@@ -1,0 +1,17 @@
+.modal { width: min(720px, 92vw); }
+.column { display: flex; flex-direction: column; gap: 12px; }
+.fileRow { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.fileName { font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.fileMeta { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.rangeRow { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.rangeField { display: flex; flex-direction: column; gap: 4px; }
+.rangeLabel { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.rangeInput { width: 96px; }
+.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.error { font-size: 12px; padding: 8px 10px; border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-state-error-primary); }
+.progress { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.pages { max-height: 56vh; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 2px; }
+.pageItem { display: flex; flex-direction: column; gap: 4px; }
+.pageLabel { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.pageImg { display: block; max-width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--dsw-alias-border-l2); }
+.empty { font-size: 13px; color: var(--dsw-alias-label-tertiary); }

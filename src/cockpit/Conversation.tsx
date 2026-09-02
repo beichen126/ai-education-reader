@@ -11,6 +11,7 @@ import { MessageText, IconCloseOutline16 } from '../dsh/primitives'
 import { ImageLightbox } from '../dsh/attachment/ImageLightbox'
 import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
 import { galleryActions } from '../gallery/gallery-store'
+import { PdfPanel } from '../pdf/PdfPanel'
 import css from './cockpit.module.css'
 
 export function Conversation() {
@@ -130,6 +131,7 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
   const draft = useDraft(key)
   const [openId, setOpenId] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | undefined>(undefined)
+  const [pdfPanel, setPdfPanel] = useState<{ open: boolean; file?: File }>({ open: false })
   // Reset ephemeral view state (lightbox / error banner) when the active conversation changes.
   const prevSession = useRef(sessionId)
   useEffect(() => { if (prevSession.current !== sessionId) { setOpenId(null); setPhotoError(undefined); prevSession.current = sessionId } }, [sessionId])
@@ -176,12 +178,17 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
           <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
           <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 1a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-5 0v-4A2.5 2.5 0 0 1 8 1zM3 8a5 5 0 0 0 10 0h-1.6a3.4 3.4 0 0 1-6.8 0H3z"/></svg>
         </label>
+        <label className={css.attachBtn} title="选择 PDF">
+          <input type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
+          <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M3 1h10a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zm1 2v10h8V3H4zm2 2h4a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1zm0 2h2.5a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1z"/></svg>
+        </label>
         <textarea className={css.composerText} value={text} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
           onChange={e => setDraftText(key, e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }} />
         <button className={css.sendBtn} onClick={send} disabled={busy}>{busy ? '生成中' : '发送'}</button>
       </div>
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}
+      {pdfPanel.open && <PdfPanel initialFile={pdfPanel.file} onClose={() => setPdfPanel({ open: false })} />}
     </div>
   )
 }

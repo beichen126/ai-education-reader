@@ -22,3 +22,15 @@ The upstream DeepSeek Harness clone used as a migration reference lives under
 vendor/dsh/ and is excluded from version control (it is never a build or runtime
 dependency). The global DeepSeek Harness installation is treated as read-only.
 
+PDF.js (pdfjs-dist)
+-------------------
+
+This project depends on Mozilla PDF.js (npm package `pdfjs-dist`) for reading
+and rendering PDF files entirely in the browser.
+
+- Upstream: https://github.com/mozilla/pdf.js
+- License: Apache License 2.0
+- Copyright (c) Mozilla Foundation and contributors.
+- The complete Apache-2.0 license text is provided by the package itself
+  (node_modules/pdfjs-dist/LICENSE) and is available from the upstream repository.
+
