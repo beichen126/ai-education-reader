@@ -1,0 +1,9 @@
+/* Global CSS Custom Highlight paint rule for study annotations.
+   The highlight registry (src/annotations/highlight-registry.ts) registers
+   the named highlight 'study-highlight' with the marked Range(s); this rule is
+   what actually paints them. Must stay in a globally-loaded stylesheet (NOT a
+   CSS Module) so the ::highlight pseudo-element reaches the page. */
+::highlight(study-highlight) {
+  background-color: #d9d9d9;
+  color: inherit;
+}

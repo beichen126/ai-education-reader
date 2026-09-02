@@ -1,0 +1,29 @@
+
+.markdown { min-width: 0; overflow-wrap: anywhere; font: var(--dsw-font-markdown-base, 14px/22px inherit); color: var(--dsw-alias-label-primary); }
+.markdown :global(h1), .markdown h1 { font-size: 1.5em; margin: 18px 0 10px; color: var(--dsw-alias-label-primary); }
+.markdown h2 { font-size: 1.3em; margin: 18px 0 10px; }
+.markdown h3 { font-size: 1.15em; margin: 16px 0 8px; }
+.markdown h4 { font-size: 1.05em; margin: 12px 0 6px; }
+.markdown p { margin: 10px 0; line-height: 1.65; }
+.markdown a { color: var(--dsw-alias-state-business-primary); text-decoration: none; }
+.markdown a:hover { text-decoration: underline; }
+.markdown blockquote { margin: 10px 0; border-left: 2px solid var(--dsw-alias-border-l2); padding-left: 12px; color: var(--dsw-alias-label-secondary); }
+.markdown ul, .markdown ol { margin: 10px 0; padding-left: 20px; }
+.markdown li { margin: 4px 0; }
+.markdown pre { margin: 10px 0; padding: 12px; border-radius: 10px; background: var(--dsw-alias-markdown-code-block, var(--dsw-alias-bg-layer-1)); overflow-x: auto; font-family: var(--ds-font-family-code, monospace); font-size: 13px; }
+.markdown pre code { background: none; }
+.markdown :not(pre) > code { background: var(--dsw-alias-markdown-inline-code, var(--dsw-alias-bg-layer-1)); border-radius: 6px; padding: 1px 5px; font-family: var(--ds-font-family-code, monospace); font-size: 0.9em; }
+.tableScroll { max-width: 100%; overflow-x: auto; margin: 10px 0; }
+.tableScroll table { border-collapse: collapse; width: max-content; max-width: 100%; }
+.tableScroll th, .tableScroll td { padding: 8px 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.tableScroll th { font-weight: 600; border-bottom: 1px solid var(--dsw-alias-border-l3); }
+.tableScroll { position: relative; }
+.studyTableHighlighted { background: #d9d9d9; }
+.studyTableHighlighted table { background: #d9d9d9; }
+.studyCellHighlighted { background: #d9d9d9; }
+.tableAction { position: absolute; top: 4px; right: 4px; z-index: 2; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); width: 22px; height: 22px; line-height: 20px; text-align: center; border-radius: 6px; cursor: pointer; font-size: 14px; }
+.mathBlock { margin: 12px 0; display: flex; justify-content: center; overflow-x: auto; overflow-y: hidden; max-width: 100%; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
+.mathBlock .katex-display { margin: 0; }
+.mathInline { color: var(--dsw-alias-label-primary); }
+.studyMathHighlighted { background: #d9d9d9; }
+.studyMathHighlighted .katex, .studyMathHighlighted.katex { background-color: #d9d9d9; }

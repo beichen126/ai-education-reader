@@ -1,0 +1,30 @@
+# build / deps
+node_modules/
+dist/
+.vite/
+coverage/
+.cache/
+
+# environment / secrets (never committed)
+.env
+.env.*
+!.env.example
+
+# upstream DSH read-only reference clone (NOT a build/dependency source). Re-clonable:
+#   git clone --depth 1 https://github.com/deepseek-ai/deepseek-harness.git vendor/dsh
+vendor/dsh/
+
+# logs / temp / test artifacts
+*.log
+npm-debug.log*
+*.tmp
+*.bak
+*.png.screenshot
+scripts/shot*.png
+test/.playwright/
+test-results/
+playwright-report/
+
+# OS
+.DS_Store
+Thumbs.db
