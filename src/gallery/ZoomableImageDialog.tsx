@@ -2,7 +2,7 @@
 // surface for: sent-message images (Gallery), composer draft images, and PDF
 // context pages. Owns short-lived transform state only (scale/tx/ty) — nothing
 // about zoom is stored in the gallery-store.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { clampScale, clampPan, zoomAtPoint, resetTransform, DOUBLE_CLICK_SCALE } from './zoom'
 import css from './zoomable-image.module.css'
@@ -26,7 +26,11 @@ type Nd = { x: number; y: number }
 export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
   const { src, alt = '', resetKey, index, count, onPrev, onNext, onBackToList, onClose, labels } = props
   const stageRef = useRef<HTMLDivElement | null>(null)
-  const restoreRef = useRef<HTMLElement | null>(null)
+  // Two separate refs: openerRef remembers the element that opened the viewer
+  // (thumbnail / draft image / PDF page); closeRef targets the close button.
+  // Sharing one ref would let the JSX ref overwrite the captured opener.
+  const openerRef = useRef<HTMLElement | null>(null)
+  const closeRef = useRef<HTMLButtonElement | null>(null)
   const [scale, setScale] = useState(1)
   const [tx, setTx] = useState(0)
   const [ty, setTy] = useState(0)
@@ -66,20 +70,35 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
   // Reset transform on image change.
   useEffect(() => { const t = resetTransform(); setScale(t.scale); setTx(t.tx); setTy(t.ty) }, [src, resetKey])
 
-  // Focus restore + keyboard while open.
+  // On mount (layout phase, before paint): capture the opener once, then move
+  // initial focus into the dialog (the close button) so the background opener
+  // never keeps focus while the modal is open.
+  useLayoutEffect(() => {
+    openerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    closeRef.current?.focus()
+  }, [])
+
+  // Keyboard while open; on close, restore focus to the captured opener.
+  // All callbacks go through refs so this effect registers exactly once — a
+  // deps-driven re-run would ALSO run its cleanup (and steal focus back to the
+  // opener while the dialog is still open).
+  const onCloseRef = useRef(onClose); onCloseRef.current = onClose
+  const onPrevRef = useRef(onPrev); onPrevRef.current = onPrev
+  const onNextRef = useRef(onNext); onNextRef.current = onNext
+  const bumpRef = useRef(bump); bumpRef.current = bump
+  const setTRef = useRef(setT); setTRef.current = setT
   useEffect(() => {
-    restoreRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { onClose(); return }
-      if (e.key === '+' || e.key === '=') { e.preventDefault(); bump(1.25) }
-      else if (e.key === '-') { e.preventDefault(); bump(1 / 1.25) }
-      else if (e.key === '0') { e.preventDefault(); setT(1, 0, 0) }
-      else if (e.key === 'ArrowLeft') { if (onPrev) onPrev() }
-      else if (e.key === 'ArrowRight') { if (onNext) onNext() }
+      if (e.key === 'Escape') { onCloseRef.current(); return }
+      if (e.key === '+' || e.key === '=') { e.preventDefault(); bumpRef.current(1.25) }
+      else if (e.key === '-') { e.preventDefault(); bumpRef.current(1 / 1.25) }
+      else if (e.key === '0') { e.preventDefault(); setTRef.current(1, 0, 0) }
+      else if (e.key === 'ArrowLeft') { if (onPrevRef.current) onPrevRef.current() }
+      else if (e.key === 'ArrowRight') { if (onNextRef.current) onNextRef.current() }
     }
     window.addEventListener('keydown', onKey)
-    return () => { window.removeEventListener('keydown', onKey); restoreRef.current?.focus() }
-  }, [onClose, onPrev, onNext, bump, setT])
+    return () => { window.removeEventListener('keydown', onKey); openerRef.current?.focus() }
+  }, [])
 
   useEffect(() => {
     const el = stageRef.current
@@ -205,7 +224,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
           {onBackToList && <button type="button" className={css.ctrl} onClick={onBackToList}>{labels.backToList || '返回列表'}</button>}
         </div>
       </div>
-      <button ref={restoreRef as any} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>✕</button>
+      <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>✕</button>
     </div>,
     document.body,
   )

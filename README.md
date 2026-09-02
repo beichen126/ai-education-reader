@@ -11,7 +11,7 @@ Select the pages you're actually studying. Let the model see exactly that contex
 [报告问题](https://github.com/beichen126/ai-education-reader/issues) ·
 [参与贡献](./CONTRIBUTING.md)
 
-![status](https://img.shields.io/badge/status-alpha.v0.1.0--alpha.2-f39f12?style=flat-square)
+![status](https://img.shields.io/badge/status-alpha.v0.1.0--alpha.3-f39f12?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![deploy](https://img.shields.io/badge/deploy-GitHub%20Pages-2077cc?style=flat-square)
 ![react](https://img.shields.io/badge/React-18-61dafb?style=flat-square)
@@ -80,7 +80,7 @@ RAG 适合"不知道内容在哪里"的开放式问答；而读教材时，你�
 
 ## Current status
 
-**Alpha · v0.1.0-alpha.2** —— 核心学习流程可以正常使用，正在根据真实使用反馈迭代。
+**Alpha · v0.1.0-alpha.3** —— 核心学习流程可以正常使用，正在根据真实使用反馈迭代。
 
 已知限制（会随迭代逐步改善）：
 

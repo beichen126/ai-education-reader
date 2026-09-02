@@ -143,7 +143,8 @@ function PendingThumb({ id, onRemove, onOpen }: { id: string; onRemove: () => vo
   const { url } = useAttachmentPreview(id)
   return (
     <span className={css.pic}>
-      <img src={url} alt="" onClick={onOpen} />
+      <img src={url} alt="" role="button" tabIndex={0} aria-label="查看图片" onClick={onOpen}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }} />
       <button className={css.picDel} onClick={onRemove}><IconCloseOutline16 size={12} /></button>
     </span>
   )
