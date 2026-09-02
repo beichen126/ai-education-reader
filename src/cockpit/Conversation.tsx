@@ -12,7 +12,11 @@ import { ImageLightbox } from '../dsh/attachment/ImageLightbox'
 import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
 import { galleryActions } from '../gallery/gallery-store'
 import { PdfPanel, type PdfAddResult } from '../pdf/PdfPanel'
-import { pdfPageAttachmentName, type RenderedPdfPage } from '../pdf/pdf-types'
+import { pdfPageAttachmentName, type PdfAddPayload, type RenderedPdfPage } from '../pdf/pdf-types'
+import { newStableId } from '../engine/types'
+import { useAttachmentMetas } from '../engine/use-attachment-metas'
+import { buildAttachmentDisplayItems, type AttachmentDisplayItem } from '../attachments/attachment-display'
+import { PdfContextCard } from './PdfContextCard'
 import css from './cockpit.module.css'
 
 export function Conversation() {
@@ -75,7 +79,7 @@ function MessageRow({ m, streamingId, convId, imgOffset }: { m: any; streamingId
     return (
       <div className={css.msg + ' ' + css.msgUser}>
         <div className={css.bubble}><MessageText text={m.content} /></div>
-        {m.images.length > 0 && <PhotoStrip convId={convId} imageIds={m.images} offset={imgOffset} />}
+        {m.images.length > 0 && <MessageAttachmentStrip convId={convId} message={m} imgOffset={imgOffset} />}
       </div>
     )
   }
@@ -93,10 +97,20 @@ function MessageRow({ m, streamingId, convId, imgOffset }: { m: any; streamingId
   )
 }
 
-function PhotoStrip({ imageIds, convId, offset }: { imageIds: string[]; convId?: string; offset: number }) {
+function MessageAttachmentStrip({ message, convId, imgOffset }: { message: any; convId?: string; imgOffset: number }) {
+  const metas = useAttachmentMetas(message.images)
+  const items = buildAttachmentDisplayItems(message.images, metas)
+  let running = imgOffset
   return (
     <div className={css.photoStrip}>
-      {imageIds.map((id, i) => <Thumb key={id} id={id} onOpen={() => galleryActions.open(convId, offset + i, 'viewer')} />)}
+      {items.map((item, idx) => {
+        if (item.type === 'image') {
+          const off = running; running++
+          return <Thumb key={'i' + item.attachmentId} id={item.attachmentId} onOpen={() => galleryActions.open(convId, off, 'viewer')} />
+        }
+        running += item.attachmentIds.length
+        return <PdfContextCard key={'g' + item.groupId + '-' + idx} item={item} readOnly />
+      })}
     </div>
   )
 }
@@ -133,10 +147,16 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
   const [openId, setOpenId] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | undefined>(undefined)
   const [pdfPanel, setPdfPanel] = useState<{ open: boolean; file?: File }>({ open: false })
-  const addPdfToDraft = async (fileName: string, pages: RenderedPdfPage[]): Promise<PdfAddResult> => {
+  const addPdfToDraft = async (payload: PdfAddPayload): Promise<PdfAddResult> => {
     if (!sessionId) return { ok: false, count: 0, error: '没有当前会话，无法加入。' }
     try {
-      const inputs = pages.map(p => ({ blob: p.blob, name: pdfPageAttachmentName(fileName, p.pageNumber) }))
+      // One user PDF selection = one context group (never auto-merged by fileName).
+      const groupId = newStableId()
+      const inputs = payload.pages.map(p => ({
+        blob: p.blob,
+        name: pdfPageAttachmentName(payload.fileName, p.pageNumber),
+        source: { type: 'pdf-page' as const, groupId, fileName: payload.fileName, pageNumber: p.pageNumber, selection: payload.selection },
+      }))
       const atts = await saveGeneratedImages(inputs)
       try {
         addDraftImages(sessionId, atts.map(a => a.id))
@@ -155,6 +175,11 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
   useEffect(() => { if (prevSession.current !== sessionId) { setOpenId(null); setPhotoError(undefined); prevSession.current = sessionId } }, [sessionId])
   const text = draft.text
   const picIds = draft.imageIds
+  const metas = useAttachmentMetas(picIds)
+  const composerItems = buildAttachmentDisplayItems(picIds, metas)
+  const removeGroup = (item: Extract<AttachmentDisplayItem, { type: 'pdf-group' }>) => {
+    for (const id of item.attachmentIds) { removeDraftImage(key, id); void deleteAttachment(id) }
+  }
   const onFiles = async (files: FileList) => {
     try {
       const atts = await saveFiles([...files])
@@ -187,7 +212,11 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
       {photoError && <div className={css.errorBanner}>{photoError}</div>}
       {picIds.length > 0 && (
         <div className={css.composerPics}>
-          {picIds.map(id => <PendingThumb key={id} id={id} onRemove={() => removePic(id)} onOpen={() => setOpenId(id)} />)}
+          {composerItems.map((item, idx) => item.type === 'image' ? (
+            <PendingThumb key={'i' + item.attachmentId} id={item.attachmentId} onRemove={() => removePic(item.attachmentId)} onOpen={() => setOpenId(item.attachmentId)} />
+          ) : (
+            <PdfContextCard key={'g' + item.groupId + '-' + idx} item={item} onDelete={() => removeGroup(item)} onRemovePage={id => removePic(id)} />
+          ))}
           <span className={css.picCount}>已添加 {picIds.length} 张图片</span>
         </div>
       )}

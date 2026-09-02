@@ -1,5 +1,5 @@
 // attachmentService — the single authority for attachment lifecycle. The UI never touches IndexedDB, Blob, objectURL, or base64 directly.
-import { newStableId, type Attachment, type StableId } from './types'
+import { newStableId, type Attachment, type PdfAttachmentSource, type StableId } from './types'
 import { saveAttachments, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists } from '../storage/storage'
 
 export type AttachmentErrorKind = 'unsupported-format' | 'read-failed' | 'missing-attachment' | 'image-too-large' | 'vision-unsupported'
@@ -42,8 +42,10 @@ export async function saveFiles(files: File[]): Promise<Attachment[]> {
   return metas
 }
 
-/** Input for an app-generated image Blob (e.g. rendered PDF page). */
-export type GeneratedImageInput = { blob: Blob; name: string }
+/** Input for an app-generated image Blob (e.g. rendered PDF page).
+ * source is OPTIONAL and supplied by the caller (the PDF flow) — the service
+ * never guesses fileName/pageNumber/selection from names. */
+export type GeneratedImageInput = { blob: Blob; name: string; source?: PdfAttachmentSource }
 
 /**
  * Persist a batch of app-generated image Blobs (NOT user-picked files). Semantically
@@ -61,7 +63,7 @@ export async function saveGeneratedImages(images: GeneratedImageInput[]): Promis
     if (!(g.blob instanceof Blob) || g.blob.size <= 0) throw new AttachmentError('read-failed', 'empty blob')
     if (!SUPPORTED_MIME.has(g.blob.type)) throw new AttachmentError('unsupported-format', 'unsupported image')
     if (g.blob.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large')
-    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now })
+    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}) })
     blobs.push(g.blob)
   }
   await saveAttachments(metas, blobs)
@@ -84,6 +86,12 @@ export function isInlineImageOverBudget(totalBytes: number): boolean {
 }
 
 export async function getAttachment(id: StableId): Promise<Attachment | undefined> { const row = await getAttachmentRow(id); return row ? row.meta : undefined }
+/** Load metadata for many attachment ids in order (missing ids are skipped). */
+export async function getAttachments(ids: StableId[]): Promise<Attachment[]> {
+  const out: Attachment[] = []
+  for (const id of ids) { const a = await getAttachment(id); if (a) out.push(a) }
+  return out
+}
 export async function existsAttachment(id: StableId): Promise<boolean> { return attachmentExists(id) }
 async function blobOf(id: StableId): Promise<Blob> { const row = await getAttachmentRow(id); if (!row) throw new AttachmentError('missing-attachment', 'attachment missing'); try { if (!(row.blob instanceof Blob)) throw new Error('not blob'); return row.blob } catch { throw new AttachmentError('read-failed', 'read failed') } }
 

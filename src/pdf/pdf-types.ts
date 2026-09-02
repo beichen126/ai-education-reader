@@ -25,3 +25,17 @@ export function pdfPageAttachmentName(fileName: string, pageNumber: number): str
   const stem = fileName.replace(/\.pdf$/i, '')
   return stem + '-p' + String(pageNumber).padStart(4, '0') + '.jpg'
 }
+/** Minimal provenance of the user's PDF selection, stored on every page Attachment. */
+export type PdfSelection = {
+  kind: 'outline' | 'manual'
+  title?: string
+  startPage: number
+  endPage: number
+}
+
+/** Payload handed from the PDF panel to the engine when the user clicks 加入对话. */
+export type PdfAddPayload = {
+  fileName: string
+  selection: PdfSelection
+  pages: RenderedPdfPage[]
+}

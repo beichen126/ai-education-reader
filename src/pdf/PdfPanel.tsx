@@ -9,7 +9,7 @@ import { Modal, Button, Input } from '../dsh/primitives'
 import { formatBytes } from '../storage/diagnostics'
 import { usePdfPreview } from './use-pdf-preview'
 import { PdfOutlineSelector } from './PdfOutlineSelector'
-import { MAX_PREVIEW_PAGES, type RenderedPdfPage } from './pdf-types'
+import { MAX_PREVIEW_PAGES, type PdfAddPayload, type RenderedPdfPage } from './pdf-types'
 import type { PdfOutlineItem } from './pdf-outline'
 import css from './pdf-panel.module.css'
 
@@ -30,7 +30,7 @@ export function PdfPanel({
 }: {
   initialFile?: File
   onClose: () => void
-  onAddToDraft: (fileName: string, pages: RenderedPdfPage[]) => Promise<PdfAddResult>
+  onAddToDraft: (payload: PdfAddPayload) => Promise<PdfAddResult>
 }) {
   const { doc, pages, status, error, progress, outline, outlineStatus, outlineError, selectFile, generate, clearPreview } = usePdfPreview()
   const [mode, setMode] = useState<'chapter' | 'manual'>('chapter')
@@ -95,7 +95,10 @@ export function PdfPanel({
     if (!doc || pages.length === 0 || adding) return
     setAdding(true); setAddMsg(null)
     try {
-      const res = await onAddToDraft(doc.fileName, pages)
+      const selection = inChapterMode && selectedNode && selectedNode.startPage != null && selectedNode.endPage != null
+        ? { kind: 'outline' as const, title: selectedNode.title, startPage: selectedNode.startPage, endPage: selectedNode.endPage }
+        : { kind: 'manual' as const, startPage: lastRange?.start ?? pages[0].pageNumber, endPage: lastRange?.end ?? pages[pages.length - 1].pageNumber }
+      const res = await onAddToDraft({ fileName: doc.fileName, selection, pages })
       if (res.ok) { setAddMsg('已加入 ' + res.count + ' 页'); setTimeout(() => onClose(), 700) } else { setAddMsg(res.error) }
     } catch { setAddMsg('无法将 PDF 页面加入对话。') }
     setAdding(false)

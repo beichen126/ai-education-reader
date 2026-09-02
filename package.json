@@ -42,7 +42,9 @@
     "test:storage-diagnostics": "npx tsx scripts/test-storage-diagnostics.ts",
     "test:pdf-attach": "npx tsx scripts/test-pdf-attach.ts",
     "test:pdf-outline": "npx tsx scripts/test-pdf-outline.ts",
-    "test:pdf-outline-real": "npx tsx scripts/test-pdf-outline-real.ts"
+    "test:pdf-outline-real": "npx tsx scripts/test-pdf-outline-real.ts",
+    "test:attachment-display": "npx tsx scripts/test-attachment-display.ts",
+    "test:backup-source": "npx tsx scripts/test-backup-source.ts"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",
