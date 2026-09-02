@@ -40,7 +40,9 @@
     "test:draft-send": "npx tsx scripts/test-draft-send.ts",
     "test:draft-persistence": "npx tsx scripts/test-draft-persistence.ts",
     "test:storage-diagnostics": "npx tsx scripts/test-storage-diagnostics.ts",
-    "test:pdf-attach": "npx tsx scripts/test-pdf-attach.ts"
+    "test:pdf-attach": "npx tsx scripts/test-pdf-attach.ts",
+    "test:pdf-outline": "npx tsx scripts/test-pdf-outline.ts",
+    "test:pdf-outline-real": "npx tsx scripts/test-pdf-outline-real.ts"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",

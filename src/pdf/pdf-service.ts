@@ -11,6 +11,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 // /ai-education-reader/ base path).
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { PDF_FILE_MIME, type LocalPdfDocument } from './pdf-types.ts'
+import { parsePdfOutline, type PdfOutlineResult } from './pdf-outline.ts'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
@@ -114,4 +115,16 @@ export async function renderPdfPage(pageNumber: number): Promise<RenderedPage> {
   canvas.width = 0
   canvas.height = 0
   return { blob, width, height, mimeType: OUTPUT_IMAGE_MIME }
+}
+
+/**
+ * Read the OUTLINE of the currently open document into a parsed chapter tree.
+ * Stage 3: parser only, wired for tests / future Stage 4 UI. Shares the SAME
+ * open document as rendering (no second load). Throws PdfError('not-open') when
+ * no document is open; PdfOutlineError when the outline itself fails to load.
+ */
+export async function readPdfOutline(): Promise<PdfOutlineResult> {
+  const doc = activeDoc
+  if (!doc) throw new PdfError('not-open', 'not open')
+  return parsePdfOutline(doc)
 }
