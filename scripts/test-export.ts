@@ -147,10 +147,10 @@ let threw = false
 try { parseAndValidate({ format: 'nope', version: 1, conversations: [], annotations: [], attachments: [] }) } catch(e){ threw = e instanceof BackupError }
 assert(threw, 'parseAndValidate rejects wrong format')
 threw = false
-try { parseAndValidate({ format: 'dsh-eink-backup', version: 99, conversations: [], annotations: [], attachments: [] }) } catch(e){ threw = e instanceof BackupError }
+try { parseAndValidate({ format: 'ai-education-reader-backup', version: 99, conversations: [], annotations: [], attachments: [] }) } catch(e){ threw = e instanceof BackupError }
 assert(threw, 'parseAndValidate rejects wrong version')
 threw = false
-try { parseAndValidate({ format: 'dsh-eink-backup', version: 1 }) } catch(e){ threw = e instanceof BackupError }
+try { parseAndValidate({ format: 'ai-education-reader-backup', version: 1 }) } catch(e){ threw = e instanceof BackupError }
 assert(threw, 'parseAndValidate rejects missing arrays')
 
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)

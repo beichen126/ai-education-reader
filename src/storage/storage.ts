@@ -1,6 +1,9 @@
-import { idbGet, idbGetAll, idbGetAllKeys, idbPut, idbDelete, idbGetAllByIndex, idbDeleteByIndex, idbBatchPut, idbBatchDelete } from './idb'
+import { idbGet, idbGetAll, idbGetAllKeys, idbPut, idbDelete, idbGetAllByIndex, idbDeleteByIndex, idbBatchPut, idbBatchDelete, idbClearAll } from './idb'
 import type { Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
+
+/** Destructive: clear conversations/attachments/annotations/settings (all stores). */
+export async function clearAllLocalData(): Promise<void> { await idbClearAll() }
 
 export async function getSetting(key) { const row = await idbGet('settings', key); return row ? row.value : undefined }
 export async function setSetting(key, value) { await idbPut('settings', { key, value }) }

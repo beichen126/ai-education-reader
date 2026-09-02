@@ -2,12 +2,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
-import { uiActions } from '../engine/ui-store'
+import { uiActions, useUi } from '../engine/ui-store'
 import { saveFiles, saveGeneratedImages, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraft } from '../engine/draft-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { t } from '../engine/locale'
-import { MessageText, IconCloseOutline16 } from '../dsh/primitives'
+import { MessageText, IconCloseOutline16, Button } from '../dsh/primitives'
 import { ImageLightbox } from '../dsh/attachment/ImageLightbox'
 import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
 import { galleryActions } from '../gallery/gallery-store'
@@ -15,6 +15,7 @@ import { PdfPanel, type PdfAddResult } from '../pdf/PdfPanel'
 import { pdfPageAttachmentName, type PdfAddPayload, type RenderedPdfPage } from '../pdf/pdf-types'
 import { newStableId } from '../engine/types'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
+import { setComposerTriggers, triggerComposerImages, triggerComposerPdf } from '../engine/composer-triggers'
 import { buildAttachmentDisplayItems, type AttachmentDisplayItem } from '../attachments/attachment-display'
 import { PdfContextCard } from './PdfContextCard'
 import css from './cockpit.module.css'
@@ -63,8 +64,14 @@ export function Conversation() {
         <div className={css.messagesInner}>
           {!session || session.messages.length === 0 ? (
             <div className={css.emptyHero}>
-              <div className={css.emptyTitle}>{t('conversation.emptyHero')}</div>
-              <div className={css.emptyHint}>{t('conversation.emptyHint')}</div>
+              <div className={css.emptyTitle}>AI 学习阅读器</div>
+              <div className={css.emptyHint}>还没有学习内容。上传一张图片，或者打开一份 PDF 开始。</div>
+              <div className={css.emptyActions}>
+                <Button variant="primary" data-testid="empty-add-image" onClick={triggerComposerImages}>添加图片</Button>
+                <Button variant="outline" data-testid="empty-open-pdf" onClick={triggerComposerPdf}>打开 PDF</Button>
+                {!hasKey && <Button variant="outline" data-testid="empty-configure" onClick={uiActions.openSettings}>配置 API</Button>}
+              </div>
+              {!hasKey && <div className={css.emptyHint}>开始前，需要配置你自己的 DeepSeek API Key。</div>}
             </div>
           ) : messages.map(m => <MessageRow key={m.id} m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} />)}
         </div>
@@ -147,6 +154,12 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
   const [openId, setOpenId] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | undefined>(undefined)
   const [pdfPanel, setPdfPanel] = useState<{ open: boolean; file?: File }>({ open: false })
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const pdfInputRef = useRef<HTMLInputElement | null>(null)
+  useEffect(() => {
+    setComposerTriggers({ openImages: () => imageInputRef.current?.click(), openPdf: () => pdfInputRef.current?.click() })
+    return () => setComposerTriggers(null)
+  }, [])
   const addPdfToDraft = async (payload: PdfAddPayload): Promise<PdfAddResult> => {
     if (!sessionId) return { ok: false, count: 0, error: '没有当前会话，无法加入。' }
     try {
@@ -231,11 +244,11 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
       )}
       <div className={css.composerBar}>
         <label className={css.attachBtn} title={t('composer.attach')}>
-          <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
+          <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
           <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 1a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-5 0v-4A2.5 2.5 0 0 1 8 1zM3 8a5 5 0 0 0 10 0h-1.6a3.4 3.4 0 0 1-6.8 0H3z"/></svg>
         </label>
         <label className={css.attachBtn} title="选择 PDF">
-          <input type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
+          <input ref={pdfInputRef} type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
           <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M3 1h10a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zm1 2v10h8V3H4zm2 2h4a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1zm0 2h2.5a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1z"/></svg>
         </label>
         <textarea className={css.composerText} value={text} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}

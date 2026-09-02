@@ -16,7 +16,7 @@ function safeName(t: string): string { return (String(t || '').replace(/[\\/:*?"
 
 export async function exportBackupJson(): Promise<void> {
   const backup = await buildBackup()
-  downloadJson('dsh-eink-backup-' + stamp() + '.json', backup)
+  downloadJson('ai-education-reader-backup-' + stamp() + '.json', backup)
 }
 export async function exportConversationMd(convId: string): Promise<void> {
   const conv = await getConversation(convId); if (!conv) return

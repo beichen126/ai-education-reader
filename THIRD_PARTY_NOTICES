@@ -1,7 +1,7 @@
 THIRD-PARTY NOTICES
 ===================
 
-This project (dsh-eink-client) contains code, design tokens, and component
+This project (AI Education Reader) contains code, design tokens, and component
 patterns derived from the DeepSeek Harness (DSH) web UI.
 
 Upstream project: https://github.com/deepseek-ai/deepseek-harness
@@ -14,9 +14,9 @@ apps/web) retain their original copyright and license notice. Specifically:
 - Copyright (c) 2026 DeepSeek
 - See LICENSE (root) for the full text.
 
-This repository is maintained as a standalone, self-contained static build for
-ink-screen (e-ink) devices. It does not depend on the DeepSeek Harness host,
-Cordis runtime, Node host, or DSH Agent/Tool/Workspace backends.
+This repository is maintained as a standalone, self-contained static build. It does
+not depend on the DeepSeek Harness host, Cordis runtime, Node host, or DSH
+Agent/Tool/Workspace backends.
 
 The upstream DeepSeek Harness clone used as a migration reference lives under
 vendor/dsh/ and is excluded from version control (it is never a build or runtime
@@ -33,4 +33,3 @@ and rendering PDF files entirely in the browser.
 - Copyright (c) Mozilla Foundation and contributors.
 - The complete Apache-2.0 license text is provided by the package itself
   (node_modules/pdfjs-dist/LICENSE) and is available from the upstream repository.
-

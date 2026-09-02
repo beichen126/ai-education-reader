@@ -1,15 +1,13 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.0-alpha.1",
   "type": "module",
-  "description": "AI 学习阅读器产品版：面向教材、讲义、论文与学习资料的 AI 学习阅读器。由 dsh-eink-client 个人版完整复制而来，独立开发、独立维护。",
+  "description": "AI Education Reader (AI 学习阅读器): 面向教材、讲义、论文和学习资料的 AI 学习阅读器。本地优先、BYOK、浏览器内处理 PDF。",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "baseline:dsh": "node scripts/gen-baseline.mjs \"C:\\Users\\lenovo\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\" DSH_BASELINE.json",
-    "verify:dsh": "node scripts/verify-dsh.mjs \"C:\\Users\\lenovo\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\" DSH_BASELINE.json",
     "test": "npx tsx scripts/test-storage.ts",
     "test:storage": "npx tsx scripts/test-storage.ts",
     "test:sse": "npx tsx scripts/test-sse.ts",
@@ -45,7 +43,8 @@
     "test:pdf-outline-real": "npx tsx scripts/test-pdf-outline-real.ts",
     "test:attachment-display": "npx tsx scripts/test-attachment-display.ts",
     "test:backup-source": "npx tsx scripts/test-backup-source.ts",
-    "test:large-context": "npx tsx scripts/test-large-context.ts"
+    "test:large-context": "npx tsx scripts/test-large-context.ts",
+    "test:backup-security": "npx tsx scripts/test-backup-security.ts"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",

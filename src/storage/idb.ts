@@ -58,6 +58,18 @@ export async function idbDeleteByIndex(store: string, index: string, key: any): 
 }
 export async function idbBatchPut(store: string, values: any[]): Promise<void> { const db = await openDb(); const os = tx(db, store, 'readwrite'); for (const v of values) await asPromise(os.put(v)) }
 export async function idbBatchDelete(store: string, keys: any[]): Promise<void> { const db = await openDb(); const os = tx(db, store, 'readwrite'); for (const k of keys) await asPromise(os.delete(k)) }
+/** Clear EVERY store in one readwrite transaction (destructive: used by "clear local data"). */
+export async function idbClearAll(): Promise<void> {
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const txn = db.transaction(STORES, 'readwrite')
+    for (const s of STORES) txn.objectStore(s).clear()
+    txn.oncomplete = () => resolve(undefined)
+    txn.onerror = () => reject(txn.error)
+    txn.onabort = () => reject(txn.error)
+  })
+}
+
 export async function closeDb(): Promise<void> { if (dbPromise) { const db = await dbPromise; db.close(); dbPromise = null } }
 export async function idbReplaceAll(records: { settings: any[]; conversations: any[]; attachments: any[]; annotations: any[] }): Promise<void> {
   const db = await openDb()
@@ -75,4 +87,3 @@ export async function idbReplaceAll(records: { settings: any[]; conversations: a
     txn.onabort = () => reject(txn.error)
   })
 }
-

@@ -208,9 +208,9 @@ async function runReplyStream(id: string, afterUser: Conversation): Promise<void
 export async function initStore(): Promise<void> {
   const convs = await listConversations()
   if (convs.length === 0) {
-    const c = makeSession('存储系统示例')
-    const now = Date.now()
-    c.messages = [{ id: newStableId(), role: 'assistant', content: "# 第五章 存储系统\n\n## 5.1 层次结构\n\n**平均存储器访问时间（AMAT）** = 命中时间 + 缺失率 × 缺失代价，可参考[存储层次](https://example.com)。\n\n- SRAM：快但贵\n- DRAM：主存主体\n- 磁盘：容量大\n\n> 局部性原理是缓存有效的前提。\n\n| 层次 | 容量 | 速度 |\n|---|---|---|\n| 寄存器 | 小 | 最快 |\n| Cache | 中 | 快 |\n\n```text\nAMAT = Hit + Miss_Rate × Miss_Penalty\n```", images: [], createdAt: now, updatedAt: now }]
+    // First run: create ONE empty conversation (no demo/seed content) so the
+    // composer has a current session; the UI shows the product empty state.
+    const c = makeSession()
     await saveConversation(c)
     await setSetting(LAST_CONV, c.id)
     await initDrafts([c.id])

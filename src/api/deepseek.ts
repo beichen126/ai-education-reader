@@ -68,14 +68,24 @@ export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChat
   return { content }
 }
 
-export async function testConnection(args: SendTextChatArgs): Promise<{ ok: boolean; label: string; status?: number }> {
+/** Connection test: GET {baseUrl}/models (OpenAI-compatible). Sends NO chat history,
+ * NO images/PDFs/user content — only the Authorization header. Verifies endpoint
+ * reachability, key validity and browser CORS. */
+export async function testConnection(args: { apiKey: string; baseUrl: string }): Promise<{ ok: boolean; label: string; status?: number }> {
+  const { apiKey, baseUrl } = args
+  if (!apiKey) return { ok: false, label: '请先填写 API Key。' }
+  const endpoint = (baseUrl || DEFAULT_BASE).replace(/\/+$/, '') + '/models'
   try {
-    const r = await sendTextChat(args)
-    return { ok: true, label: '连接成功：' + r.content.slice(0, 40) }
-  } catch (e) {
-    const err = e instanceof DeepSeekError ? e : new DeepSeekError('network-or-cors', String(e))
-    const statusMark = (err.kind === 'unauthorized' || err.kind === 'bad-request' || err.kind === 'billing' || err.kind === 'rate-limited') && err.status ? ('（HTTP ' + err.status + '）') : ''
-    return { ok: false, label: errorKindLabel(err.kind) + statusMark, status: err.status }
+    const res = await fetch(endpoint, { method: 'GET', headers: { 'Authorization': 'Bearer ' + apiKey } })
+    if (res.ok) return { ok: true, label: '连接成功：API 服务可访问，Key 有效。', status: res.status }
+    let kind: ErrorKind = 'bad-request'
+    if (res.status === 401) kind = 'unauthorized'
+    else if (res.status === 402) kind = 'billing'
+    else if (res.status === 429) kind = 'rate-limited'
+    else if (res.status >= 500) kind = 'server'
+    return { ok: false, label: errorKindLabel(kind) + '（HTTP ' + res.status + '）', status: res.status }
+  } catch {
+    return { ok: false, label: errorKindLabel('network-or-cors'), status: undefined }
   }
 }
 // ---- SSE streaming (browser-native fetch + ReadableStream; no third-party SSE lib) ----

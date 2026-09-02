@@ -2,7 +2,7 @@ import { idbReplaceAll } from '../storage/idb'
 import type { Annotation } from '../annotations/annotation-types'
 import { ANNOTATION_VERSION } from '../annotations/annotation-types'
 import type { Attachment } from '../engine/types'
-import { BACKUP_FORMAT, BACKUP_VERSION, type BackupV1 } from './backup-types'
+import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type BackupV1 } from './backup-types'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -29,7 +29,7 @@ function isBase64(data: unknown): boolean {
  */
 export function parseAndValidate(input: unknown): BackupV1 {
   if (!isObj(input)) throw new BackupError('不是一个有效的备份对象')
-  if (input.format !== BACKUP_FORMAT) throw new BackupError('格式不匹配：不是 dsh-eink 备份文件')
+  if (input.format !== BACKUP_FORMAT && input.format !== LEGACY_BACKUP_FORMAT) throw new BackupError('格式不匹配：不是本产品的备份文件（支持 ' + BACKUP_FORMAT + ' 与 ' + LEGACY_BACKUP_FORMAT + '）')
   if (input.version !== BACKUP_VERSION) throw new BackupError('版本不支持：当前仅支持 v1')
   if (!Array.isArray(input.conversations)) throw new BackupError('缺少 conversations 数组')
   if (!Array.isArray(input.annotations)) throw new BackupError('缺少 annotations 数组')
@@ -135,4 +135,3 @@ export async function restoreBackup(backup: BackupV1): Promise<void> {
   ]
   await idbReplaceAll({ settings, conversations: backup.conversations, attachments, annotations: backup.annotations as Annotation[] })
 }
-

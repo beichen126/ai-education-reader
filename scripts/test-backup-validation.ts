@@ -6,7 +6,7 @@ const clone = (x:any) => JSON.parse(JSON.stringify(x))
 const b64 = (n:number) => Buffer.from(new Array(n).fill(7)).toString('base64')
 
 function validBackup(){ return {
-  format:'dsh-eink-backup', version:1, exportedAt:1,
+  format:'ai-education-reader-backup', version:1, exportedAt:1,
   settings:{ apiBaseUrl:'https://api.deepseek.com', model:'deepseek-chat', customSystemPrompt:'', customSystemPromptEnabled:false },
   conversations:[{ id:'c1', title:'会话', createdAt:1, updatedAt:1, messages:[{ id:'m1', role:'user', content:'hi', images:['att1'], createdAt:1, updatedAt:1 }] }],
   annotations:[{ id:'a1', conversationId:'c1', messageId:'m1', target:{ type:'text', anchor:{scope:'block',blockId:'b1'}, start:0, end:2, quote:{exact:'hi',prefix:'',suffix:''} }, createdAt:1, updatedAt:1, version:1 }],
@@ -45,4 +45,3 @@ assert(parseAndValidate(validBackup()) !== null, 'valid backup passes validation
 
 console.log('\nRESULT pass='+pass+' fail='+fail)
 process.exit(fail===0?0:1)
-
