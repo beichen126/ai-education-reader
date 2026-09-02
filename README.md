@@ -54,7 +54,15 @@ npm run preview  # 预览 production build
 - 不含 PDF Reader / 双栏阅读工作区；
 - 不含云同步 / 登录 / 账户。
 
+## Contributing & Security
+
+社区共建欢迎：见 [CONTRIBUTING.md](./CONTRIBUTING.md) 与 [SECURITY.md](./SECURITY.md)。
+**不要在 Issue 中提交 API Key、备份 JSON 或私人教材。**
+请使用仓库内的 Issue 模板（bug_report / feature_request）。
+
 ## License / Attribution
+
+本项目代码采用 MIT License（见 [LICENSE](./LICENSE)）。
 
 - 代码与设计 token 部分来自 DeepSeek Harness (DSH) 上游 Web UI：MIT，版权归 DeepSeek（见 [LICENSE](./LICENSE) 与 [THIRD_PARTY_NOTICES](./THIRD_PARTY_NOTICES)）；
 - PDF.js (pdfjs-dist)：Apache-2.0，Mozilla 基金会（见 THIRD_PARTY_NOTICES）；

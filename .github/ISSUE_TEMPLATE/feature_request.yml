@@ -1,0 +1,19 @@
+name: Feature request
+description: 功能建议（请勿包含私人内容）
+title: "[Feature] "
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: 你希望解决什么学习场景？
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: 期望的行为
+  - type: markdown
+    attributes:
+      value: |
+        ## 隐私提醒
+        请勿在 Issue 中提交 API Key、备份 JSON 或私人教材。

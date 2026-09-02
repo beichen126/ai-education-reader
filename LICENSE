@@ -1,3 +1,19 @@
+AI Education Reader
+==================
+
+This project is provided under the MIT License (see the full text below).
+
+- Code, design tokens and component patterns derived from the DeepSeek Harness
+  (DSH) web UI retain their original copyright and license: MIT, Copyright (c) 2026 DeepSeek.
+- PDF.js (`pdfjs-dist`) is licensed under Apache License 2.0 (Mozilla Foundation).
+- See THIRD_PARTY_NOTICES for the full third-party attribution.
+
+Note: the MIT license text below is the upstream DeepSeek Harness license that
+also applies to this project (MIT). Code written for this project is MIT-licensed
+by its contributors.
+
+---
+
 MIT License
 
 Copyright (c) 2026 DeepSeek
@@ -19,4 +35,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-

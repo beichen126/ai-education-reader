@@ -1,0 +1,29 @@
+name: Bug report
+description: 报告一个产品缺陷（请勿提交 API Key / backup / 私人教材）
+title: "[Bug] "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / 环境
+      placeholder: 例如 v0.1.0-alpha.1, Chrome Mac, GitHub Pages
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: 发生了什么
+      description: 请描述现象与期望。
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      placeholder: 1. 打开… 2. 上传… 3. 点击… 4. 报错…
+  - type: markdown
+    attributes:
+      value: |
+        ## 隐私提醒
+        **请不要粘贴 API Key、备份 JSON、私人教材或含个人信息的截图。**
+        ​如需日志，请先脱敏。
