@@ -2,7 +2,7 @@ import { useSyncExternalStore } from 'react'
 import { getSetting, setSetting } from '../storage/storage'
 
 export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean }
-export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-chat', customSystemPrompt: '', customSystemPromptEnabled: false }
+export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-v4-flash-vision-exp', customSystemPrompt: '', customSystemPromptEnabled: false }
 
 let state: Settings = { ...DEFAULT_SETTINGS }
 const subs = new Set<() => void>()

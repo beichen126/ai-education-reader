@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
 import { uiActions } from '../engine/ui-store'
-import { saveFiles, deleteAttachment, attachmentErrorLabel } from '../engine/attachment-service'
+import { saveFiles, saveGeneratedImages, deleteAttachment, attachmentErrorLabel } from '../engine/attachment-service'
 import { useDraft, setDraftText, addDraftImages, removeDraftImage, clearDraft } from '../engine/draft-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { t } from '../engine/locale'
@@ -11,7 +11,8 @@ import { MessageText, IconCloseOutline16 } from '../dsh/primitives'
 import { ImageLightbox } from '../dsh/attachment/ImageLightbox'
 import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
 import { galleryActions } from '../gallery/gallery-store'
-import { PdfPanel } from '../pdf/PdfPanel'
+import { PdfPanel, type PdfAddResult } from '../pdf/PdfPanel'
+import { pdfPageAttachmentName, type RenderedPdfPage } from '../pdf/pdf-types'
 import css from './cockpit.module.css'
 
 export function Conversation() {
@@ -132,6 +133,23 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
   const [openId, setOpenId] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | undefined>(undefined)
   const [pdfPanel, setPdfPanel] = useState<{ open: boolean; file?: File }>({ open: false })
+  const addPdfToDraft = async (fileName: string, pages: RenderedPdfPage[]): Promise<PdfAddResult> => {
+    if (!sessionId) return { ok: false, count: 0, error: '没有当前会话，无法加入。' }
+    try {
+      const inputs = pages.map(p => ({ blob: p.blob, name: pdfPageAttachmentName(fileName, p.pageNumber) }))
+      const atts = await saveGeneratedImages(inputs)
+      try {
+        addDraftImages(sessionId, atts.map(a => a.id))
+      } catch (e) {
+        // Roll back this batch so a failed attach step never leaves orphan blobs.
+        for (const a of atts) { try { await deleteAttachment(a.id) } catch { /* ignore */ } }
+        throw e
+      }
+      return { ok: true, count: atts.length, error: '' }
+    } catch (e) {
+      return { ok: false, count: 0, error: '无法将 PDF 页面加入对话。' }
+    }
+  }
   // Reset ephemeral view state (lightbox / error banner) when the active conversation changes.
   const prevSession = useRef(sessionId)
   useEffect(() => { if (prevSession.current !== sessionId) { setOpenId(null); setPhotoError(undefined); prevSession.current = sessionId } }, [sessionId])
@@ -188,7 +206,7 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
         <button className={css.sendBtn} onClick={send} disabled={busy}>{busy ? '生成中' : '发送'}</button>
       </div>
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}
-      {pdfPanel.open && <PdfPanel initialFile={pdfPanel.file} onClose={() => setPdfPanel({ open: false })} />}
+      {pdfPanel.open && <PdfPanel initialFile={pdfPanel.file} onClose={() => setPdfPanel({ open: false })} onAddToDraft={addPdfToDraft} />}
     </div>
   )
 }

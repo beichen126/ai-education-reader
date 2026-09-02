@@ -20,3 +20,8 @@ export const MAX_PREVIEW_PAGES = 30
 
 export const PDF_FILE_MIME = 'application/pdf'
 export const PDF_FILE_ACCEPT = '.pdf,application/pdf'
+/** Stable, readable generated-attachment name: <stem>-pNNNN.jpg (zero-padded page). */
+export function pdfPageAttachmentName(fileName: string, pageNumber: number): string {
+  const stem = fileName.replace(/\.pdf$/i, '')
+  return stem + '-p' + String(pageNumber).padStart(4, '0') + '.jpg'
+}

@@ -1,29 +1,57 @@
 // PDF preview panel: a restrained dialog opened from a Composer "PDF" button.
-// Stage 1 scope: load a local PDF, show file info + page count, let the user pick
-// a page range, and render ONLY that range to images for local preview. Nothing
-// here reaches attachments / draft / messages / Gallery / the AI.
+// Stage 2 scope: after rendering a page range to local preview, offer "加入对话"
+// which hands the RenderedPdfPage[] back to the engine (via onAddToDraft — the
+// panel never touches IndexedDB/attachment-service itself). Loading, rendering,
+// preview objectURLs and validation remain the PDF module's concern.
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Modal, Button, Input } from '../dsh/primitives'
 import { formatBytes } from '../storage/diagnostics'
 import { usePdfPreview } from './use-pdf-preview'
+import type { RenderedPdfPage } from './pdf-types'
 import css from './pdf-panel.module.css'
 
-export function PdfPanel({ initialFile, onClose }: { initialFile?: File; onClose: () => void }) {
+export type PdfAddResult = { ok: boolean; count: number; error: string }
+
+export function PdfPanel({
+  initialFile, onClose, onAddToDraft,
+}: {
+  initialFile?: File
+  onClose: () => void
+  onAddToDraft: (fileName: string, pages: RenderedPdfPage[]) => Promise<PdfAddResult>
+}) {
   const { doc, pages, status, error, progress, selectFile, generate } = usePdfPreview()
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [addMsg, setAddMsg] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
-  // Load the file chosen from the Composer's PDF button once the panel mounts.
   useEffect(() => { if (initialFile) void selectFile(initialFile) }, [initialFile])
 
   const onPick = async (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
-    if (f) { setStart(''); setEnd(''); await selectFile(f) }
+    if (f) { setStart(''); setEnd(''); setAddMsg(null); await selectFile(f) }
     e.target.value = ''
   }
 
   const generating = progress !== undefined
+
+  const addToDraft = async () => {
+    if (!doc || pages.length === 0 || adding) return
+    setAdding(true); setAddMsg(null)
+    try {
+      const res = await onAddToDraft(doc.fileName, pages)
+      if (res.ok) {
+        setAddMsg('已加入 ' + res.count + ' 页')
+        setTimeout(() => onClose(), 700)
+      } else {
+        setAddMsg(res.error)
+      }
+    } catch {
+      setAddMsg('无法将 PDF 页面加入对话。')
+    }
+    setAdding(false)
+  }
 
   return (
     <>
@@ -75,11 +103,22 @@ export function PdfPanel({ initialFile, onClose }: { initialFile?: File; onClose
               {!generating && pages.length > 0 && (
                 <>
                   <div className={css.progress}>共生成 {pages.length} 页</div>
+                  <div className={css.addBar}>
+                    <span className={css.fileName}>{doc.fileName}</span>
+                    <span className={css.fileMeta}>PDF {start}–{end} · 共 {pages.length} 页</span>
+                  </div>
+                  <div className={css.actions}>
+                    <Button variant="primary" data-testid="pdf-add" disabled={adding} onClick={() => void addToDraft()}>
+                      {adding ? '正在加入 ' + pages.length + ' 页…' : '加入对话'}
+                    </Button>
+                    <Button variant="outline" disabled={adding} onClick={() => fileRef.current?.click()}>重新选择</Button>
+                  </div>
+                  {addMsg && <div className={css.progress} data-testid="pdf-add-msg">{addMsg}</div>}
                   <div className={css.pages}>
                     {pages.map(p => (
                       <div className={css.pageItem} key={p.pageNumber} data-testid="pdf-page">
                         <span className={css.pageLabel}>第 {p.pageNumber} 页</span>
-                        <img className={css.pageImg} src={p.previewUrl} alt={`第 ${p.pageNumber} 页`} width={p.width} height={p.height} />
+                        <img className={css.pageImg} src={p.previewUrl} alt={'第 ' + p.pageNumber + ' 页'} width={p.width} height={p.height} />
                       </div>
                     ))}
                   </div>

@@ -39,7 +39,8 @@
     "test:draft-attachments": "npx tsx scripts/test-draft-attachments.ts",
     "test:draft-send": "npx tsx scripts/test-draft-send.ts",
     "test:draft-persistence": "npx tsx scripts/test-draft-persistence.ts",
-    "test:storage-diagnostics": "npx tsx scripts/test-storage-diagnostics.ts"
+    "test:storage-diagnostics": "npx tsx scripts/test-storage-diagnostics.ts",
+    "test:pdf-attach": "npx tsx scripts/test-pdf-attach.ts"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",

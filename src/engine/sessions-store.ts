@@ -4,7 +4,7 @@ import { sanitizeTitle } from './session-title'
 import { getSetting, setSetting, saveConversation, deleteConversation, listConversations } from '../storage/storage'
 import { getSettingsSnapshot } from './settings-store'
 import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, isVisionModel } from '../api/deepseek'
-import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError } from './attachment-service'
+import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
 import { deleteConvAnnotations } from '../annotations/annotation-service'
 import { getDraft, deleteDraft, initDrafts } from './draft-store'
 
@@ -149,6 +149,17 @@ async function runReplyStream(id: string, afterUser: Conversation): Promise<void
     const contextMessages = buildContextMessages(afterUser.messages)
     const hasImages = contextMessages.some(x => x.images.length > 0)
     if (hasImages && !isVisionModel(settings.model)) { setState({ ...state, status: 'error', sendError: attachmentErrorLabel('vision-unsupported') }); return }
+    // Inline-base64 payload guard: refuse to base64-encode + POST a request whose
+    // retained raw image bytes would blow past the request-size budget. Uses only
+    // recorded blob sizes (attachment meta.size) — no encoding, no network.
+    const retainedImageIds = contextMessages.flatMap(x => x.images)
+    if (retainedImageIds.length > 0) {
+      const totalImageBytes = await sumAttachmentBytes(retainedImageIds)
+      if (isInlineImageOverBudget(totalImageBytes)) {
+        setState({ ...state, status: 'error', sendError: '当前消息包含的图片数据过多，可能超过模型接口的请求大小限制。请减少本次选择的 PDF 页数或图片数量。' })
+        return
+      }
+    }
     const apiMessages = await buildApiMessages(contextMessages, toDataUrl)
     const reqMessages = buildRequestMessages(apiMessages, settings)
     // Invariant (§16): the outgoing request must encode exactly the images the context
