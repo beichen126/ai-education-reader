@@ -13,9 +13,11 @@ function write(s) { buf += s; pos += enc(s) }
 write('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n')
 
 const fontId = 11
-const pageId = (i) => 11 + i            // page i (1-based) => object id 12..19
-const contentId = (i) => 19 + i         // 20..27
-const ids = { cat: 1, pages: 2, outlineRoot: 3, names: 28, dests: 29 }
+const pageId = (i) => 11 + i            // page i (1-based) => 12..11+N
+const contentId = (i) => 11 + N + i     // 12+N .. 11+2N
+const namesId = 11 + 2 * N + 1
+const destsId = 11 + 2 * N + 2
+const ids = { cat: 1, pages: 2, outlineRoot: 3, names: namesId, dests: destsId }
 
 function writeObj(id, body) { const s = id + ' 0 obj\n' + body + '\nendobj\n'; while (offsets.length < id) offsets.push(-1); offsets[id] = pos; write(s) }
 
@@ -23,7 +25,7 @@ const kids = []
 for (let i = 1; i <= N; i++) kids.push(pageId(i) + ' 0 R')
 
 // Catalog links outline + names
-writeObj(ids.cat, '<< /Type /Catalog /Pages 2 0 R /Outlines 3 0 R /Names 28 0 R /PageMode /UseOutlines >>')
+writeObj(ids.cat, '<< /Type /Catalog /Pages 2 0 R /Outlines 3 0 R /Names ' + ids.names + ' 0 R /PageMode /UseOutlines >>')
 // Pages
 writeObj(ids.pages, '<< /Type /Pages /Kids [' + kids.join(' ') + '] /Count ' + N + ' >>')
 // Outline root
