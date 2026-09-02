@@ -1,8 +1,8 @@
 name: Deploy to GitHub Pages
 
 on:
-  # Stage 4.5: no automatic deployment. The product stays private; this workflow
-  # can only run via manual workflow_dispatch until a later stage opts in.
+  push:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
