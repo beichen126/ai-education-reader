@@ -4,6 +4,10 @@ export type ApiChatMessage = { role: 'user' | 'assistant' | 'system'; content: s
 export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[] }
 export type SendTextChatResult = { content: string }
 
+/** DeepSeek vision API limit: max images in ONE chat request (API limit, not product). */
+export const MAX_VISION_IMAGES_PER_REQUEST = 600
+export function exceedsVisionImageCount(count: number): boolean { return count > MAX_VISION_IMAGES_PER_REQUEST }
+
 export type ErrorKind =
   | 'no-api-key' | 'network-or-cors' | 'unauthorized' | 'billing'
   | 'rate-limited' | 'bad-request' | 'server' | 'bad-json' | 'no-content' | 'aborted'

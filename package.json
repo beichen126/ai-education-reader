@@ -44,7 +44,8 @@
     "test:pdf-outline": "npx tsx scripts/test-pdf-outline.ts",
     "test:pdf-outline-real": "npx tsx scripts/test-pdf-outline-real.ts",
     "test:attachment-display": "npx tsx scripts/test-attachment-display.ts",
-    "test:backup-source": "npx tsx scripts/test-backup-source.ts"
+    "test:backup-source": "npx tsx scripts/test-backup-source.ts",
+    "test:large-context": "npx tsx scripts/test-large-context.ts"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",

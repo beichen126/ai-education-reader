@@ -6,6 +6,7 @@ import { useState } from 'react'
 import type { AttachmentDisplayItem } from '../attachments/attachment-display'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { IconCloseOutline16 } from '../dsh/primitives'
+import { PDF_GROUP_PREVIEW_BATCH } from '../pdf/pdf-types'
 import css from './cockpit.module.css'
 
 type GroupItem = Extract<AttachmentDisplayItem, { type: 'pdf-group' }>
@@ -19,6 +20,9 @@ export function PdfContextCard({
   onRemovePage?: (id: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [shown, setShown] = useState(PDF_GROUP_PREVIEW_BATCH)
+  const large = item.attachmentIds.length > 30
+  const visibleIds = large ? item.attachmentIds.slice(0, shown) : item.attachmentIds
   const rangeText = item.startPage === item.endPage
     ? 'PDF 第 ' + item.startPage + ' 页'
     : 'PDF ' + item.startPage + '–' + item.endPage
@@ -39,7 +43,7 @@ export function PdfContextCard({
           className={css.groupBtn}
           data-testid={'pdf-group-expand-' + item.groupId}
           aria-expanded={expanded}
-          onClick={() => setExpanded(e => !e)}
+          onClick={() => setExpanded(e => { const next = !e; if (!next) setShown(PDF_GROUP_PREVIEW_BATCH); return next })}
         >
           {expanded ? '收起' : '预览页面'}
         </button>
@@ -48,11 +52,18 @@ export function PdfContextCard({
         )}
       </div>
       {expanded && (
+        <>
         <div className={css.groupPages}>
-          {item.attachmentIds.map(id => (
+          {visibleIds.map(id => (
             <GroupPageThumb key={id} id={id} readOnly={readOnly} onRemove={onRemovePage ? () => onRemovePage(id) : undefined} />
           ))}
         </div>
+        {large && shown < item.attachmentIds.length && (
+          <button type="button" className={css.groupBtn} data-testid="pdf-group-more" onClick={() => setShown(s => Math.min(s + PDF_GROUP_PREVIEW_BATCH, item.attachmentIds.length))}>
+            显示更多 {Math.min(PDF_GROUP_PREVIEW_BATCH, item.attachmentIds.length - shown)} 页
+          </button>
+        )}
+        </>
       )}
     </div>
   )

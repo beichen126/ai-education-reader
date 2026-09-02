@@ -85,6 +85,11 @@ export function isInlineImageOverBudget(totalBytes: number): boolean {
   return totalBytes > MAX_INLINE_IMAGE_RAW_BYTES
 }
 
+/** Draft early guard: existing draft bytes + new group bytes must fit the 30 MiB budget. */
+export function wouldExceedInlineBudget(existingBytes: number, newBytes: number): boolean {
+  return existingBytes + newBytes > MAX_INLINE_IMAGE_RAW_BYTES
+}
+
 export async function getAttachment(id: StableId): Promise<Attachment | undefined> { const row = await getAttachmentRow(id); return row ? row.meta : undefined }
 /** Load metadata for many attachment ids in order (missing ids are skipped). */
 export async function getAttachments(ids: StableId[]): Promise<Attachment[]> {

@@ -1,15 +1,19 @@
 // PDF preview panel: a responsive dialog opened from a Composer "PDF" button.
-// Stage 4: when the PDF has bookmarks, offer [按章节] / [选页] — the chapter path
-// consumes the parsed PdfOutlineResult (Stage 3) verbatim, the user picks a
-// node, sees its range summary, then clicks 生成预览 (which reuses the SAME
-// Stage 1 render + Stage 2 add-to-draft pipeline). Modes keep independent state;
-// switching mode only clears the rendered preview, never the doc/inputs/selection.
+// Stage 4: [按章节] / [选页] with the parsed outline. Stage 6: large-context
+// safety — >30 pages asks for confirmation (soft), >120 is blocked (product
+// hard limit), generation tracks real accumulated bytes and the panel shows a
+// representative preview (first-3 + last-3) for large contexts while keeping all
+// Blobs. Everything still funnels into the same Stage 1 render + add-to-draft.
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Modal, Button, Input } from '../dsh/primitives'
 import { formatBytes } from '../storage/diagnostics'
 import { usePdfPreview } from './use-pdf-preview'
 import { PdfOutlineSelector } from './PdfOutlineSelector'
-import { MAX_PREVIEW_PAGES, type PdfAddPayload, type RenderedPdfPage } from './pdf-types'
+import {
+  PDF_CONTEXT_SOFT_WARNING_PAGES, MAX_PDF_CONTEXT_PAGES,
+  needsPdfContextSoftConfirm, exceedsPdfContextHardLimit,
+  type PdfAddPayload, type RenderedPdfPage,
+} from './pdf-types'
 import type { PdfOutlineItem } from './pdf-outline'
 import css from './pdf-panel.module.css'
 
@@ -17,13 +21,11 @@ export type PdfAddResult = { ok: boolean; count: number; error: string }
 
 function findNode(items: PdfOutlineItem[], id: string | null): PdfOutlineItem | undefined {
   if (!id) return undefined
-  for (const it of items) {
-    if (it.id === id) return it
-    const d = findNode(it.children, id)
-    if (d) return d
-  }
+  for (const it of items) { if (it.id === id) return it; const d = findNode(it.children, id); if (d) return d }
   return undefined
 }
+
+function miB(bytes: number): string { return (bytes / (1024 * 1024)).toFixed(1) + ' MiB' }
 
 export function PdfPanel({
   initialFile, onClose, onAddToDraft,
@@ -40,6 +42,7 @@ export function PdfPanel({
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
   const [selError, setSelError] = useState<string | null>(null)
   const [lastRange, setLastRange] = useState<{ start: number; end: number } | null>(null)
+  const [pendingConfirm, setPendingConfirm] = useState<{ start: number; end: number; count: number } | null>(null)
   const [adding, setAdding] = useState(false)
   const [addMsg, setAddMsg] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -52,7 +55,7 @@ export function PdfPanel({
   const generating = progress !== undefined
 
   const resetSelection = () => {
-    setSelectedId(null); setExpandedIds(new Set()); setMode('chapter'); setSelError(null); setLastRange(null); setAddMsg(null)
+    setSelectedId(null); setExpandedIds(new Set()); setMode('chapter'); setSelError(null); setLastRange(null); setAddMsg(null); setPendingConfirm(null)
   }
 
   const onPick = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -63,15 +66,20 @@ export function PdfPanel({
 
   const changeMode = (m: 'chapter' | 'manual') => {
     if (m === mode) return
-    setMode(m); clearPreview(); setAddMsg(null); setSelError(null); setLastRange(null)
+    setMode(m); clearPreview(); setAddMsg(null); setSelError(null); setLastRange(null); setPendingConfirm(null)
   }
 
   const selectChapter = (node: PdfOutlineItem) => {
-    setSelError(null); setAddMsg(null)
+    setSelError(null); setAddMsg(null); setPendingConfirm(null)
     if (node.id !== selectedId) { setSelectedId(node.id); clearPreview(); setLastRange(null) }
   }
 
   const toggle = (id: string) => setExpandedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+
+  const startGenerate = (s: number, e2: number) => {
+    setLastRange({ start: s, end: e2 })
+    void generate(String(s), String(e2))
+  }
 
   const onGenerate = () => {
     setSelError(null)
@@ -79,16 +87,30 @@ export function PdfPanel({
       const sel = selectedNode
       if (!sel || sel.startPage == null || sel.endPage == null) { setSelError('请先选择一个章节。'); return }
       const count = sel.endPage - sel.startPage + 1
-      if (count > MAX_PREVIEW_PAGES) {
-        setSelError('该章节共 ' + count + ' 页，当前单次最多处理 ' + MAX_PREVIEW_PAGES + ' 页。你可以切换到“选页”模式，选择其中一部分。')
+      if (exceedsPdfContextHardLimit(count)) {
+        setSelError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请切换到“选页”模式，将内容拆成较小范围。')
         return
       }
-      setLastRange({ start: sel.startPage, end: sel.endPage })
-      void generate(String(sel.startPage), String(sel.endPage))
+      if (needsPdfContextSoftConfirm(count)) { setPendingConfirm({ start: sel.startPage, end: sel.endPage, count }); return }
+      startGenerate(sel.startPage, sel.endPage)
     } else {
-      setLastRange({ start: Number(start) || 0, end: Number(end) || 0 })
-      void generate(start, end)
+      const s = Number(start) || 0; const e2 = Number(end) || 0
+      if (s < 1 || e2 < 1 || e2 < s) { void generate(start, end); return } // let validation surface the exact error
+      const count = e2 - s + 1
+      if (exceedsPdfContextHardLimit(count)) {
+        setSelError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请切换到“选页”模式，将内容拆成较小范围。')
+        return
+      }
+      if (needsPdfContextSoftConfirm(count)) { setPendingConfirm({ start: s, end: e2, count }); return }
+      startGenerate(s, e2)
     }
+  }
+
+  const confirmLarge = () => {
+    if (!pendingConfirm) return
+    const { start: s, end: e2, count } = pendingConfirm
+    setPendingConfirm(null)
+    startGenerate(s, e2)
   }
 
   const addToDraft = async () => {
@@ -106,6 +128,8 @@ export function PdfPanel({
 
   const rangeLabel = lastRange ? (lastRange.start === lastRange.end ? 'PDF 第 ' + lastRange.start + ' 页' : 'PDF ' + lastRange.start + '–' + lastRange.end) : ''
   const selRange = selectedNode ? (selectedNode.startPage === selectedNode.endPage ? 'PDF 第 ' + selectedNode.startPage + ' 页' : 'PDF ' + selectedNode.startPage + '–' + selectedNode.endPage) : ''
+  const visiblePages = pages.filter(p => p.previewUrl)
+  const largePreview = pages.length > PDF_CONTEXT_SOFT_WARNING_PAGES
 
   return (
     <>
@@ -173,11 +197,25 @@ export function PdfPanel({
                 <Button variant="outline" disabled={generating} onClick={() => fileRef.current?.click()}>重新选择</Button>
               </div>
 
-              {generating && progress && <div className={css.progress}>正在渲染 {progress.done} / {progress.total} 页</div>}
+              {pendingConfirm && (
+                <div className={css.confirmBox} data-testid="pdf-large-confirm">
+                  <div className={css.confirmText}>本次将处理 {pendingConfirm.count} 页。</div>
+                  <div className={css.confirmHint}>大范围 PDF 需要更多本地处理时间和内存，并会占用更多模型视觉上下文。</div>
+                  <div className={css.actions}>
+                    <Button variant="primary" data-testid="pdf-large-confirm-yes" onClick={confirmLarge}>继续处理 {pendingConfirm.count} 页</Button>
+                    <Button variant="outline" data-testid="pdf-large-confirm-no" onClick={() => setPendingConfirm(null)}>取消</Button>
+                  </div>
+                </div>
+              )}
+
+              {generating && progress && (
+                <div className={css.progress} data-testid="pdf-progress">正在处理 {progress.done} / {progress.total} 页 · 已生成 {miB(progress.bytes)}</div>
+              )}
 
               {!generating && pages.length > 0 && (
                 <>
                   <div className={css.progress}>共生成 {pages.length} 页</div>
+                  {largePreview && <div className={css.empty} data-testid="pdf-preview-note">以下仅展示部分页面预览（共 {pages.length} 页，Blob 已全部生成）。</div>}
                   <div className={css.addBar}>
                     <span className={css.fileName}>{doc.fileName}</span>
                     <span className={css.fileMeta}>{inChapterMode && selectedNode ? selectedNode.title + ' · ' : ''}{rangeLabel} · 共 {pages.length} 页</span>
@@ -188,7 +226,7 @@ export function PdfPanel({
                   </div>
                   {addMsg && <div className={css.progress} data-testid="pdf-add-msg">{addMsg}</div>}
                   <div className={css.pages}>
-                    {pages.map(p => (
+                    {visiblePages.map(p => (
                       <div className={css.pageItem} key={p.pageNumber} data-testid="pdf-page">
                         <span className={css.pageLabel}>第 {p.pageNumber} 页</span>
                         <img className={css.pageImg} src={p.previewUrl} alt={'第 ' + p.pageNumber + ' 页'} width={p.width} height={p.height} />
@@ -198,7 +236,7 @@ export function PdfPanel({
                 </>
               )}
 
-              {!generating && pages.length === 0 && !error && !selError && (
+              {!generating && pages.length === 0 && !error && !selError && !pendingConfirm && (
                 <div className={css.empty}>{inChapterMode ? '选择一个章节后点击“生成预览”。' : '输入页码范围后点击“生成预览”。'}</div>
               )}
             </>

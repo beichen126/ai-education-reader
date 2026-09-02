@@ -56,3 +56,7 @@
   .pages { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); max-height: 48vh; }
   .segBtn { min-height: 36px; padding: 6px 16px; }
 }
+/* Large-context soft confirmation */
+.confirmBox { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); }
+.confirmText { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.confirmHint { font-size: 12px; color: var(--dsw-alias-label-tertiary); line-height: 1.5; }

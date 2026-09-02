@@ -1,12 +1,17 @@
 // React-side orchestration for the PDF preview panel. Keeps PDF.js out of the
 // UI; owns the component state machine, page-range validation, objectURL and
-// document lifecycle. Stage 3/4: also reads the document outline (same active
-// document, no second load) and supports clearPreview() for mode switches.
-// Does NOT touch attachments/draft/messages/API.
+// document lifecycle. Also reads the document outline (same active document).
+// Stage 6: large-context safety — sequential render with a real accumulated
+// raw-byte budget (stop >24 MiB), all-or-nothing on page failure, and a
+// "first-3 + last-3" preview strategy for >30 page contexts.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { openPdf, renderPdfPage, closePdf, readPdfOutline, pdfErrorMessage, PdfError } from './pdf-service'
 import { PdfOutlineError, type PdfOutlineResult } from './pdf-outline'
-import { MAX_PREVIEW_PAGES, type LocalPdfDocument, type RenderedPdfPage } from './pdf-types'
+import {
+  PDF_CONTEXT_SOFT_WARNING_PAGES, MAX_PDF_CONTEXT_PAGES, PDF_LARGE_PREVIEW_COUNT,
+  exceedsPdfContextHardLimit, exceedsPdfGroupByteBudget,
+  type LocalPdfDocument, type RenderedPdfPage,
+} from './pdf-types'
 
 export function validatePdfRange(startText: string, endText: string, pageCount: number): string | null {
   const startRaw = startText.trim()
@@ -19,12 +24,11 @@ export function validatePdfRange(startText: string, endText: string, pageCount: 
   if (start > pageCount) return '开始页超出范围，该 PDF 共 ' + pageCount + ' 页。'
   if (end > pageCount) return '结束页超出范围，该 PDF 共 ' + pageCount + ' 页。'
   if (start > end) return '开始页不能大于结束页。'
-  if (end - start + 1 > MAX_PREVIEW_PAGES) return '本阶段单次最多预览 ' + MAX_PREVIEW_PAGES + ' 页，请缩小页码范围。'
   return null
 }
 
 export type PdfPreviewStatus = 'idle' | 'loading' | 'ready' | 'error'
-export type PdfProgress = { done: number; total: number }
+export type PdfProgress = { done: number; total: number; bytes: number }
 export type PdfOutlineStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 export type PdfPreviewApi = {
@@ -77,7 +81,6 @@ export function usePdfPreview(): PdfPreviewApi {
       const d = await openPdf(file)
       if (gen !== genRef.current) return
       setDoc(d); setStatus('ready')
-      // Read the outline from the SAME active document (no second getDocument).
       try {
         const o = await readPdfOutline()
         if (gen !== genRef.current) return
@@ -101,31 +104,55 @@ export function usePdfPreview(): PdfPreviewApi {
     const start = Number(startText.trim())
     const end = Number(endText.trim())
     const total = end - start + 1
+    if (exceedsPdfContextHardLimit(total)) {
+      setError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请切换到“选页”模式，将内容拆成较小范围。')
+      return
+    }
     genRef.current++
     const gen = genRef.current
     revokeAll()
-    setPages([]); setError(undefined); setProgress({ done: 0, total })
+    setPages([]); setError(undefined); setProgress({ done: 0, total, bytes: 0 })
     const built: RenderedPdfPage[] = []
+    // Preview strategy: <=30 pages -> all; >30 -> first 3 + last 3 (blobs all kept).
+    const previewIdx = new Set<number>()
+    if (total <= PDF_CONTEXT_SOFT_WARNING_PAGES) {
+      for (let k = 0; k < total; k++) previewIdx.add(k)
+    } else {
+      for (let k = 0; k < PDF_LARGE_PREVIEW_COUNT; k++) { previewIdx.add(k); previewIdx.add(total - 1 - k) }
+    }
+    let totalBytes = 0
+    let failingPage = start
     try {
       for (let n = start; n <= end; n++) {
         if (gen !== genRef.current) return
+        failingPage = n
         const { blob, width, height, mimeType } = await renderPdfPage(n)
         if (gen !== genRef.current) return
-        const previewUrl = URL.createObjectURL(blob)
-        urlsRef.current.push(previewUrl)
-        built.push({ pageNumber: n, blob, previewUrl, width, height, mimeType })
-        setProgress({ done: built.length, total })
+        totalBytes += blob.size
+        const idx = n - start
+        const previewUrl = previewIdx.has(idx) ? URL.createObjectURL(blob) : undefined
+        if (previewUrl) urlsRef.current.push(previewUrl)
+        built.push({ pageNumber: n, blob, ...(previewUrl ? { previewUrl } : {}), width, height, mimeType })
+        setProgress({ done: built.length, total, bytes: totalBytes })
         setPages([...built])
+        if (exceedsPdfGroupByteBudget(totalBytes)) {
+          genRef.current++
+          revokeAll()
+          setPages([]); setProgress(undefined)
+          setError('该范围生成的图片数据过大，已超过当前单次 PDF Context 的安全限制。请减少选择的页面范围后重试。（本次处理到第 ' + n + ' 页时超过限制。）')
+          return
+        }
       }
       if (gen === genRef.current) setProgress(undefined)
     } catch (e: unknown) {
       if (gen !== genRef.current) return
-      setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : '页面渲染失败。')
-      setPages([])
+      genRef.current++
+      revokeAll()
+      setPages([]); setProgress(undefined)
+      setError('第 ' + failingPage + ' 页处理失败，本次范围未加入对话。你可以重新尝试，或切换到“选页”模式缩小范围。')
     }
   }, [doc, revokeAll])
 
-  // Clear the rendered preview WITHOUT touching document/manual inputs/selection.
   const clearPreview = useCallback(() => {
     genRef.current++
     revokeAll()

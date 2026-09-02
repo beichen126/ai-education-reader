@@ -3,7 +3,7 @@ import { type Conversation, type Message, type Attachment, type StableId, newSta
 import { sanitizeTitle } from './session-title'
 import { getSetting, setSetting, saveConversation, deleteConversation, listConversations } from '../storage/storage'
 import { getSettingsSnapshot } from './settings-store'
-import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, isVisionModel } from '../api/deepseek'
+import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, isVisionModel, exceedsVisionImageCount } from '../api/deepseek'
 import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
 import { deleteConvAnnotations } from '../annotations/annotation-service'
 import { getDraft, deleteDraft, initDrafts } from './draft-store'
@@ -157,6 +157,13 @@ async function runReplyStream(id: string, afterUser: Conversation): Promise<void
       const totalImageBytes = await sumAttachmentBytes(retainedImageIds)
       if (isInlineImageOverBudget(totalImageBytes)) {
         setState({ ...state, status: 'error', sendError: '当前消息包含的图片数据过多，可能超过模型接口的请求大小限制。请减少本次选择的 PDF 页数或图片数量。' })
+        return
+      }
+      // DeepSeek vision API image-count limit (600) — based on the FINAL retained set,
+      // not the current PDF alone, since history images also occupy slots.
+      const retainedImages = contextMessages.reduce((sum, mm) => sum + mm.images.length, 0)
+      if (exceedsVisionImageCount(retainedImages)) {
+        setState({ ...state, status: 'error', sendError: '当前对话需要发送的图片数量过多。请减少本次 PDF 页面或图片后重试。' })
         return
       }
     }

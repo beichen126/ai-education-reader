@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
 import { uiActions } from '../engine/ui-store'
-import { saveFiles, saveGeneratedImages, deleteAttachment, attachmentErrorLabel } from '../engine/attachment-service'
-import { useDraft, setDraftText, addDraftImages, removeDraftImage, clearDraft } from '../engine/draft-store'
+import { saveFiles, saveGeneratedImages, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
+import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraft } from '../engine/draft-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { t } from '../engine/locale'
 import { MessageText, IconCloseOutline16 } from '../dsh/primitives'
@@ -151,6 +151,15 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
     if (!sessionId) return { ok: false, count: 0, error: '没有当前会话，无法加入。' }
     try {
       // One user PDF selection = one context group (never auto-merged by fileName).
+      // Draft early guard: existing draft bytes + this group must fit the 30 MiB budget
+      // (final runReplyStream guard stays authoritative; this avoids writing dozens of
+      // attachments into IDB just to reject them at send time).
+      const existingIds = sessionId ? getDraft(sessionId).imageIds : []
+      const existingBytes = await sumAttachmentBytes(existingIds)
+      const newBytes = payload.pages.reduce((s, p) => s + p.blob.size, 0)
+      if (wouldExceedInlineBudget(existingBytes, newBytes)) {
+        return { ok: false, count: 0, error: '当前消息中的图片内容已经较多。加入这一 PDF 范围后可能超过接口请求大小限制。请删除部分图片或减少 PDF 页面后重试。' }
+      }
       const groupId = newStableId()
       const inputs = payload.pages.map(p => ({
         blob: p.blob,
