@@ -2,6 +2,8 @@ import { useEffect, useMemo } from 'react'
 import { useSessions } from '../engine/sessions-store'
 import { useGallery, galleryActions } from './gallery-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
+import { ZoomableImageDialog } from './ZoomableImageDialog'
+import { clampIndex } from './zoom'
 import css from './gallery.module.css'
 
 export function Gallery() {
@@ -19,16 +21,7 @@ export function Gallery() {
         g.view === 'list' ? (
           <div className={css.grid}>{imageIds.map((id, i) => <Thumb key={id} id={id} index={i} />)}</div>
         ) : (
-          <div className={css.viewer}>
-            <div className={css.stage}><ImageViewer id={imageIds[g.index]} /></div>
-            <div className={css.controls}>
-              <button className={css.ctrl} disabled={g.index <= 0} onClick={() => galleryActions.goto(g.index - 1)}>上一张</button>
-              <span className={css.counter}>{g.index + 1} / {count}</span>
-              <button className={css.ctrl} disabled={g.index >= count - 1} onClick={() => galleryActions.goto(g.index + 1)}>下一张</button>
-              <button className={css.ctrl} onClick={galleryActions.showList}>返回列表</button>
-              <button className={css.ctrl} onClick={galleryActions.close}>关闭</button>
-            </div>
-          </div>
+          <GalleryViewer imageIds={imageIds} index={clampIndex(g.index, count)} />
         )}
     </div>
   )
@@ -37,9 +30,22 @@ function Thumb({ id, index }: { id: string; index: number }) {
   const { url, error } = useAttachmentPreview(id)
   return <button className={css.thumb} onClick={() => galleryActions.openViewer(index)}>{url ? <img src={url} alt="" /> : <span className={css.missing}>{error ? '图片已丢失' : '…'}</span>}</button>
 }
-function ImageViewer({ id }: { id: string | undefined }) {
-  const { url, error } = useAttachmentPreview(id || '')
-  if (!id) return <div className={css.missing}>无法读取这张图片</div>
-  if (error) return <div className={css.missing}>无法读取这张图片</div>
-  return <div className={css.stageImg}>{url ? <img src={url} alt="" /> : <div className={css.missing}>…</div>}</div>
+function GalleryViewer({ imageIds, index }: { imageIds: string[]; index: number }) {
+  const id = imageIds[index]
+  const { url } = useAttachmentPreview(id)
+  const count = imageIds.length
+  return (
+    <ZoomableImageDialog
+      src={url}
+      alt=""
+      resetKey={id}
+      index={index}
+      count={count}
+      onPrev={() => galleryActions.goto(clampIndex(index - 1, count))}
+      onNext={() => galleryActions.goto(clampIndex(index + 1, count))}
+      onBackToList={galleryActions.showList}
+      onClose={galleryActions.close}
+      labels={{ close: '关闭', prev: '上一张', next: '下一张', backToList: '返回列表', dialog: '图片大图查看' }}
+    />
+  )
 }

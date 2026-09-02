@@ -46,7 +46,16 @@ for (let i = 1; i <= N; i++) {
   writeObj(pageId(i), '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ' + fontId + ' 0 R >> >> /Contents ' + contentId(i) + ' 0 R >>')
 }
 for (let i = 1; i <= N; i++) {
-  const stream = 'BT\n/F1 32 Tf\n72 700 Td\n(Page ' + i + ') Tj\nET'
+  // Rich-but-synthetic page content: title, body-line placeholders, a figure block,
+  // footer — so page thumbnails / viewer render something visible (no private data).
+  let s = ['BT', '/F1 28 Tf', '72 760 Td', '(Page ' + i + ') Tj', 'ET']
+  s.push('q 0.88 0.9 0.93 rg 72 712 451 4 re f Q')
+  s.push('BT /F1 13 Tf 72 682 Td (Sample chapter page \u2014 synthetic fixture) Tj ET')
+  for (let k = 0; k < 12; k++) s.push('q 0.86 0.88 0.91 rg 72 ' + (658 - k * 24) + ' 451 9 re f Q')
+  s.push('q 0.42 0.6 0.86 rg 320 290 190 130 re f Q')
+  s.push('BT /F1 16 Tf 0.06 0.07 0.12 rg 372 350 Td (Figure) Tj ET')
+  s.push('BT /F1 10 Tf 0.45 0.46 0.5 rg 72 40 Td (draft of the reader) Tj ET')
+  const stream = s.join('\n')
   const body = '<< /Length ' + enc(stream) + ' >>\nstream\n' + stream + '\nendstream'
   writeObj(contentId(i), body)
 }

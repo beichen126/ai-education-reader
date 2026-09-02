@@ -1,69 +1,135 @@
-# AI Education Reader
+# 📚 AI Education Reader
 
-AI 学习阅读器：面向教材、讲义、论文和学习资料的 AI 学习阅读器。你决定 AI 现在看哪里。
+<div align="center">
 
-## What it does
+**让 AI 真正阅读你正在学习的那一章。**
 
-- 上传教材/题目/笔记图片，直接进入对话；
-- 打开 PDF，选择页面范围；
-- 带书签（Outline/Bookmarks）的 PDF 可直接选择章节；
-- PDF 页面以“PDF Context Group”作为一个整体加入学习上下文；
-- 支持 30–120 页的大章节安全处理；
-- 发送后由你配置的 (DeepSeek) Vision 模型作答。
+Select the pages you're actually studying. Let the model see exactly that context.
 
-## Why
+[🚀 在线体验](https://beichen126.github.io/ai-education-reader/) ·
+[使用说明](#quick-start) ·
+[报告问题](https://github.com/beichen126/ai-education-reader/issues) ·
+[参与贡献](./CONTRIBUTING.md)
 
-用户明确选择当前学习的内容（User-controlled Context），系统把这段内容交给视觉 AI。
-不是“全书 OCR → chunk → embedding → vector DB → retrieval”的 RAG 知识库。
+![status](https://img.shields.io/badge/status-alpha.v0.1.0--alpha.2-f39f12?style=flat-square)
+![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
+![deploy](https://img.shields.io/badge/deploy-GitHub%20Pages-2077cc?style=flat-square)
+![react](https://img.shields.io/badge/React-18-61dafb?style=flat-square)
+![pdf.js](https://img.shields.io/badge/PDF.js-Apache%202.0-dd0c39?style=flat-square)
 
-## Privacy / Local-first
+</div>
 
-- PDF 在浏览器本地用 PDF.js 读取与渲染：**打开 PDF ≠ 上传整个 PDF**；
-- API Key 保存在浏览器本地，发送时浏览器直连你配置的 API 服务（默认 https://api.deepseek.com）；
-- **本项目（当前 GitHub Pages 版本）没有自己的应用后端，没有中转服务器**；
-- 仅在真正发送消息时，选中的图片/PDF 页面与聊天上下文才发送到你配置的 API 服务；
-- 数据（会话、图片附件、PDF 页面、标注、设置）保存在浏览器 IndexedDB 本地；
-- 无产品分析/广告追踪代码。详见 [PRIVACY.md](./PRIVACY.md)。
+---
+
+### 🚀 Try it online
+
+**https://beichen126.github.io/ai-education-reader/**
+
+Alpha 已可实际使用：打开即可上传图片或 PDF 开始学习（需要自带 DeepSeek API Key，BYOK）。
+
+<img src="docs/assets/preview.png" alt="AI Education Reader 桌面界面：图片问答、PDF Context Group 与学习对话" width="100%" />
+
+---
+
+## What is AI Education Reader?
+
+AI Education Reader 是一个**本地优先（Local-first）的 AI 学习阅读器**。你上传正在学的教材图片或 PDF，选择真正要学的那几页，AI 只阅读你选中的内容，然后针对它回答问题。
+
+它把"AI 该看哪里"这件事交还给你（**User-controlled Context**）：你控制 AI 的上下文，而不是让 AI 先"读完"整本书、再靠向量检索去猜你在问哪里。
+
+PDF 在浏览器本地渲染（PDF.js），会话、图片、标注都保存在浏览器里；发送消息时，浏览器直连你自己配置的 API 服务（**BYOK**），没有中转服务器。
+
+## Features
+
+- **上传图片直接提问** —— 教材页、习题、笔记、板书截图
+- **PDF 按书签选章节** —— 有 Outline/Bookmarks 的 PDF 直接选章节；无书签可手动选页
+- **PDF Context Group** —— 选中的页面作为一个整体小组加入学习上下文
+- **大章节 Context** —— 30–120 页的章节也能安全加入对话
+- **统一图片查看器** —— 全屏缩放、平移、双指捏合、键盘操作，消息图片 / 待发送图片 / PDF 页面三条入口一致
+- **本地优先** —— 打开 PDF ≠ 上传 PDF；数据与 Key 留在浏览器
+- **BYOK** —— 使用你自己的 DeepSeek API Key（或兼容端点）
+- **多设备响应式** —— 桌面 / 平板 / 手机；无动画依赖，E-Ink 友好
+
+## How it works
+
+```
+PDF 书签 ─→ 选择章节/页码 ─→ 浏览器本地渲染选中页 ─→ PDF Context Group ─→ 提问
+   或（无书签）─→ 手动选页 ──────────────────────────┘                    └─→ Vision 模型基于你选中的内容作答
+```
+
+## Why not RAG?
+
+"我现在就要学第 3.2 节"是一个明确目标：与其先把整本书向量化、再从知识库里检索，不如直接让 AI 看你选中的那几页 —— 更快、更省、上下文更可控。
+
+RAG 适合"不知道内容在哪里"的开放式问答；而读教材时，你其实知道自己在学哪里。
 
 ## Quick Start
 
-1. 打开在线 Alpha（见下方部署说明 / GitHub Pages 链接）；
-2. 在设置中填写你自己的 DeepSeek API Key（BYOK）；
-3. 上传图片，或打开 PDF（有书签可按章节，无书签手动选页）；
-4. 加入学习上下文，开始提问。
+1. 打开 [在线体验](https://beichen126.github.io/ai-education-reader/)
+2. 进入设置，配置你自己的 DeepSeek API Key（BYOK）
+3. 上传一张图片，或者打开一份 PDF（有书签按章节选，无书签手动选页）
+4. 把选中的内容加入对话，开始提问
 
-## Local Development
+## Privacy & Local-first
+
+- 所有数据保存在你浏览器的 IndexedDB 中，没有产品后端
+- API Key 只存在浏览器本地，浏览器直连你配置的 API 服务
+- 仅在你发送消息时，选中的图片 / PDF 页面与聊天上下文才会发送到你配置的 API
+
+详见 [PRIVACY.md](./PRIVACY.md)。
+
+## Current status
+
+**Alpha · v0.1.0-alpha.2** —— 核心学习流程可以正常使用，正在根据真实使用反馈迭代。
+
+已知限制（会随迭代逐步改善）：
+
+- 单次 PDF Context 最多 120 页；单次请求图片数据有 30 MiB 内联预算
+- 图片以 inline Base64 传输，尚未使用 Files API
+- 需要支持视觉输入的模型（默认 `deepseek-v4-flash-vision-exp`）
+- 不含 OCR / 自动目录识别：无书签 PDF 请手动选择页码
+- 不含云同步 / 登录 / 账户
+
+## Development
 
 ```bash
 npm install
-npm run dev      # 开发模式（Vite）
-npm run build    # 产出 dist/
-npm run typecheck
-npm run preview  # 预览 production build
+npm run dev        # 开发模式（Vite）
+npm run typecheck  # 类型检查
+npm run build      # 产出 dist/
+npm run preview    # 预览 production build
 ```
 
-单元测试（核心逻辑，无网络）：`npm run test:pdf-outline`、`npm run test:pdf-attach`、
-`npm run test:attachment-display`、`npm run test:large-context`、`npm run test:backup-source` 等。
+单元测试（核心逻辑，无网络）：
 
-## Current Limitations (Alpha)
+```bash
+npm run test:zoom               # 缩放/平移数学
+npm run test:pdf-outline        # PDF 书签解析
+npm run test:pdf-attach         # PDF 页面附件
+npm run test:attachment-display # 附件分组展示
+npm run test:large-context      # 大上下文安全
+```
 
-- 单次 PDF Context 最多 120 页（产品安全限制，非模型限制），单次请求图片数据有 30 MiB 内联预算；
-- 采用 inline Base64 图片（Chat Completions），尚未使用 Files API；
-- 需要选择支持视觉输入的模型（默认 `deepseek-v4-flash-vision-exp`）；
-- 不含 OCR / 自动目录识别：无书签 PDF 请手动选择页码；需要章节式导航时，可先用任意 PDF 工具生成标准 Outline/Bookmarks；
-- 不含 PDF Reader / 双栏阅读工作区；
-- 不含云同步 / 登录 / 账户。
+## Contributing
 
-## Contributing & Security
+欢迎 PR 与 Issue —— 在 [CONTRIBUTING.md](./CONTRIBUTING.md) 了解流程，使用仓库内的 Issue 模板报告问题或功能建议。
 
-社区共建欢迎：见 [CONTRIBUTING.md](./CONTRIBUTING.md) 与 [SECURITY.md](./SECURITY.md)。
-**不要在 Issue 中提交 API Key、备份 JSON 或私人教材。**
-请使用仓库内的 Issue 模板（bug_report / feature_request）。
+**请不要在 Issue 中提交 API Key、备份 JSON 或私人教材。**
 
-## License / Attribution
+## Roadmap
 
-本项目代码采用 MIT License（见 [LICENSE](./LICENSE)）。
+Roadmap 由真实使用反馈驱动（feedback-driven），不承诺日期：
 
-- 代码与设计 token 部分来自 DeepSeek Harness (DSH) 上游 Web UI：MIT，版权归 DeepSeek（见 [LICENSE](./LICENSE) 与 [THIRD_PARTY_NOTICES](./THIRD_PARTY_NOTICES)）；
-- PDF.js (pdfjs-dist)：Apache-2.0，Mozilla 基金会（见 THIRD_PARTY_NOTICES）；
-- 其余依赖见 package.json。
+- 更完整的 PDF 阅读工作区
+- 更大上下文的传输方式（Files API）
+- PWA 离线使用
+
+欢迎通过 Issue 提供你的使用反馈。
+
+## License
+
+MIT License（见 [LICENSE](./LICENSE)）。
+
+- 代码与设计 token 部分来自 DeepSeek Harness (DSH) 上游 Web UI：MIT，版权归 DeepSeek（见 [THIRD_PARTY_NOTICES](./THIRD_PARTY_NOTICES)）
+- PDF.js (pdfjs-dist)：Apache-2.0，Mozilla 基金会
+- 其余依赖见 [package.json](./package.json)

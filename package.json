@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "type": "module",
   "description": "AI Education Reader (AI 学习阅读器): 面向教材、讲义、论文和学习资料的 AI 学习阅读器。本地优先、BYOK、浏览器内处理 PDF。",
   "scripts": {
@@ -44,7 +44,8 @@
     "test:attachment-display": "npx tsx scripts/test-attachment-display.ts",
     "test:backup-source": "npx tsx scripts/test-backup-source.ts",
     "test:large-context": "npx tsx scripts/test-large-context.ts",
-    "test:backup-security": "npx tsx scripts/test-backup-security.ts"
+    "test:backup-security": "npx tsx scripts/test-backup-security.ts",
+    "test:zoom": "npx tsx scripts/test-zoom.ts"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",

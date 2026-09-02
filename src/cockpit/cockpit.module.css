@@ -135,3 +135,5 @@
 .keyToggle:hover, .keyClear:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .keyClear { color: var(--dsw-alias-state-error-primary); }
 .settingsScroll { max-height: calc(100vh - 96px); overflow-y: auto; }
+.groupPageBtn { display: block; border: none; padding: 0; background: none; cursor: zoom-in; border-radius: 8px; overflow: hidden; }
+.groupPageBtn img { display: block; width: 56px; height: 56px; object-fit: cover; border-radius: 8px; }

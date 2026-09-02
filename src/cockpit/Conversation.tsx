@@ -8,13 +8,14 @@ import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, cle
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { t } from '../engine/locale'
 import { MessageText, IconCloseOutline16, Button } from '../dsh/primitives'
-import { ImageLightbox } from '../dsh/attachment/ImageLightbox'
+import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
 import { galleryActions } from '../gallery/gallery-store'
 import { PdfPanel, type PdfAddResult } from '../pdf/PdfPanel'
 import { pdfPageAttachmentName, type PdfAddPayload, type RenderedPdfPage } from '../pdf/pdf-types'
 import { newStableId } from '../engine/types'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
+import { IconPhoto16, IconDocument16 } from './composer-icons'
 import { setComposerTriggers, triggerComposerImages, triggerComposerPdf } from '../engine/composer-triggers'
 import { buildAttachmentDisplayItems, type AttachmentDisplayItem } from '../attachments/attachment-display'
 import { PdfContextCard } from './PdfContextCard'
@@ -132,9 +133,10 @@ function Thumb({ id, onOpen }: { id: string; onOpen: () => void }) {
 }
 
 function Lightbox({ id, onClose }: { id: string; onClose: () => void }) {
-  const { url, error } = useAttachmentPreview(id)
-  if (!url) return null
-  return <ImageLightbox src={url} alt="" labels={{ dialog: t('attachment.view'), close: t('common.close') }} onClose={onClose} />
+  const { url } = useAttachmentPreview(id)
+  return (
+    <ZoomableImageDialog src={url} alt="" resetKey={id} onClose={onClose} labels={{ close: t('common.close'), dialog: t('attachment.view') }} />
+  )
 }
 
 function PendingThumb({ id, onRemove, onOpen }: { id: string; onRemove: () => void; onOpen: () => void }) {
@@ -243,13 +245,13 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
         </div>
       )}
       <div className={css.composerBar}>
-        <label className={css.attachBtn} title={t('composer.attach')}>
+        <label className={css.attachBtn} role="button" aria-label="添加图片" title="添加图片" data-testid="composer-attach-image">
           <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
-          <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M8 1a2.5 2.5 0 0 1 2.5 2.5v4a2.5 2.5 0 0 1-5 0v-4A2.5 2.5 0 0 1 8 1zM3 8a5 5 0 0 0 10 0h-1.6a3.4 3.4 0 0 1-6.8 0H3z"/></svg>
+          <IconPhoto16 />
         </label>
-        <label className={css.attachBtn} title="选择 PDF">
+        <label className={css.attachBtn} role="button" aria-label="添加 PDF" title="添加 PDF" data-testid="composer-attach-pdf">
           <input ref={pdfInputRef} type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
-          <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor"><path d="M3 1h10a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1zm1 2v10h8V3H4zm2 2h4a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1zm0 2h2.5a.5.5 0 0 1 0 1H6a.5.5 0 0 1 0-1z"/></svg>
+          <IconDocument16 />
         </label>
         <textarea className={css.composerText} value={text} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
           onChange={e => setDraftText(key, e.target.value)}

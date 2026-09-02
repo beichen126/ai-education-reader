@@ -5,6 +5,7 @@
 import { useState } from 'react'
 import type { AttachmentDisplayItem } from '../attachments/attachment-display'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
+import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { IconCloseOutline16 } from '../dsh/primitives'
 import { PDF_GROUP_PREVIEW_BATCH } from '../pdf/pdf-types'
 import css from './cockpit.module.css'
@@ -21,6 +22,7 @@ export function PdfContextCard({
 }) {
   const [expanded, setExpanded] = useState(false)
   const [shown, setShown] = useState(PDF_GROUP_PREVIEW_BATCH)
+  const [viewerIdx, setViewerIdx] = useState<number | null>(null)
   const large = item.attachmentIds.length > 30
   const visibleIds = large ? item.attachmentIds.slice(0, shown) : item.attachmentIds
   const rangeText = item.startPage === item.endPage
@@ -51,11 +53,14 @@ export function PdfContextCard({
           <button type="button" className={css.groupBtn + ' ' + css.groupDel} data-testid={'pdf-group-delete-' + item.groupId} onClick={onDelete}>删除</button>
         )}
       </div>
+      {viewerIdx !== null && (
+        <GroupViewer2 attachmentIds={item.attachmentIds} index={viewerIdx} onClose={() => setViewerIdx(null)} onPrev={viewerIdx > 0 ? () => setViewerIdx(viewerIdx - 1) : undefined} onNext={viewerIdx < item.attachmentIds.length - 1 ? () => setViewerIdx(viewerIdx + 1) : undefined} />
+      )}
       {expanded && (
         <>
         <div className={css.groupPages}>
-          {visibleIds.map(id => (
-            <GroupPageThumb key={id} id={id} readOnly={readOnly} onRemove={onRemovePage ? () => onRemovePage(id) : undefined} />
+          {visibleIds.map((id, i) => (
+            <GroupPageThumb key={id} id={id} readOnly={readOnly} onRemove={onRemovePage ? () => onRemovePage(id) : undefined} onOpen={() => setViewerIdx(i)} />
           ))}
         </div>
         {large && shown < item.attachmentIds.length && (
@@ -69,14 +74,34 @@ export function PdfContextCard({
   )
 }
 
-function GroupPageThumb({ id, readOnly, onRemove }: { id: string; readOnly?: boolean; onRemove?: () => void }) {
+function GroupPageThumb({ id, readOnly, onRemove, onOpen }: { id: string; readOnly?: boolean; onRemove?: () => void; onOpen?: () => void }) {
   const { url } = useAttachmentPreview(id)
   return (
     <span className={css.groupPage}>
-      {url ? <img src={url} alt="" /> : <span className={css.photoLoading}>…</span>}
+      <button type="button" className={css.groupPageBtn} data-testid={'pdf-page-open-' + id} aria-label="查看这一页" onClick={onOpen}>
+        {url ? <img src={url} alt="" /> : <span className={css.photoLoading}>…</span>}
+      </button>
       {!readOnly && onRemove && (
         <button className={css.picDel} data-testid={'pdf-page-del-' + id} onClick={onRemove} aria-label="删除这一页"><IconCloseOutline16 size={12} /></button>
       )}
     </span>
+  )
+}
+
+function GroupViewer2({ attachmentIds, index, onClose, onPrev, onNext }: { attachmentIds: string[]; index: number; onClose: () => void; onPrev?: () => void; onNext?: () => void }) {
+  const id = attachmentIds[index] || ''
+  const { url } = useAttachmentPreview(id)
+  return (
+    <ZoomableImageDialog
+      src={url}
+      alt=""
+      resetKey={id}
+      index={index}
+      count={attachmentIds.length}
+      onPrev={onPrev}
+      onNext={onNext}
+      onClose={onClose}
+      labels={{ close: '关闭', prev: '上一页', next: '下一页', dialog: 'PDF 页面查看' }}
+    />
   )
 }
