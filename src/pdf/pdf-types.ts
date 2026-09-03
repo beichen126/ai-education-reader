@@ -45,7 +45,9 @@ export function pdfPageAttachmentName(fileName: string, pageNumber: number): str
   const stem = fileName.replace(/\.pdf$/i, '')
   return stem + '-p' + String(pageNumber).padStart(4, '0') + '.jpg'
 }
-/** Sorted, deduped, non-adjacent-merged list of normalized page ranges. */
+/** Sorted, deduped list of normalized page ranges. Overlapping AND adjacent input
+ * ranges are merged (the rendered page set is identical), so no two output ranges
+ * overlap or touch. */
 export function normalizePdfRanges(ranges: PdfRange[]): PdfRange[] {
   const valid = ranges
     .filter(r => Number.isInteger(r.startPage) && Number.isInteger(r.endPage) && r.startPage >= 1 && r.endPage >= r.startPage)
@@ -79,6 +81,15 @@ export function pdfRangesText(ranges: PdfRange[]): string {
   const rs = normalizePdfRanges(ranges)
   if (rs.length === 0) return ''
   return 'PDF ' + rs.map(r => r.startPage === r.endPage ? '第 ' + r.startPage + ' 页' : r.startPage + '–' + r.endPage).join(', ')
+}
+
+/** Human-readable title for a selection — single chapter keeps its own title;
+ * multiple chapters join ALL selected node titles with '、' (callers pass them in
+ * PDF outline order, NOT click order). Cap/truncation is a display concern. */
+export function pdfSelectionTitle(titles: string[]): string {
+  const list = titles.filter(t => t != null && t.trim() !== '')
+  if (list.length === 0) return ''
+  return list.join('、')
 }
 
 /** Minimal provenance of the user's PDF selection, stored on every page Attachment.

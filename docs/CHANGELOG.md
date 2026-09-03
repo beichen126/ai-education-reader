@@ -19,7 +19,6 @@ AI Education Reader 的用户可感知更新记录。
 
 ### Planned
 
-- PDF 章节多选：允许一次选择多个不连续章节并统一加入 AI Context。
 - 新增“文件”资料入口和完整 PDF Reader，可阅读未加入 AI Context 的页面。
 - 统一 Document → Chapter → Context 数据模型。
 - 无书签 PDF 支持目录页缩略图选择、AI 目录识别与手动分章。

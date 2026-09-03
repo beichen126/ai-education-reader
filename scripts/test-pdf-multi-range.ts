@@ -1,6 +1,6 @@
 // Stage 9.1: pure multi-range PDF selection logic (no React / no PDF.js).
 import {
-  normalizePdfRanges, countPdfRangePages, expandPdfRangePages, pdfRangesText,
+  normalizePdfRanges, countPdfRangePages, expandPdfRangePages, pdfRangesText, pdfSelectionTitle,
   exceedsPdfContextHardLimit, needsPdfContextSoftConfirm, MAX_PDF_CONTEXT_PAGES,
   type PdfRange,
 } from '../src/pdf/pdf-types.ts'
@@ -54,6 +54,13 @@ assert(!h.some(n => n >= 33 && n <= 99), 'H: pages 33-99 NOT rendered (no fake 3
 assert(pdfRangesText([r(7, 8)]) === 'PDF 7–8', 'text: single range -> PDF 7–8')
 assert(pdfRangesText([r(30, 48), r(100, 118)]) === 'PDF 30–48, 100–118', 'text: two ranges joined')
 assert(pdfRangesText([r(3, 3)]) === 'PDF 第 3 页', 'text: single page')
+
+// ---- title: single vs multi chapter (outline order, not click order) ----
+assert(pdfSelectionTitle(['第二章 数据表示']) === '第二章 数据表示', 'title: single chapter keeps its own title')
+assert(pdfSelectionTitle(['第二章 数据表示', '第五章 存储系统']) === '第二章 数据表示、第五章 存储系统', 'title: multi chapter joins ALL names')
+assert(pdfSelectionTitle(['第二章 数据表示', '第五章 存储系统', '第七章 接口']) === '第二章 数据表示、第五章 存储系统、第七章 接口', 'title: three chapters joined')
+assert(pdfSelectionTitle([]) === '', 'title: empty -> empty')
+assert(pdfSelectionTitle(['  ']) === '', 'title: blank-only -> empty')
 
 // ---- extra: invalid / empty input ----
 assert(eq(normalizePdfRanges([]), []), 'empty input -> empty output')

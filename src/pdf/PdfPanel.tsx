@@ -14,7 +14,7 @@ import { PdfOutlineSelector } from './PdfOutlineSelector'
 import {
   PDF_CONTEXT_SOFT_WARNING_PAGES, MAX_PDF_CONTEXT_PAGES,
   needsPdfContextSoftConfirm, exceedsPdfContextHardLimit,
-  normalizePdfRanges, countPdfRangePages, pdfRangesText,
+  normalizePdfRanges, countPdfRangePages, pdfRangesText, pdfSelectionTitle,
   type PdfAddPayload, type PdfRange, type RenderedPdfPage,
 } from './pdf-types'
 import type { PdfOutlineItem } from './pdf-outline'
@@ -137,7 +137,9 @@ export function PdfPanel({
       const selection = inChapterMode && selectedNodes.length > 0
         ? {
             kind: 'outline' as const,
-            title: selectedNodes[0].title,
+            // Single chapter: its own title. Multiple chapters: ALL nodes joined
+            // ('第二章、第五章') in PDF outline order — never just the first one.
+            title: pdfSelectionTitle(selectedNodes.map(n => n.title)),
             ranges: lastRanges ?? selectedRanges,
             selectedChapterIds: [...selectedIds],
           }
