@@ -13,11 +13,13 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
 function mustReject(b: any, label: string) { let threw = false; try { parseAndValidate(b) } catch (e) { threw = e instanceof BackupError } assert(threw, 'rejects ' + label) }
 const b64 = (n: number) => Buffer.from(new Array(n).fill(7)).toString('base64')
 
-const docMeta = {
-  id: 'doc1', kind: 'pdf', fileName: '教材.pdf', mimeType: 'application/pdf', fileSize: 100,
-  pageCount: 10, chapters: [{ id: '0', title: '第 1 章', level: 1, startPage: 1, endPage: 5, selectable: true, source: 'native', children: [] }],
-  chapterSource: 'native', lastReadPage: 3, importSource: { kind: 'pdf' as const, originalFileName: '教材.pdf' },
-  createdAt: 1, updatedAt: 1,
+function freshDocMeta(): any {
+  return {
+    id: 'doc1', kind: 'pdf', fileName: '教材.pdf', mimeType: 'application/pdf', fileSize: 100,
+    pageCount: 10, chapters: [{ id: '0', title: '第 1 章', level: 1, startPage: 1, endPage: 5, selectable: true, source: 'native', children: [] }],
+    chapterSource: 'native', lastReadPage: 3, importSource: { kind: 'pdf', originalFileName: '教材.pdf' },
+    createdAt: 1, updatedAt: 1,
+  }
 }
 function v2backup() {
   return {
@@ -25,7 +27,7 @@ function v2backup() {
     settings: { apiBaseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', customSystemPrompt: '', customSystemPromptEnabled: false },
     conversations: [], annotations: [],
     attachments: [],
-    documents: [{ id: 'doc1', meta: docMeta, mimeType: 'application/pdf', data: b64(100) }],
+    documents: [{ id: 'doc1', meta: freshDocMeta(), mimeType: 'application/pdf', data: b64(100) }],
   }
 }
 function v1backup() {
@@ -39,7 +41,7 @@ function v1backup() {
 
 // --- V2 export: documents included, base64 decodes byte-for-byte ---
 await idbClearAll()
-await createDocument({ id: docMeta.id, fileName: docMeta.fileName, mimeType: 'application/pdf', fileSize: docMeta.fileSize, pageCount: docMeta.pageCount, sourceBlob: new Blob([new Uint8Array(100).fill(7)], { type: 'application/pdf' }), importSource: { kind: 'pdf', originalFileName: '教材.pdf' } })
+await createDocument({ id: 'doc1', fileName: '教材.pdf', mimeType: 'application/pdf', fileSize: 100, pageCount: 10, sourceBlob: new Blob([new Uint8Array(100).fill(7)], { type: 'application/pdf' }), importSource: { kind: 'pdf', originalFileName: '教材.pdf' } })
 await restoreBackup(parseAndValidate(v2backup())) // seed a second state? no — just parse+restore below
 const backup = await buildBackup()
 assert(backup.version === BACKUP_VERSION && BACKUP_VERSION === 2, 'exported backup version = 2')
@@ -78,6 +80,17 @@ assert(!!conv && conv.messages[0].content === 'hi', 'V1 restore keeps conversati
 { const b = v2backup(); b.version = 3; mustReject(b, 'unsupported version 3') }
 { const b = v1backup(); b.version = 2; delete b.documents; mustReject(b, 'v2 without documents array') }
 { const b = v2backup(); b.documents[0].meta.lastReadPage = -1; mustReject(b, 'negative lastReadPage') }
+{ const b = v2backup(); b.documents[0].meta.lastReadPage = 1.5; mustReject(b, 'fractional lastReadPage') }
+{ const b = v2backup(); b.documents[0].meta.lastReadPage = 11; mustReject(b, 'lastReadPage beyond pageCount') }
+{ const b = v2backup(); b.documents[0].meta.lastReadPage = NaN; mustReject(b, 'NaN lastReadPage') }
+{ const b = v2backup(); b.documents[0].meta.lastReadPage = Infinity; mustReject(b, 'infinite lastReadPage') }
+{ const b = v2backup(); b.documents[0].meta.lastReadPage = 10; assert(parseAndValidate(b) !== null, 'lastReadPage = pageCount accepted'); }
+{ const b = v2backup(); b.documents[0].meta.importSource = { kind: 'slides', originalFileName: 'x.pdf' }; mustReject(b, 'importSource kind not pdf/ppt/pptx') }
+{ const b = v2backup(); b.documents[0].meta.importSource = { kind: 'pdf' }; mustReject(b, 'importSource missing originalFileName') }
+{ const b = v2backup(); b.documents[0].meta.importSource = { kind: 'pdf', originalFileName: '   ' }; mustReject(b, 'importSource blank originalFileName') }
+{ const b = v2backup(); b.documents[0].meta.chapters[0].children = [{ id: '0', title: 'dup id', level: 2, startPage: 2, endPage: 3, selectable: true, source: 'native', children: [] }]; mustReject(b, 'duplicate chapter id within one document') }
+{ const b = v2backup(); b.documents[0].meta.fileSize = 100.5; mustReject(b, 'fractional fileSize rejected') }
+{ const b = v2backup(); b.documents[0].meta.chapters = [{ id: '0', title: 'A', level: 1, startPage: 1, endPage: 2, selectable: true, source: 'native', children: [] }, { id: 'a', title: 'B', level: 1, startPage: 3, endPage: 4, selectable: true, source: 'native', children: [] }]; assert(parseAndValidate(b) !== null, 'distinct chapter ids accepted'); }
 // apiKey must NEVER be part of a backup
 const noKey = JSON.stringify(v2backup())
 assert(!noKey.includes('sk-') && !noKey.includes('apiKey'), 'backup JSON contains no apiKey field')

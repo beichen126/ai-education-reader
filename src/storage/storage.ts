@@ -2,7 +2,7 @@ import { idbGet, idbGetAll, idbGetAllKeys, idbPut, idbDelete, idbGetAllByIndex, 
 import type { Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 
-/** Destructive: clear conversations/attachments/annotations/settings (all stores). */
+/** Destructive: clear conversations/attachments/annotations/settings/documents (all stores). */
 export async function clearAllLocalData(): Promise<void> { await idbClearAll() }
 
 export async function getSetting(key) { const row = await idbGet('settings', key); return row ? row.value : undefined }

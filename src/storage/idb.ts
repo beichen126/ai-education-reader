@@ -62,6 +62,34 @@ export async function idbDeleteByIndex(store: string, index: string, key: any): 
 }
 export async function idbBatchPut(store: string, values: any[]): Promise<void> { const db = await openDb(); const os = tx(db, store, 'readwrite'); for (const v of values) await asPromise(os.put(v)) }
 export async function idbBatchDelete(store: string, keys: any[]): Promise<void> { const db = await openDb(); const os = tx(db, store, 'readwrite'); for (const k of keys) await asPromise(os.delete(k)) }
+/**
+ * Atomic read-modify-write on ONE readwrite transaction: get(key) -> updater(current)
+ * -> put(next), all in the same transaction. No read/write split can happen, so
+ * concurrent updates of DIFFERENT fields never lose each other (no stale snapshot).
+ * - row missing -> the transaction aborts and this rejects (caller decides).
+ * - updater throws -> the transaction aborts and this rejects.
+ */
+export async function idbUpdate(store: string, key: any, updater: (current: any) => any): Promise<void> {
+  const db = await openDb()
+  await new Promise<void>((resolve, reject) => {
+    const txn = db.transaction(store, 'readwrite')
+    const os = txn.objectStore(store)
+    const req = os.get(key)
+    let done = false
+    const fail = (e: unknown) => { if (!done) { done = true; try { txn.abort() } catch { /* already settled */ } reject(e) } }
+    req.onsuccess = () => {
+      const cur = req.result
+      if (cur === undefined) { fail(new Error('row not found: ' + store + '/' + String(key))); return }
+      let next: any
+      try { next = updater(cur) } catch (e) { fail(e instanceof Error ? e : new Error(String(e))); return }
+      try { os.put(next) } catch (e) { fail(e instanceof Error ? e : new Error(String(e))); return }
+    }
+    req.onerror = () => fail(req.error)
+    txn.oncomplete = () => { if (!done) { done = true; resolve(undefined) } }
+    txn.onerror = () => fail(txn.error)
+    txn.onabort = () => fail(new Error('transaction aborted'))
+  })
+}
 /** Clear EVERY store in one readwrite transaction (destructive: used by "clear local data"). */
 export async function idbClearAll(): Promise<void> {
   const db = await openDb()

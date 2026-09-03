@@ -17,6 +17,7 @@ const VALID_ANNOT_TYPES = new Set(['text', 'table', 'table-cells', 'math'])
 const VALID_MATH_KINDS = new Set(['inline', 'block'])
 const VALID_ANCHOR_SCOPES = new Set(['block', 'table-cell'])
 const VALID_CHAPTER_SOURCES = new Set(['native', 'ai-toc', 'manual'])
+const VALID_IMPORT_KINDS = new Set(['pdf', 'ppt', 'pptx'])
 const VALID_DOC_CHAPTER_SOURCES = new Set(['none', 'native', 'ai-toc', 'manual', 'mixed'])
 
 /** Standard base64 (with padding) that atob can decode. */
@@ -25,16 +26,18 @@ function isBase64(data: unknown): boolean {
   try { atob(data); return true } catch { return false }
 }
 
-function validateChapterTree(c: unknown, pageCount: number, depth: number): boolean {
+function validateChapterTree(c: unknown, pageCount: number, depth: number, ids: Set<string>): boolean {
   if (!isObj(c)) return false
   if (!isNonEmptyStr(c.id) || !isStr(c.title) || !isInt(c.level) || c.level < 1) return false
+  if (ids.has(c.id)) return false // chapter ids must be unique within one document tree
+  ids.add(c.id)
   if (!VALID_CHAPTER_SOURCES.has(c.source)) return false
   if (typeof c.selectable !== 'boolean') return false
   const inRange = (p: unknown) => p === null || (isInt(p) && p >= 1 && p <= pageCount)
   if (!inRange(c.startPage) || !inRange(c.endPage)) return false
   if (isInt(c.startPage) && isInt(c.endPage) && c.endPage < c.startPage) return false
   if (depth > 24 || !Array.isArray(c.children)) return false
-  return c.children.every((ch: unknown) => validateChapterTree(ch, pageCount, depth + 1))
+  return c.children.every((ch: unknown) => validateChapterTree(ch, pageCount, depth + 1, ids))
 }
 
 function validateDocuments(input: Record<string, any>): void {
@@ -50,12 +53,19 @@ function validateDocuments(input: Record<string, any>): void {
     if (m.kind !== 'pdf') throw new BackupError('document.kind 非法')
     if (m.mimeType !== 'application/pdf') throw new BackupError('document.mimeType 非法')
     if (!isNonEmptyStr(m.fileName)) throw new BackupError('document.fileName 非法')
-    if (!isNum(m.fileSize) || m.fileSize < 0) throw new BackupError('document.fileSize 非法')
+    if (!isInt(m.fileSize) || m.fileSize < 0) throw new BackupError('document.fileSize 必须是 >= 0 的整数')
     if (!isInt(m.pageCount) || m.pageCount < 1) throw new BackupError('document.pageCount 非法')
-    if (!isNum(m.lastReadPage) || m.lastReadPage < 0) throw new BackupError('document.lastReadPage 非法')
+    // lastReadPage invariant: 0 (unread) or an integer in [1, pageCount]
+    const okLastRead = m.lastReadPage === 0 || (isInt(m.lastReadPage) && m.lastReadPage >= 1 && m.lastReadPage <= m.pageCount)
+    if (!okLastRead) throw new BackupError('document.lastReadPage 非法（0 或 1..pageCount 的整数）')
     if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('document 时间戳必须是数字')
     if (!VALID_DOC_CHAPTER_SOURCES.has(m.chapterSource)) throw new BackupError('document.chapterSource 非法')
-    if (!Array.isArray(m.chapters) || !m.chapters.every((c: unknown) => validateChapterTree(c, m.pageCount, 0))) throw new BackupError('document.chapters 非法（章节页码/层级/结构不合法）')
+    if (m.importSource !== undefined) {
+      const imp = m.importSource
+      if (!isObj(imp) || !VALID_IMPORT_KINDS.has(imp.kind) || !isNonEmptyStr(imp.originalFileName) || imp.originalFileName.trim().length === 0) throw new BackupError('document.importSource 非法')
+    }
+    const chapterIds = new Set<string>()
+    if (!Array.isArray(m.chapters) || !m.chapters.every((c: unknown) => validateChapterTree(c, m.pageCount, 0, chapterIds))) throw new BackupError('document.chapters 非法（章节页码/层级/结构/id 不合法）')
     if (d.mimeType !== 'application/pdf') throw new BackupError('document 的 mimeType 必须是 application/pdf')
     if (!isBase64(d.data)) throw new BackupError('document.data 不是合法的 base64')
   }

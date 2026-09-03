@@ -71,5 +71,43 @@ await closeDb()
 const after = await getDocument(id3)
 assert(!!after && after.fileName === 'c.pdf' && after.sourceBlob.size === 33, 'document survives db reopen')
 
+// ---- Stage 9.2A.1: atomic read-modify-write (no lost update) ----
+const idC = newStableId()
+await createDocument({ id: idC, fileName: 'atomic.pdf', mimeType: 'application/pdf', fileSize: 5, pageCount: 50, sourceBlob: pdfBlob(5) })
+const ch1 = [{ id: '0', title: '第 1 章', level: 1, startPage: 1, endPage: 10, selectable: true, source: 'native' as const, children: [] }]
+await Promise.all([
+  updateDocumentChapters(idC, ch1, 'native'),
+  updateLastReadPage(idC, 42),
+])
+const atomic = await getDocument(idC)
+assert(atomic!.chapters.length === 1 && atomic!.chapters[0].id === '0', 'concurrent updates: chapters written')
+assert(atomic!.lastReadPage === 42, 'concurrent updates: lastReadPage written (no lost update, got ' + atomic!.lastReadPage + ')')
+
+// rapid sequential progress bumps always keep other document fields intact
+await Promise.all([updateLastReadPage(idC, 7), updateLastReadPage(idC, 8), updateLastReadPage(idC, 9)])
+const g9 = await getDocument(idC)
+assert(g9!.lastReadPage >= 7 && g9!.lastReadPage <= 9, 'rapid progress bumps land (got ' + g9!.lastReadPage + ')')
+assert(g9!.chapters.length === 1 && g9!.fileName === 'atomic.pdf', 'other fields untouched by progress bumps')
+
+// ---- lastReadPage invariant: invalid values THROW ----
+for (const bad of [-1, 1.5, 51, NaN, Infinity]) {
+  let threw = false
+  try { await updateLastReadPage(idC, bad) } catch { threw = true }
+  assert(threw, 'lastReadPage ' + String(bad) + ' rejected')
+}
+const gBad = await getDocument(idC)
+assert(gBad!.lastReadPage <= 9 && gBad!.chapters.length === 1, 'invalid writes left the document unchanged')
+// not-found throws
+let nf = false
+try { await updateLastReadPage(newStableId(), 1) } catch { nf = true }
+assert(nf, 'updateLastReadPage on missing document throws')
+let nf2 = false
+try { await updateDocumentChapters(newStableId(), [], 'none') } catch { nf2 = true }
+assert(nf2, 'updateDocumentChapters on missing document throws')
+// fileSize truth source
+const idF = newStableId()
+const created = await createDocument({ id: idF, fileName: 'truth.pdf', mimeType: 'application/pdf', fileSize: 99999, pageCount: 2, sourceBlob: pdfBlob(44) })
+assert(created.fileSize === 44, 'createDocument stores sourceBlob.size as fileSize truth (got ' + created.fileSize + ')')
+
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)

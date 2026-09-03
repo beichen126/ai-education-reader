@@ -1,13 +1,25 @@
 // Document Service — the ONLY way UI code touches the IndexedDB 'documents' store.
 // A document is globally owned (no conversationId): deleting a conversation never
 // deletes the original file, and a document may be used by many conversations.
-import { idbGet, idbGetAll, idbPut, idbDelete } from '../storage/idb'
+//
+// All field updates go through the ATOMIC idbUpdate primitive (one readwrite
+// transaction: get -> updater -> put). Never hand-split into get+put — concurrent
+// updates of different fields would otherwise lose one of them.
+//
+// Stage 9.2B constraint (Reader): lastReadPage must NOT be persisted on every page
+// turn — the Reader should debounce page progress and flush on close/unmount.
+import { idbGet, idbGetAll, idbPut, idbDelete, idbUpdate } from '../storage/idb'
 import type { LearningDocument } from './document-types'
+
+export class DocumentNotFoundError extends Error {
+  constructor(id: string) { super('document not found: ' + id); this.name = 'DocumentNotFoundError' }
+}
 
 export type NewDocumentInput = {
   id: string
   fileName: string
   mimeType: 'application/pdf'
+  /** Accepted for API symmetry; the persisted fileSize is ALWAYS sourceBlob.size. */
   fileSize: number
   pageCount: number
   sourceBlob: Blob
@@ -15,7 +27,8 @@ export type NewDocumentInput = {
 }
 
 /** Persist a new document. Throws on IndexedDB failure (QuotaExceeded etc.) —
- * callers then continue WITHOUT a documentId rather than shipping half a row. */
+ * callers then continue WITHOUT a documentId rather than shipping half a row.
+ * fileSize is taken from sourceBlob.size (single truth source, no caller mismatch). */
 export async function createDocument(input: NewDocumentInput): Promise<LearningDocument> {
   const now = Date.now()
   const doc: LearningDocument = {
@@ -23,7 +36,7 @@ export async function createDocument(input: NewDocumentInput): Promise<LearningD
     kind: 'pdf',
     fileName: input.fileName,
     mimeType: input.mimeType,
-    fileSize: input.fileSize,
+    fileSize: input.sourceBlob.size,
     pageCount: input.pageCount,
     sourceBlob: input.sourceBlob,
     chapters: [],
@@ -46,19 +59,32 @@ export async function listDocuments(): Promise<LearningDocument[]> {
   return (all as LearningDocument[]).sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
-/** Update the persisted chapter structure of an existing document. */
+/** Atomically update the persisted chapter structure (never loses other fields). */
 export async function updateDocumentChapters(id: string, chapters: LearningDocument['chapters'], chapterSource: LearningDocument['chapterSource']): Promise<void> {
-  const doc = await getDocument(id)
-  if (!doc) throw new Error('document not found: ' + id)
-  const next: LearningDocument = { ...doc, chapters, chapterSource, updatedAt: Date.now() }
-  await idbPut('documents', next)
+  await idbUpdate('documents', id, (cur: LearningDocument) => {
+    if (!cur) throw new DocumentNotFoundError(id)
+    return { ...cur, chapters, chapterSource, updatedAt: Date.now() }
+  })
 }
 
+/**
+ * lastReadPage invariant: 0 = not read yet; otherwise an integer in [1, pageCount].
+ * Invalid input (negative / fraction / beyond pageCount / NaN / Infinity) THROWS —
+ * it is a programming error, not a value to silently clamp.
+ */
+export function assertValidLastReadPage(page: number, pageCount: number): void {
+  if (!Number.isInteger(page) || page < 0 || page > pageCount) {
+    throw new RangeError('invalid lastReadPage ' + String(page) + ' for document with ' + pageCount + ' pages')
+  }
+}
+
+/** Atomically bump the last-read page (never loses other fields). */
 export async function updateLastReadPage(id: string, page: number): Promise<void> {
-  const doc = await getDocument(id)
-  if (!doc) throw new Error('document not found: ' + id)
-  const next: LearningDocument = { ...doc, lastReadPage: page, updatedAt: Date.now() }
-  await idbPut('documents', next)
+  await idbUpdate('documents', id, (cur: LearningDocument) => {
+    if (!cur) throw new DocumentNotFoundError(id)
+    assertValidLastReadPage(page, cur.pageCount)
+    return { ...cur, lastReadPage: page, updatedAt: Date.now() }
+  })
 }
 
 export async function deleteDocument(id: string): Promise<void> {
