@@ -99,3 +99,146 @@ export function chunkTocPages(pages: number[], perChunk: number = TOC_VISION_PAG
   for (let i = 0; i < pages.length; i += perChunk) out.push(pages.slice(i, i + perChunk))
   return out
 }
+// ===================== Flat transcription architecture (Stage 9.4C) =====================
+// Vision transcription outputs FLAT rows (no final level). A separate GLOBAL structure
+// pass assigns levels across the whole row set. Community test intent: transcription
+// batches are NOT tree batches; only the global pass proposes level.
+
+/** One flat, faithful (verbatim) transcription row. NO final level — the model only
+ *  records what is printed. */
+export type TocTranscriptionRow = {
+  id: string
+  title: string
+  pageLabel: string
+  tocPage: number
+  /** Absolute reading order (0-based) across the merged set. */
+  rowOrder: number
+  /** Observed visual indentation (0..N), optional. */
+  visualIndent?: number
+  /** Raw numbering prefix as printed (e.g. 第一编 / 第一章 / 一、 / （一） / 1.), optional. */
+  numbering?: string
+}
+
+export type TocTranscriptionLine = {
+  title: string
+  pageLabel: string
+  tocPage: number
+  visualIndent?: number
+  numbering?: string
+}
+
+export type TocJsonlParseResult =
+  | { ok: true; rows: TocTranscriptionLine[] }
+  | { ok: false; line: number; diagnostics: string[] }
+
+const isRecord2 = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
+
+/** Parse a TOC-page transcription response as JSON Lines. Blank lines are allowed; a
+ *  whole response wrapped in a single ```jsonl fence is accepted; every malformed line
+ *  produces a precise diagnostic (never silently dropped). No "scraping" from prose. */
+export function parseTocJsonl(text: string): TocJsonlParseResult {
+  let body = text.trim()
+  const fence = /^\`\`\`(?:jsonl)?\s*([\s\S]*?)\s*\`\`\`$/i.exec(body)
+  if (fence) body = fence[1].trim()
+  if (body === '') return { ok: false, line: 0, diagnostics: ['空响应'] }
+  const lines = body.split(/\r?\n/)
+  const rows: TocTranscriptionLine[] = []
+  const diagnostics: string[] = []
+  for (let idx = 0; idx < lines.length; idx++) {
+    const raw = lines[idx].trim()
+    if (raw === '') continue // blank line allowed
+    let json: unknown
+    try { json = JSON.parse(raw) } catch { diagnostics.push('第 ' + (idx + 1) + ' 行不是合法 JSON'); continue }
+    if (!isRecord2(json)) { diagnostics.push('第 ' + (idx + 1) + ' 行不是对象'); continue }
+    if (typeof json.title !== 'string' || json.title.trim() === '') { diagnostics.push('第 ' + (idx + 1) + ' 行缺少有效 title'); continue }
+    let pl = ''
+    if (typeof json.pageLabel === 'string') pl = json.pageLabel.trim()
+    else if (typeof json.pageLabel === 'number' && Number.isFinite(json.pageLabel)) pl = String(json.pageLabel)
+    if (pl === '') { diagnostics.push('第 ' + (idx + 1) + ' 行缺少 pageLabel'); continue }
+    const tocPage = Number.isInteger(json.tocPage) && (json.tocPage as number) >= 1 ? (json.tocPage as number) : 1
+    rows.push({
+      title: normalizeTitle(json.title),
+      pageLabel: pl,
+      tocPage,
+      ...(typeof json.visualIndent === 'number' && json.visualIndent >= 0 ? { visualIndent: json.visualIndent } : {}),
+      ...(typeof json.numbering === 'string' ? { numbering: json.numbering } : {}),
+    })
+  }
+  if (rows.length === 0) return { ok: false, line: 0, diagnostics }
+  return { ok: true, rows }
+}
+
+/** Assign stable LOCAL ids (r0001…) in row order; never trusts model ids. */
+export function assignLocalRowIds(rows: TocTranscriptionLine[]): TocTranscriptionRow[] {
+  return rows.map((r, i) => ({ ...r, id: 'r' + String(i + 1).padStart(4, '0'), rowOrder: i }))
+}
+
+export type TocStructureProposal = { id: string; level: number }
+
+export type TocStructureParseResult =
+  | { ok: true; proposals: TocStructureProposal[] }
+  | { ok: false; line: number; diagnostics: string[] }
+
+/** Parse the GLOBAL structure pass output (JSONL of {id, level}). */
+export function parseTocStructure(text: string): TocStructureParseResult {
+  let body = text.trim()
+  const fence = /^\`\`\`(?:jsonl)?\s*([\s\S]*?)\s*\`\`\`$/i.exec(body)
+  if (fence) body = fence[1].trim()
+  const lines = body.split(/\r?\n/).map(l => l.trim()).filter(l => l !== '')
+  const proposals: TocStructureProposal[] = []
+  const diags: string[] = []
+  for (let i = 0; i < lines.length; i++) {
+    let json: unknown
+    try { json = JSON.parse(lines[i]) } catch { diags.push('第 ' + (i + 1) + ' 行非 JSON'); continue }
+    if (!isRecord2(json) || typeof json.id !== 'string' || !Number.isInteger(json.level) || (json.level as number) < 1) { diags.push('第 ' + (i + 1) + ' 行缺少合法 id/level'); continue }
+    proposals.push({ id: json.id, level: json.level as number })
+  }
+  if (proposals.length === 0) return { ok: false, line: 0, diagnostics: diags }
+  return { ok: true, proposals }
+}
+
+/**
+ * Deterministic level normalization: shift the observed minimum/root level to 1 while
+ * preserving relative depth. Only a pure shift — never re-orders or re-semantics.
+ */
+export function normalizeTocLevels(levels: number[]): number[] {
+  const min = Math.min(...levels)
+  return levels.map(l => l - min + 1)
+}
+
+export type TocStructureValidation = {
+  ok: boolean
+  issues: string[]
+  /** Proposed levels normalized to start at 1, in row order. */
+  levels: number[]
+}
+
+/**
+ * Validate a global structure pass against the transcription rows: every input id
+ * appears exactly once, no unknown/duplicate id, level integer >=1, the FIRST row's
+ * normalized level = 1, and no level transition jumps a parent. Returns the normalized
+ * levels aligned to rows, or issues. Never partially persists.
+ */
+export function validateTocStructure(rows: TocTranscriptionRow[], proposals: TocStructureProposal[]): TocStructureValidation {
+  const issues: string[] = []
+  const byId = new Map(proposals.map(p => [p.id, p.level]))
+  if (byId.size !== proposals.length) issues.push('重复 id')
+  for (const r of rows) {
+    if (!byId.has(r.id)) { issues.push('缺少 id ' + r.id); continue }
+    const lvl = byId.get(r.id) as number
+    if (!Number.isInteger(lvl) || lvl < 1) issues.push('非法 level for ' + r.id)
+  }
+  for (const p of proposals) { if (!rows.some(r => r.id === p.id)) issues.push('未知 id ' + p.id) }
+  const orderedLevels = rows.map(r => byId.get(r.id))
+  if (orderedLevels.some(l => l === undefined)) {
+    // some rows missing a proposal: report but attempt no levels
+    return { ok: false, issues: issues.length ? issues : ['结构不完整'], levels: [] }
+  }
+  const levels = normalizeTocLevels(orderedLevels as number[])
+  if (levels[0] !== 1) issues.push('首项归一化后不是层级 1')
+  for (let i = 1; i < levels.length; i++) {
+    if (levels[i] > levels[i - 1] + 1) { issues.push('第 ' + (i + 1) + ' 项层级跳变'); break }
+  }
+  return { ok: issues.length === 0, issues, levels }
+}
+

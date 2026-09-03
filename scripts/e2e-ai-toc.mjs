@@ -30,10 +30,13 @@ await page.locator('[data-testid="toc-thumb-8"]').click()
 assert((await page.locator('[data-testid="toc-picker-start"]').textContent()).includes('2 页'), 'A: picker shows selected count')
 
 // --- B: extraction (mock) -> review opens ---
-await page.evaluate(() => { (globalThis).__dshMockAiToc = (req) => JSON.stringify([
-  { title: '第一章 自然地理', level: 1, pageLabel: '1', tocPage: req.pages[0] },
-  { title: '第二章 地球', level: 1, pageLabel: '2', tocPage: req.pages[0] },
-]) })
+await page.evaluate(() => { (globalThis).__dshMockAiToc = (req) => {
+  if (req.phase === 'structure') {
+    return '{"id":"r0001","level":1}\n{"id":"r0002","level":1}'
+  }
+  return '{"title":"第一章 自然地理","pageLabel":"1","tocPage":' + req.pages[0] + ',"visualIndent":0,"numbering":"第一章"}\n' +
+    '{"title":"第二章 地球","pageLabel":"2","tocPage":' + req.pages[0] + ',"visualIndent":0,"numbering":"第二章"}'
+} })
 await page.locator('[data-testid="toc-picker-start"]').click()
 await page.locator('[data-testid="toc-review"]').waitFor({ state: 'visible', timeout: 20000 })
 assert(await page.locator('[data-testid="toc-review-progress"]').count() === 1, 'B: review opens with progress')
