@@ -102,6 +102,26 @@ export type PdfSelection = {
   selectedChapterIds?: string[]
 }
 
+/** Result of committing a PDF context into a conversation draft (shared by the
+ * Composer PdfPanel and the Document Reader — domain type, not PdfPanel UI). */
+export type PdfAddResult = { ok: boolean; count: number; error: string }
+
+/** Shared manual page-range input validation (single source of the Chinese error rules).
+ * Returns null when valid, otherwise a human-readable error. */
+export function validatePdfRange(startText: string, endText: string, pageCount: number): string | null {
+  const startRaw = startText.trim()
+  const endRaw = endText.trim()
+  if (startRaw === '' || endRaw === '') return '请输入开始页和结束页。'
+  const start = Number(startRaw)
+  const end = Number(endRaw)
+  if (!Number.isInteger(start) || !Number.isInteger(end)) return '页码必须是整数。'
+  if (start < 1 || end < 1) return '页码不能小于 1。'
+  if (start > pageCount) return '开始页超出范围，该 PDF 共 ' + pageCount + ' 页。'
+  if (end > pageCount) return '结束页超出范围，该 PDF 共 ' + pageCount + ' 页。'
+  if (start > end) return '开始页不能大于结束页。'
+  return null
+}
+
 /** Payload handed from the PDF panel to the engine when the user clicks 加入对话. */
 export type PdfAddPayload = {
   fileName: string

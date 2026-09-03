@@ -14,6 +14,7 @@ AI Education Reader 的用户可感知更新记录。
 
 - 新增本地“文件”资料入口，可查看和管理保存在浏览器中的 PDF 学习文档。
 - 新增完整 PDF Reader，可阅读整份文档、通过章节目录和页码导航，并自动恢复上次阅读位置。
+- PDF Reader 支持将当前页、当前章节或指定页码范围直接加入当前对话的 AI Context，无需重新上传或重新定位 PDF。
 - 建立本地 Document Store：原始 PDF 可作为独立学习文档保存在浏览器 IndexedDB 中，为后续完整文件阅读器提供数据基础。
 - PDF Context 新增来源文档引用，可追溯到对应的本地 Document。
 - 统一 Document → Chapter → Context 数据模型（原始资料 → 书签/AI 目录/手动章节 → 发送给 AI 的页码集合）。

@@ -15,12 +15,12 @@ import {
   PDF_CONTEXT_SOFT_WARNING_PAGES, MAX_PDF_CONTEXT_PAGES,
   needsPdfContextSoftConfirm, exceedsPdfContextHardLimit,
   normalizePdfRanges, countPdfRangePages, pdfRangesText, pdfSelectionTitle,
-  type PdfAddPayload, type PdfRange, type RenderedPdfPage,
+  type PdfAddPayload, type PdfAddResult, type PdfRange, type RenderedPdfPage,
 } from './pdf-types'
 import type { PdfOutlineItem } from './pdf-outline'
 import css from './pdf-panel.module.css'
 
-export type PdfAddResult = { ok: boolean; count: number; error: string }
+export type { PdfAddResult } from './pdf-types'
 
 /** Collect the SELECTED outline nodes that carry a usable page range. */
 function collectNodes(items: PdfOutlineItem[], ids: ReadonlySet<string>, out: PdfOutlineItem[] = []): PdfOutlineItem[] {

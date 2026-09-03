@@ -23,6 +23,27 @@
 .pageBtn { border: none; background: transparent; padding: 0; cursor: zoom-in; display: block; max-width: 100%; max-height: 100%; }
 .pageImg { display: block; max-width: 100%; max-height: calc(100vh - 190px); object-fit: contain; box-shadow: 0 1px 6px rgba(0,0,0,0.18); border-radius: 4px; }
 .errorBox { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--dsw-alias-state-error-primary); font-size: 13px; }
+.ctxBtn { min-height: 36px; padding: 4px 14px; border: none; border-radius: 8px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 13px; cursor: pointer; white-space: nowrap; }
+.ctxBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ctxMenu { position: absolute; top: 56px; right: 12px; z-index: 30; width: min(320px, calc(100vw - 24px)); background: #fff; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.ctxMenuTitle { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.menuItem { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 42px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; text-align: left; }
+.menuItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.menuItem:disabled { opacity: 0.45; cursor: not-allowed; }
+.menuMeta { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.menuClose { align-self: flex-end; border: none; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 12px; cursor: pointer; }
+.ctxHint { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+.ctxForm { display: flex; flex-direction: column; gap: 6px; padding: 4px 2px; }
+.ctxFormRow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ctxFormRow label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.ctxInput { width: 72px; min-height: 34px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 4px 6px; font-size: 13px; }
+.ctxConfirm { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 30; width: min(420px, calc(100vw - 24px)); background: #fff; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 16px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.ctxConfirmBtns { display: flex; gap: 8px; justify-content: flex-end; }
+.ctxPrimary { min-height: 36px; padding: 6px 14px; border: none; border-radius: 8px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 13px; cursor: pointer; }
+.ctxSecondary { min-height: 36px; padding: 6px 14px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; border-radius: 8px; color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
+.ctxProgress { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 25; background: rgba(24,26,30,0.85); color: #e8eaed; border-radius: 8px; padding: 6px 12px; font-size: 12px; }
+.ctxMsg { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 25; display: flex; align-items: center; gap: 10px; background: rgba(24,26,30,0.85); color: #e8eaed; border-radius: 8px; padding: 6px 12px; font-size: 12px; }
+.ctxMsgOk { background: rgba(22, 84, 52, 0.9); }
 .navBar { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 10px); border-top: 1px solid var(--dsw-alias-border-l2); }
 .navBtn { min-height: 40px; min-width: 76px; padding: 6px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
 .navBtn:disabled { opacity: 0.4; cursor: not-allowed; }

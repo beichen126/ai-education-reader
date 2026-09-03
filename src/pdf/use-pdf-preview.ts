@@ -6,6 +6,8 @@
 // "first-3 + last-3" preview strategy for >30 page contexts.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { openPdf, renderPdfPage, closePdf, readPdfOutline, pdfErrorMessage, PdfError } from './pdf-service'
+export { validatePdfRange } from './pdf-types'
+
 import { PdfOutlineError, type PdfOutlineResult } from './pdf-outline'
 import { createDocument, updateDocumentChapters, cleanupStaleDocument } from '../documents/document-service'
 import { chapterNodesFromPdfOutline } from '../documents/chapter-model'
@@ -17,19 +19,6 @@ import {
   type LocalPdfDocument, type RenderedPdfPage, type PdfRange,
 } from './pdf-types'
 
-export function validatePdfRange(startText: string, endText: string, pageCount: number): string | null {
-  const startRaw = startText.trim()
-  const endRaw = endText.trim()
-  if (startRaw === '' || endRaw === '') return '请输入开始页和结束页。'
-  const start = Number(startRaw)
-  const end = Number(endRaw)
-  if (!Number.isInteger(start) || !Number.isInteger(end)) return '页码必须是整数。'
-  if (start < 1 || end < 1) return '页码不能小于 1。'
-  if (start > pageCount) return '开始页超出范围，该 PDF 共 ' + pageCount + ' 页。'
-  if (end > pageCount) return '结束页超出范围，该 PDF 共 ' + pageCount + ' 页。'
-  if (start > end) return '开始页不能大于结束页。'
-  return null
-}
 
 export type PdfPreviewStatus = 'idle' | 'loading' | 'ready' | 'error'
 export type PdfProgress = { done: number; total: number; bytes: number }

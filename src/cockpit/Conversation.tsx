@@ -11,8 +11,9 @@ import { MessageText, IconCloseOutline16, Button } from '../dsh/primitives'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
 import { galleryActions } from '../gallery/gallery-store'
-import { PdfPanel, type PdfAddResult } from '../pdf/PdfPanel'
-import { pdfPageAttachmentName, type PdfAddPayload, type RenderedPdfPage } from '../pdf/pdf-types'
+import { PdfPanel } from '../pdf/PdfPanel'
+import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
+import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult, type RenderedPdfPage } from '../pdf/pdf-types'
 import { newStableId } from '../engine/types'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
 import { IconPhoto16, IconDocument16 } from './composer-icons'
@@ -164,43 +165,10 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
     return () => setComposerTriggers(null)
   }, [])
   const addPdfToDraft = async (payload: PdfAddPayload): Promise<PdfAddResult> => {
+    // Shared implementation (also used by the Document Reader): budget guard -> one
+    // groupId -> saveGeneratedImages -> addDraftImages with full rollback.
     if (!sessionId) return { ok: false, count: 0, error: '没有当前会话，无法加入。' }
-    try {
-      // One user PDF selection = one context group (never auto-merged by fileName).
-      // Draft early guard: existing draft bytes + this group must fit the 30 MiB budget
-      // (final runReplyStream guard stays authoritative; this avoids writing dozens of
-      // attachments into IDB just to reject them at send time).
-      const existingIds = sessionId ? getDraft(sessionId).imageIds : []
-      const existingBytes = await sumAttachmentBytes(existingIds)
-      const newBytes = payload.pages.reduce((s, p) => s + p.blob.size, 0)
-      if (wouldExceedInlineBudget(existingBytes, newBytes)) {
-        return { ok: false, count: 0, error: '当前消息中的图片内容已经较多。加入这一 PDF 范围后可能超过接口请求大小限制。请删除部分图片或减少 PDF 页面后重试。' }
-      }
-      const groupId = newStableId()
-      const inputs = payload.pages.map(p => ({
-        blob: p.blob,
-        name: pdfPageAttachmentName(payload.fileName, p.pageNumber),
-        source: {
-          type: 'pdf-page' as const,
-          groupId,
-          ...(payload.documentId ? { documentId: payload.documentId } : {}),
-          fileName: payload.fileName,
-          pageNumber: p.pageNumber,
-          selection: payload.selection,
-        },
-      }))
-      const atts = await saveGeneratedImages(inputs)
-      try {
-        addDraftImages(sessionId, atts.map(a => a.id))
-      } catch (e) {
-        // Roll back this batch so a failed attach step never leaves orphan blobs.
-        for (const a of atts) { try { await deleteAttachment(a.id) } catch { /* ignore */ } }
-        throw e
-      }
-      return { ok: true, count: atts.length, error: '' }
-    } catch (e) {
-      return { ok: false, count: 0, error: '无法将 PDF 页面加入对话。' }
-    }
+    return addPdfContextToDraft(sessionId, payload)
   }
   // Reset ephemeral view state (lightbox / error banner) when the active conversation changes.
   const prevSession = useRef(sessionId)
