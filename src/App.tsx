@@ -1,11 +1,12 @@
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { AppFrame } from './dsh/layout/AppFrame'
 import { useSessions, initStore } from './engine/sessions-store'
 import { flushAllDrafts } from './engine/draft-store'
 import { initSettings } from './engine/settings-store'
 import { migrateLegacyBinaryStorage } from './storage/migration'
+import { requestStoragePersist } from './storage/binary-store'
 import { useUi } from './engine/ui-store'
 import { layoutStore, useLayoutStore } from './engine/layout-store'
 import { SessionProvider } from './engine/session-context'
@@ -26,6 +27,7 @@ function renderSlot(key: string, owner?: any): ReactNode {
 type BootState = 'loading' | 'ready' | 'error'
 
 export function App() {
+  const persistRequestedRef = useRef(false)
   const settingsOpen = useUi(s => s.settingsOpen)
   const [boot, setBoot] = useState<BootState>('loading')
   const bootFn = useCallback(async () => {
@@ -39,6 +41,8 @@ export function App() {
   useEffect(() => {
     if (boot !== 'ready') return
     void migrateLegacyBinaryStorage().catch((e) => console.warn('binary migration failed', e))
+    // One-time best-effort persistent-storage request (never blocks; failure is a no-op).
+    if (!persistRequestedRef.current) { persistRequestedRef.current = true; void requestStoragePersist().catch(() => {}) }
   }, [boot])
   // Best-effort flush of any pending debounced text draft when the page is hidden/unloaded,
   // so quick navigation / system kill doesn't lose the last keystrokes.

@@ -39,7 +39,6 @@ export type ChapterDraftIssue =
   | { index: number; code: 'page-not-int'; message: string }
   | { index: number; code: 'page-out-of-range'; message: string }
   | { index: number; code: 'page-decreases'; message: string }
-  | { index: number; code: 'sibling-same-page'; message: string }
   | { index: number; code: 'duplicate-id'; message: string }
 
 export type ChapterDraftValidation = {

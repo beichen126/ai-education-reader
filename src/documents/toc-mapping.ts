@@ -3,7 +3,7 @@
 // PDF has none we fall back to a human-calibrated numeric offset. Never fabricates
 // a page: an unmappable label stays unresolved (kept in the review list) until the
 // user confirms it. Individual manual overrides survive a global remap.
-import { validateChapterDraft } from './chapter-builder'
+import { validateChapterDraft, type ChapterDraftItem } from './chapter-builder'
 export type MappedTocItem = {
   title: string
   level: number
@@ -133,17 +133,25 @@ export function validateMappedTocReview(items: MappedTocItem[], pageCount: numbe
     if (!Number.isInteger(it.level) || it.level < 1) { blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push('层级非法'); return }
     if (typeof it.title !== 'string' || it.title.trim() === '') { blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push('标题为空'); return }
   })
-  // Derived draft-level validation (only resolved rows with valid page/level).
-  const draft = items
-    .filter(r => r.startPage != null && Number.isInteger(r.startPage))
-    .map((it, i) => ({ id: 'ai' + i, title: it.title, level: it.level, startPage: it.startPage as number }))
+  // Derived draft-level validation (only rows with a valid integer page). Track the
+  // draftIndex -> originalRowIndex mapping so ChapterDraft issues map back to the ORIGINAL row
+  // (finding 9) — never reuse the filtered draft's index as the original row index.
+  const draft: ChapterDraftItem[] = []
+  const draftToRow: number[] = []
+  items.forEach((it, i) => {
+    if (it.startPage != null && Number.isInteger(it.startPage)) {
+      draft.push({ id: 'ai' + i, title: it.title, level: it.level, startPage: it.startPage as number })
+      draftToRow.push(i)
+    }
+  })
   const v = validateChapterDraft(draft, pageCount)
   for (const issue of v.issues) {
-    const idx = issue.index
-    if (idx >= 0 && idx < items.length && !blocking.includes(idx)) {
-      blocking.push(idx)
-      issuesByRow[idx] = issuesByRow[idx] || []
-      if (!issuesByRow[idx].includes(issue.message)) issuesByRow[idx].push(issue.message)
+    if (issue.index < 0 || issue.index >= draftToRow.length) continue
+    const orig = draftToRow[issue.index]
+    if (!blocking.includes(orig)) {
+      blocking.push(orig)
+      issuesByRow[orig] = issuesByRow[orig] || []
+      if (!issuesByRow[orig].includes(issue.message)) issuesByRow[orig].push(issue.message)
     }
   }
   const errorCount = blocking.length

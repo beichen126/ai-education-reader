@@ -218,7 +218,7 @@ export function validateTocStructure(rows: TocTranscriptionRow[], proposals: Toc
 
 /** Normalized identity used ONLY for EXACT boundary-duplicate detection
  *  (same normalized title + same pageLabel + same physical tocPage). */
-function boundaryDedupeKey(r: { title: string; pageLabel: string; tocPage: number }): string {
+export function boundaryDedupeKey(r: { title: string; pageLabel: string; tocPage: number }): string {
   return r.title + '|' + r.pageLabel + '|' + r.tocPage
 }
 
@@ -228,21 +228,22 @@ function boundaryDedupeKey(r: { title: string; pageLabel: string; tocPage: numbe
  * the immediately preceding row AND sits at a window boundary. NEVER fuzzy-merges
  * (第一章 研究对象 vs 第一章 研究方法 must never merge). Pure.
  */
-export function dedupeBoundaryRows(rows: TocTranscriptionRow[]): TocTranscriptionRow[] {
-  const out: TocTranscriptionRow[] = []
-  for (const r of rows) {
-    const last = out[out.length - 1]
-    if (last && boundaryDedupeKey(last) === boundaryDedupeKey(r)) continue
-    out.push(r)
+export function dedupeWindowBoundary(prev: TocTranscriptionRow[], cur: TocTranscriptionRow[]): TocTranscriptionRow[] {
+  let prevSeq = prev
+  let drop = 0
+  while (drop < cur.length && prevSeq.length > 0) {
+    const p = prevSeq[prevSeq.length - 1]
+    const c = cur[drop]
+    if (boundaryDedupeKey(p) === boundaryDedupeKey(c)) { prevSeq = prevSeq.slice(0, -1); drop++ }
+    else break
   }
-  return out
+  return drop > 0 ? cur.slice(drop) : cur
 }
 
 /** Deduplicate consecutive copy runs, then RE-INDEX to a stable contiguous r0001….
  *  Order preserved, ids re-based (local provenance — structure only references ids). */
 export function reindexRows(rows: TocTranscriptionRow[]): TocTranscriptionRow[] {
-  const deduped = dedupeBoundaryRows(rows)
-  return deduped.map((r, i) => ({ ...r, id: 'r' + String(i + 1).padStart(4, '0'), rowOrder: i }))
+  return rows.map((r, i) => ({ ...r, id: 'r' + String(i + 1).padStart(4, '0'), rowOrder: i }))
 }
 
 export { newStableId }

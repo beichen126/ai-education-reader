@@ -11,12 +11,16 @@ import { clearOpfsAppRoot } from './binary-store'
 
 // Destructive: clear conversations/attachments/annotations/settings/documents (all stores).
 // IDB is cleared FIRST (metadata), THEN the OPFS app root is deleted. A partial OPFS
-// failure returns a `partialCleanup` flag so the UI can say retry — IDB is already empty.
-export async function clearAllLocalData(): Promise<{ partialCleanup?: boolean }> {
+// failure returns `partialCleanup:true` so the UI can say retry — IDB is already empty, and
+// the next clear re-attempts the OPFS cleanup even though nothing is left in IDB.
+export async function clearAllLocalData(): Promise<{ partialCleanup: boolean; failedPaths: string[] }> {
   await idbClearAll()
-  let partialCleanup = false
-  try { await clearOpfsAppRoot() } catch { partialCleanup = true }
-  return partialCleanup ? { partialCleanup: true } : {}
+  try {
+    const r = await clearOpfsAppRoot()
+    return r.completed ? { partialCleanup: false, failedPaths: [] } : { partialCleanup: true, failedPaths: r.failedPaths }
+  } catch (e) {
+    return { partialCleanup: true, failedPaths: [] }
+  }
 }
 
 export async function getSetting(key: string): Promise<any> { const row = await idbGet('settings', key); return row ? row.value : undefined }

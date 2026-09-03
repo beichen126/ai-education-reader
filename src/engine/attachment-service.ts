@@ -24,27 +24,46 @@ const urlRegistry = new Map<string, { url: string; refs: number }>()
 
 export function isSupportedImage(file: { type: string; size: number }): boolean { return SUPPORTED_MIME.has(file.type) && file.size > 0 }
 
-// ---- batch write with all-or-nothing semantics ----------------
+// ---- batch write with all-or-nothing semantics (Stage 9.4D.1) ----------------
 // Binary bytes are persisted to OPFS FIRST (each gets a unique app path), refs are
-// collected, then ALL metadata rows are committed in ONE IndexedDB transaction. If
-// any binary write or the metadata commit fails, every already-written OPFS file is
-// deleted best-effort and nothing is left behind (no partial batch, no orphan).
+// collected, then ALL metadata rows are committed in ONE IndexedDB transaction.
+// If ANY binary write fails, the whole batch falls back to storage:'idb' (every blob
+// goes inline in IndexedDB), so a transient OPFS failure never fails the upload and
+// there is never a mix of partial-OPFS + partial-IDB for a single batch. Only a
+// Quota / IndexedDB-write failure surfaces as an error (after cleaning staged OPFS).
 async function writeBatch(namespace: 'attachments', metas: Attachment[], blobs: Blob[]): Promise<StoredAttachmentRow[]> {
   if (metas.length === 0) return []
-  const refs: StoredBinary[] = []
-  const written: { ref: StoredBinary }[] = []
-  try {
-    for (let i = 0; i < metas.length; i++) {
-      const ref = await persistBinary(namespace, metas[i].id, blobs[i], { requireOpfsWhenAvailable: true });
-      refs.push(ref); written.push({ ref });
-    }
-    const rows: StoredAttachmentRow[] = metas.map((m, i) => ({ id: m.id, meta: m, binary: refs[i], recordVersion: 2 }));
-    await saveAttachmentRows(rows);
-    return rows;
-  } catch (e) {
-    for (const w of written) { try { await deleteBinary(w.ref) } catch { /* orphan */ } }
-    throw e;
+  const written: StoredBinary[] = []
+  const needIdbFallback = await persistAllOpfs(namespace, metas, blobs, written)
+  let refs: StoredBinary[]
+  if (!needIdbFallback) {
+    refs = written
+  } else {
+    // Clean up every staged OPFS file, then rebuild the ENTIRE batch as inline IDB refs.
+    for (const w of written) { try { await deleteBinary(w) } catch { /* orphan */ } }
+    refs = []
+    for (const b of blobs) refs.push({ storage: 'idb', blob: b, size: b.size, mimeType: b.type || 'application/octet-stream' })
   }
+  const rows: StoredAttachmentRow[] = metas.map((m, i) => ({ id: m.id, meta: m, binary: refs[i], recordVersion: 2 }))
+  // ONE metadata transaction. A failure here is a genuine storage error (no partial).
+  try { await saveAttachmentRows(rows) }
+  catch (e) { for (const r of refs) { if (r.storage === 'opfs') { try { await deleteBinary(r) } catch { /* orphan */ } } } throw e }
+  return rows
+}
+
+/** Try to persist every blob to OPFS (requireOpfsWhenAvailable). Returns true if ANY write */
+function persistAllOpfs(namespace: 'attachments', metas: Attachment[], blobs: Blob[], written: StoredBinary[]): Promise<boolean> {
+  return (async () => {
+    try {
+      for (let i = 0; i < metas.length; i++) {
+        const ref = await persistBinary(namespace, metas[i].id, blobs[i], { requireOpfsWhenAvailable: true })
+        written.push(ref)
+      }
+      return false
+    } catch {
+      return true
+    }
+  })()
 }
 
 export async function saveFiles(files: File[]): Promise<Attachment[]> {

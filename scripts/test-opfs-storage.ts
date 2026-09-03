@@ -21,7 +21,8 @@ function installMock() {
     async write(path, blob) { files.set(path, blob) },
     async delete(path) { files.delete(path) },
     async exists(path) { return files.has(path) },
-    async listAll() { return [...files.entries()].map(([p, b]) => ({ path: p, size: b.size, lastModified: 1 })) },
+    async listAppFiles() { return [...files.entries()].map(([p, b]) => ({ path: p, size: b.size, lastModified: 1 })) },
+    async clearAppRoot() { const fs: string[] = []; for (const k of [...files.keys()]) { try { files.delete(k) } catch { fs.push(k) } } return { completed: fs.length === 0, failedPaths: fs } },
   };
   (globalThis as any).__dshOpfsMock = mock;
   return mock;
@@ -91,21 +92,27 @@ await idbClearAll();
   let writes = 0;
   const origWrite = mock.write.bind(mock);
   mock.write = async (path, blob) => { writes++; if (writes === 3) throw new Error('write fail'); await origWrite(path, blob); };
-  let threw = false;
-  try { await saveGeneratedImages([
+  let ok = true;
+  const atts = await saveGeneratedImages([
     { blob: new Blob([new Uint8Array(10)], { type: 'image/png' }), name: 'a.png' },
     { blob: new Blob([new Uint8Array(10)], { type: 'image/png' }), name: 'b.png' },
     { blob: new Blob([new Uint8Array(10)], { type: 'image/png' }), name: 'c.png' },
-  ]) } catch { threw = true }
-  assert(threw, 'batch write failure throws');
+  ]).catch(() => { ok = false; return [] });
+  assert(ok === true, 'batch does NOT fail on transient OPFS write failure (full IDB fallback)');
   const count = await idbGetAll('attachments');
-  assert(count.length === 0, 'no partial attachment metadata after batch failure');
-  assert(mock.files.size === 0, 'no orphan OPFS files after batch rollback');
+  assert(count.length === 3, 'all 3 attachments persisted via IDB fallback (got ' + count.length + ')');
+  const allIdb = count.every(r => r.binary && r.binary.storage === 'idb');
+  assert(allIdb, 'the WHOLE batch is IDB-backed (no partial OPFS+IDB mix)');
+  assert(mock.files.size === 0, 'no orphan OPFS files after batch IDB fallback');
+  assert(atts.length === 3, 'returned 3 attachments');
   mock.write = origWrite;
 }
 
 // --- backup V2 roundtrip (OPFS document) ---
 {
+  await idbClearAll();
+  const mock0 = (globalThis as any).__dshOpfsMock;
+  for (const p of [...mock0.files.keys()]) await mock0.delete(p);
   const did = newStableId();
   await createDocument({ id: did, fileName: 'backup.pdf', mimeType: 'application/pdf', fileSize: 2000, pageCount: 20, sourceBlob: pdfBlob(2000) });
   const backup = await buildBackup();
@@ -122,6 +129,9 @@ await idbClearAll();
 
 // --- restore failure (metadata replace fail) leaves old data intact + staged OPFS cleaned ---
 {
+  await idbClearAll();
+  const mock1 = (globalThis as any).__dshOpfsMock;
+  for (const p of [...mock1.files.keys()]) await mock1.delete(p);
   const did = newStableId();
   await createDocument({ id: did, fileName: 'keep.pdf', mimeType: 'application/pdf', fileSize: 999, pageCount: 9, sourceBlob: pdfBlob(999) });
   const backup = await buildBackup();

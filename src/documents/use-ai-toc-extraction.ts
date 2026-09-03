@@ -13,7 +13,7 @@ import type { PdfSession } from '../pdf/pdf-session'
 import { sendTextChat, type ApiChatMessage } from '../api/deepseek'
 import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
-  mapTocSourcePages, reindexRows,
+  mapTocSourcePages, reindexRows, dedupeWindowBoundary,
   TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT,
   type TocTranscriptionRow, type TocLocalRow, type TocTranscriptionLine,
 } from './ai-toc'
@@ -108,7 +108,11 @@ export async function extractAiToc(opts: {
       }
     }
     if (!transcription) return { ok: false, error: '目录页面转录失败，请重试。' };
-    allRows = allRows.concat(transcription);
+    // Boundary-only dedupe: drop the head rows of this window that EXACTLY duplicate the tail
+    // of the accumulated rows (a previous-window continuity hint re-output) — NEVER dedupes
+    // two identical rows within the same window, and NEVER fuzzy-merges.
+    const deduped = dedupeWindowBoundary(allRows, transcription);
+    allRows = allRows.concat(deduped);
     tail = transcription.slice(-PREV_TAIL_SIZE);
   }
   // Re-index to a stable contiguous r0001… (dedupe exact boundary copies first).

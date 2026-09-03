@@ -1,7 +1,9 @@
-// Legacy binary -> OPFS migration (Stage 9.4D). NON-blocking, best-effort, run after app
-// boot. Migrates document sourceBlob then attachment blob, ONE record at a time (never
-// getAll() every big Blob into memory). Uses keys + a cursor for the documents store.
-import { idbScan, idbUpdate, idbGet, idbGetAllKeys, closeDb } from './idb'
+// Legacy binary -> OPFS migration (Stage 9.4D.1). NON-blocking, best-effort, run after app
+// boot. Migrates document sourceBlob then attachment blob, ONE record at a time via the
+// store KEYS (never collects every blob into memory). re-checks the current row inside the
+// atomic update so a concurrently-removed/migrated row is never overwritten. OPFS
+// unavailable -> no-op; a transient write fail keeps the legacy row intact for retry.
+import { idbGet, idbGetAllKeys, idbUpdate } from './idb'
 import { persistBinary, readBinary, deleteBinary, isOpfsAvailable, type StoredBinary } from './binary-store'
 import type { StoredAttachmentRow } from './storage'
 
@@ -9,25 +11,23 @@ export type MigrationResult = { migratedDocuments: number; migratedAttachments: 
 
 function isLegacyDoc(row: any): boolean { return row && !row.source && row.sourceBlob instanceof Blob }
 function isLegacyAtt(row: any): boolean { return row && !row.binary && row.blob instanceof Blob }
-
 function isOpfsRef(b: StoredBinary): boolean { return b.storage === 'opfs' }
 
-/** Migrate ALL legacy document rows (sourceBlob) to OPFS refs, one at a time. */
+/** Migrate legacy document rows (sourceBlob) to OPFS refs, one key at a time. */
 async function migrateLegacyDocuments(): Promise<{ migrated: number; failed: number }> {
   let migrated = 0; let failed = 0;
-  const rows: any[] = [];
-  await idbScan('documents', (row) => { if (isLegacyDoc(row)) rows.push(row) });
-  for (const row of rows) {
+  const opfsOk = await isOpfsAvailable();
+  if (!opfsOk) return { migrated, failed };
+  let keys: string[] = []
+  try { keys = await idbGetAllKeys('documents'); } catch { return { migrated, failed } }
+  for (const id of keys) {
+    let row: any;
+    try { row = await idbGet('documents', id); } catch { failed += 1; continue; }
+    if (!isLegacyDoc(row)) continue;
     try {
-      const id = row.id;
       const blob = row.sourceBlob;
-      // persistBinary also falls back to IDB if OPFS is unavailable — but we only
-      // want to migrate when OPFS is truly available (else keep legacy inline).
-      const opfsOk = await isOpfsAvailable();
-      if (!opfsOk) { failed += 1; continue; }
       const ref = await persistBinary('documents', id, blob, { mimeType: row.mimeType || 'application/pdf' });
       if (!isOpfsRef(ref)) { continue; }
-      // Re-check the CURRENT row inside the atomic update (may have been migrated/deleted).
       try {
         await idbUpdate('documents', id, (cur: any) => {
           if (!cur || cur.source || !(cur.sourceBlob instanceof Blob)) throw new Error('row changed');
@@ -36,29 +36,31 @@ async function migrateLegacyDocuments(): Promise<{ migrated: number; failed: num
         });
         migrated += 1;
       } catch (e) {
-        // Row was deleted/migrated concurrently -> delete the duplicate new object.
         await deleteBinary(ref).catch(() => {});
         if (e instanceof Error && e.message === 'row changed') continue;
         failed += 1;
       }
     } catch {
+      // Transient OPFS write fail: legacy row stays intact (diagnostics can record, retry later).
       failed += 1;
     }
   }
   return { migrated, failed };
 }
 
-/** Migrate ALL legacy attachment rows (blob) to OPFS refs, one at a time. */
+/** Migrate legacy attachment rows (blob) to OPFS refs, one key at a time. */
 async function migrateLegacyAttachments(): Promise<{ migrated: number; failed: number }> {
   let migrated = 0; let failed = 0;
-  const rows: StoredAttachmentRow[] = [];
-  await idbScan('attachments', (row) => { if (isLegacyAtt(row)) rows.push(row as StoredAttachmentRow) });
-  for (const row of rows) {
+  const opfsOk = await isOpfsAvailable();
+  if (!opfsOk) return { migrated, failed };
+  let keys: string[] = []
+  try { keys = await idbGetAllKeys('attachments'); } catch { return { migrated, failed } }
+  for (const id of keys) {
+    let row: StoredAttachmentRow | undefined;
+    try { row = await idbGet('attachments', id); } catch { failed += 1; continue; }
+    if (!isLegacyAtt(row)) continue;
     try {
-      const id = row.id;
       const blob = row.blob as Blob;
-      const opfsOk = await isOpfsAvailable();
-      if (!opfsOk) { failed += 1; continue; }
       const ref = await persistBinary('attachments', id, blob, { mimeType: row.meta?.mimeType });
       if (!isOpfsRef(ref)) { continue; }
       try {
@@ -82,8 +84,8 @@ async function migrateLegacyAttachments(): Promise<{ migrated: number; failed: n
 
 /**
  * Best-effort background migration. Does NOT block app render / library / conversation.
- * Migrates documents first, then attachments. OPFS unavailable -> no-op (legacy rows stay).
- * A failure on one record keeps the legacy row usable (never destructive).
+ * Migrates documents first, then attachments, one record at a time by key. OPFS
+ * unavailable -> no-op (legacy rows stay). A failure keeps the legacy row usable.
  */
 export async function migrateLegacyBinaryStorage(): Promise<MigrationResult> {
   const opfsOk = await isOpfsAvailable();
@@ -96,7 +98,7 @@ export async function migrateLegacyBinaryStorage(): Promise<MigrationResult> {
 /** Count legacy rows still waiting for migration (diagnostics display, non-blocking). */
 export async function countLegacyBinaryRows(): Promise<{ documents: number; attachments: number }> {
   let documents = 0; let attachments = 0;
-  try { await idbScan('documents', (r) => { if (isLegacyDoc(r)) documents++ }) } catch {}
-  try { await idbScan('attachments', (r) => { if (isLegacyAtt(r)) attachments++ }) } catch {}
+  try { const ks = await idbGetAllKeys('documents'); for (const k of ks) { const r = await idbGet('documents', k); if (isLegacyDoc(r)) documents++ } } catch {}
+  try { const ks = await idbGetAllKeys('attachments'); for (const k of ks) { const r = await idbGet('attachments', k); if (isLegacyAtt(r)) attachments++ } } catch {}
   return { documents, attachments };
 }

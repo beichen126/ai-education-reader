@@ -1,9 +1,10 @@
 import { listConversations, getAnnotationsByConversation, getAttachmentRow, getSetting } from '../storage/storage'
-import { listDocuments, readDocumentSourceBlob } from '../documents/document-service'
+import { listDocumentRecords, readDocumentSourceBlob } from '../documents/document-service'
 import type { Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupDocument, type BackupV2 } from './backup-types'
 import { readBinary } from '../storage/binary-store'
+import { BackupError } from './backup-import'
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer()
@@ -13,14 +14,17 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(bin)
 }
 
-// Read an attachment's bytes via the binary store (OPFS-first), so the external Backup V2
-// stays backend-agnostic: it NEVER leaks OPFS path / StoredBinary / recordVersion.
-async function attachmentBlobOf(id: string): Promise<Blob | null> {
-  const row = await getAttachmentRow(id);
-  if (!row) return null;
-  if (row.binary) { try { return await readBinary(row.binary) } catch { return null } }
-  if (row.blob instanceof Blob) return row.blob;
-  return null;
+// Read an attachment's bytes via the binary store (OPFS-first). A referenced attachment that
+// cannot be read makes the "complete backup" FAIL (never silently omit it).
+async function attachmentBlobOf(id: string, mime: string): Promise<Blob> {
+  const row = await getAttachmentRow(id)
+  if (!row) throw new BackupError('本地文件数据不完整，无法生成完整备份：附件 ' + id.slice(0, 8) + ' 不存在')
+  let blob: Blob | undefined
+  if (row.binary) { try { blob = await readBinary(row.binary) } catch { blob = undefined } }
+  else blob = row.blob instanceof Blob ? row.blob : undefined
+  if (!blob) throw new BackupError('本地文件数据不完整，无法生成完整备份：附件 ' + id.slice(0, 8) + ' 数据缺失')
+  // ReadBinary returns a MIME-corrected Blob; ensure the type is recorded for the backup.
+  return blob.type ? blob : blob.slice(0, blob.size, mime || 'application/octet-stream')
 }
 
 export async function buildBackup(): Promise<BackupV2> {
@@ -36,8 +40,8 @@ export async function buildBackup(): Promise<BackupV2> {
         if (seen.has(imgId)) continue; seen.add(imgId)
         const row = await getAttachmentRow(imgId)
         if (row && row.meta) {
-          const blob = await attachmentBlobOf(imgId);
-          if (blob) attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, data: await blobToBase64(blob) });
+          const blob = await attachmentBlobOf(imgId, row.meta.mimeType)
+          attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, data: await blobToBase64(blob) })
         }
       }
     }
@@ -51,13 +55,22 @@ export async function buildBackup(): Promise<BackupV2> {
     customSystemPrompt: (typeof customSystemPrompt === 'string' ? customSystemPrompt : ''),
     customSystemPromptEnabled: customSystemPromptEnabled === 'true',
   }
+  // Local Document Library: iterate ONE record at a time (metadata, one binary read, base64,
+  // next) — never hydrate the whole library first. A document binary that cannot be read
+  // makes the backup FAIL (complete backups must be complete).
   const documents: BackupDocument[] = []
-  for (const doc of await listDocuments()) {
-    try {
-      const blob = await readDocumentSourceBlob(doc.id);
-      const { sourceBlob, ...meta } = doc;
-      documents.push({ id: doc.id, meta: meta as BackupDocument['meta'], mimeType: blob.type || doc.mimeType || 'application/pdf', data: await blobToBase64(blob) });
-    } catch { /* skip a document whose binary is missing */ }
+  for (const rec of await listDocumentRecords()) {
+    let blob: Blob
+    try { blob = await readBinaryForExport(rec.id) }
+    catch { throw new BackupError('本地文件数据不完整，无法生成完整备份：文档 ' + rec.id.slice(0, 8) + ' 数据缺失') }
+    documents.push({ id: rec.id, meta: rec.meta as BackupDocument['meta'], mimeType: blob.type || rec.meta.mimeType || 'application/pdf', data: await blobToBase64(blob) })
   }
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents }
+}
+
+// Read exactly ONE document's source Blob (imported here to avoid a hard circular import
+// at module load — backup-import imports binary-store; this stays a lazy boundary hook.
+async function readBinaryForExport(id: string): Promise<Blob> {
+  const { readDocumentSourceBlob } = await import('../documents/document-service');
+  return readDocumentSourceBlob(id)
 }

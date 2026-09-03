@@ -2,7 +2,7 @@
 // mapping, structure parse/validate, boundary dedupe, review single-source validation.
 import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
-  mapTocSourcePages, reindexRows, dedupeBoundaryRows, normalizeTitle, normalizeTocLevels,
+  mapTocSourcePages, reindexRows, dedupeWindowBoundary, normalizeTitle, normalizeTocLevels,
 } from '../src/documents/ai-toc.ts'
 import {
   exactLabelToPage, labelsArePlainNumeric, buildInitialMapping, numericOffsetFromAnchor,
@@ -83,26 +83,45 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
 // --- normalization: pure min->1 shift, deterministic, no semantic reorder ---
 { assert(normalizeTocLevels([3,4,5]).join(',') === '1,2,3', 'levels 3,4,5 -> 1,2,3') }
 
-// --- boundary dedupe: exact duplicate (title+pageLabel+tocPage) only ---
+// --- FINDING 10: within-window identical rows are PRESERVED (no global adjacent dedupe) ---
 {
   const tl = parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":1}');
-  const m = mapTocSourcePages(assignLocalRowIds(tl.ok ? tl.rows : []), [7]);
-  const d = m.ok ? dedupeBoundaryRows(m.rows) : [];
-  assert(d.length === 2 && d[0].title === 'A' && d[1].title === 'B', 'exact adjacent duplicate removed (A,B)');
+  const rows = assignLocalRowIds(tl.ok ? tl.rows : []);
+  const m = mapTocSourcePages(rows, [7]);
+  // prev empty -> no boundary dedupe, ALL rows preserved.
+  const merged = m.ok ? [...dedupeWindowBoundary([], m.rows)] : [];
+  assert(merged.length === 3, 'within-window identical rows preserved (got ' + merged.length + ')');
 }
-// --- reindexRows ---
+// --- FINDING 10: cross-window head duplicate IS deduped (boundary) ---
 {
-  const tl = parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":2}');
+  const prev = [ { id:'r1', title:'A', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:0 } ];
+  const cur = [
+    { id:'x1', title:'A', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:0 },
+    { id:'x2', title:'B', pageLabel:'2', tocPage:7, sourceImageIndex:1, rowOrder:1 },
+  ];
+  const d = dedupeWindowBoundary(prev as any, cur as any);
+  assert(d.length === 1 && d[0].title === 'B', 'cross-window boundary duplicate deduped (got ' + d.length + ' rows)');
+}
+// --- FINDING 10: a window head that does NOT match the tail is preserved ---
+{
+  const prev = [ { id:'r1', title:'A', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:0 } ];
+  const cur = [ { id:'x1', title:'C', pageLabel:'3', tocPage:7, sourceImageIndex:1, rowOrder:0 } ];
+  const d = dedupeWindowBoundary(prev as any, cur as any);
+  assert(d.length === 1 && d[0].title === 'C', 'non-boundary head NOT deduped');
+}
+// --- reindexRows: order preserved, contiguous ids, no dedupe ---
+{
+  const tl = parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"A","pageLabel":"1","sourceImageIndex":2}\n{"title":"B","pageLabel":"2","sourceImageIndex":2}');
   const m = mapTocSourcePages(assignLocalRowIds(tl.ok ? tl.rows : []), [7,8]);
   const ri = m.ok ? reindexRows(m.rows) : [];
-  assert(ri.map(x => x.id).join(',') === 'r0001,r0002', 'reindex -> contiguous r0001,r0002');
+  assert(ri.map(x => x.id).join(',') === 'r0001,r0002,r0003', 'reindex keeps all rows, contiguous ids');
 }
-// --- similar-but-not-equal title NOT deduped ---
+// --- similar-but-not-equal title NOT deduped at a boundary ---
 {
-  const tl = parseTocJsonl('{"title":"第一章 自然地理","pageLabel":"1","sourceImageIndex":1}\n{"title":"第一章 自然地理学","pageLabel":"1","sourceImageIndex":1}');
-  const m = mapTocSourcePages(assignLocalRowIds(tl.ok ? tl.rows : []), [7]);
-  const d = m.ok ? dedupeBoundaryRows(m.rows) : [];
-  assert(d.length === 2, 'similar-but-different title NOT deduped');
+  const prev = [ { id:'r1', title:'第一章 自然地理', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:0 } ];
+  const cur = [ { id:'x1', title:'第一章 自然地理学', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:0 } ];
+  const d = dedupeWindowBoundary(prev as any, cur as any);
+  assert(d.length === 1 && d[0].title === '第一章 自然地理学', 'similar-but-different title NOT boundary-deduped');
 }
 
 // --- exact label mapping ---
@@ -182,6 +201,24 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   const items = [{ title: '', level: 1, pageLabel: '1', tocPage: 7, startPage: 99 }];
   const v = validateMappedTocReview(items, 30);
   assert(v.ok === false && v.errorCount === 1, 'one row with multiple problems => 1 blocking row');
+}
+
+
+// --- FINDING 9: draft-level issue maps back to the ORIGINAL row index (not filtered draft index) ---
+{
+  // Row 0 is unresolved (filtered out of the draft). Row 1 has page 20 then row 2 has page 10 =>
+  // a page-decreases issue at DRAFT index 1 (row 2 in the draft), which is ORIGINAL row index 2.
+  const items = [
+    { title: 'A', level: 1, pageLabel: 'x', tocPage: 1, startPage: null },
+    { title: 'B', level: 1, pageLabel: '20', tocPage: 1, startPage: 20 },
+    { title: 'C', level: 1, pageLabel: '10', tocPage: 1, startPage: 10 },
+  ];
+  const v = validateMappedTocReview(items as any, 30);
+  // Page decreases must be flagged on ORIGINAL row 2, not mapped to draft index.
+  assert(v.blockingRowIndices.includes(2), 'page-decreases mapped to original row index 2');
+  assert(v.issuesByRow[2] && v.issuesByRow[2].some(m => m.includes('不能小于')), 'original row 2 carries the decrease message');
+  assert(v.blockingRowIndices.includes(0), 'unresolved row 0 also blocking (its own issue)');
+  assert(v.blockingRowIndices.includes(0) && v.blockingRowIndices.includes(2) && v.blockingRowIndices.length === 2, 'exactly rows 0 and 2 blocking');
 }
 
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)

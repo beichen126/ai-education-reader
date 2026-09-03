@@ -9,9 +9,7 @@
 //   - storage:'idb'  -> Blob inline (fallback; already a real Blob, retrievable as-is).
 //
 // Atomicity: OPFS + IndexedDB are NOT a cross-storage ACID transaction. We follow
-// write-first -> metadata-commit -> rollback/orphan-cleanup. Callers (document &
-// attachment services / backup restore) own the staged-commit choreography; this module
-// owns the per-object write-verify-delete primitives.
+// write-first -> metadata-commit -> rollback/orphan-cleanup.
 
 export type BinaryNamespace = 'documents' | 'attachments'
 
@@ -33,20 +31,28 @@ const OPFS_OBJECTS = 'objects'
 export function buildBinaryPath(namespace: BinaryNamespace, ownerId: string, binaryId: string): string {
   const segs = [OPFS_APP_ROOT, OPFS_OBJECTS, namespace, ownerId, binaryId]
   for (const s of segs) {
-    if (!s || /[\/\\\\]|\.\.|\u0000/.test(s)) throw new Error('unsafe binary path segment: ' + JSON.stringify(s))
+    if (!s || /[/\\]|\.\.|\u0000/.test(s)) throw new Error('unsafe binary path segment: ' + JSON.stringify(s))
   }
   return segs.join('/')
 }
 
+/** The one app-owned OPFS root directory name (singleton source, node-testable). */
+export function appRootName(): string { return OPFS_APP_ROOT }
+export function objectsRootName(): string { return OPFS_OBJECTS }
+
 /** A minimal OPFS filesystem adapter consumed by this module. The REAL adapter wraps
  *  navigator.storage.getDirectory(); tests may install a deterministic in-memory mock
- *  (globalThis.__dshOpfsMock) so the OPFS path is exercised without a browser. */
+ *  (globalThis.__dshOpfsMock) so the OPFS path is exercised without a browser. All list /
+ *  GC / clear operations are inherently scoped to the APP OWNED root (never the whole origin). */
 export interface OpfsFileSystem {
   read(path: string): Promise<Blob>
   write(path: string, blob: Blob): Promise<void>
   delete(path: string): Promise<void>
   exists(path: string): Promise<boolean>
-  listAll(): Promise<{ path: string; size: number; lastModified: number }[]>
+  /** List files under the APP OWNED root only (never enumerates the whole origin). */
+  listAppFiles(): Promise<{ path: string; size: number; lastModified: number }[]>
+  /** Delete the APP OWNED root subtree; reports which app files could not be removed. */
+  clearAppRoot(): Promise<{ completed: boolean; failedPaths: string[] }>
 }
 
 // ---- real OPFS adapter (origin-private, never a user picker) ----
@@ -67,12 +73,18 @@ function splitPath(path: string): { dirSegs: string[]; file: string } {
   return { dirSegs: parts.slice(0, -1), file: parts[parts.length - 1] }
 }
 
+async function getAppRoot(create: boolean): Promise<any> {
+  const root = await getDirectory()
+  return dirAt(root, [OPFS_APP_ROOT], create)
+}
+
 const realOpfs: OpfsFileSystem = {
   async write(path: string, blob: Blob): Promise<void> {
-    const root = await getDirectory()
+    const dir = await getAppRoot(true)
     const { dirSegs, file } = splitPath(path)
-    const dir = await dirAt(root, dirSegs, true)
-    const fh = await dir.getFileHandle(file, { create: true })
+    // dirSegs = [v1, objects, ns, owner]; drop the app-root segment -> nested dir under it.
+    const nested = await dirAt(dir, dirSegs.slice(1), true)
+    const fh = await nested.getFileHandle(file, { create: true })
     const writable = await fh.createWritable()
     try {
       await writable.write(blob)
@@ -81,8 +93,7 @@ const realOpfs: OpfsFileSystem = {
       try { await writable.abort() } catch { /* ignore */ }
       throw e
     }
-    // Verify bytes landed (createWritable resolve alone is NOT proof).
-    const back = await dir.getFileHandle(file)
+    const back = await nested.getFileHandle(file)
     const f = await back.getFile()
     if (f.size !== blob.size) {
       await realOpfs.delete(path).catch(() => {})
@@ -90,40 +101,57 @@ const realOpfs: OpfsFileSystem = {
     }
   },
   async read(path: string): Promise<Blob> {
-    const root = await getDirectory()
+    const dir = await getAppRoot(false)
     const { dirSegs, file } = splitPath(path)
-    const dir = await dirAt(root, dirSegs, false)
-    const fh = await dir.getFileHandle(file)
+    const nested = await dirAt(dir, dirSegs.slice(1), false)
+    const fh = await nested.getFileHandle(file)
     const f = await fh.getFile()
     return f
   },
   async delete(path: string): Promise<void> {
-    const root = await getDirectory()
+    const dir = await getAppRoot(false)
     const { dirSegs, file } = splitPath(path)
-    const dir = await dirAt(root, dirSegs, false)
-    await dir.removeEntry(file)
+    const nested = await dirAt(dir, dirSegs.slice(1), false)
+    await nested.removeEntry(file)
   },
   async exists(path: string): Promise<boolean> {
-    const root = await getDirectory()
+    const dir = await getAppRoot(false)
     const { dirSegs, file } = splitPath(path)
-    const dir = await dirAt(root, dirSegs, false)
-    try { await dir.getFileHandle(file); return true } catch { return false }
+    const nested = await dirAt(dir, dirSegs.slice(1), false)
+    try { await nested.getFileHandle(file); return true } catch { return false }
   },
-  async listAll(): Promise<{ path: string; size: number; lastModified: number }[]> {
+  async listAppFiles(): Promise<{ path: string; size: number; lastModified: number }[]> {
     const out: { path: string; size: number; lastModified: number }[] = []
-    const root = await getDirectory()
-    const walk = async (dir: any, prefix: string) => {
-      for await (const entry of dir.values()) {
+    const dir = await getAppRoot(false)
+    const walk = async (d: any, prefix: string) => {
+      for await (const entry of d.values()) {
         const p = prefix + entry.name
         if (entry.kind === 'directory') { await walk(entry, p + '/') }
         else {
-          try { const f = await entry.getFile(); out.push({ path: p, size: f.size, lastModified: f.lastModified }) }
+          try { const f = await entry.getFile(); out.push({ path: OPFS_APP_ROOT + '/' + p, size: f.size, lastModified: f.lastModified }) }
           catch { /* skip unreadable */ }
         }
       }
     }
-    await walk(root, '')
+    await walk(dir, '')
     return out
+  },
+  async clearAppRoot(): Promise<{ completed: boolean; failedPaths: string[] }> {
+    const root = await getDirectory()
+    const failedPaths: string[] = []
+    // Try a recursive remove of the whole app root first.
+    try {
+      await root.removeEntry(OPFS_APP_ROOT, { recursive: true })
+      return { completed: true, failedPaths: [] };
+    } catch (e) {
+      if (e && typeof e === 'object' && ((e as { name?: string }).name === 'NotFoundError')) return { completed: true, failedPaths: [] }
+      // Otherwise walk the app files and delete each; report failures instead of swallowing.
+      const files = await realOpfs.listAppFiles().catch(() => []);
+      for (const f of files) {
+        try { await realOpfs.delete(f.path) } catch { failedPaths.push(f.path) }
+      }
+      return { completed: failedPaths.length === 0, failedPaths };
+    }
   },
 }
 
@@ -132,8 +160,7 @@ let driverChecked = false
 
 // Resolve the active OPFS driver. A test seam ALWAYS wins (checked every call so
 // install/uninstall inside one process is honored). Otherwise the REAL OPFS adapter is
-// detected once and cached; a null (unsupported) is re-checked but never cached as final
-// (so a later seam install in the same process still takes effect).
+// detected once and cached; a null (unsupported) is re-checked but never cached as final.
 async function getDriver(): Promise<OpfsFileSystem | null> {
   const seam = (globalThis as any).__dshOpfsMock
   if (seam) return seam as OpfsFileSystem
@@ -161,8 +188,9 @@ export type PersistBinaryOptions = { mimeType?: string; requireOpfsWhenAvailable
 /**
  * Persist a Blob. OPFS-first: writes to an app-owned path, verifies the size, and
  * returns an OPFS StoredBinary reference. If OPFS is unavailable OR the write/verify
- * fails, it falls back to an INLINE IndexedDB StoredBinary (the Blob stays a real Blob,
- * so the product still works — OPFS is preferred, never mandatory).
+ * fails it falls back to an INLINE IndexedDB StoredBinary (never lose data). When
+ * requireOpfsWhenAvailable is set, a genuine OPFS write failure propagates (batch callers
+ * use this to trigger a whole-batch IDB fallback, not a silent partial).
  */
 export async function persistBinary(namespace: BinaryNamespace, ownerId: string, blob: Blob, opts?: PersistBinaryOptions): Promise<StoredBinary> {
   const mime = opts?.mimeType || blob.type || 'application/octet-stream'
@@ -176,9 +204,6 @@ export async function persistBinary(namespace: BinaryNamespace, ownerId: string,
       if (!exists) throw new BinaryStorageError('write-failed', 'opfs missing after write')
       return { storage: 'opfs', path, size: blob.size, mimeType: mime }
     } catch (e) {
-      // If OPFS is available but this write/verify failed AND the caller requires OPFS
-      // (e.g. a multi-object batch that must be all-or-nothing), propagate so the batch
-      // rolls back. Otherwise fall back to an inline IndexedDB Blob (never lose data).
       if (opts?.requireOpfsWhenAvailable) throw e
       try { await d.delete(path).catch(() => {}) } catch { /* orphan possible */ }
     }
@@ -188,14 +213,13 @@ export async function persistBinary(namespace: BinaryNamespace, ownerId: string,
 
 /** Read a Blob back from a StoredBinary ref. For an OPFS ref the file must exist;
  *  a missing file is BinaryNotFound (never an empty/0-byte fake). For an IDB ref the
- *  Blob is returned directly. MIME is taken from the stored metadata (not OPFS File.type). */
+ *  Blob is returned directly. MIME is taken from the stored metadata. */
 export async function readBinary(ref: StoredBinary): Promise<Blob> {
   if (ref.storage === 'idb') return ref.blob
   const d = await getDriver()
   if (!d) throw new BinaryStorageError('unsupported', 'OPFS unavailable but ref is opfs')
   let f: Blob
   try { f = await d.read(ref.path) } catch { throw new BinaryStorageError('missing', 'binary not found: ' + ref.path) }
-  // OPFS File.type is unreliable; re-slice with the recorded MIME if it differs.
   if (f.type !== ref.mimeType) return f.slice(0, f.size, ref.mimeType)
   return f
 }
@@ -222,11 +246,11 @@ export async function listReferencedOpfsPaths(documents: { source?: StoredBinary
   return [...set]
 }
 
-/** Best-effort GC of unreferenced OPFS objects with a 24h grace period (not auto-run). */
+/** Best-effort GC of APP-OWNED unreferenced OPFS objects (never touches other subtrees). */
 export async function cleanupUnreferencedOpfs(referenced: string[], graceMs = 24 * 60 * 60 * 1000): Promise<{ removed: number }> {
   const d = await getDriver()
   if (!d) return { removed: 0 }
-  const all = await d.listAll()
+  const all = await d.listAppFiles()
   const ref = new Set(referenced)
   let removed = 0
   const now = Date.now()
@@ -238,12 +262,14 @@ export async function cleanupUnreferencedOpfs(referenced: string[], graceMs = 24
   return { removed }
 }
 
-export async function isStoragePersistent(): Promise<boolean> {
+/** Detect whether the origin has been granted persistent storage.
+ *  undefined = API unavailable (unsupported); false = exists but not granted; true = granted. */
+export async function isStoragePersistent(): Promise<boolean | undefined> {
   try {
     const nav = typeof navigator !== 'undefined' ? (navigator as any) : undefined
     if (nav?.storage?.persisted && typeof nav.storage.persisted === 'function') return !!(await nav.storage.persisted())
   } catch { /* unavailable */ }
-  return false
+  return undefined
 }
 
 /** Best-effort request for persistent storage (never a hard requirement). */
@@ -254,16 +280,12 @@ export async function requestStoragePersist(): Promise<boolean> {
   } catch { /* unavailable */ }
   return false
 }
-/** Delete the ENTIRE app-owned OPFS subtree (used by "clear local data"). Best-effort;
- *  an IDB clear happens FIRST so a partial OPFS cleanup never leaves broken visible data. */
-export async function clearOpfsAppRoot(): Promise<void> {
+
+/** Delete the ENTIRE app-owned OPFS subtree (used by "clear local data"). Returns which
+ *  app files could not be removed (never swallows a final delete failure). An IDB clear
+ *  must run FIRST so a partial OPFS cleanup never leaves broken visible metadata. */
+export async function clearOpfsAppRoot(): Promise<{ completed: boolean; failedPaths: string[] }> {
   const d = await getDriver()
-  if (!d) return
-  const root = await getDirectory()
-  try { await root.removeEntry(OPFS_APP_ROOT, { recursive: true }) } catch (e) {
-    if (e && typeof e === 'object' && ((e as {name?:string}).name === 'NotFoundError')) return
-    // Could not remove the root (e.g. locked) -> fall back to per-file delete if possible.
-    const all = await d.listAll()
-    for (const obj of all) { try { await d.delete(obj.path) } catch { /* orphan */ } }
-  }
+  if (!d) return { completed: true, failedPaths: [] };
+  return d.clearAppRoot()
 }

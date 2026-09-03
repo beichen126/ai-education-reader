@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { validateChapterDraft, buildChapterTreeFromDraft, type ChapterDraftItem } from './chapter-builder'
 import { applyGlobalOffset, setManualPageOverride, validateMappedTocReview, type MappedTocItem } from './toc-mapping'
+import { emptyReviewState, markRowUnchecked, markChangedRowsUnchecked, verifiedCount as countVerified, type ReviewState, type ReviewStateValue } from './toc-review-state'
 import type { ChapterNode, DocumentChapterSource } from './document-types'
 import css from './toc-review.module.css'
 
@@ -21,17 +22,16 @@ type Props = {
   onEditAll: (items: MappedTocItem[]) => void
 }
 
-type ReviewState = Record<number, 'unchecked' | 'verified' | 'issue'>
-
 export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump, onSave, onClose, onEditAll }: Props) {
   const [rows, setRows] = useState<MappedTocItem[]>(items)
-  const [state, setState] = useState<ReviewState>(() => { const s: ReviewState = {}; items.forEach((_, i) => s[i] = 'unchecked'); return s })
+  const [state, setState] = useState<ReviewState>(() => emptyReviewState(items.length))
   const [idx, setIdx] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [offset, setOffset] = useState<string>('0')
   const [confirmUnchecked, setConfirmUnchecked] = useState(false)
+  const [confirmIssue, setConfirmIssue] = useState(false)
   const [levelRaw, setLevelRaw] = useState<Record<number, string>>({})
 
   // Rebuild rows when a new mapped draft arrives.
@@ -80,32 +80,42 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
   const verifyButton = (i: number) => { if (isBlocking(i)) { setSaveError('第 ' + (i + 1) + ' 项仍需修正后才能标记为正确。'); return } markVerified(i) }
   const markIssue = (i: number) => setState(s => ({ ...s, [i]: 'issue' }))
 
-  // 继续检查: mark the CURRENT item verified (only when resolved + the single-row draft
-  // validates), then move to the next unchecked item and jump the reader to it.
+  // 继续检查 (Stage 9.4D.1): if the CURRENT row is blocking, set an explicit hint and STAY
+  // on it (never silently jump to the next item). Otherwise mark verified and advance.
   const continueReview = () => {
     const cur = rows[idx]
-    if (cur && !isBlocking(idx)) markVerified(idx)
+    if (cur && isBlocking(idx)) { setSaveError('第 ' + (idx + 1) + ' 项仍需修正后才能继续检查。'); return }
+    if (cur) markVerified(idx)
     const next = rows.findIndex((_, i) => state[i] === 'unchecked' && i > idx)
     const target = next >= 0 ? next : rows.findIndex((_, k) => state[k] === 'unchecked')
     if (target >= 0) jump(target)
   }
 
-  const editRow = (i: number, patch: Partial<Pick<MappedTocItem, 'title' | 'level' | 'startPage'>>) => setRows(r => r.map((it, j) => (j === i ? { ...it, ...patch } : it)))
+  // Any title edit resets that row's review state to unchecked (finding 8).
+  const editRow = (i: number, patch: Partial<Pick<MappedTocItem, 'title' | 'level' | 'startPage'>>) => { setRows(r => r.map((it, j) => (j === i ? { ...it, ...patch } : it))); setState(s => markRowUnchecked(s, i)) }
 
+  // Global offset remap: reset EVERY row whose startPage actually changed to unchecked.
   const applyGlobal = () => {
     const n = Number(offset.trim())
     if (!Number.isFinite(n)) return
-    setRows(r => applyGlobalOffset(r, n))
+    setRows(r => {
+      const before = r.map(x => x.startPage)
+      const after = applyGlobalOffset(r, n)
+      setState(s => markChangedRowsUnchecked(s, before, after))
+      return after
+    })
   }
   // Page input: empty -> null (unresolved); valid integer >=1 -> page override; other text
   // left as-is (validation state flags it) — never coerced to 1.
   const onPageInput = (i: number, raw: string) => {
+    setState(s => markRowUnchecked(s, i))
     if (raw.trim() === '') { setRows(r => r.map((it, j) => (j === i ? { ...it, startPage: null } : it))); return }
     const n = Number(raw.trim())
     if (Number.isInteger(n) && n >= 1) setRows(r => setManualPageOverride(r, i, n))
   }
   // 9.4C.1 raw level input: empty/非整数 is INVALID (blocking row), never coerced to 1.
   const onLevelInput = (i: number, raw: string) => {
+    setState(s => markRowUnchecked(s, i))
     setLevelRaw(prev => ({ ...prev, [i]: raw }))
     const n = Number(raw.trim())
     if (Number.isInteger(n) && n >= 1) { setRows(r => r.map((it, j) => (j === i ? { ...it, level: n } : it))) }
@@ -116,6 +126,8 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
     if (invalid) { setSaveError('还有 ' + invalidCount + ' 项需要修正后才能保存。'); return }
     const unchecked = rows.filter((_, i) => state[i] === 'unchecked').length
     if (unchecked > 0) { setConfirmUnchecked(true); return }
+    const issueCount = rows.filter((_, i) => state[i] === 'issue').length
+    if (issueCount > 0) { setConfirmIssue(true); return }
     await doSave()
   }
   const doSave = async () => {
@@ -126,14 +138,15 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
     } catch { setSaveError('保存目录失败，请重试。'); setSaving(false) }
   }
 
-  const verifiedCount = Object.values(state).filter(v => v === 'verified' || v === 'issue').length
+  // Progress reflects TRULY verified rows only — a row marked 待修改 is NOT counted as verified.
+  const verifiedCount = countVerified(state)
 
   // Escape closes the review (never the Reader). The Reader's keydown is guarded while open.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); if (confirmUnchecked) setConfirmUnchecked(false); else onClose() } }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); if (confirmUnchecked) setConfirmUnchecked(false); else if (confirmIssue) setConfirmIssue(false); else onClose() } }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [confirmUnchecked, onClose])
+  }, [confirmUnchecked, confirmIssue, onClose])
 
   return (
     <div className={css.overlay} data-testid="toc-review">
@@ -189,6 +202,17 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
               <div className={css.confirmBtns}>
                 <button type="button" className={css.btn} data-testid="toc-review-unchecked-no" onClick={() => setConfirmUnchecked(false)}>继续检查</button>
                 <button type="button" className={css.btnPrimary} data-testid="toc-review-unchecked-yes" onClick={() => { setConfirmUnchecked(false); void doSave() }}>仍然保存</button>
+              </div>
+            </div>
+          </div>
+        )}
+        {confirmIssue && (
+          <div className={css.confirmWrap} data-testid="toc-review-issue-confirm">
+            <div className={css.confirmBox}>
+              <div>还有 {rows.filter((_, i) => state[i] === 'issue').length} 项标记为待修改，仍然保存？</div>
+              <div className={css.confirmBtns}>
+                <button type="button" className={css.btn} data-testid="toc-review-issue-no" onClick={() => setConfirmIssue(false)}>返回修改</button>
+                <button type="button" className={css.btnPrimary} data-testid="toc-review-issue-yes" onClick={() => { setConfirmIssue(false); void doSave() }}>仍然保存</button>
               </div>
             </div>
           </div>

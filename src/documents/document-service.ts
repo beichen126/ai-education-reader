@@ -95,6 +95,28 @@ export async function listDocumentSummaries(): Promise<DocumentSummary[]> {
   return (all as any[]).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).map(toSummaryFromRecord);
 }
 
+/** Persisted document RECORD metadata (full chapters, no binary read) for backup / exporters.
+ *  Iterates ONE record at a time in memory and NEVER hydrates any source Blob, so a backup
+ *  can read each document's binary exactly once. */
+export type DocumentRecordMeta = Omit<LearningDocument, 'sourceBlob'>
+
+export async function listDocumentRecords(): Promise<{ id: string; meta: DocumentRecordMeta }[]> {
+  const all = await idbGetAll('documents')
+  const sorted = (all as any[]).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+  const out: { id: string; meta: DocumentRecordMeta }[] = []
+  for (const row of sorted) {
+    const meta: DocumentRecordMeta = {
+      id: row.id, kind: 'pdf', fileName: row.fileName, mimeType: row.mimeType,
+      fileSize: row.fileSize, pageCount: row.pageCount, chapters: (row.chapters ?? []) as ChapterNode[],
+      chapterSource: row.chapterSource ?? 'none', lastReadPage: row.lastReadPage ?? 0,
+      ...(row.importSource ? { importSource: row.importSource } : {}),
+      createdAt: row.createdAt ?? 0, updatedAt: row.updatedAt ?? 0,
+    }
+    out.push({ id: row.id, meta })
+  }
+  return out
+}
+
 export function toDocumentSummary(doc: LearningDocument): DocumentSummary {
   return { id: doc.id, fileName: doc.fileName, fileSize: doc.fileSize, pageCount: doc.pageCount, chapterSource: doc.chapterSource, chapterCount: countChapters(doc.chapters), lastReadPage: doc.lastReadPage, createdAt: doc.createdAt, updatedAt: doc.updatedAt, ...(doc.importSource ? { importSource: doc.importSource } : {}) };
 }

@@ -6,7 +6,7 @@
 // progress flushed with the document id bound at call time). App-level unmount
 // effect only keeps pagehide/visibility flush.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getDocument, updateLastReadPage, updateDocumentChapters } from './document-service'
+import { getDocument, updateLastReadPage, updateDocumentChapters, DocumentBinaryMissingError } from './document-service'
 import { useSessions } from '../engine/sessions-store'
 import { formatBytes } from '../storage/diagnostics'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
@@ -179,7 +179,10 @@ export function DocumentReader() {
           if (!cancelled) { setHasNativeOutline(false); setNativeOutlineStatus('unknown') }
         }
       } catch (e) {
-        if (!cancelled) setLoadError(e instanceof PdfError ? pdfErrorMessage(e.kind) : '无法打开这份文档。')
+        if (!cancelled) {
+          if (e instanceof DocumentBinaryMissingError) setLoadError('本地 PDF 文件数据已丢失，请重新导入。')
+          else setLoadError(e instanceof PdfError ? pdfErrorMessage(e.kind) : '无法打开这份文档。')
+        }
       }
     })()
     return () => {

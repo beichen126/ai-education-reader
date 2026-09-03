@@ -19,7 +19,8 @@ function installMock() {
     async write(path, blob) { files.set(path, blob) },
     async delete(path) { files.delete(path) },
     async exists(path) { return files.has(path) },
-    async listAll() { return [...files.entries()].map(([p, b]) => ({ path: p, size: b.size, lastModified: 1 })) },
+    async listAppFiles() { return [...files.entries()].map(([p, b]) => ({ path: p, size: b.size, lastModified: 1 })) },
+    async clearAppRoot() { for (const k of [...files.keys()]) try { files.delete(k) } catch {} return { completed: true, failedPaths: [] } },
   };
   (globalThis as any).__dshOpfsMock = mock;
   return mock;

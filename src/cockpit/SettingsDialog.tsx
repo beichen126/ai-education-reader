@@ -62,7 +62,7 @@ export function SettingsDialog() {
     try {
       releaseAllPreviews()
       const r = await clearAllLocalData()
-      if (r && r.partialCleanup) { setMsg('本地记录已清除，但部分文件数据清理失败，请再次点击清除重试。'); setClearing(false); return }
+      if (r && r.partialCleanup) { setMsg('本地记录已清除，但部分文件数据清理失败（' + (r.failedPaths?.length ?? 0) + ' 个文件），请再次点击清除重试。'); setClearing(false); return }
       window.location.reload()
     } catch (e) { setClearing(false); setMsg('清除本地数据失败，请重试。') }
   }

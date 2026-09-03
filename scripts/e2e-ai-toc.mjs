@@ -44,6 +44,15 @@ assert(await page.locator('[data-testid="toc-review-progress"]').count() === 1, 
 const itemCount = await page.locator('[data-testid^="toc-review-item-"]').count()
 assert(itemCount === 2, 'B: review lists 2 items (got ' + itemCount + ')')
 
+// --- B2 (finding 8): blocking continue STAYS on the current unresolved row ---
+// First row is unresolved (page 待确认) -> continueReview must NOT advance.
+await page.locator('[data-testid="toc-review-next"]').click()
+await page.waitForTimeout(300)
+const activeState0 = await page.locator('[data-testid="toc-review-item-0"]').getAttribute('data-state')
+assert(activeState0 !== 'verified', 'B2: blocking continue does NOT mark the unresolved row verified')
+const active0 = await page.locator('[data-testid="toc-review-item-0"]').evaluate(el => el.className)
+assert(active0.includes('active'), 'B2: blocking continue STAYS on the current (unresolved) row')
+
 // --- C: click first item -> jump (unresolved -> stays; assign page then jump) ---
 await page.locator('[data-testid="toc-review-title"]').fill('第一章 自然地理')
 await page.locator('[data-testid="toc-review-page"]').fill('5')
