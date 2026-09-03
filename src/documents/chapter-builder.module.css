@@ -27,6 +27,8 @@
 .footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--dsw-alias-border-l2); }
 .footerBtns { display: flex; gap: 8px; }
 .error { padding: 6px 16px; font-size: 12px; color: var(--dsw-alias-state-error-primary); }
+.hint { padding: 6px 16px 0; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.warn { padding: 6px 16px 0; font-size: 12px; color: var(--dsw-alias-state-warning-primary, #b7791f); }
 .confirm { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 2100; display: flex; align-items: center; justify-content: center; background: rgba(12,14,18,0.4); padding: 16px; }
 .confirmBox { width: min(360px, 100%); background: #fff; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.24); padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
 .confirmBtns { display: flex; justify-content: flex-end; gap: 8px; }

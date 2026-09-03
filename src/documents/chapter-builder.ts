@@ -181,6 +181,35 @@ export function flattenManualChapters(chapters: ChapterNode[]): ChapterDraftItem
   return out
 }
 
+/**
+ * Convert an arbitrary ChapterNode tree (native / manual / ai-toc) into an
+ * EDITABLE flat preorder draft. Unlike flattenManualChapters this tolerates the
+ * unresolved nodes a native outline may carry (startPage === null or not
+ * selectable) WITHOUT fabricating a page number: those nodes are SKIPPED and
+ * counted, and their resolved descendants are re-leveled to a valid contiguous
+ * hierarchy (kept-depth + 1) so the resulting draft always passes the validator.
+ * id / title / startPage / preorder are preserved; never mutates `chapters`.
+ */
+export function chaptersToEditableDraft(chapters: ChapterNode[]): { items: ChapterDraftItem[]; skippedUnresolved: number } {
+  const items: ChapterDraftItem[] = []
+  let skippedUnresolved = 0
+  const walk = (nodes: ChapterNode[], parentLevel: number) => {
+    for (const n of nodes) {
+      if (n.selectable && n.startPage != null) {
+        const level = parentLevel + 1
+        items.push({ id: n.id, title: n.title, level, startPage: n.startPage })
+        walk(n.children, level)
+      } else {
+        skippedUnresolved++
+        // Descendants of an unresolved node re-level under the nearest kept ancestor.
+        walk(n.children, parentLevel)
+      }
+    }
+  }
+  walk(chapters, 0)
+  return { items, skippedUnresolved }
+}
+
 /** Deep clone a draft so editing never mutates the persisted tree source. */
 export function cloneChapterDraft(items: ChapterDraftItem[]): ChapterDraftItem[] {
   return items.map(it => ({ ...it }))

@@ -78,6 +78,22 @@ assert(!!manualRestored && manualRestored.chapterSource === 'manual', 'manual ch
 assert(!!manualRestored && manualRestored.chapters.length === 2 && manualRestored.chapters[0].id === 'm1' && manualRestored.chapters[0].children[0].id === 'm1a' && manualRestored.chapters[0].children[0].level === 2, 'manual chapter tree (with nested child) survives backup round-trip')
 assert(!!manualRestored && manualRestored.chapters[0].source === 'manual' && manualRestored.chapters[1].startPage === 8, 'manual source + startPage preserved')
 
+// --- native -> manual override survives backup (Stage 9.4A.2): override is the persisted
+// 'current chapters'; the original native outline is never stored (re-derived from sourceBlob).
+await idbClearAll()
+await createDocument({ id: 'docN', fileName: '教材.pdf', mimeType: 'application/pdf', fileSize: 60, pageCount: 15, sourceBlob: new Blob([new Uint8Array(60).fill(5)], { type: 'application/pdf' }) })
+// pretend it started native, then the user overrode to a manual tree (chapters replaced)
+await updateDocumentChapters('docN', [
+  { id: 'n1', title: '第二章 地球', level: 1, startPage: 3, endPage: 7, selectable: true, source: 'manual', children: [
+    { id: 'n1a', title: '第一节 位置', level: 2, startPage: 4, endPage: 6, selectable: true, source: 'manual', children: [] },
+  ] },
+], 'manual')
+const overrideBackup = await buildBackup()
+await idbClearAll()
+await restoreBackup(parseAndValidate(JSON.parse(JSON.stringify(overrideBackup))))
+const overrideRestored = await getDocument('docN')
+assert(!!overrideRestored && overrideRestored.chapterSource === 'manual' && overrideRestored.chapters.length === 1 && overrideRestored.chapters[0].id === 'n1' && overrideRestored.chapters[0].children[0].id === 'n1a', 'native->manual override survives backup round-trip as the current chapters')
+
 // --- V1 compatibility: accepted, restores conversations/attachments, documents=[] ---
 await idbClearAll()
 const v1 = parseAndValidate(v1backup())

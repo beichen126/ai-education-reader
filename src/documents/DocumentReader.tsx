@@ -15,11 +15,14 @@ import { validatePdfRange, countPdfRangePages, needsPdfContextSoftConfirm, MAX_P
 import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, buildManualRangeSelection } from './reader-context'
 import { useDocumentUi, documentUiActions } from './document-ui-store'
 import { clampReaderPage, parsePageInput } from './reader-utils'
-import { openPdfSession, renderSessionPage, closePdfSession, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
+import { openPdfSession, renderSessionPage, closePdfSession, readSessionOutline, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
 import { PdfError } from '../pdf/pdf-service'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { createUrlOwner } from './url-owner'
 import { ChapterBuilder, type ChapterBuilderSave } from './ChapterBuilder'
+import { chaptersToEditableDraft } from './chapter-builder'
+import { chapterNodesFromPdfOutline } from './chapter-model'
+import type { ChapterDraftItem } from './chapter-builder'
 import type { LearningDocument, ChapterNode } from './document-types'
 import css from './document-reader.module.css'
 
@@ -72,6 +75,14 @@ export function DocumentReader() {
   const [builderOpen, setBuilderOpen] = useState(false)
   const [builderSeed, setBuilderSeed] = useState(false)
   const builderOpenRef = useRef(false); builderOpenRef.current = builderOpen
+  // ---- Native TOC override (Stage 9.4A.2) ----
+  const [nativeDraft, setNativeDraft] = useState<{ items: ChapterDraftItem[]; skipped: number } | null>(null)
+  const [builderHint, setBuilderHint] = useState<string | null>(null)
+  const [hasNativeOutline, setHasNativeOutline] = useState(false)
+  const [nativeOutlineStatus, setNativeOutlineStatus] = useState<'unknown' | 'yes' | 'no'>('unknown')
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false)
+  const [restoreMsg, setRestoreMsg] = useState<string | null>(null)
+  const restoreBusyRef = useRef(false)
 
   // ---- docId-BOUND progress persistence: each write carries the id it belongs to ----
   const persist = useCallback((targetDocId: string, p: number) => {
@@ -101,6 +112,8 @@ export function DocumentReader() {
       setDoc(null); setPageCount(0); setPage(1); setPageInput('')
       setPageError(null); setRendering(false); setLoadError(null)
       setTocState({ expanded: new Set() }); setTocOpen(false)
+      setNativeDraft(null); setBuilderHint(null); setHasNativeOutline(false); setNativeOutlineStatus('unknown')
+      setRestoreConfirmOpen(false); setRestoreMsg(null)
       return
     }
     // Ownership contract: the effect remembers the documentId IT was created for.
@@ -128,6 +141,18 @@ export function DocumentReader() {
         setDoc(d); setPageCount(d.pageCount)
         const start = clampReaderPage(d.lastReadPage || 1, d.pageCount)
         setPage(start); setPageInput(String(start))
+        // Detect whether the ORIGINAL PDF has a native outline — ephemeral, used only
+        // for the 整理/恢复 目录 UI. Reading must never fail because of this.
+        setNativeOutlineStatus('unknown')
+        try {
+          const outline = await readSessionOutline(o.session)
+          if (!cancelled) {
+            setHasNativeOutline(outline.items.length > 0)
+            setNativeOutlineStatus(outline.items.length > 0 ? 'yes' : 'no')
+          }
+        } catch {
+          if (!cancelled) { setHasNativeOutline(false); setNativeOutlineStatus('unknown') }
+        }
       } catch (e) {
         if (!cancelled) setLoadError(e instanceof PdfError ? pdfErrorMessage(e.kind) : '无法打开这份文档。')
       }
@@ -290,6 +315,54 @@ export function DocumentReader() {
     }
     // Close ONLY after the write succeeded.
     setBuilderOpen(false)
+    setNativeDraft(null); setBuilderHint(null)
+  }, [doc])
+
+  // ---- Native TOC override (Stage 9.4A.2): 整理目录 / 编辑目录 / 恢复原始目录 ----
+  // 整理目录: copy the CURRENT persisted (native) tree into an editable draft. The
+  // original PDF native outline is NEVER mutated — it lives in sourceBlob.
+  const openOrganizeNative = useCallback(() => {
+    if (!doc) return
+    const { items, skippedUnresolved } = chaptersToEditableDraft(doc.chapters)
+    setNativeDraft({ items, skipped: skippedUnresolved })
+    setBuilderHint('正在整理 PDF 原始目录。保存后仅修改本地目录，不会改动原 PDF。')
+    setBuilderSeed(false)
+    setBuilderOpen(true)
+  }, [doc])
+  // 编辑目录: edit the current (manual override) tree in place — no native origin hint.
+  const openEditCurrent = useCallback(() => {
+    if (!doc) return
+    const { items, skippedUnresolved } = chaptersToEditableDraft(doc.chapters)
+    setNativeDraft({ items, skipped: skippedUnresolved })
+    setBuilderHint(null)
+    setBuilderSeed(false)
+    setBuilderOpen(true)
+  }, [doc])
+  // Restore original native outline: re-read the PDF sourceBlob outline (never a
+  // persisted snapshot) and replace the current chapters. All-or-nothing.
+  const restoreNative = useCallback(async () => {
+    if (!doc || restoreBusyRef.current) return
+    restoreBusyRef.current = true
+    setRestoreMsg(null)
+    try {
+      // Test seam (Stage 9.4A.2): e2e sets this to verify a failed restore keeps the
+      // current (manual) tree and reports an error. Never set in prod.
+      const w = window as unknown as { __dshFailNextNativeRestore?: boolean }
+      if (w.__dshFailNextNativeRestore) { w.__dshFailNextNativeRestore = false; throw new Error('simulated native restore failure') }
+      const session = sessionRef.current
+      if (!session) { setRestoreMsg('无法读取 PDF 原始目录，当前整理结果未发生变化。'); return }
+      const outline = await readSessionOutline(session)
+      if (outline.items.length === 0) { setRestoreMsg('无法读取 PDF 原始目录，当前整理结果未发生变化。'); return }
+      const nativeTree = chapterNodesFromPdfOutline(outline.items)
+      await updateDocumentChapters(doc.id, nativeTree, 'native')
+      const fresh = await getDocument(doc.id)
+      if (fresh) { setDoc(fresh); setTocState(prev => ({ expanded: prev.expanded })) }
+      setRestoreConfirmOpen(false)
+    } catch {
+      setRestoreMsg('无法读取 PDF 原始目录，当前整理结果未发生变化。')
+    } finally {
+      restoreBusyRef.current = false
+    }
   }, [doc])
 
   // ---- keyboard: arrows page, Escape closes (viewer gets priority) ----
@@ -299,6 +372,8 @@ export function DocumentReader() {
       if (viewerOpenRef.current) return
       // Chapter Builder owns keyboard priority while open — no page-turning.
       if (builderOpenRef.current) return
+      // Restore-original confirm: Escape cancels it, never closes the Reader.
+      if (restoreConfirmOpen && e.key === 'Escape') { e.preventDefault(); setRestoreConfirmOpen(false); return }
       const t = document.activeElement as HTMLElement | null
       // Context menu takes Escape ONLY — arrows / typing / everything else pass through.
       if (ctxMenuOpenRef.current && e.key === 'Escape') { e.preventDefault(); setCtxMenuOpen(false); setCtxMode('menu'); return }
@@ -310,7 +385,7 @@ export function DocumentReader() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [doc, pageCount, go])
+  }, [doc, pageCount, go, restoreConfirmOpen])
 
   const commitPageInput = () => {
     const r = parsePageInput(pageInput, pageCount)
@@ -362,6 +437,20 @@ export function DocumentReader() {
                   <button type="button" className={css.tocCreate} data-testid="reader-toc-create" onClick={() => { setBuilderSeed(false); setBuilderOpen(true) }}>创建章节</button>
                 </div>
               )}
+              {doc && doc.chapterSource !== 'none' && (
+                <div className={css.tocActions}>
+                  {doc.chapterSource === 'native' && (
+                    <button type="button" className={css.tocActionBtn} data-testid="reader-toc-organize" onClick={openOrganizeNative}>整理目录</button>
+                  )}
+                  {doc.chapterSource !== 'native' && (
+                    <button type="button" className={css.tocActionBtn} data-testid="reader-toc-edit" onClick={openEditCurrent}>编辑目录</button>
+                  )}
+                  {doc.chapterSource !== 'native' && hasNativeOutline && (
+                    <button type="button" className={css.tocActionBtn} data-testid="reader-toc-restore" onClick={() => setRestoreConfirmOpen(true)}>恢复原始目录</button>
+                  )}
+                </div>
+              )}
+              {restoreMsg && <div className={css.tocRestoreMsg} data-testid="reader-toc-restore-msg">{restoreMsg}</div>}
             </aside>
             <main className={css.stage}>
               {rendering && <div className={css.hint} data-testid="reader-loading">正在渲染第 {page} 页…</div>}
@@ -443,9 +532,23 @@ export function DocumentReader() {
           initialChapters={doc.chapters}
           currentPage={page}
           seedFromCurrentPage={builderSeed}
+          draftSeed={nativeDraft ? nativeDraft.items : undefined}
+          skippedUnresolved={nativeDraft ? nativeDraft.skipped : 0}
+          hint={builderHint || undefined}
           onSave={saveBuilder}
-          onClose={() => { setBuilderOpen(false); setBuilderSeed(false) }}
+          onClose={() => { setBuilderOpen(false); setBuilderSeed(false); setNativeDraft(null); setBuilderHint(null) }}
         />
+      )}
+      {restoreConfirmOpen && (
+        <div className={css.restoreConfirm} data-testid="reader-restore-confirm">
+          <div className={css.restoreConfirmBox}>
+            <div>恢复 PDF 原始目录后，你当前整理的目录将被替换。确认恢复？</div>
+            <div className={css.restoreConfirmBtns}>
+              <button type="button" className={css.tocSecondary} data-testid="reader-restore-no" onClick={() => setRestoreConfirmOpen(false)}>取消</button>
+              <button type="button" className={css.tocPrimary} data-testid="reader-restore-yes" onClick={() => void restoreNative()}>确认恢复</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

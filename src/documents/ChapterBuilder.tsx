@@ -24,6 +24,12 @@ type Props = {
   currentPage: number
   /** When opened via 从此页新建章节, pre-seed ONE new row at currentPage. */
   seedFromCurrentPage?: boolean
+  /** Pre-computed editable draft (e.g. from a native outline via chaptersToEditableDraft). */
+  draftSeed?: ChapterDraftItem[]
+  /** Light note shown above the list (e.g. '正在整理 PDF 原始目录…'). */
+  hint?: string
+  /** Count of native items that had no resolvable page and were not imported. */
+  skippedUnresolved?: number
   onSave: (save: ChapterBuilderSave) => Promise<void>
   onClose: () => void
 }
@@ -31,10 +37,11 @@ type Props = {
 const SAVE_FAILED_MSG = '无法保存章节，请检查浏览器存储空间后重试。'
 const SAME_PAGE_MSG = '第 {P} 页已有同级章节，请编辑现有章节或调整新章节层级。'
 
-export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFromCurrentPage, onSave, onClose }: Props) {
+export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFromCurrentPage, draftSeed, hint, skippedUnresolved = 0, onSave, onClose }: Props) {
   const seedConflictRef = useRef<string | null>(null)
   const [items, setItems] = useState<ChapterDraftItem[]>(() => {
-    const base = cloneChapterDraft(flattenManualChapters(initialChapters))
+    // A pre-computed draftSeed (native / ai-toc) wins; otherwise derive from the tree.
+    const base = draftSeed ? cloneChapterDraft(draftSeed) : cloneChapterDraft(flattenManualChapters(initialChapters))
     if (!seedFromCurrentPage) return base
     const item = makeNewChapterItem({ currentPage, pageCount, level: 1 })
     const r = insertChapterByPage(base, item)
@@ -52,8 +59,8 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
   const [saveError, setSaveError] = useState<string | null>(null)
   const [insertError, setInsertError] = useState<string | null>(null)
 
-  // Dirty = any item differs from the persisted draft.
-  const originalRef = useRef<ChapterDraftItem[]>(flattenManualChapters(initialChapters))
+  // Dirty = any item differs from the persisted draft (baseline matches the seed).
+  const originalRef = useRef<ChapterDraftItem[]>(draftSeed ? cloneChapterDraft(draftSeed) : flattenManualChapters(initialChapters))
   const dirty = (() => {
     const orig = originalRef.current
     if (items.length !== orig.length) return true
@@ -148,6 +155,8 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
         {!validation.ok && <div className={css.error} data-testid="cb-error">{validation.issues[0].message}</div>}
         {saveError && <div className={css.error} data-testid="cb-save-error">{saveError}</div>}
         {insertError && <div className={css.error} data-testid="cb-insert-error">{insertError}</div>}
+        {hint && <div className={css.hint} data-testid="cb-hint">{hint}</div>}
+        {skippedUnresolved > 0 && <div className={css.warn} data-testid="cb-skipped">原目录中有 {skippedUnresolved} 项无法定位页码，未自动加入编辑结果。</div>}
         <div className={css.list} data-testid="cb-list">
           {items.length === 0 && <div className={css.empty} data-testid="cb-empty">尚无章节，点击下方“添加章节”开始。</div>}
           {items.map((it, i) => (

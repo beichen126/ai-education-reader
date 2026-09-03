@@ -21,6 +21,7 @@ AI Education Reader 的用户可感知更新记录。
 - PDF Outline 支持多章节选择（真实 checkbox，展开/选择分离）。
 - 支持多个不连续 PDF 页码范围作为同一 Context：选择章节 → 规范化范围 → 去重 → 合计页数 → 渲染 → 一个 PDF Context Group 加入对话。
 - 无原生目录的 PDF 可在 Reader 中手动创建和编辑章节，保存后可直接用于章节导航与 AI Context。
+- 支持整理 PDF 自带目录，并可随时恢复 PDF 原始目录；整理结果仅保存在本地，不修改原 PDF。
 
 ### Changed
 

@@ -19,6 +19,17 @@
 .tocChevron { flex: none; width: 22px; font-size: 10px; color: var(--dsw-alias-label-tertiary); }
 .tocText { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .tocRange { flex: none; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+
+.tocActions { display: flex; flex-direction: column; gap: 6px; padding: 10px 8px 4px; border-top: 1px solid var(--dsw-alias-border-l2); }
+.tocActionBtn { min-height: 34px; padding: 5px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 12px; cursor: pointer; text-align: left; }
+.tocActionBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.tocRestoreMsg { padding: 8px; font-size: 12px; color: var(--dsw-alias-state-error-primary); }
+.restoreConfirm { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 30; width: min(420px, calc(100vw - 24px)); background: #fff; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.restoreConfirmBox { display: flex; flex-direction: column; gap: 12px; }
+.restoreConfirmBtns { display: flex; justify-content: flex-end; gap: 8px; }
+.tocPrimary { min-height: 36px; padding: 6px 14px; border: none; border-radius: 8px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 13px; cursor: pointer; }
+.tocSecondary { min-height: 36px; padding: 6px 14px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; border-radius: 8px; color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
+
 .tocEmpty { padding: 10px 8px; font-size: 13px; color: var(--dsw-alias-label-tertiary); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .tocCreate { min-height: 34px; padding: 5px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 12px; cursor: pointer; }
 .tocCreate:hover { background: var(--dsw-alias-interactive-bg-hover); }
