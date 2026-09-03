@@ -1,14 +1,17 @@
-// Chapter Builder (Stage 9.4A): a stable manual chapter-structure editor for
-// documents with no native outline (or to maintain existing manual chapters).
+// Chapter Builder (Stage 9.4A / 9.4A.1): a stable manual chapter-structure editor
+// for documents with no native outline (or to maintain existing manual chapters).
 // The Reader only opens it, provides currentPage, and consumes the saved tree.
-// Editing happens on a LOCAL flat draft; nothing is persisted until 保存, and
-// the Reader refreshes the tree from the saved result (never re-opened).
+// Editing happens on a LOCAL flat draft; persistence happens ONLY on 保存 and is
+// the Reader's responsibility — onSave returns a Promise so this Builder controls
+// saving/error/close timing. A failed save NEVER fabricates success: the Builder
+// stays open, the draft is preserved, and an explicit error is shown.
 import { useEffect, useRef, useState } from 'react'
 import type { ChapterNode, DocumentChapterSource } from './document-types'
 import {
   validateChapterDraft, buildManualChapterTree, flattenManualChapters,
   cloneChapterDraft, makeNewChapterItem, chapterSourceForTree,
-  deleteDraftSubtree, draftHasChildren, moveUp, moveDown, indentSubtree, outdentSubtree,
+  deleteDraftSubtree, draftHasChildren, indentSubtree, outdentSubtree,
+  insertChapterByPage, canApplyChapterDraftOperation,
   type ChapterDraftItem, type ChapterDraftValidation,
 } from './chapter-builder'
 import css from './chapter-builder.module.css'
@@ -21,22 +24,35 @@ type Props = {
   currentPage: number
   /** When opened via 从此页新建章节, pre-seed ONE new row at currentPage. */
   seedFromCurrentPage?: boolean
-  onSave: (save: ChapterBuilderSave) => void
+  onSave: (save: ChapterBuilderSave) => Promise<void>
   onClose: () => void
 }
 
+const SAVE_FAILED_MSG = '无法保存章节，请检查浏览器存储空间后重试。'
+const SAME_PAGE_MSG = '第 {P} 页已有同级章节，请编辑现有章节或调整新章节层级。'
+
 export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFromCurrentPage, onSave, onClose }: Props) {
+  const seedConflictRef = useRef<string | null>(null)
   const [items, setItems] = useState<ChapterDraftItem[]>(() => {
     const base = cloneChapterDraft(flattenManualChapters(initialChapters))
-    if (seedFromCurrentPage) base.push(makeNewChapterItem({ currentPage, pageCount, level: 1 }))
+    if (!seedFromCurrentPage) return base
+    const item = makeNewChapterItem({ currentPage, pageCount, level: 1 })
+    const r = insertChapterByPage(base, item)
+    if (r.ok) return r.items
+    // A same-page conflict must NOT fabricate an unsavable draft — keep base + note it.
+    seedConflictRef.current = SAME_PAGE_MSG.replace('{P}', String(item.startPage))
     return base
   })
+  useEffect(() => { if (seedConflictRef.current) { setInsertError(seedConflictRef.current); seedConflictRef.current = null } }, [])
   const [validation, setValidation] = useState<ChapterDraftValidation>({ ok: true, issues: [] })
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({})
   const [pendingDelete, setPendingDelete] = useState<number | null>(null)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [insertError, setInsertError] = useState<string | null>(null)
 
-  // Dirty = any item differs from the persisted draft (by id/title/level/startPage).
+  // Dirty = any item differs from the persisted draft.
   const originalRef = useRef<ChapterDraftItem[]>(flattenManualChapters(initialChapters))
   const dirty = (() => {
     const orig = originalRef.current
@@ -52,27 +68,29 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
   const updateItem = (index: number, patch: Partial<ChapterDraftItem>) => {
     setItems(prev => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)))
   }
-  const addItem = () => {
+
+  // Both add entrances funnel through the SAME page-aware insertion helper (§9).
+  const insertNew = () => {
+    setInsertError(null)
     const item = makeNewChapterItem({ currentPage, pageCount, level: 1 })
-    setItems(prev => [...prev, item])
+    setItems(prev => {
+      const r = insertChapterByPage(prev, item)
+      if (!r.ok) { setInsertError(SAME_PAGE_MSG.replace('{P}', String(item.startPage))); return prev }
+      return r.items
+    })
   }
-  const addFromCurrentPage = () => {
-    const item = makeNewChapterItem({ currentPage, pageCount, level: 1 })
-    setItems(prev => [...prev, item])
-  }
+
   const requestDelete = (index: number) => {
-    if (draftHasChildren(items, index)) {
-      // Deletion of a parent always cascades to its subtree — require confirmation.
-      setPendingDelete(index)
-      return
-    }
+    if (draftHasChildren(items, index)) { setPendingDelete(index); return }
     setItems(prev => deleteDraftSubtree(prev, index))
   }
   const applyOp = (fn: (items: ChapterDraftItem[], index: number) => ChapterDraftItem[], index: number) => {
     setItems(prev => fn(cloneChapterDraft(prev), index))
   }
 
-  const save = () => {
+  const save = async () => {
+    if (saving) return
+    setSaveError(null)
     const v = validateChapterDraft(items, pageCount)
     setValidation(v)
     if (!v.ok) {
@@ -83,10 +101,19 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
     }
     setRowErrors({})
     const tree = buildManualChapterTree(items, pageCount)
-    onSave({ chapters: tree, source: chapterSourceForTree(tree) })
+    setSaving(true)
+    try {
+      await onSave({ chapters: tree, source: chapterSourceForTree(tree) })
+      // Success: the Reader's onSave closes this Builder (unmount). No need to reset.
+    } catch {
+      // A failed save must NOT fabricate success: builder stays open, draft kept.
+      setSaving(false)
+      setSaveError(SAVE_FAILED_MSG)
+    }
   }
 
   const close = () => {
+    if (saving) return
     if (dirty) { setConfirmDiscard(true); return }
     onClose()
   }
@@ -97,6 +124,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
       e.preventDefault()
+      if (saving) return
       if (confirmDiscard) { setConfirmDiscard(false); return }
       if (pendingDelete != null) { setPendingDelete(null); return }
       if (dirty) { setConfirmDiscard(true); return }
@@ -104,7 +132,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [confirmDiscard, pendingDelete, onClose])
+  }, [confirmDiscard, pendingDelete, onClose, saving])
 
   const childCount = pendingDelete != null ? subtreeCount(items, pendingDelete) : 0
   return (
@@ -113,11 +141,13 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
         <div className={css.header}>
           <span className={css.title}>编辑章节</span>
           <div className={css.headerBtns}>
-            <button type="button" className={css.btn} data-testid="cb-cancel" onClick={close}>取消</button>
-            <button type="button" className={css.btnPrimary} data-testid="cb-save" onClick={save}>保存</button>
+            <button type="button" className={css.btn} data-testid="cb-cancel" disabled={saving} onClick={close}>取消</button>
+            <button type="button" className={css.btnPrimary} data-testid="cb-save" disabled={saving} onClick={save}>{saving ? '保存中…' : '保存'}</button>
           </div>
         </div>
         {!validation.ok && <div className={css.error} data-testid="cb-error">{validation.issues[0].message}</div>}
+        {saveError && <div className={css.error} data-testid="cb-save-error">{saveError}</div>}
+        {insertError && <div className={css.error} data-testid="cb-insert-error">{insertError}</div>}
         <div className={css.list} data-testid="cb-list">
           {items.length === 0 && <div className={css.empty} data-testid="cb-empty">尚无章节，点击下方“添加章节”开始。</div>}
           {items.map((it, i) => (
@@ -125,16 +155,11 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
               key={it.id}
               item={it}
               index={i}
-              hasChildren={draftHasChildren(items, i)}
-              canUp={canMoveUp(items, i)}
-              canDown={canMoveDown(items, i)}
-              canIndent={canIndent(items, i)}
-              canOutdent={it.level > 1}
+              canIndent={canApplyChapterDraftOperation(items, pageCount, indentSubtree, i)}
+              canOutdent={canApplyChapterDraftOperation(items, pageCount, outdentSubtree, i)}
               error={rowErrors[i]}
               onTitle={v => updateItem(i, { title: v })}
               onPage={v => updateItem(i, { startPage: pageFromInput(v) })}
-              onUp={() => applyOp(moveUp, i)}
-              onDown={() => applyOp(moveDown, i)}
               onIndent={() => applyOp(indentSubtree, i)}
               onOutdent={() => applyOp(outdentSubtree, i)}
               onDelete={() => requestDelete(i)}
@@ -143,8 +168,8 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
         </div>
         <div className={css.footer}>
           <div className={css.footerBtns}>
-            <button type="button" className={css.btn} data-testid="cb-add" onClick={addItem}>+ 添加章节</button>
-            <button type="button" className={css.btn} data-testid="cb-add-current" onClick={addFromCurrentPage}>从当前页添加：{currentPage || 1}</button>
+            <button type="button" className={css.btn} data-testid="cb-add" disabled={saving} onClick={insertNew}>+ 添加章节</button>
+            <button type="button" className={css.btn} data-testid="cb-add-current" disabled={saving} onClick={insertNew}>从当前页添加：{currentPage || 1}</button>
           </div>
         </div>
       </div>
@@ -190,34 +215,13 @@ function subtreeCount(items: ChapterDraftItem[], index: number): number {
   return n
 }
 
-function canMoveUp(items: ChapterDraftItem[], index: number): boolean {
-  if (index <= 0) return false
-  const level = items[index].level
-  let k = index - 1
-  while (k >= 0 && items[k].level > level) k--
-  return k >= 0 && items[k].level === level
-}
-function canMoveDown(items: ChapterDraftItem[], index: number): boolean {
-  const level = items[index].level
-  let k = index + 1
-  while (k < items.length && items[k].level > level) k++
-  return k < items.length && items[k].level === level
-}
-function canIndent(items: ChapterDraftItem[], index: number): boolean {
-  if (index <= 0) return false
-  const level = items[index].level
-  let k = index - 1
-  while (k >= 0 && items[k].level > level) k--
-  return k >= 0 && items[k].level === level
-}
-
 function BuilderRow(props: {
-  item: ChapterDraftItem; index: number; hasChildren: boolean
-  canUp: boolean; canDown: boolean; canIndent: boolean; canOutdent: boolean; error?: string
+  item: ChapterDraftItem; index: number
+  canIndent: boolean; canOutdent: boolean; error?: string
   onTitle: (v: string) => void; onPage: (v: string) => void
-  onUp: () => void; onDown: () => void; onIndent: () => void; onOutdent: () => void; onDelete: () => void
+  onIndent: () => void; onOutdent: () => void; onDelete: () => void
 }) {
-  const { item, index, hasChildren, canUp, canDown, canIndent, canOutdent, error, onTitle, onPage, onUp, onDown, onIndent, onOutdent, onDelete } = props
+  const { item, index, canIndent, canOutdent, error, onTitle, onPage, onIndent, onOutdent, onDelete } = props
   const pad = (item.level - 1) * 14
   return (
     <div className={css.row + (error ? ' ' + css.rowErr : '')} data-testid="cb-row">
@@ -229,8 +233,6 @@ function BuilderRow(props: {
       </div>
       <div className={css.rowOps}>
         <button type="button" className={css.op + ' ' + css.opDanger} data-testid={'cb-del-' + index} title="删除" onClick={onDelete}>×</button>
-        <button type="button" className={css.op} data-testid={'cb-up-' + index} title="上移" disabled={!canUp} onClick={onUp}>↑</button>
-        <button type="button" className={css.op} data-testid={'cb-down-' + index} title="下移" disabled={!canDown} onClick={onDown}>↓</button>
         <button type="button" className={css.op} data-testid={'cb-outdent-' + index} title="减少缩进" disabled={!canOutdent} onClick={onOutdent}>←</button>
         <button type="button" className={css.op} data-testid={'cb-indent-' + index} title="缩进" disabled={!canIndent} onClick={onIndent}>→</button>
       </div>

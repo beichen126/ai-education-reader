@@ -230,32 +230,6 @@ export function subtreeSize(items: ChapterDraftItem[], index: number): number {
   return size
 }
 
-/** Move a subtree up one sibling-position, staying under the SAME parent. */
-export function moveUp(items: ChapterDraftItem[], index: number): ChapterDraftItem[] {
-  const prev = previousSiblingIndex(items, index)
-  if (prev < 0) return items
-  const size = subtreeSize(items, index)
-  const prevSize = subtreeSize(items, prev)
-  const block = items.slice(index, index + size)
-  const before = items.slice(0, prev)
-  const prevBlock = items.slice(prev, prev + prevSize)
-  const after = items.slice(index + size)
-  return [...before, ...block, ...prevBlock, ...after]
-}
-
-/** Move a subtree down one sibling-position, staying under the SAME parent. */
-export function moveDown(items: ChapterDraftItem[], index: number): ChapterDraftItem[] {
-  const next = nextSiblingIndex(items, index)
-  if (next < 0) return items
-  const size = subtreeSize(items, index)
-  const nextSize = subtreeSize(items, next)
-  const block = items.slice(index, index + size)
-  const before = items.slice(0, index)
-  const nextBlock = items.slice(next, next + nextSize)
-  const after = items.slice(next + nextSize)
-  return [...before, ...nextBlock, ...block, ...after]
-}
-
 /** Indent a subtree under its previous sibling, when one exists. */
 export function indentSubtree(items: ChapterDraftItem[], index: number): ChapterDraftItem[] {
   const prev = previousSiblingIndex(items, index)
@@ -282,15 +256,62 @@ function previousSiblingIndex(items: ChapterDraftItem[], index: number): number 
   return k
 }
 
-function nextSiblingIndex(items: ChapterDraftItem[], index: number): number {
-  const level = items[index].level
-  let k = index + 1
-  while (k < items.length && items[k].level > level) k++
-  if (k >= items.length) return -1
-  return k
+/**
+ * Page-aware top-level insertion for a NEW chapter (Stage 9.4A.1). The chapter
+ * order in a manual draft derives from physical page order, so a new top-level
+ * chapter (level 1, startPage P) is inserted BEFORE the first existing root
+ * whose startPage > P — never blindly appended to the end. If an existing
+ * level-1 root already starts at exactly P, inserting another would be an
+ * illegal sibling-same-page, so we report a conflict and do NOT fabricate an
+ * unsavable draft. Returns a NEW array (input never mutated).
+ */
+export type InsertChapterByPageResult =
+  | { ok: true; items: ChapterDraftItem[] }
+  | { ok: false; reason: 'same-page-conflict' }
+
+export function insertChapterByPage(items: ChapterDraftItem[], newItem: ChapterDraftItem): InsertChapterByPageResult {
+  // This helper is deliberately top-level-only for now (Stage 9.4A.1 semantics).
+  if (newItem.level !== 1) return { ok: true, items: insertItem(items, newItem) }
+  const P = newItem.startPage
+  for (const it of items) {
+    if (it.level === 1 && it.startPage === P) return { ok: false, reason: 'same-page-conflict' }
+  }
+  let insertAt = items.length
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].level === 1 && items[i].startPage > P) { insertAt = i; break }
+  }
+  return { ok: true, items: [...items.slice(0, insertAt), newItem, ...items.slice(insertAt)] }
 }
 
-/** Insert a new item AFTER `index` (or at the start when index < 0). */
+/**
+ * Whether applying a structural editing operation to the draft at `index`
+ * leaves a VALID draft. Stage 9.4A.1 principle: an operation the Builder exposes
+ * must never produce an unsavable structure; candidacy = structure valid a
+ * posteriori, not just a structural level check. Cheap for the small drafts the
+ * builder edits; pure, deterministic, never mutates input.
+ */
+export function canApplyChapterDraftOperation(
+  items: ChapterDraftItem[],
+  pageCount: number,
+  operation: (items: ChapterDraftItem[], index: number) => ChapterDraftItem[],
+  index: number,
+): boolean {
+  const candidate = operation(cloneChapterDraft(items), index)
+  // A no-op (e.g. first item cannot indent) is not a meaningful operation -> disabled.
+  if (sameDraftSequence(candidate, items)) return false
+  return validateChapterDraft(candidate, pageCount).ok
+}
+
+function sameDraftSequence(a: ChapterDraftItem[], b: ChapterDraftItem[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i]
+    if (x.id !== y.id || x.title !== y.title || x.level !== y.level || x.startPage !== y.startPage) return false
+  }
+  return true
+}
+
+/** Insert a new item AFTER `index` (or at the start when index < 0). Low-level. */
 export function insertItem(items: ChapterDraftItem[], item: ChapterDraftItem, after?: number): ChapterDraftItem[] {
   if (after == null || after < 0) return [item, ...items]
   const at = Math.min(after + 1, items.length)

@@ -9,11 +9,11 @@ import {
   deleteDraftSubtree,
   draftHasChildren,
   subtreeSize,
-  moveUp,
-  moveDown,
   indentSubtree,
   outdentSubtree,
   insertItem,
+  insertChapterByPage,
+  canApplyChapterDraftOperation,
   deriveChapterEndPages,
   MAX_CHAPTER_LEVEL,
   type ChapterDraftItem,
@@ -209,27 +209,6 @@ const base: ChapterDraftItem[] = [
   assert(subtreeSize(base, 0) === 3 && subtreeSize(base, 1) === 1, 'subtreeSize')
 }
 
-// ===================== MOVE =====================
-const moveBase = [
-  item('a', 'Chapter 1', 1, 1), item('b', 'A', 2, 2), item('c', 'B', 2, 3), item('d', 'Chapter 2', 1, 5),
-]
-{
-  const up = moveUp(moveBase, 2) // move B (idx2) up before A
-  assert(up.map(i => i.id).join(',') === 'a,c,b,d', 'move sibling up (got ' + up.map(i => i.id).join(',') + ')')
-}
-{
-  const down = moveDown(moveBase, 1) // move A (idx1) down after B
-  assert(down.map(i => i.id).join(',') === 'a,c,b,d', 'move sibling down (got ' + down.map(i => i.id).join(',') + ')')
-}
-{
-  const firstNoUp = moveUp(moveBase, 0) // Chapter 1 is first -> no move
-  assert(firstNoUp.map(i => i.id).join(',') === 'a,b,c,d', 'first sibling cannot move up')
-}
-{
-  const lastNoDown = moveDown(moveBase, 3) // Chapter 2 is last -> no move
-  assert(lastNoDown.map(i => i.id).join(',') === 'a,b,c,d', 'last sibling cannot move down')
-}
-
 // ===================== INDENT / OUTDENT =====================
 {
   const ind = indentSubtree([item('a', 'A', 1, 1), item('b', 'B', 1, 2)], 1) // B -> under A
@@ -237,7 +216,7 @@ const moveBase = [
 }
 {
   const noIndFirst = indentSubtree([item('a', 'A', 1, 1), item('b', 'B', 1, 2)], 0)
-  assert(noIndFirst.map(i => i.level).join(',') === '1,1', 'first item cannot indent')
+  assert(noIndFirst.map(i => i.level).join(',') === '1,1', 'first item cannot indent (raw op no-op)')
 }
 {
   const out = outdentSubtree([item('a', 'A', 1, 1), item('b', 'B', 2, 2)], 1)
@@ -245,23 +224,94 @@ const moveBase = [
 }
 {
   const noOutL1 = outdentSubtree([item('a', 'A', 1, 1)], 0)
-  assert(noOutL1[0].level === 1, 'level1 cannot outdent')
+  assert(noOutL1[0].level === 1, 'level1 cannot outdent (raw op no-op)')
 }
 {
-  // subtree moves/indents together: B is level1 with child C(level2); D is another top-level
+  // subtree indents together: B is level1 with child C(level2); D is another top-level
   const sg = [item('a', 'A', 1, 1), item('b', 'B', 1, 5), item('c', 'C', 2, 6), item('d', 'D', 1, 9)]
-  const indentB = indentSubtree(sg, 1) // indent B subtree under previous sibling A: B->2, C->3, D stays 1
+  const indentB = indentSubtree(sg, 1)
   assert(indentB.map(i => i.level).join(',') === '1,2,3,1', 'indent moves subtree together (B+child C both deeper; got ' + indentB.map(i => i.level).join(',') + ')')
-  const moveB = moveUp(sg, 1) // B has previous sibling A -> can move up
-  assert(moveB.map(i => i.id).join(',') === 'b,c,a,d', 'move subtree up moves child with it (got ' + moveB.map(i => i.id).join(',') + ')')
 }
 
-// ===================== VALIDATION ON OPERATIONS (structural) =====================
+// ===================== page-aware insertion (§5-9) =====================
 {
-  // after indent B, the draft must still be structurally valid (no level jump)
-  const afterIndent = indentSubtree([item('a', 'A', 1, 1), item('b', 'B', 1, 2)], 1)
-  const v = validateChapterDraft(afterIndent, 10)
-  assert(v.ok === true, 'indent result is structurally valid')
+  // middle insertion: [A p2, B p8] + new p5 -> [A p2, X p5, B p8]
+  const base = [item('a', 'Chapter A', 1, 2), item('b', 'Chapter B', 1, 8)]
+  const r = insertChapterByPage(base, { id: 'x', title: '新章节', level: 1, startPage: 5 })
+  assert(r.ok && r.items.map(i => i.id).join(',') === 'a,x,b', 'page-aware insert middle (got ' + r.items.map(i => i.id).join(',') + ')')
+  assert(validateChapterDraft(r.items, 10).ok, 'middle insert result valid')
+}
+{
+  // before-first: [A p4, B p8] + new p2 -> [X p2, A p4, B p8]
+  const base = [item('a', 'A', 1, 4), item('b', 'B', 1, 8)]
+  const r = insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 2 })
+  assert(r.ok && r.items.map(i => i.id).join(',') === 'x,a,b', 'page-aware insert before first (got ' + r.items.map(i => i.id).join(',') + ')')
+  assert(validateChapterDraft(r.items, 10).ok, 'before-first insert result valid')
+}
+{
+  // append: [A p2, B p5] + new p7 -> [A, B, X p7]
+  const base = [item('a', 'A', 1, 2), item('b', 'B', 1, 5)]
+  const r = insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 7 })
+  assert(r.ok && r.items.map(i => i.id).join(',') === 'a,b,x', 'page-aware append (got ' + r.items.map(i => i.id).join(',') + ')')
+}
+{
+  // same-page conflict: [A p5] + new p5 -> conflict, no fabricated unsavable draft
+  const base = [item('a', 'A', 1, 5)]
+  const r = insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 5 })
+  assert(!r.ok && r.reason === 'same-page-conflict', 'same-page conflict reported')
+}
+{
+  // conflict keeps the base untouched (no mutation)
+  const base = [item('a', 'A', 1, 5)]
+  insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 5 })
+  assert(base.map(i => i.id).join(',') === 'a' && base[0].startPage === 5, 'conflict leaves input draft unchanged')
+}
+{
+  // inserting BEFORE a root with children keeps the whole subtree after the new root
+  const base = [item('a', 'A', 1, 2), item('a1', 'A1', 2, 3), item('b', 'B', 1, 8)]
+  const r = insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 5 })
+  assert(r.ok && r.items.map(i => i.id).join(',') === 'a,a1,x,b', 'insert never splits a subtree (got ' + r.items.map(i => i.id).join(',') + ')')
+  assert(validateChapterDraft(r.items, 10).ok, 'subtree-preserving insert result valid')
+}
+
+// ===================== operation legality (§13-15) =====================
+{
+  // indent candidate valid -> canApplyChapterDraftOperation true
+  const base = [item('a', 'A', 1, 1), item('b', 'B', 1, 2)]
+  assert(canApplyChapterDraftOperation(base, 10, indentSubtree, 1) === true, 'indent candidacy valid (B can indent under A)')
+}
+{
+  // outdent candidate INVALID (B L2 p5 outdents to L1 p5 == A L1 p5 sibling same page) -> disabled
+  const base = [item('a', 'A', 1, 5), item('b', 'B', 2, 5)]
+  assert(canApplyChapterDraftOperation(base, 10, outdentSubtree, 1) === false, 'outdent candidacy invalid (would create sibling same page)')
+}
+{
+  // outdent candidacy valid when it keeps order (B L2 p6 outdents to L1 p6 > A p5)
+  const base = [item('a', 'A', 1, 5), item('b', 'B', 2, 6)]
+  assert(canApplyChapterDraftOperation(base, 10, outdentSubtree, 1) === true, 'outdent candidacy valid (B p6 outdents to top-level p6)')
+}
+{
+  // first item cannot indent -> candidacy false
+  const base = [item('a', 'A', 1, 1), item('b', 'B', 1, 2)]
+  assert(canApplyChapterDraftOperation(base, 10, indentSubtree, 0) === false, 'first item indent candidacy invalid')
+}
+
+// ===================== page-order invariant / move not exposed (§10-11,16-17) =====================
+{
+  // Stage 9.4A.1 removes the arbitrary "move reorders array" operation: chapter order
+  // derives from physical page order. Swapping [A p2, B p5] -> [B p5, A p2] is an INVALID
+  // draft (page decreases); no Builder-exposed operation may produce it.
+  const swapped = [item('b', 'B', 1, 5), item('a', 'A', 1, 2)]
+  assert(!validateChapterDraft(swapped, 10).ok, 'A p2 / B p5 cannot be swapped into an invalid draft (page decreases rejected)')
+}
+{
+  // no moveUp/moveDown export exists anymore (compiled check via import would fail); the
+  // domain's only ordering primitive is page-aware insertion. Assert a valid draft stays
+  // valid after the remaining exposed ops (delete/indent/outdent).
+  const base = [item('a', 'A', 1, 1), item('b', 'B', 2, 2), item('c', 'C', 2, 3)]
+  assert(validateChapterDraft(deleteDraftSubtree(base, 1), 10).ok, 'delete leaf keeps a valid draft')
+  assert(validateChapterDraft(indentSubtree([item('a', 'A', 1, 1), item('b', 'B', 1, 2)], 1), 10).ok, 'indent keeps a valid draft')
+  assert(validateChapterDraft(outdentSubtree([item('a', 'A', 1, 1), item('b', 'B', 2, 2)], 1), 10).ok, 'outdent keeps a valid draft')
 }
 
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)

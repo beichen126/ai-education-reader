@@ -271,17 +271,23 @@ export function DocumentReader() {
   // Reader TOC updates immediately. The current page is NEVER re-seeked (a builder
   // save is not re-opening the Reader). ----
   const saveBuilder = useCallback(async (save: ChapterBuilderSave) => {
-    if (!doc) return
-    try {
-      await updateDocumentChapters(doc.id, save.chapters, save.source)
-      const fresh = await getDocument(doc.id)
-      if (fresh) {
-        setDoc(fresh)
-        setTocState(prev => ({ expanded: prev.expanded })) // keep expansion; tree refresh below
-      }
-    } catch { /* persist failure surfaces as a non-jump; keep stale doc */ }
+    // Test seam (Stage 9.4A.1): e2e sets this to verify a failed save keeps the
+    // Builder open, preserves the draft and shows an error. Never set in prod.
+    const w = window as unknown as { __dshFailNextChapterSave?: boolean }
+    if (w.__dshFailNextChapterSave) { w.__dshFailNextChapterSave = false; throw new Error('simulated chapter save failure') }
+    if (!doc) throw new Error('no document')
+    // A failed persist MUST propagate to the Builder (stays open, draft kept, error shown).
+    await updateDocumentChapters(doc.id, save.chapters, save.source)
+    // Refresh the tree so the TOC updates immediately. Page state is local and
+    // untouched by setDoc, so the current page is preserved (never re-seeked).
+    let fresh
+    try { fresh = await getDocument(doc.id) } catch { fresh = undefined }
+    if (fresh) {
+      setDoc(fresh)
+      setTocState(prev => ({ expanded: prev.expanded }))
+    }
+    // Close ONLY after the write succeeded.
     setBuilderOpen(false)
-    // Page state is local and untouched by setDoc, so the current page is preserved.
   }, [doc])
 
   // ---- keyboard: arrows page, Escape closes (viewer gets priority) ----
