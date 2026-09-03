@@ -24,6 +24,7 @@ import { chaptersToEditableDraft } from './chapter-builder'
 import { chapterNodesFromPdfOutline } from './chapter-model'
 import type { ChapterDraftItem } from './chapter-builder'
 import { TocPagePicker } from './TocPagePicker'
+import { TocReview, type TocReviewSave } from './TocReview'
 import { extractAiToc } from './use-ai-toc-extraction'
 import { getSettingsSnapshot } from '../engine/settings-store'
 import type { MappedTocItem } from './toc-mapping'
@@ -94,6 +95,8 @@ export function DocumentReader() {
   const [aiTocItems, setAiTocItems] = useState<MappedTocItem[] | null>(null)
   const [aiTocLabels, setAiTocLabels] = useState<string[] | null>(null)
   const [aiTocLabelsPlainNumeric, setAiTocLabelsPlainNumeric] = useState(false)
+  const [tocReviewOpen, setTocReviewOpen] = useState(false)
+  const tocReviewOpenRef = useRef(false); tocReviewOpenRef.current = tocReviewOpen
   const aiTocGenRef = useRef(0)
 
   // ---- docId-BOUND progress persistence: each write carries the id it belongs to ----
@@ -368,13 +371,23 @@ export function DocumentReader() {
       if (!res.ok) { setAiTocMsg((res as { error: string }).error); return }
       setAiTocItems(res.items); setAiTocLabels(res.labels); setAiTocLabelsPlainNumeric(res.labelsPlainNumeric)
       setAiTocMsg(null)
-      // Review workflow (commit 2) opens here; for now the draft is ready in state.
+      setTocReviewOpen(true)
     } catch {
       if (gen === aiTocGenRef.current) setAiTocMsg('目录识别失败，请重试。')
     } finally {
       if (gen === aiTocGenRef.current) setAiTocExtracting(false)
     }
   }, [doc, pageCount])
+
+  // Save the AI-reviewed draft as chapterSource 'ai-toc' — the ONLY persistence step.
+  const saveAiToc = useCallback(async (save: TocReviewSave) => {
+    if (!doc) throw new Error('no document')
+    await updateDocumentChapters(doc.id, save.chapters, 'ai-toc')
+    let fresh
+    try { fresh = await getDocument(doc.id) } catch { fresh = undefined }
+    if (fresh) { setDoc(fresh); setTocState(prev => ({ expanded: prev.expanded })) }
+    setTocReviewOpen(false)
+  }, [doc])
 
   // Restore original native outline: re-read the PDF sourceBlob outline (never a
   // persisted snapshot) and replace the current chapters. All-or-nothing.
@@ -408,8 +421,9 @@ export function DocumentReader() {
     if (!doc) return
     const onKey = (e: KeyboardEvent) => {
       if (viewerOpenRef.current) return
-      // Chapter Builder owns keyboard priority while open — no page-turning.
+      // Chapter Builder / TOC Review own keyboard priority while open — no page-turning.
       if (builderOpenRef.current) return
+      if (tocReviewOpenRef.current) return
       // Restore-original confirm: Escape cancels it, never closes the Reader.
       if (restoreConfirmOpen && e.key === 'Escape') { e.preventDefault(); setRestoreConfirmOpen(false); return }
       const t = document.activeElement as HTMLElement | null
@@ -569,6 +583,17 @@ export function DocumentReader() {
           resetKey={page}
           onClose={() => { viewerOpenRef.current = false; setViewerUrl(null) }}
           labels={{ close: '关闭', dialog: 'PDF 页面查看' }}
+        />
+      )}
+      {tocReviewOpen && aiTocItems && (
+        <TocReview
+          pageCount={pageCount}
+          items={aiTocItems}
+          labels={aiTocLabels}
+          labelsPlainNumeric={aiTocLabelsPlainNumeric}
+          onJump={(p) => go(p, pageCount)}
+          onSave={saveAiToc}
+          onClose={() => setTocReviewOpen(false)}
         />
       )}
       {tocPickerOpen && sessionRef.current && (

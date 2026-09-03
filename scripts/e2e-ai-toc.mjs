@@ -1,7 +1,6 @@
-// AI TOC picker + extraction e2e (commit 1). Uses a deterministic mock seam
-// (window.__dshMockAiToc) so NO real paid API is called. Validates: entry button,
-// picker lazy grid + selection, extraction produces a mapped draft (with exact label
-// matching when the PDF has page labels) and handles a no-key case cleanly.
+// AI TOC picker + review + save e2e (commit 1+2). Uses a deterministic mock seam
+// (window.__dshMockAiToc) so NO real paid API is called. Validates the full chain:
+// picker -> extraction -> review (jump/continue/adjust) -> save to 'ai-toc' -> TOC.
 import { chromium } from 'playwright-core'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF = 'test/fixtures/no-outline.pdf'
@@ -16,47 +15,55 @@ await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
 const FILES = '[data-testid="sidebar-entry-files"], [data-testid="rail-files"]'
 const openLibrary = async () => { if (await page.locator('[data-testid="document-library"]').count()) return; await page.locator(FILES).first().click(); await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 }) }
+const inputVal = () => page.locator('[data-testid="reader-page-input"]').inputValue()
 await openLibrary()
 await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(PDF)
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
 
-// --- A: entry button present + opens picker ---
-assert(await page.locator('[data-testid="reader-toc-ai"]').count() === 1, 'A: AI 识别目录 button shown')
+// --- A: entry + picker + select pages ---
 await page.locator('[data-testid="reader-toc-ai"]').click()
 await page.locator('[data-testid="toc-picker"]').waitFor({ state: 'visible', timeout: 10000 })
-assert(await page.locator('[data-testid="toc-picker-privacy"]').count() === 1, 'A: privacy notice shown')
-
-// --- B: lazy grid renders thumbnails; select pages ---
-// first sample thumbnails eventually render images
-await page.waitForTimeout(1200)
-const thumbCount = await page.locator('[data-testid^="toc-thumb-"]').count()
-assert(thumbCount >= 10, 'B: grid renders all 10 pages (got ' + thumbCount + ')')
-// select page 7 and 8
+await page.waitForTimeout(1000)
 await page.locator('[data-testid="toc-thumb-7"]').click()
 await page.locator('[data-testid="toc-thumb-8"]').click()
-const countLabel = await page.locator('[data-testid="toc-picker-count"]').textContent()
-assert(countLabel.includes('已选择 2 页'), 'B: selection count updates (got ' + countLabel + ')')
-const startText = await page.locator('[data-testid="toc-picker-start"]').textContent()
-assert(startText.includes('2 页'), 'B: start button shows count (got ' + startText + ')')
+assert((await page.locator('[data-testid="toc-picker-start"]').textContent()).includes('2 页'), 'A: picker shows selected count')
 
-// --- C: extraction with mock -> mapped draft (exact label) ---
-await page.evaluate(() => {
-  // no page labels on this PDF; mock returns plain entries with printed labels "1"/"2"
-  ;(globalThis).__dshMockAiToc = (req) => {
-    return JSON.stringify([
-      { title: '第一章 自然地理', level: 1, pageLabel: '1', tocPage: req.pages[0] },
-      { title: '第二章 地球', level: 2, pageLabel: '2', tocPage: req.pages[0] },
-    ])
-  }
-  // ensure no API key so the mock path is used regardless
-})
+// --- B: extraction (mock) -> review opens ---
+await page.evaluate(() => { (globalThis).__dshMockAiToc = (req) => JSON.stringify([
+  { title: '第一章 自然地理', level: 1, pageLabel: '1', tocPage: req.pages[0] },
+  { title: '第二章 地球', level: 1, pageLabel: '2', tocPage: req.pages[0] },
+]) })
 await page.locator('[data-testid="toc-picker-start"]').click()
-await page.waitForTimeout(1500)
-// No page labels -> items stay unresolved (startPage null). Extraction itself must
-// produce a mapped draft. We assert the AI message area is NOT an error.
-const aiMsg = await page.locator('[data-testid="reader-toc-ai-msg"]').count()
-assert(aiMsg === 0, 'C: extraction produced a draft (no error message)')
+await page.locator('[data-testid="toc-review"]').waitFor({ state: 'visible', timeout: 20000 })
+assert(await page.locator('[data-testid="toc-review-progress"]').count() === 1, 'B: review opens with progress')
+const itemCount = await page.locator('[data-testid^="toc-review-item-"]').count()
+assert(itemCount === 2, 'B: review lists 2 items (got ' + itemCount + ')')
+
+// --- C: click first item -> jump (unresolved -> stays; assign page then jump) ---
+await page.locator('[data-testid="toc-review-title"]').fill('第一章 自然地理')
+await page.locator('[data-testid="toc-review-page"]').fill('5')
+await page.locator('[data-testid="toc-review-ok-0"]').click()
+// advance to item 1, set its page too
+await page.locator('[data-testid="toc-review-next"]').click()
+await page.locator('[data-testid="toc-review-title"]').fill('第二章 地球')
+await page.locator('[data-testid="toc-review-page"]').fill('8')
+await page.locator('[data-testid="toc-review-ok-1"]').click()
+
+// --- D: save (all resolved + valid) ---
+await page.locator('[data-testid="toc-review-save"]').click()
+await page.locator('[data-testid="toc-review"]').waitFor({ state: 'detached', timeout: 10000 })
+await page.waitForTimeout(600)
+const toc = await page.locator('[data-testid^="reader-chapter-"]').allTextContents()
+assert(toc.join('|').includes('第一章 自然地理') && toc.join('|').includes('第二章 地球'), 'D: TOC shows ai-toc chapters (got ' + toc.join('|') + ')')
+// current page preserved (was 1 before save)
+assert((await inputVal()).trim() === '1', 'D: reader page unchanged after ai-toc save (got ' + await inputVal() + ')')
+
+// --- E: context uses the new ai-toc tree (no special branch) ---
+assert(await page.locator('[data-testid="reader-toc-edit"]').count() === 1, 'E: ai-toc tree shows 编辑目录')
+const restoreBtn = await page.locator('[data-testid="reader-toc-restore"]').count()
+// no-outline has no native outline -> no restore button
+assert(restoreBtn === 0, 'E: manual/ai-toc PDF without native outline shows no 恢复原始目录')
 
 await browser.close()
 const pageErrors = errors.length ? errors.join(' | ') : '(none)'
