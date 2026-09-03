@@ -3,27 +3,35 @@
 // safety — >30 pages asks for confirmation (soft), >120 is blocked (product
 // hard limit), generation tracks real accumulated bytes and the panel shows a
 // representative preview (first-3 + last-3) for large contexts while keeping all
-// Blobs. Everything still funnels into the same Stage 1 render + add-to-draft.
+// Blobs. Stage 9.1: multi-chapter selection — several (non-contiguous) chapters
+// normalize into ONE PdfRange[] context; adding to the draft no longer closes
+// the panel so the user can keep selecting and add a second group.
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Modal, Button, Input } from '../dsh/primitives'
 import { formatBytes } from '../storage/diagnostics'
-import { usePdfPreview } from './use-pdf-preview'
+import { usePdfPreview, validatePdfRange } from './use-pdf-preview'
 import { PdfOutlineSelector } from './PdfOutlineSelector'
 import {
   PDF_CONTEXT_SOFT_WARNING_PAGES, MAX_PDF_CONTEXT_PAGES,
   needsPdfContextSoftConfirm, exceedsPdfContextHardLimit,
-  type PdfAddPayload, type RenderedPdfPage,
+  normalizePdfRanges, countPdfRangePages, pdfRangesText,
+  type PdfAddPayload, type PdfRange, type RenderedPdfPage,
 } from './pdf-types'
 import type { PdfOutlineItem } from './pdf-outline'
 import css from './pdf-panel.module.css'
 
 export type PdfAddResult = { ok: boolean; count: number; error: string }
 
-function findNode(items: PdfOutlineItem[], id: string | null): PdfOutlineItem | undefined {
-  if (!id) return undefined
-  for (const it of items) { if (it.id === id) return it; const d = findNode(it.children, id); if (d) return d }
-  return undefined
+/** Collect the SELECTED outline nodes that carry a usable page range. */
+function collectNodes(items: PdfOutlineItem[], ids: ReadonlySet<string>, out: PdfOutlineItem[] = []): PdfOutlineItem[] {
+  for (const it of items) {
+    if (ids.has(it.id) && it.startPage != null && it.endPage != null) out.push(it)
+    collectNodes(it.children, ids, out)
+  }
+  return out
 }
+
+function rangeOf(node: PdfOutlineItem): PdfRange { return { startPage: node.startPage!, endPage: node.endPage! } }
 
 function miB(bytes: number): string { return (bytes / (1024 * 1024)).toFixed(1) + ' MiB' }
 
@@ -34,15 +42,15 @@ export function PdfPanel({
   onClose: () => void
   onAddToDraft: (payload: PdfAddPayload) => Promise<PdfAddResult>
 }) {
-  const { doc, pages, status, error, progress, outline, outlineStatus, outlineError, selectFile, generate, clearPreview } = usePdfPreview()
+  const { doc, pages, status, error, progress, outline, outlineStatus, outlineError, selectFile, generateRanges, clearPreview } = usePdfPreview()
   const [mode, setMode] = useState<'chapter' | 'manual'>('chapter')
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set())
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
   const [selError, setSelError] = useState<string | null>(null)
-  const [lastRange, setLastRange] = useState<{ start: number; end: number } | null>(null)
-  const [pendingConfirm, setPendingConfirm] = useState<{ start: number; end: number; count: number } | null>(null)
+  const [lastRanges, setLastRanges] = useState<PdfRange[] | null>(null)
+  const [pendingConfirm, setPendingConfirm] = useState<{ ranges: PdfRange[]; count: number } | null>(null)
   const [adding, setAdding] = useState(false)
   const [addMsg, setAddMsg] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -51,11 +59,13 @@ export function PdfPanel({
 
   const hasOutline = outlineStatus === 'ready' && !!outline && outline.items.length > 0
   const inChapterMode = hasOutline && mode === 'chapter'
-  const selectedNode = findNode(outline?.items ?? [], selectedId)
+  const selectedNodes = collectNodes(outline?.items ?? [], selectedIds)
+  const selectedRanges = normalizePdfRanges(selectedNodes.map(rangeOf))
+  const selectedCount = countPdfRangePages(selectedRanges)
   const generating = progress !== undefined
 
   const resetSelection = () => {
-    setSelectedId(null); setExpandedIds(new Set()); setMode('chapter'); setSelError(null); setLastRange(null); setAddMsg(null); setPendingConfirm(null)
+    setSelectedIds(new Set()); setExpandedIds(new Set()); setMode('chapter'); setSelError(null); setLastRanges(null); setAddMsg(null); setPendingConfirm(null)
   }
 
   const onPick = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -66,68 +76,80 @@ export function PdfPanel({
 
   const changeMode = (m: 'chapter' | 'manual') => {
     if (m === mode) return
-    setMode(m); clearPreview(); setAddMsg(null); setSelError(null); setLastRange(null); setPendingConfirm(null)
+    setMode(m); clearPreview(); setAddMsg(null); setSelError(null); setLastRanges(null); setPendingConfirm(null)
   }
 
-  const selectChapter = (node: PdfOutlineItem) => {
-    setSelError(null); setAddMsg(null); setPendingConfirm(null)
-    if (node.id !== selectedId) { setSelectedId(node.id); clearPreview(); setLastRange(null) }
+  const toggleSelect = (node: PdfOutlineItem) => {
+    setAddMsg(null); setSelError(null); setPendingConfirm(null)
+    setSelectedIds(prev => {
+      const n = new Set(prev)
+      if (n.has(node.id)) n.delete(node.id); else n.add(node.id)
+      return n
+    })
+    clearPreview()
+    setLastRanges(null)
   }
 
   const toggle = (id: string) => setExpandedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
-  const startGenerate = (s: number, e2: number) => {
-    setLastRange({ start: s, end: e2 })
-    void generate(String(s), String(e2))
+  const startGenerateRanges = (ranges: PdfRange[]) => {
+    setLastRanges(ranges)
+    void generateRanges(ranges)
   }
 
   const onGenerate = () => {
     setSelError(null)
     if (inChapterMode) {
-      const sel = selectedNode
-      if (!sel || sel.startPage == null || sel.endPage == null) { setSelError('请先选择一个章节。'); return }
-      const count = sel.endPage - sel.startPage + 1
-      if (exceedsPdfContextHardLimit(count)) {
-        setSelError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请切换到“选页”模式，将内容拆成较小范围。')
+      if (selectedNodes.length === 0) { setSelError('请先选择一个章节。'); return }
+      if (selectedCount > MAX_PDF_CONTEXT_PAGES) {
+        setSelError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少选择的章节范围后重试。')
         return
       }
-      if (needsPdfContextSoftConfirm(count)) { setPendingConfirm({ start: sel.startPage, end: sel.endPage, count }); return }
-      startGenerate(sel.startPage, sel.endPage)
+      if (needsPdfContextSoftConfirm(selectedCount)) { setPendingConfirm({ ranges: selectedRanges, count: selectedCount }); return }
+      startGenerateRanges(selectedRanges)
     } else {
       const s = Number(start) || 0; const e2 = Number(end) || 0
-      if (s < 1 || e2 < 1 || e2 < s) { void generate(start, end); return } // let validation surface the exact error
-      const count = e2 - s + 1
-      if (exceedsPdfContextHardLimit(count)) {
-        setSelError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请切换到“选页”模式，将内容拆成较小范围。')
+      if (s < 1 || e2 < 1 || e2 < s) {
+        setSelError(validatePdfRange(start, end, doc?.pageCount ?? 0))
         return
       }
-      if (needsPdfContextSoftConfirm(count)) { setPendingConfirm({ start: s, end: e2, count }); return }
-      startGenerate(s, e2)
+      const ranges = normalizePdfRanges([{ startPage: s, endPage: e2 }])
+      const count = countPdfRangePages(ranges)
+      if (count > MAX_PDF_CONTEXT_PAGES) {
+        setSelError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少页码范围后重试。')
+        return
+      }
+      if (needsPdfContextSoftConfirm(count)) { setPendingConfirm({ ranges, count }); return }
+      startGenerateRanges(ranges)
     }
   }
 
   const confirmLarge = () => {
     if (!pendingConfirm) return
-    const { start: s, end: e2, count } = pendingConfirm
     setPendingConfirm(null)
-    startGenerate(s, e2)
+    startGenerateRanges(pendingConfirm.ranges)
   }
 
   const addToDraft = async () => {
     if (!doc || pages.length === 0 || adding) return
     setAdding(true); setAddMsg(null)
     try {
-      const selection = inChapterMode && selectedNode && selectedNode.startPage != null && selectedNode.endPage != null
-        ? { kind: 'outline' as const, title: selectedNode.title, startPage: selectedNode.startPage, endPage: selectedNode.endPage }
-        : { kind: 'manual' as const, startPage: lastRange?.start ?? pages[0].pageNumber, endPage: lastRange?.end ?? pages[pages.length - 1].pageNumber }
+      const selection = inChapterMode && selectedNodes.length > 0
+        ? {
+            kind: 'outline' as const,
+            title: selectedNodes[0].title,
+            ranges: lastRanges ?? selectedRanges,
+            selectedChapterIds: [...selectedIds],
+          }
+        : { kind: 'manual' as const, ranges: lastRanges ?? [{ startPage: pages[0].pageNumber, endPage: pages[pages.length - 1].pageNumber }] }
       const res = await onAddToDraft({ fileName: doc.fileName, selection, pages })
-      if (res.ok) { setAddMsg('已加入 ' + res.count + ' 页'); setTimeout(() => onClose(), 700) } else { setAddMsg(res.error) }
+      setAddMsg(res.ok ? '已加入 ' + res.count + ' 页' : res.error)
     } catch { setAddMsg('无法将 PDF 页面加入对话。') }
     setAdding(false)
   }
 
-  const rangeLabel = lastRange ? (lastRange.start === lastRange.end ? 'PDF 第 ' + lastRange.start + ' 页' : 'PDF ' + lastRange.start + '–' + lastRange.end) : ''
-  const selRange = selectedNode ? (selectedNode.startPage === selectedNode.endPage ? 'PDF 第 ' + selectedNode.startPage + ' 页' : 'PDF ' + selectedNode.startPage + '–' + selectedNode.endPage) : ''
+  const addBarRange = pdfRangesText(lastRanges ?? (pages.length > 0 ? [{ startPage: pages[0].pageNumber, endPage: pages[pages.length - 1].pageNumber }] : []))
+  const addBarTitle = inChapterMode && selectedNodes[0] ? selectedNodes[0].title + ' · ' : ''
   const visiblePages = pages.filter(p => p.previewUrl)
   const largePreview = pages.length > PDF_CONTEXT_SOFT_WARNING_PAGES
 
@@ -164,17 +186,24 @@ export function PdfPanel({
 
               {(inChapterMode) ? (
                 <>
-                  <PdfOutlineSelector items={outline!.items} selectedId={selectedId} expandedIds={expandedIds} onSelect={selectChapter} onToggle={toggle} />
+                  <PdfOutlineSelector items={outline!.items} selectedIds={selectedIds} expandedIds={expandedIds} onToggleSelect={toggleSelect} onToggle={toggle} />
                   <div className={css.summary} data-testid="pdf-summary">
                     <div className={css.summaryLabel}>已选择</div>
-                    {selectedNode ? (
-                      <>
-                        <div className={css.summaryTitle} data-testid="pdf-summary-title">{selectedNode.title}</div>
-                        <div className={css.summaryRange} data-testid="pdf-summary-range">{selRange}</div>
-                        <div className={css.summaryCount} data-testid="pdf-summary-count">{selectedNode.endPage! - selectedNode.startPage! + 1} 页</div>
-                      </>
+                    {selectedNodes.length === 0 ? (
+                      <div className={css.summaryEmpty} data-testid="pdf-summary-empty">请在目录中选择章节（可多选）。</div>
                     ) : (
-                      <div className={css.summaryEmpty}>请在左侧选择章节。</div>
+                      <>
+                        <div className={css.summaryTotal} data-testid="pdf-summary-total">{selectedNodes.length} 个章节 · 共 {selectedCount} 页</div>
+                        {selectedNodes.map((n, i) => (
+                          <div className={css.summaryRow} key={n.id} data-testid={'pdf-summary-item-' + n.id}>
+                            <span className={css.summaryTitle} data-testid={i === 0 ? 'pdf-summary-title' : undefined}>{n.title}</span>
+                            <span className={css.summaryRange} data-testid={i === 0 ? 'pdf-summary-range' : undefined}>
+                              {n.startPage === n.endPage ? 'PDF 第 ' + n.startPage + ' 页' : 'PDF ' + n.startPage + '–' + n.endPage}
+                            </span>
+                          </div>
+                        ))}
+                        <div className={css.summaryCount} data-testid="pdf-summary-count">{selectedCount} 页</div>
+                      </>
                     )}
                   </div>
                 </>
@@ -191,7 +220,7 @@ export function PdfPanel({
               {error && <div className={css.error} data-testid="pdf-error">{error}</div>}
 
               <div className={css.actions}>
-                <Button variant="primary" data-testid="pdf-generate" disabled={generating || (inChapterMode && !selectedNode)} onClick={onGenerate}>
+                <Button variant="primary" data-testid="pdf-generate" disabled={generating || (inChapterMode && selectedNodes.length === 0)} onClick={onGenerate}>
                   {generating ? '正在渲染…' : '生成预览'}
                 </Button>
                 <Button variant="outline" disabled={generating} onClick={() => fileRef.current?.click()}>重新选择</Button>
@@ -218,11 +247,12 @@ export function PdfPanel({
                   {largePreview && <div className={css.empty} data-testid="pdf-preview-note">以下仅展示部分页面预览（共 {pages.length} 页，Blob 已全部生成）。</div>}
                   <div className={css.addBar}>
                     <span className={css.fileName}>{doc.fileName}</span>
-                    <span className={css.fileMeta}>{inChapterMode && selectedNode ? selectedNode.title + ' · ' : ''}{rangeLabel} · 共 {pages.length} 页</span>
+                    <span className={css.fileMeta}>{addBarTitle}{addBarRange} · 共 {pages.length} 页</span>
                   </div>
                   <div className={css.actions}>
                     <Button variant="primary" data-testid="pdf-add" disabled={adding} onClick={() => void addToDraft()}>{adding ? '正在加入 ' + pages.length + ' 页…' : '加入对话'}</Button>
                     <Button variant="outline" disabled={adding} onClick={() => fileRef.current?.click()}>重新选择</Button>
+                    <Button variant="outline" data-testid="pdf-done" onClick={onClose}>完成</Button>
                   </div>
                   {addMsg && <div className={css.progress} data-testid="pdf-add-msg">{addMsg}</div>}
                   <div className={css.pages}>
@@ -237,7 +267,7 @@ export function PdfPanel({
               )}
 
               {!generating && pages.length === 0 && !error && !selError && !pendingConfirm && (
-                <div className={css.empty}>{inChapterMode ? '选择一个章节后点击“生成预览”。' : '输入页码范围后点击“生成预览”。'}</div>
+                <div className={css.empty}>{inChapterMode ? '勾选章节后点击“生成预览”。' : '输入页码范围后点击“生成预览”。'}</div>
               )}
             </>
           )}

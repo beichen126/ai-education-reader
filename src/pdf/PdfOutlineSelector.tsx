@@ -1,15 +1,17 @@
-// Chapter outline tree selector. Consumes the parsed PdfOutlineResult from
-// Stage 3 verbatim (title/depth/children/startPage/endPage/selectable/resolution)
-// — no range/hierarchy recomputation here. Renders expand/collapse + select as
-// two distinct button actions; a11y: buttons, aria-expanded, real disabled.
+// Chapter outline tree selector (Stage 4: tree; Stage 9.1: multi-select).
+// Consumes the parsed PdfOutlineResult verbatim (title/depth/children/
+// startPage/endPage/selectable/resolution). Expand/collapse and select are two
+// distinct controls: the chevron toggles the tree, a REAL checkbox selects the
+// chapter (no aria-pressed simulation). Selecting a parent does not auto-check
+// children — the data layer normalizes/dedups the ranges instead.
 import type { PdfOutlineItem } from './pdf-outline'
 import css from './pdf-panel.module.css'
 
 type Props = {
   items: PdfOutlineItem[]
-  selectedId: string | null
+  selectedIds: ReadonlySet<string>
   expandedIds: ReadonlySet<string>
-  onSelect: (node: PdfOutlineItem) => void
+  onToggleSelect: (node: PdfOutlineItem) => void
   onToggle: (id: string) => void
 }
 
@@ -25,20 +27,20 @@ function visibleChildren(node: PdfOutlineItem): PdfOutlineItem[] {
 type RowProps = {
   node: PdfOutlineItem
   depth: number
-  selectedId: string | null
+  selectedIds: ReadonlySet<string>
   expandedIds: ReadonlySet<string>
-  onSelect: (node: PdfOutlineItem) => void
+  onToggleSelect: (node: PdfOutlineItem) => void
   onToggle: (id: string) => void
 }
 
-function OutlineRow({ node, depth, selectedId, expandedIds, onSelect, onToggle }: RowProps) {
+function OutlineRow({ node, depth, selectedIds, expandedIds, onToggleSelect, onToggle }: RowProps) {
   // Blank-title parent with children -> promote children (no blank row, keep subtree).
   if (node.title.trim() === '' && node.children.length > 0) {
-    return <>{visibleChildren(node).map(c => <OutlineRow key={c.id} node={c} depth={depth} selectedId={selectedId} expandedIds={expandedIds} onSelect={onSelect} onToggle={onToggle} />)}</>
+    return <>{visibleChildren(node).map(c => <OutlineRow key={c.id} node={c} depth={depth} selectedIds={selectedIds} expandedIds={expandedIds} onToggleSelect={onToggleSelect} onToggle={onToggle} />)}</>
   }
   const hasChildren = node.children.length > 0
   const expanded = expandedIds.has(node.id)
-  const selected = selectedId === node.id
+  const selected = selectedIds.has(node.id)
 
   return (
     <>
@@ -55,15 +57,19 @@ function OutlineRow({ node, depth, selectedId, expandedIds, onSelect, onToggle }
           {hasChildren ? (expanded ? '▾' : '▸') : ''}
         </button>
         {node.selectable ? (
-          <button
-            type="button"
+          <label
             className={css.outlineTitle + (selected ? ' ' + css.outlineSel : '')}
             data-testid={'outline-item-' + node.id}
-            aria-pressed={selected}
-            onClick={() => onSelect(node)}
           >
-            {node.title}
-          </button>
+            <input
+              type="checkbox"
+              className={css.outlineCheck}
+              checked={selected}
+              aria-label={'选择章节 ' + node.title}
+              onChange={() => onToggleSelect(node)}
+            />
+            <span className={css.outlineTitleText}>{node.title}</span>
+          </label>
         ) : (
           <span className={css.outlineTitle + ' ' + css.outlineDisabled} data-testid={'outline-item-' + node.id}>{node.title}</span>
         )}
@@ -73,17 +79,17 @@ function OutlineRow({ node, depth, selectedId, expandedIds, onSelect, onToggle }
       </div>
       {expanded && hasChildren && (
         <div className={css.outlineChildren}>
-          {visibleChildren(node).map(c => <OutlineRow key={c.id} node={c} depth={depth + 1} selectedId={selectedId} expandedIds={expandedIds} onSelect={onSelect} onToggle={onToggle} />)}
+          {visibleChildren(node).map(c => <OutlineRow key={c.id} node={c} depth={depth + 1} selectedIds={selectedIds} expandedIds={expandedIds} onToggleSelect={onToggleSelect} onToggle={onToggle} />)}
         </div>
       )}
     </>
   )
 }
 
-export function PdfOutlineSelector({ items, selectedId, expandedIds, onSelect, onToggle }: Props) {
+export function PdfOutlineSelector({ items, selectedIds, expandedIds, onToggleSelect, onToggle }: Props) {
   return (
     <div className={css.outlineList} role="tree" aria-label="章节目录">
-      {items.map(it => <OutlineRow key={it.id} node={it} depth={0} selectedId={selectedId} expandedIds={expandedIds} onSelect={onSelect} onToggle={onToggle} />)}
+      {items.map(it => <OutlineRow key={it.id} node={it} depth={0} selectedIds={selectedIds} expandedIds={expandedIds} onToggleSelect={onToggleSelect} onToggle={onToggle} />)}
     </div>
   )
 }

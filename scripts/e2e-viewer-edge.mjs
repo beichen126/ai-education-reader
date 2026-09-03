@@ -229,6 +229,8 @@ async function drag(p, dx, dy) {
   await page.locator('[data-testid="pdf-generate"]').click()
   await page.locator('[data-testid="pdf-page"]').first().waitFor({ state: 'visible', timeout: 40000 })
   await page.locator('[data-testid="pdf-add"]').click()
+  await page.locator('[data-testid="pdf-add-msg"]').waitFor({ state: 'visible', timeout: 20000 }).catch(() => {})
+  await page.locator('[data-testid="pdf-done"]').click()
   await page.locator('[data-testid="pdf-group-card"]').first().waitFor({ state: 'visible', timeout: 20000 })
   await page.locator('[data-testid^="pdf-group-expand-"]').first().click()
   await page.waitForTimeout(500)

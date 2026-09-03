@@ -10,7 +10,8 @@ import { PdfOutlineError, type PdfOutlineResult } from './pdf-outline'
 import {
   PDF_CONTEXT_SOFT_WARNING_PAGES, MAX_PDF_CONTEXT_PAGES, PDF_LARGE_PREVIEW_COUNT,
   exceedsPdfContextHardLimit, exceedsPdfGroupByteBudget,
-  type LocalPdfDocument, type RenderedPdfPage,
+  normalizePdfRanges, countPdfRangePages, expandPdfRangePages,
+  type LocalPdfDocument, type RenderedPdfPage, type PdfRange,
 } from './pdf-types'
 
 export function validatePdfRange(startText: string, endText: string, pageCount: number): string | null {
@@ -41,7 +42,7 @@ export type PdfPreviewApi = {
   outlineStatus: PdfOutlineStatus
   outlineError: string | undefined
   selectFile: (file: File) => Promise<void>
-  generate: (startText: string, endText: string) => Promise<void>
+  generateRanges: (ranges: PdfRange[]) => Promise<void>
   clearPreview: () => void
   reset: () => Promise<void>
 }
@@ -97,15 +98,20 @@ export function usePdfPreview(): PdfPreviewApi {
     }
   }, [revokeAll])
 
-  const generate = useCallback(async (startText: string, endText: string) => {
+  // Stage 9.1: the pipeline consumes ALREADY-normalized PdfRange[] (never a fake
+  // contiguous span). Overlaps/duplicates are normalized again here for safety.
+  const generateRanges = useCallback(async (ranges: PdfRange[]) => {
     if (!doc) { setError('尚未打开 PDF 文件。'); return }
-    const validation = validatePdfRange(startText, endText, doc.pageCount)
-    if (validation) { setError(validation); return }
-    const start = Number(startText.trim())
-    const end = Number(endText.trim())
-    const total = end - start + 1
+    const norm = normalizePdfRanges(ranges)
+    if (norm.length === 0) { setError('请先选择页面范围。'); return }
+    for (const r of norm) {
+      if (r.startPage > doc.pageCount || r.endPage > doc.pageCount) {
+        setError('页码范围超出范围，该 PDF 共 ' + doc.pageCount + ' 页。'); return
+      }
+    }
+    const total = countPdfRangePages(norm)
     if (exceedsPdfContextHardLimit(total)) {
-      setError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请切换到“选页”模式，将内容拆成较小范围。')
+      setError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少选择的页面范围后重试。')
       return
     }
     genRef.current++
@@ -120,16 +126,17 @@ export function usePdfPreview(): PdfPreviewApi {
     } else {
       for (let k = 0; k < PDF_LARGE_PREVIEW_COUNT; k++) { previewIdx.add(k); previewIdx.add(total - 1 - k) }
     }
+    const pageNumbers = expandPdfRangePages(norm)
     let totalBytes = 0
-    let failingPage = start
+    let failingPage = pageNumbers[0]
     try {
-      for (let n = start; n <= end; n++) {
+      for (let idx = 0; idx < pageNumbers.length; idx++) {
+        const n = pageNumbers[idx]
         if (gen !== genRef.current) return
         failingPage = n
         const { blob, width, height, mimeType } = await renderPdfPage(n)
         if (gen !== genRef.current) return
         totalBytes += blob.size
-        const idx = n - start
         const previewUrl = previewIdx.has(idx) ? URL.createObjectURL(blob) : undefined
         if (previewUrl) urlsRef.current.push(previewUrl)
         built.push({ pageNumber: n, blob, ...(previewUrl ? { previewUrl } : {}), width, height, mimeType })
@@ -165,5 +172,5 @@ export function usePdfPreview(): PdfPreviewApi {
     setOutline(null); setOutlineStatus('idle'); setOutlineError(undefined)
   }, [cleanup])
 
-  return { doc, pages, status, error, progress, outline, outlineStatus, outlineError, selectFile, generate, clearPreview, reset }
+  return { doc, pages, status, error, progress, outline, outlineStatus, outlineError, selectFile, generateRanges, clearPreview, reset }
 }

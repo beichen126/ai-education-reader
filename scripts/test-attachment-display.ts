@@ -50,9 +50,32 @@ const remaining = [full[0], full[2]] // missing p2
 const gg = buildAttachmentDisplayItems(remaining.map(x=>x.id), remaining)
 assert(gg.length === 1 && gg[0].type==='pdf-group' && (gg[0] as any).selectedPageCount === 2 && (gg[0] as any).originalPageCount === 3, 'G: missing page -> selected 2 / original 3')
 
-// metadata source intact
+// metadata source intact (legacy single-range selection -> ranges + counts)
 const one = buildAttachmentDisplayItems([full[1].id], full)
-assert(one[0].type==='pdf-group' && (one[0] as any).startPage === 1 && (one[0] as any).endPage === 3 && (one[0] as any).fileName === 'doc.pdf', 'source field carried into display item')
+assert(one[0].type==='pdf-group' && (one[0] as any).ranges.length === 1 && (one[0] as any).ranges[0].startPage === 1 && (one[0] as any).ranges[0].endPage === 3 && (one[0] as any).originalPageCount === 3 && (one[0] as any).fileName === 'doc.pdf', 'legacy source -> display ranges/counts intact')
+
+// H: multi-range (Stage 9.1) selection -> group shows both ranges + deduped count
+function pdfPageMulti(groupId: string, page: number, ranges: Array<{ startPage: number; endPage: number }>, title?: string): Attachment {
+  seq++
+  return { id: 'm' + seq, name: 'book-p' + String(page).padStart(4,'0') + '.jpg', mimeType: 'image/jpeg', size: 10, createdAt: 1, updatedAt: 1, source: { type: 'pdf-page', groupId, fileName: 'book.pdf', pageNumber: page, selection: { kind: 'outline', ...(title ? { title } : {}), ranges, selectedChapterIds: ['c2','c5'] } } }
+}
+const gH = 'G-H'
+const multiAtts = [
+  pdfPageMulti(gH, 30, [{ startPage: 30, endPage: 48 }, { startPage: 100, endPage: 118 }], '第二章 数据表示'),
+  pdfPageMulti(gH, 31, [{ startPage: 30, endPage: 48 }, { startPage: 100, endPage: 118 }], '第二章 数据表示'),
+  pdfPageMulti(gH, 100, [{ startPage: 30, endPage: 48 }, { startPage: 100, endPage: 118 }], '第二章 数据表示'),
+]
+const hh = buildAttachmentDisplayItems(multiAtts.map(x=>x.id), multiAtts)
+const hGroup = hh[0] as any
+assert(hh.length === 1 && hGroup.type === 'pdf-group', 'H: multi-range selection -> 1 group')
+assert(hGroup.ranges.length === 2 && hGroup.ranges[0].startPage === 30 && hGroup.ranges[0].endPage === 48 && hGroup.ranges[1].startPage === 100 && hGroup.ranges[1].endPage === 118, 'H: group keeps both ranges (no fake span)')
+assert(hGroup.originalPageCount === 38 && hGroup.selectedPageCount === 3, 'H: original 38 (deduped) / selected 3')
+
+// I: multi-range with overlap -> normalized single range + deduped count
+const gI = 'G-I'
+const overlapAtts = [pdfPageMulti(gI, 1, [{ startPage: 1, endPage: 100 }, { startPage: 20, endPage: 40 }], '父章节')]
+const ii = buildAttachmentDisplayItems(overlapAtts.map(x=>x.id), overlapAtts)
+assert((ii[0] as any).originalPageCount === 100, 'I: parent+child selections display 100 pages, not 121 (got ' + (ii[0] as any).originalPageCount + ')')
 
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)

@@ -3,6 +3,7 @@
 // Attachment.source — the ids order stays authoritative, groups are formed on
 // contiguous runs (never merging across an interruption, never re-sorting).
 import type { Attachment, StableId } from '../engine/types'
+import { normalizePdfRanges, countPdfRangePages, type PdfRange } from '../pdf/pdf-types'
 
 export type AttachmentDisplayItem =
   | { type: 'image'; attachmentId: StableId }
@@ -12,11 +13,18 @@ export type AttachmentDisplayItem =
       attachmentIds: StableId[]
       fileName: string
       title?: string
-      startPage: number
-      endPage: number
+      /** Normalized (sorted/deduped/merged) page ranges of this context group. */
+      ranges: PdfRange[]
       selectedPageCount: number
       originalPageCount: number
     }
+
+/** Range list of a stored selection — handles both the current multi-range shape
+ * and the pre-Stage-9.1 single-range shape found in existing user data. */
+export function selectionRanges(selection: NonNullable<Attachment['source']>['selection']): PdfRange[] {
+  if ('ranges' in selection) return normalizePdfRanges(selection.ranges)
+  return [{ startPage: selection.startPage, endPage: selection.endPage }]
+}
 
 export function isPdfPageAttachment(a: Attachment | undefined): a is Attachment & { source: NonNullable<Attachment['source']> } {
   return !!a && a.source?.type === 'pdf-page'
@@ -38,16 +46,16 @@ export function buildAttachmentDisplayItems(ids: StableId[], metas: Attachment[]
         if (a && a.source?.type === 'pdf-page' && a.source.groupId === gid) { run.push(ids[j]); j++ } else break
       }
       const first = byId.get(run[0])!
+      const ranges = selectionRanges(first.source.selection)
       out.push({
         type: 'pdf-group',
         groupId: gid,
         attachmentIds: [...run],
         fileName: first.source.fileName,
         title: first.source.selection.title,
-        startPage: first.source.selection.startPage,
-        endPage: first.source.selection.endPage,
+        ranges,
         selectedPageCount: run.length,
-        originalPageCount: first.source.selection.endPage - first.source.selection.startPage + 1,
+        originalPageCount: countPdfRangePages(ranges),
       })
       i = j
     } else {

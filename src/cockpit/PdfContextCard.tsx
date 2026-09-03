@@ -7,7 +7,7 @@ import type { AttachmentDisplayItem } from '../attachments/attachment-display'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { IconCloseOutline16 } from '../dsh/primitives'
-import { PDF_GROUP_PREVIEW_BATCH } from '../pdf/pdf-types'
+import { PDF_GROUP_PREVIEW_BATCH, pdfRangesText } from '../pdf/pdf-types'
 import css from './cockpit.module.css'
 
 type GroupItem = Extract<AttachmentDisplayItem, { type: 'pdf-group' }>
@@ -25,9 +25,8 @@ export function PdfContextCard({
   const [viewerIdx, setViewerIdx] = useState<number | null>(null)
   const large = item.attachmentIds.length > 30
   const visibleIds = large ? item.attachmentIds.slice(0, shown) : item.attachmentIds
-  const rangeText = item.startPage === item.endPage
-    ? 'PDF 第 ' + item.startPage + ' 页'
-    : 'PDF ' + item.startPage + '–' + item.endPage
+  // Multi-range display (Stage 9.1): 'PDF 30–48, 100–118' — never re-flattened to a fake span.
+  const rangeText = pdfRangesText(item.ranges)
   const countText = item.selectedPageCount === item.originalPageCount
     ? rangeText + ' · ' + item.originalPageCount + ' 页'
     : rangeText + ' · 已加入 ' + item.selectedPageCount + '/' + item.originalPageCount + ' 页'

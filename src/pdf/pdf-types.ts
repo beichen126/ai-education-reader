@@ -14,7 +14,8 @@ export type RenderedPdfPage = {
   mimeType: string
 }
 
-export type PdfRange = { start: number; end: number }
+/** One contiguous physical page range (1-based inclusive). */
+export type PdfRange = { startPage: number; endPage: number }
 
 /** Product safety limits for a single PDF context (NOT DeepSeek/API limits). */
 export const PDF_CONTEXT_SOFT_WARNING_PAGES = 30
@@ -44,12 +45,50 @@ export function pdfPageAttachmentName(fileName: string, pageNumber: number): str
   const stem = fileName.replace(/\.pdf$/i, '')
   return stem + '-p' + String(pageNumber).padStart(4, '0') + '.jpg'
 }
-/** Minimal provenance of the user's PDF selection, stored on every page Attachment. */
+/** Sorted, deduped, non-adjacent-merged list of normalized page ranges. */
+export function normalizePdfRanges(ranges: PdfRange[]): PdfRange[] {
+  const valid = ranges
+    .filter(r => Number.isInteger(r.startPage) && Number.isInteger(r.endPage) && r.startPage >= 1 && r.endPage >= r.startPage)
+    .map(r => ({ startPage: r.startPage, endPage: r.endPage }))
+    .sort((a, b) => a.startPage - b.startPage || a.endPage - b.endPage)
+  const out: PdfRange[] = []
+  for (const r of valid) {
+    const last = out[out.length - 1]
+    // Overlapping (20-60 + 30-40) and adjacent (20-40 + 41-60) ranges merge: the
+    // rendered page set is identical, and duplicate pages must never be sent twice.
+    if (last && r.startPage <= last.endPage + 1) last.endPage = Math.max(last.endPage, r.endPage)
+    else out.push({ ...r })
+  }
+  return out
+}
+
+/** Number of unique physical pages covered by normalized ranges (deduped). */
+export function countPdfRangePages(ranges: PdfRange[]): number {
+  return normalizePdfRanges(ranges).reduce((s, r) => s + (r.endPage - r.startPage + 1), 0)
+}
+
+/** Every physical page in normalized range order (each page rendered exactly once). */
+export function expandPdfRangePages(ranges: PdfRange[]): number[] {
+  const out: number[] = []
+  for (const r of normalizePdfRanges(ranges)) { for (let n = r.startPage; n <= r.endPage; n++) out.push(n) }
+  return out
+}
+
+/** Compact display text for a normalized range list: `PDF 7–8, 100–118` (`第 N 页` for singles). */
+export function pdfRangesText(ranges: PdfRange[]): string {
+  const rs = normalizePdfRanges(ranges)
+  if (rs.length === 0) return ''
+  return 'PDF ' + rs.map(r => r.startPage === r.endPage ? '第 ' + r.startPage + ' 页' : r.startPage + '–' + r.endPage).join(', ')
+}
+
+/** Minimal provenance of the user's PDF selection, stored on every page Attachment.
+ * Multi-range from Stage 9.1: chapters may be non-contiguous; `ranges` is the
+ * normalized, deduped page set; `selectedChapterIds` keeps the original chapter refs. */
 export type PdfSelection = {
   kind: 'outline' | 'manual'
   title?: string
-  startPage: number
-  endPage: number
+  ranges: PdfRange[]
+  selectedChapterIds?: string[]
 }
 
 /** Payload handed from the PDF panel to the engine when the user clicks 加入对话. */
