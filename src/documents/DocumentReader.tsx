@@ -453,21 +453,33 @@ function TocRow({ node, depth, state, onOpen, onToggle }: { node: ChapterNode; d
   const hasKids = node.children.length > 0
   const expanded = state.expanded.has(node.id)
   const leafSelectable = node.selectable && node.startPage != null
+  // TOC layout (Stage 9.4A.2): each chapter node is a VERTICAL block. Its row (chevron
+  // + title + page) is a single flex row that spans the full available width; children
+  // render BELOW the row in their own vertical container — never as sibling flex items
+  // of the row (which squeezes long Chinese titles into character-by-character wrapping
+  // and forces horizontal overflow). Indent is bounded left padding only.
+  const indent = Math.min(depth * 12, 96)
   return (
-    <div className={css.tocNodeWrap} style={{ paddingLeft: 6 + depth * 14 }}>
-      {hasKids ? (
-        <button type="button" className={css.tocChevronBtn} data-testid={'reader-toc-toggle-' + node.id} aria-label={expanded ? '收起' : '展开'} onClick={() => onToggle(node)}>{expanded ? '▾' : '▸'}</button>
-      ) : <span className={css.tocChevron} aria-hidden />}
-      <button
-        type="button"
-        className={css.tocRow}
-        data-testid={'reader-chapter-' + node.id}
-        onClick={() => onOpen(node)}
-      >
-        <span className={css.tocText}>{node.title}</span>
-        {leafSelectable && <span className={css.tocRange}>{node.startPage}</span>}
-      </button>
-      {hasKids && expanded && node.children.map(c => <TocRow key={c.id} node={c} depth={depth + 1} state={state} onOpen={onOpen} onToggle={onToggle} />)}
+    <div className={css.tocNode} style={{ paddingLeft: indent }}>
+      <div className={css.tocNodeWrap} data-testid={'reader-toc-node-' + node.id}>
+        {hasKids ? (
+          <button type="button" className={css.tocChevronBtn} data-testid={'reader-toc-toggle-' + node.id} aria-label={expanded ? '收起' : '展开'} onClick={() => onToggle(node)}>{expanded ? '▾' : '▸'}</button>
+        ) : <span className={css.tocChevron} aria-hidden />}
+        <button
+          type="button"
+          className={css.tocRow}
+          data-testid={'reader-chapter-' + node.id}
+          onClick={() => onOpen(node)}
+        >
+          <span className={css.tocText}>{node.title}</span>
+          {leafSelectable && <span className={css.tocRange}>{node.startPage}</span>}
+        </button>
+      </div>
+      {hasKids && expanded && (
+        <div className={css.tocChildren}>
+          {node.children.map(c => <TocRow key={c.id} node={c} depth={depth + 1} state={state} onOpen={onOpen} onToggle={onToggle} />)}
+        </div>
+      )}
     </div>
   )
 }
