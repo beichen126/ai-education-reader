@@ -6,6 +6,10 @@ AI Education Reader 的用户可感知更新记录。
 
 ## [Unreleased]
 
+### Fixed
+
+- 修复 PDF Reader 返回文件库或切换文档后旧 PDF session / 页面预览未及时释放，以及再次导入 PDF 时按钮状态未恢复的问题。
+
 ### Added
 
 - 新增本地“文件”资料入口，可查看和管理保存在浏览器中的 PDF 学习文档。

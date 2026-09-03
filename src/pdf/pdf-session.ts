@@ -11,7 +11,9 @@ import type { PdfOutlineResult } from './pdf-outline.ts'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-export type PdfSession = {
+import { closePdfSession as closeSessionCore, type PdfSessionLike } from './pdf-session-core'
+
+export type PdfSession = PdfSessionLike & {
   loadingTask: ReturnType<typeof pdfjsLib.getDocument>
   documentProxy: import('pdfjs-dist').PDFDocumentProxy
 }
@@ -40,9 +42,8 @@ export async function readSessionOutline(session: PdfSession): Promise<PdfOutlin
   return readOutlineForDocument(session.documentProxy)
 }
 
-/** Destroy the session and release its worker. Safe to call multiple times. */
+/** Destroy the session and release its worker. IDEMPOTENT (see pdf-session-core). */
 export async function closePdfSession(session: PdfSession | null): Promise<void> {
-  if (!session) return
-  try { await session.loadingTask.destroy() } catch { /* ignore */ }
+  return closeSessionCore(session)
 }
 export { pdfErrorMessage }

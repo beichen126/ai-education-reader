@@ -26,7 +26,11 @@ await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'att
 const FILES_ENTRY = '[data-testid="sidebar-entry-files"], [data-testid="rail-files"]'
 const IMAGES_ENTRY = '[data-testid="sidebar-entry-images"], [data-testid="rail-images"]'
 const inputVal = () => page.locator('[data-testid="reader-page-input"]').inputValue()
-const openLibrary = async () => { await page.locator(FILES_ENTRY).first().click(); await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 }) }
+const openLibrary = async () => {
+  if (await page.locator('[data-testid="document-library"]').count()) return
+  await page.locator(FILES_ENTRY).first().click()
+  await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
+}
 
 // ---- A. library empty state -> import PDF -> Reader opens on page 1 ----
 await openLibrary()
@@ -144,12 +148,42 @@ await page.locator('[data-testid="sidebar-new-chat"]').click()
 await page.waitForTimeout(400)
 assert(await page.locator('[data-testid="sidebar-new-chat"]').count() === 1, 'H: sidebar new chat works')
 
+// ---- J. repeat import: A -> reader -> back -> B -> both documents kept ----
+await openLibrary()
+await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(PDF)
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
+await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+await page.locator('[data-testid="reader-back"]').click()
+await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
+assert(await page.locator('[data-testid="library-import"]').isEnabled(), 'J: 导入 PDF re-enabled after reader round-trip')
+await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/outline-tricky.pdf')
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
+await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+assert((await page.locator('[data-testid="reader-title"]').textContent()).includes('outline-tricky.pdf'), 'J: second import opens B reader (got ' + await page.locator('[data-testid="reader-title"]').textContent() + ')')
+await page.locator('[data-testid="reader-back"]').click()
+await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
+assert(await page.locator('[data-testid^="doc-card-"]').count() === 3, 'J: library keeps all imported documents (outline-sample x2 + outline-tricky)')
+
+// ---- K. A -> B page isolation: no stale A image during B load ----
+const bCard = page.locator('[data-testid^="doc-open-"]').filter({ hasText: 'outline-tricky.pdf' }).first()
+await bCard.click()
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
+// after doc switch the old A page image must be GONE (loading state), then B's image appears
+const imgDuringLoad = await page.locator('[data-testid="reader-page-img"]').count()
+assert(imgDuringLoad === 0 || (await page.locator('[data-testid="reader-title"]').textContent() || '').includes('outline-tricky'), 'K: no stale A page image during B load (img=' + imgDuringLoad + ')')
+await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+assert((await page.locator('[data-testid="reader-title"]').textContent()).includes('outline-tricky'), 'K: B title shown with B page')
+await page.locator('[data-testid="reader-close"]').click()
+await page.waitForTimeout(300)
+await openLibrary()
+
 // ---- I. delete document (confirm accepted via dialog handler) ----
 await openLibrary()
+const beforeDel = await page.locator('[data-testid^="doc-card-"]').count()
 await page.locator('[data-testid^="doc-delete-"]').first().click()
 await page.waitForTimeout(500)
-assert(await page.locator('[data-testid="library-empty"]').count() === 1, 'I: delete -> empty library')
-assert(await page.locator('[data-testid="doc-card-"]').count() === 0, 'I: no doc cards remain')
+const afterDel = await page.locator('[data-testid^="doc-card-"]').count()
+assert(afterDel === beforeDel - 1, 'I: delete removes one document (' + beforeDel + ' -> ' + afterDel + ')')
 await page.locator('[data-testid="library-close"]').click()
 
 console.log('--------')

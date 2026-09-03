@@ -1,9 +1,10 @@
-// Document Reader (Stage 9.2B1): full-document reading space backed by an explicit
-// PDF session (never the PdfPanel singleton). Single-page on-demand rendering
-// with generation-token stale-result discard; fit-to-area page that opens the
-// existing ZoomableImageDialog for zoom/pan; chapter navigation from the PERSISTED
-// LearningDocument.chapters (no re-parse of the outline); debounced lastReadPage
-// persistence flushed on close/unmount/pagehide/visibilitychange.
+// Document Reader (Stage 9.2B1 / 9.2B1.1): full-document reading space backed by an
+// explicit PDF session (never the PdfPanel singleton). Lifecycle contract:
+// the [docId] load effect OWNS the session it opens and only closes its OWN
+// session — reader→library, reader→closed and A→B all tear down via that effect
+// cleanup (render generation invalidated, page URL revoked, viewer closed,
+// progress flushed with the document id bound at call time). App-level unmount
+// effect only keeps pagehide/visibility flush.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getDocument, updateLastReadPage } from './document-service'
 import { useDocumentUi, documentUiActions } from './document-ui-store'
@@ -11,10 +12,18 @@ import { clampReaderPage, parsePageInput } from './reader-utils'
 import { openPdfSession, renderSessionPage, closePdfSession, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
 import { PdfError } from '../pdf/pdf-service'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
+import { createUrlOwner } from './url-owner'
 import type { LearningDocument, ChapterNode } from './document-types'
 import css from './document-reader.module.css'
 
 type TocTreeState = { expanded: ReadonlySet<string> }
+
+const EMPTY_DOC_STATE = {
+  doc: null as LearningDocument | null,
+  pageCount: 0,
+  page: 1,
+  pageInput: '',
+}
 
 export function DocumentReader() {
   const ui = useDocumentUi(x => x)
@@ -25,6 +34,7 @@ export function DocumentReader() {
   const [page, setPage] = useState(1)
   const [pageCount, setPageCount] = useState(0)
   const [pageUrl, setPageUrl] = useState<string | null>(null)
+  const urlOwnerRef = useRef(createUrlOwner())
   const [rendering, setRendering] = useState(false)
   const [pageInput, setPageInput] = useState('')
   const [pageError, setPageError] = useState<string | null>(null)
@@ -34,39 +44,52 @@ export function DocumentReader() {
   const viewerOpenRef = useRef(false)
   const genRef = useRef(0)
   const pageRef = useRef(1); pageRef.current = page
+  const docIdRef = useRef<string | null>(null); docIdRef.current = docId
   const skipFirstProgressRef = useRef(true)
   const queueRef = useRef<Promise<void>>(Promise.resolve())
-  const urlRef = useRef<string | null>(null)
 
-  const persist = useCallback((p: number) => {
-    if (!docId) return
-    queueRef.current = queueRef.current.then(() => updateLastReadPage(docId, p).catch(() => {})).catch(() => {})
-  }, [docId])
-  const flushProgress = useCallback(() => { const p = pageRef.current; if (p > 0) persist(p) }, [persist])
-  const flushRef = useRef(flushProgress); flushRef.current = flushProgress
-  const docIdRef = useRef(docId); docIdRef.current = docId
-  const sessionRefHold = sessionRef
-
-  const go = useCallback((p: number, count: number) => {
-    const next = clampReaderPage(p, count)
-    setPage(prev => { const v = prev === next ? prev : next; return v })
-    setPageInput(String(next))
+  // ---- docId-BOUND progress persistence: each write carries the id it belongs to ----
+  const persist = useCallback((targetDocId: string, p: number) => {
+    if (!targetDocId) return
+    queueRef.current = queueRef.current.then(() => updateLastReadPage(targetDocId, p).catch(() => {})).catch(() => {})
   }, [])
+  const flushProgress = useCallback(() => {
+    const id = docIdRef.current
+    if (id) persist(id, pageRef.current)
+  }, [persist])
+  const flushRef = useRef(flushProgress); flushRef.current = flushProgress
 
-  // ---- load document + own session ----
+  // ---- load document now OWNS the whole lifecycle for one docId ----
   useEffect(() => {
-    if (!docId) return
+    if (!docId) {
+      // Reader left (library / closed / switching): reset everything synchronously
+      // so the previous document's page / image / TOC / viewer never leaks in.
+      genRef.current++ // any in-flight render of the old document becomes stale
+      sessionRef.current = null
+      urlOwnerRef.current.revokeAll()
+      setPageUrl(null)
+      setViewerUrl(null); viewerOpenRef.current = false
+      setDoc(null); setPageCount(0); setPage(1); setPageInput('')
+      setPageError(null); setRendering(false); setLoadError(null)
+      setTocState({ expanded: new Set() }); setTocOpen(false)
+      return
+    }
     let cancelled = false
-    let opened: PdfSession | null = null
+    let ownedSession: PdfSession | null = null
     void (async () => {
       setLoadError(null); setDoc(null)
+      setPageCount(0); setPage(1); setPageInput(''); setPageError(null)
+      setTocState({ expanded: new Set() }); setTocOpen(false)
+      setViewerUrl(null); viewerOpenRef.current = false
+      urlOwnerRef.current.revokeAll(); setPageUrl(null)
+      sessionRef.current = null
       try {
         const d = await getDocument(docId)
         if (cancelled) return
         if (!d) { setLoadError('找不到这份文档。'); return }
         const o = await openPdfSession(d.sourceBlob)
         if (cancelled) { void closePdfSession(o.session); return }
-        opened = o.session
+        ownedSession = o.session
         sessionRef.current = o.session
         setDoc(d); setPageCount(d.pageCount)
         const start = clampReaderPage(d.lastReadPage || 1, d.pageCount)
@@ -75,7 +98,15 @@ export function DocumentReader() {
         if (!cancelled) setLoadError(e instanceof PdfError ? pdfErrorMessage(e.kind) : '无法打开这份文档。')
       }
     })()
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      genRef.current++ // invalidate pending renders of THIS document immediately
+      flushRef.current() // last meaningful page of THIS document (id bound via docIdRef)
+      if (ownedSession) { void closePdfSession(ownedSession) }
+      if (sessionRef.current === ownedSession) sessionRef.current = null
+      urlOwnerRef.current.revokeAll()
+      setViewerUrl(null); viewerOpenRef.current = false
+    }
   }, [docId])
 
   // ---- render current page (generation token discards stale results) ----
@@ -83,29 +114,28 @@ export function DocumentReader() {
     if (!sessionRef.current || !doc || pageCount <= 0) return
     const session = sessionRef.current
     const gen = ++genRef.current
-    let renderedUrl: string | null = null
     setRendering(true); setPageError(null)
     void renderSessionPage(session, page).then(r => {
-      if (gen !== genRef.current) return
-      renderedUrl = URL.createObjectURL(r.blob)
-      setPageUrl(prev => { if (prev) URL.revokeObjectURL(prev); return renderedUrl })
+      if (gen !== genRef.current) return // stale (page switch / document switch / leave)
+      urlOwnerRef.current.replace(URL.createObjectURL(r.blob))
+      setPageUrl(urlOwnerRef.current.current)
       setRendering(false)
     }).catch(() => {
       if (gen !== genRef.current) return
       setRendering(false)
       setPageError('第 ' + page + ' 页渲染失败。')
     })
-    return () => { /* page switch discards via generation token */ }
   }, [page, pageCount, doc])
 
-  // ---- debounced progress persistence (1000ms), ordered writes ----
+  // ---- debounced progress persistence (1000ms), id bound at schedule time ----
   useEffect(() => {
     if (skipFirstProgressRef.current) { skipFirstProgressRef.current = false; return }
-    const t = setTimeout(() => persist(page), 1000)
+    const idAtSchedule = docIdRef.current
+    const t = setTimeout(() => { if (idAtSchedule) persist(idAtSchedule, page) }, 1000)
     return () => clearTimeout(t)
   }, [page, persist])
 
-  // ---- flush on unmount / hidden / pagehide ----
+  // ---- App-level: flush on hidden/pagehide (unmount flush is the [docId] cleanup) ----
   useEffect(() => {
     const flush = () => flushRef.current()
     const onVis = () => { if (document.visibilityState === 'hidden') flushRef.current() }
@@ -114,19 +144,22 @@ export function DocumentReader() {
     return () => {
       window.removeEventListener('pagehide', flush)
       document.removeEventListener('visibilitychange', onVis)
-      flushRef.current()
-      void closePdfSession(sessionRef.current)
-      if (urlRef.current) { URL.revokeObjectURL(urlRef.current); urlRef.current = null }
     }
+  }, [])
+
+  const go = useCallback((p: number, count: number) => {
+    const next = clampReaderPage(p, count)
+    setPage(prev => prev === next ? prev : next)
+    setPageInput(String(next))
   }, [])
 
   // ---- keyboard: arrows page, Escape closes (viewer gets priority) ----
   useEffect(() => {
     if (!doc) return
     const onKey = (e: KeyboardEvent) => {
-      if (viewerOpenRef.current) return // the page viewer handles Escape/arrows itself
+      if (viewerOpenRef.current) return
       const t = document.activeElement as HTMLElement | null
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return // page input being edited
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return
       if (e.key === 'ArrowLeft') { e.preventDefault(); go(pageRef.current - 1, pageCount) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); go(pageRef.current + 1, pageCount) }
       else if (e.key === 'Escape') { documentUiActions.close() }

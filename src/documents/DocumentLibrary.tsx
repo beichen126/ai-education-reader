@@ -44,12 +44,15 @@ export function DocumentLibrary() {
         importSource: { kind: 'pdf', originalFileName: f.name },
       })
       if (chapters.length > 0) { try { await updateDocumentChapters(id, chapters, chapterSource) } catch { /* metadata only */ } }
-      await closePdfSession(session); session = null
       await refresh()
       documentUiActions.openReader(id)
     } catch (e: unknown) {
-      if (session) { try { await closePdfSession(session) } catch { /* ignore */ } }
       setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : '无法导入该 PDF。')
+    } finally {
+      // ONE cleanup path: the temporary import session is always closed exactly
+      // once (closePdfSession is idempotent) and the button re-enables even when
+      // the reader opened right after a successful import.
+      if (session) { try { await closePdfSession(session) } catch { /* ignore */ } }
       setImporting(false)
     }
   }

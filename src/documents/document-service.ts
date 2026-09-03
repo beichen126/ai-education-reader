@@ -96,7 +96,9 @@ export function toDocumentSummary(doc: LearningDocument): DocumentSummary {
   }
 }
 
-/** Lightweight library list (updatedAt DESC). No Blobs / full trees are materialized. */
+/** Lightweight library list (updatedAt DESC). The React list stores only summaries;
+ * note idbGetAll does read full rows (Blob references, not byte copies) — the
+ * real metadata-query optimization for huge libraries is a later concern. */
 export async function listDocumentSummaries(): Promise<DocumentSummary[]> {
   const all = await idbGetAll('documents')
   return (all as LearningDocument[]).sort((a, b) => b.updatedAt - a.updatedAt).map(toDocumentSummary)
