@@ -1,7 +1,8 @@
-import { idbReplaceAll } from '../storage/idb'
+import { idbReplaceAll, idbGetAll } from '../storage/idb'
 import type { Annotation } from '../annotations/annotation-types'
 import { ANNOTATION_VERSION } from '../annotations/annotation-types'
 import type { Attachment } from '../engine/types'
+import { persistBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
 import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupV1, type BackupV2 } from './backup-types'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
@@ -20,7 +21,6 @@ const VALID_CHAPTER_SOURCES = new Set(['native', 'ai-toc', 'manual'])
 const VALID_IMPORT_KINDS = new Set(['pdf', 'ppt', 'pptx'])
 const VALID_DOC_CHAPTER_SOURCES = new Set(['none', 'native', 'ai-toc', 'manual', 'mixed'])
 
-/** Standard base64 (with padding) that atob can decode. */
 function isBase64(data: unknown): boolean {
   if (!isStr(data) || data.length === 0 || data.length % 4 !== 0) return false
   try { atob(data); return true } catch { return false }
@@ -29,7 +29,7 @@ function isBase64(data: unknown): boolean {
 function validateChapterTree(c: unknown, pageCount: number, depth: number, ids: Set<string>): boolean {
   if (!isObj(c)) return false
   if (!isNonEmptyStr(c.id) || !isStr(c.title) || !isInt(c.level) || c.level < 1) return false
-  if (ids.has(c.id)) return false // chapter ids must be unique within one document tree
+  if (ids.has(c.id)) return false
   ids.add(c.id)
   if (!VALID_CHAPTER_SOURCES.has(c.source)) return false
   if (typeof c.selectable !== 'boolean') return false
@@ -41,7 +41,7 @@ function validateChapterTree(c: unknown, pageCount: number, depth: number, ids: 
 }
 
 function validateDocuments(input: Record<string, any>): void {
-  if (input.version === 1) return // V1 never carries documents; legacy restores with documents=[]
+  if (input.version === 1) return
   if (!Array.isArray(input.documents)) throw new BackupError('缺少 documents 数组')
   const ids = new Set<string>()
   for (const d of input.documents) {
@@ -55,7 +55,6 @@ function validateDocuments(input: Record<string, any>): void {
     if (!isNonEmptyStr(m.fileName)) throw new BackupError('document.fileName 非法')
     if (!isInt(m.fileSize) || m.fileSize < 0) throw new BackupError('document.fileSize 必须是 >= 0 的整数')
     if (!isInt(m.pageCount) || m.pageCount < 1) throw new BackupError('document.pageCount 非法')
-    // lastReadPage invariant: 0 (unread) or an integer in [1, pageCount]
     const okLastRead = m.lastReadPage === 0 || (isInt(m.lastReadPage) && m.lastReadPage >= 1 && m.lastReadPage <= m.pageCount)
     if (!okLastRead) throw new BackupError('document.lastReadPage 非法（0 或 1..pageCount 的整数）')
     if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('document 时间戳必须是数字')
@@ -71,12 +70,6 @@ function validateDocuments(input: Record<string, any>): void {
   }
 }
 
-/**
- * Parse + validate an external backup. Throws BackupError with a human-readable
- * reason on ANY failure, BEFORE anything is written — so a malformed or malicious
- * backup can never clear/overwrite the current database. Accepts V1 (Stage 4-9.3)
- * and V2 (Stage 9.2A+) backups; V1 restores with an empty document library.
- */
 export function parseAndValidate(input: unknown): Backup {
   if (!isObj(input)) throw new BackupError('不是一个有效的备份对象')
   if (input.format !== BACKUP_FORMAT && input.format !== LEGACY_BACKUP_FORMAT) throw new BackupError('格式不匹配：不是本产品的备份文件（支持 ' + BACKUP_FORMAT + ' 与 ' + LEGACY_BACKUP_FORMAT + '）')
@@ -91,9 +84,8 @@ export function parseAndValidate(input: unknown): Backup {
 
   const convIds = new Set<string>()
   const attIds = new Set<string>()
-  const messageIds = new Map<string, Set<string>>()   // conversationId -> message ids
+  const messageIds = new Map<string, Set<string>>()
 
-  // --- conversations + messages ---
   for (const c of input.conversations) {
     if (!isObj(c) || !isNonEmptyStr(c.id)) throw new BackupError('conversation 缺少合法的 id')
     if (!isStr(c.title)) throw new BackupError('conversation.title 必须是字符串')
@@ -112,7 +104,6 @@ export function parseAndValidate(input: unknown): Backup {
     messageIds.set(c.id, mids)
   }
 
-  // --- attachments ---
   for (const at of input.attachments) {
     if (!isObj(at) || !isNonEmptyStr(at.id)) throw new BackupError('attachment 缺少合法的 id')
     if (!isObj(at.meta) || at.meta.id !== at.id) throw new BackupError('attachment.meta.id 必须与 at.id 一致')
@@ -121,7 +112,6 @@ export function parseAndValidate(input: unknown): Backup {
     attIds.add(at.id)
   }
 
-  // --- annotations (type-specific + reference consistency) ---
   for (const a of input.annotations) {
     if (!isObj(a) || !isNonEmptyStr(a.id)) throw new BackupError('annotation 缺少合法的 id')
     if (a.version !== ANNOTATION_VERSION) throw new BackupError('annotation.version 非法')
@@ -154,7 +144,6 @@ export function parseAndValidate(input: unknown): Backup {
     }
   }
 
-  // --- message.images -> attachment exists (reference consistency) ---
   for (const c of input.conversations) {
     for (const m of c.messages) {
       for (const img of m.images) {
@@ -174,17 +163,59 @@ function base64ToBlob(data: string, mime: string): Blob {
   return new Blob([bytes], { type: mime || 'application/octet-stream' })
 }
 
-/** Atomic replace-restore: decode attachments + documents then write every store in ONE readwrite transaction. */
+// Staged restore (Stage 9.4D): decodes + stages new binary objects, commits metadata in ONE
+// idbReplaceAll transaction, then cleans up old OPFS refs best-effort. A failure at ANY step
+// leaves the existing data intact (staged OPFS files deleted, old IDB untouched).
 export async function restoreBackup(backup: Backup): Promise<void> {
-  const attachments = backup.attachments.map((at) => ({ id: at.id, meta: at.meta as Attachment, blob: base64ToBlob(at.data, at.mimeType || at.meta.mimeType) }))
-  const v2 = 'documents' in backup ? (backup as BackupV2) : null
-  const documents = v2 ? v2.documents.map((d) => ({ ...d.meta, sourceBlob: base64ToBlob(d.data, d.mimeType) })) : []
-  const settings = [
-    { key: 'apiBaseUrl', value: backup.settings?.apiBaseUrl || 'https://api.deepseek.com' },
-    { key: 'model', value: backup.settings?.model || 'deepseek-chat' },
-    { key: 'customSystemPrompt', value: backup.settings?.customSystemPrompt || '' },
-    { key: 'customSystemPromptEnabled', value: backup.settings?.customSystemPromptEnabled ? 'true' : 'false' },
-    { key: 'apiKey', value: '' },
-  ]
-  await idbReplaceAll({ settings, conversations: backup.conversations, attachments, annotations: backup.annotations as Annotation[], documents })
+  const v2 = 'documents' in backup ? (backup as BackupV2) : null;
+  const staged: { ref: StoredBinary; path: string | null }[] = [];
+  const oldRefs: StoredBinary[] = [];
+  try {
+    // A. Decode + stage each attachment binary to a UNIQUE new path (never overwrite).
+    const attachRows: any[] = [];
+    for (const at of backup.attachments) {
+      const blob = base64ToBlob(at.data, at.mimeType || at.meta.mimeType);
+      const ref = await persistBinary('attachments', at.id, blob, { mimeType: at.mimeType || at.meta.mimeType });
+      if (ref.storage === 'opfs') staged.push({ ref, path: ref.path });
+      attachRows.push({ id: at.id, meta: at.meta as Attachment, binary: ref, recordVersion: 2 });
+    }
+    // B. Stage each document binary (metadata preserved; sourceBlob dropped from meta).
+    const documentsArray = v2 ? v2.documents : [];
+    const documentRows: any[] = [];
+    for (const d of documentsArray) {
+      const blob = base64ToBlob(d.data, d.mimeType);
+      const ref = await persistBinary('documents', d.id, blob, { mimeType: d.mimeType });
+      if (ref.storage === 'opfs') staged.push({ ref, path: ref.path });
+      documentRows.push({ ...d.meta, source: ref, recordVersion: 2 });
+    }
+    // C. Build replacement metadata records pointing at the NEW binary refs.
+    const settings = [
+      { key: 'apiBaseUrl', value: backup.settings?.apiBaseUrl || 'https://api.deepseek.com' },
+      { key: 'model', value: backup.settings?.model || 'deepseek-chat' },
+      { key: 'customSystemPrompt', value: backup.settings?.customSystemPrompt || '' },
+      { key: 'customSystemPromptEnabled', value: backup.settings?.customSystemPromptEnabled ? 'true' : 'false' },
+      { key: 'apiKey', value: '' },
+    ];
+    // D. Snapshot OLD opfs refs for post-success cleanup.
+    const oldDocs = await oldDocumentRefs();
+    const oldAtts = await oldAttachmentRefs();
+    oldRefs.push(...oldDocs, ...oldAtts);
+    // E. One atomic IDB replacement.
+    await idbReplaceAll({ settings, conversations: backup.conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows });
+  } catch (e) {
+    // Rollback: delete every staged OPFS file. Old IDB is untouched.
+    for (const s of staged) { if (s.path) { try { await deleteBinary(s.ref) } catch { /* orphan */ } } }
+    throw e;
+  }
+  // F. Post-success cleanup of old OPFS refs (best-effort; only orphans, never new data).
+  for (const old of oldRefs) { if (old.storage === 'opfs') { try { await deleteBinary(old) } catch { /* orphan */ } } }
+}
+
+async function oldDocumentRefs(): Promise<StoredBinary[]> {
+  const rows = await idbGetAll('documents');
+  return (rows as any[]).filter((r: any) => r?.source?.storage === 'opfs').map((r: any) => r.source);
+}
+async function oldAttachmentRefs(): Promise<StoredBinary[]> {
+  const rows = await idbGetAll('attachments');
+  return (rows as any[]).filter((r: any) => r?.binary?.storage === 'opfs').map((r: any) => r.binary);
 }

@@ -1,8 +1,9 @@
 import { listConversations, getAnnotationsByConversation, getAttachmentRow, getSetting } from '../storage/storage'
-import { listDocuments } from '../documents/document-service'
+import { listDocuments, readDocumentSourceBlob } from '../documents/document-service'
 import type { Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupDocument, type BackupV2 } from './backup-types'
+import { readBinary } from '../storage/binary-store'
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer()
@@ -12,7 +13,16 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(bin)
 }
 
-/** Build a full BackupV2 from current local data. The DeepSeek API key is EXCLUDED. */
+// Read an attachment's bytes via the binary store (OPFS-first), so the external Backup V2
+// stays backend-agnostic: it NEVER leaks OPFS path / StoredBinary / recordVersion.
+async function attachmentBlobOf(id: string): Promise<Blob | null> {
+  const row = await getAttachmentRow(id);
+  if (!row) return null;
+  if (row.binary) { try { return await readBinary(row.binary) } catch { return null } }
+  if (row.blob instanceof Blob) return row.blob;
+  return null;
+}
+
 export async function buildBackup(): Promise<BackupV2> {
   const conversations = await listConversations()
   const annotations: Annotation[] = []
@@ -25,8 +35,9 @@ export async function buildBackup(): Promise<BackupV2> {
       for (const imgId of m.images) {
         if (seen.has(imgId)) continue; seen.add(imgId)
         const row = await getAttachmentRow(imgId)
-        if (row && row.meta && row.blob) {
-          attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, data: await blobToBase64(row.blob) })
+        if (row && row.meta) {
+          const blob = await attachmentBlobOf(imgId);
+          if (blob) attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, data: await blobToBase64(blob) });
         }
       }
     }
@@ -40,11 +51,13 @@ export async function buildBackup(): Promise<BackupV2> {
     customSystemPrompt: (typeof customSystemPrompt === 'string' ? customSystemPrompt : ''),
     customSystemPromptEnabled: customSystemPromptEnabled === 'true',
   }
-  // Local Document Library: full original PDF Blobs (never AI-sent) as base64.
   const documents: BackupDocument[] = []
   for (const doc of await listDocuments()) {
-    const { sourceBlob, ...meta } = doc
-    documents.push({ id: doc.id, meta: meta as BackupDocument['meta'], mimeType: sourceBlob.type || 'application/pdf', data: await blobToBase64(sourceBlob) })
+    try {
+      const blob = await readDocumentSourceBlob(doc.id);
+      const { sourceBlob, ...meta } = doc;
+      documents.push({ id: doc.id, meta: meta as BackupDocument['meta'], mimeType: blob.type || doc.mimeType || 'application/pdf', data: await blobToBase64(blob) });
+    } catch { /* skip a document whose binary is missing */ }
   }
   return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents }
 }

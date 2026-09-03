@@ -139,7 +139,8 @@ assert(!!convAfter && convAfter.messages[0].content === '备份内容' && convAf
 const annAfter = await getAnnotationsByMessage(bAid, 'msg-backup')
 assert(annAfter.length === 1 && annAfter[0].target.anchor.scope === 'block', 'annotation restored')
 const rowAfter = await getAttachmentRow('att-backup')
-const bytesAfter = new Uint8Array(await rowAfter.blob.arrayBuffer())
+const afterBlob = rowAfter && rowAfter.binary && rowAfter.binary.storage === 'idb' ? rowAfter.binary.blob : rowAfter?.blob
+const bytesAfter = new Uint8Array(await (afterBlob as Blob).arrayBuffer())
 assert(rowAfter && bytesAfter.length === 4 && bytesAfter[0] === 1 && bytesAfter[3] === 4, 'attachment bytes restored identically')
 
 // validate rejects
