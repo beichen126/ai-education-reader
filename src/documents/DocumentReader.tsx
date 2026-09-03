@@ -11,7 +11,7 @@ import { useSessions } from '../engine/sessions-store'
 import { formatBytes } from '../storage/diagnostics'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { renderPdfContextRanges, PdfContextRenderError, type ContextRenderProgress } from '../pdf/pdf-context-render'
-import { validatePdfRange, countPdfRangePages, needsPdfContextSoftConfirm, type PdfRange, type PdfSelection } from '../pdf/pdf-types'
+import { validatePdfRange, countPdfRangePages, needsPdfContextSoftConfirm, MAX_PDF_CONTEXT_PAGES, type PdfRange, type PdfSelection } from '../pdf/pdf-types'
 import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, buildManualRangeSelection } from './reader-context'
 import { useDocumentUi, documentUiActions } from './document-ui-store'
 import { clampReaderPage, parsePageInput } from './reader-utils'
@@ -63,7 +63,7 @@ export function DocumentReader() {
   const [ctxBusy, setCtxBusy] = useState(false)
   const [ctxProgress, setCtxProgress] = useState<ContextRenderProgress | null>(null)
   const [ctxMsg, setCtxMsg] = useState<{ text: string; ok: boolean } | null>(null)
-  const [ctxConfirm, setCtxConfirm] = useState<{ selection: PdfSelection; ranges: PdfRange[]; count: number } | null>(null)
+  const [ctxPending, setCtxPending] = useState<ReaderContextRequest | null>(null)
   const ctxGenRef = useRef(0)
   const ctxMenuOpenRef = useRef(false); ctxMenuOpenRef.current = ctxMenuOpen
 
@@ -86,7 +86,7 @@ export function DocumentReader() {
       genRef.current++ // any in-flight render of the old document becomes stale
       ctxGenRef.current++ // any in-flight Reader Context generation becomes cancelled
       setCtxBusy(false); setCtxProgress(null); setCtxMsg(null)
-      setCtxConfirm(null); setCtxMenuOpen(false); setCtxMode('menu'); setManualError(null)
+      setCtxPending(null); setCtxMenuOpen(false); setCtxMode('menu'); setManualError(null)
       sessionRef.current = null
       urlOwnerRef.current.revokeAll()
       setPageUrl(null)
@@ -129,7 +129,7 @@ export function DocumentReader() {
       genRef.current++ // invalidate pending renders of THIS document immediately
       ctxGenRef.current++ // cancel any in-flight Reader Context generation (silent)
       setCtxBusy(false); setCtxProgress(null); setCtxMsg(null)
-      setCtxConfirm(null); setCtxMenuOpen(false)
+      setCtxPending(null); setCtxMenuOpen(false)
       // last meaningful page of the OWNED document — closure id, NEVER docIdRef
       if (ownedDocId) persist(ownedDocId, pageRef.current)
       if (ownedSession) { void closePdfSession(ownedSession) }
@@ -183,36 +183,59 @@ export function DocumentReader() {
     setPageInput(String(next))
   }, [])
 
-  // ---- Reader -> Context generation (Stage 9.2B2) ----
-  // OWNERSHIP: the operation snapshots convId / selection / ranges / session /
-  // generation AT CLICK TIME; later page turns or conversation switches never
-  // change what is being generated, and leaving the reader cancels it (silent).
-  const runContext = useCallback(async (selection: PdfSelection, ranges: PdfRange[]) => {
+  // ---- Reader -> Context bridge (Stage 9.2B2 / 9.2B2.1) ----
+  // TWO phases, no confirm loop: requestContext() snapshots the operation identity
+  // and (for >30 pages) asks for approval ONCE; executeContext() runs the already
+  // approved snapshot and NEVER asks again — approving a request re-executes the
+  // SAME snapshot, never re-reads conv/doc/session/page.
+  type ReaderContextRequest = {
+    targetConversationId: string
+    documentId: string
+    fileName: string
+    selection: PdfSelection
+    ranges: PdfRange[]
+    pageCount: number
+    session: NonNullable<typeof sessionRef.current>
+    count: number
+  }
+  const requestContext = useCallback((selection: PdfSelection, ranges: PdfRange[]) => {
     if (!doc || !sessionRef.current || ctxBusy) return
-    const targetConvId = conv?.id
-    if (!targetConvId) { setCtxMsg({ text: '请先创建一个会话。', ok: false }); return }
+    const targetConversationId = conv?.id
+    if (!targetConversationId) { setCtxMsg({ text: '请先创建一个会话。', ok: false }); return }
     const count = countPdfRangePages(ranges)
-    if (needsPdfContextSoftConfirm(count)) { setCtxConfirm({ selection, ranges, count }); return }
+    if (count > MAX_PDF_CONTEXT_PAGES) {
+      setCtxMsg({ text: '当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请选择较小的页码范围。', ok: false })
+      return
+    }
+    const request: ReaderContextRequest = {
+      targetConversationId, documentId: doc.id, fileName: doc.fileName,
+      selection, ranges, pageCount,
+      session: sessionRef.current,
+      count,
+    }
+    setCtxMenuOpen(false); setCtxMode('menu'); setManualError(null)
+    if (needsPdfContextSoftConfirm(count)) { setCtxPending(request); return }
+    void executeContext(request)
+  }, [doc, conv, ctxBusy, pageCount])
+
+  const executeContext = useCallback(async (request: ReaderContextRequest) => {
     const gen = ++ctxGenRef.current
-    const session = sessionRef.current
-    const snap = { documentId: doc.id, fileName: doc.fileName, selection, pages: [] as Awaited<ReturnType<typeof renderPdfContextRanges>>['pages'] }
-    setCtxBusy(true); setCtxMsg(null); setCtxProgress({ done: 0, total: count, bytes: 0 })
-    setCtxMenuOpen(false); setCtxConfirm(null); setCtxMode('menu')
+    setCtxBusy(true); setCtxMsg(null); setCtxProgress({ done: 0, total: request.count, bytes: 0 })
+    setCtxPending(null)
     try {
       const { pages } = await renderPdfContextRanges({
-        ranges, pageCount: pageCount,
-        renderPage: (n) => renderSessionPage(session, n),
+        ranges: request.ranges, pageCount: request.pageCount,
+        renderPage: (n) => renderSessionPage(request.session, n),
         onProgress: (p) => { if (gen === ctxGenRef.current) setCtxProgress(p) },
         isCancelled: () => gen !== ctxGenRef.current,
       })
       if (gen !== ctxGenRef.current) return // cancelled during render -> silent
-      snap.pages = pages
       // Commit boundary: once all pages rendered, let the atomic attach complete
       // even if the user left meanwhile (no partial attachments); only the UI
       // message is suppressed after a cancel.
-      const res = await addPdfContextToDraft(targetConvId, { documentId: snap.documentId, fileName: snap.fileName, selection: snap.selection, pages })
+      const res = await addPdfContextToDraft(request.targetConversationId, { documentId: request.documentId, fileName: request.fileName, selection: request.selection, pages })
       if (gen !== ctxGenRef.current) return
-      const label = snap.selection.title ? '已加入「' + snap.selection.title + '」· ' + res.count + ' 页' : '已加入当前对话 · ' + res.count + ' 页'
+      const label = request.selection.title ? '已加入「' + request.selection.title + '」· ' + res.count + ' 页' : '已加入当前对话 · ' + res.count + ' 页'
       setCtxMsg(res.ok ? { text: label, ok: true } : { text: res.error, ok: false })
     } catch (e) {
       if (gen !== ctxGenRef.current) return
@@ -220,13 +243,13 @@ export function DocumentReader() {
     } finally {
       if (gen === ctxGenRef.current) { setCtxBusy(false); setCtxProgress(null) }
     }
-  }, [doc, pageCount, conv, ctxBusy])
+  }, [])
 
   const confirmContext = () => {
-    if (!ctxConfirm) return
-    const { selection, ranges } = ctxConfirm
-    setCtxConfirm(null)
-    void runContext(selection, ranges)
+    if (!ctxPending) return
+    const request = ctxPending
+    setCtxPending(null)
+    void executeContext(request)
   }
   const commitManualRange = () => {
     const v = validatePdfRange(manualStart, manualEnd, pageCount)
@@ -234,7 +257,7 @@ export function DocumentReader() {
     setManualError(null)
     const s = Number(manualStart.trim()), e = Number(manualEnd.trim())
     const sel = buildManualRangeSelection(s, e)
-    void runContext(sel, sel.ranges)
+    void requestContext(sel, sel.ranges)
   }
 
   // ---- keyboard: arrows page, Escape closes (viewer gets priority) ----
@@ -243,7 +266,8 @@ export function DocumentReader() {
     const onKey = (e: KeyboardEvent) => {
       if (viewerOpenRef.current) return
       const t = document.activeElement as HTMLElement | null
-      if (ctxMenuOpenRef.current) { setCtxMenuOpen(false); setCtxMode('menu'); return }
+      // Context menu takes Escape ONLY — arrows / typing / everything else pass through.
+      if (ctxMenuOpenRef.current && e.key === 'Escape') { e.preventDefault(); setCtxMenuOpen(false); setCtxMode('menu'); return }
       // Page-input editing defers ARROWS only; Escape always closes the reader.
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && e.key !== 'Escape') return
       if (e.key === 'ArrowLeft') { e.preventDefault(); go(pageRef.current - 1, pageCount) }
@@ -314,10 +338,10 @@ export function DocumentReader() {
       {ctxMenuOpen && !ctxBusy && (
         <div className={css.ctxMenu} data-testid="reader-ctx-menu">
           <div className={css.ctxMenuTitle}>加入对话</div>
-          <button type="button" className={css.menuItem} data-testid="reader-ctx-current-page" onClick={() => { const s = buildCurrentPageSelection(page); void runContext(s, s.ranges) }}>
+          <button type="button" className={css.menuItem} data-testid="reader-ctx-current-page" onClick={() => { const s = buildCurrentPageSelection(page); void requestContext(s, s.ranges) }}>
             当前页<span className={css.menuMeta}>第 {page} 页</span>
           </button>
-          <button type="button" className={css.menuItem} data-testid="reader-ctx-current-chapter" disabled={!currentChapter} onClick={() => { if (!currentChapter) return; const s = buildChapterSelection(currentChapter); void runContext(s, s.ranges) }}>
+          <button type="button" className={css.menuItem} data-testid="reader-ctx-current-chapter" disabled={!currentChapter} onClick={() => { if (!currentChapter) return; const s = buildChapterSelection(currentChapter); void requestContext(s, s.ranges) }}>
             当前章节{currentChapter && <span className={css.menuMeta}>{currentChapter.title} · PDF {currentChapter.startPage}–{currentChapter.endPage}</span>}
           </button>
           {doc && !currentChapter && <div className={css.ctxHint}>当前页不属于可识别章节</div>}
@@ -335,13 +359,13 @@ export function DocumentReader() {
           <button type="button" className={css.menuClose} onClick={() => { setCtxMenuOpen(false); setCtxMode('menu') }}>收起</button>
         </div>
       )}
-      {ctxConfirm && (
+      {ctxPending && (
         <div className={css.ctxConfirm} data-testid="reader-ctx-confirm">
-          <div>本次将处理 {ctxConfirm.count} 页。</div>
+          <div>本次将处理 {ctxPending.count} 页。</div>
           <div className={css.ctxHint}>大范围 PDF 会占用更多本地处理时间和模型视觉上下文。</div>
           <div className={css.ctxConfirmBtns}>
-            <button className={css.ctxPrimary} data-testid="reader-ctx-confirm-yes" onClick={confirmContext}>继续加入 {ctxConfirm.count} 页</button>
-            <button className={css.ctxSecondary} data-testid="reader-ctx-confirm-no" onClick={() => setCtxConfirm(null)}>取消</button>
+            <button className={css.ctxPrimary} data-testid="reader-ctx-confirm-yes" onClick={confirmContext}>继续加入 {ctxPending.count} 页</button>
+            <button className={css.ctxSecondary} data-testid="reader-ctx-confirm-no" onClick={() => setCtxPending(null)}>取消</button>
           </div>
         </div>
       )}

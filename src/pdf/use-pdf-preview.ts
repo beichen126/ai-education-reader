@@ -9,13 +9,13 @@ import { openPdf, renderPdfPage, closePdf, readPdfOutline, pdfErrorMessage, PdfE
 export { validatePdfRange } from './pdf-types'
 
 import { PdfOutlineError, type PdfOutlineResult } from './pdf-outline'
+import { renderPdfContextRanges, PdfContextRenderError } from './pdf-context-render'
 import { createDocument, updateDocumentChapters, cleanupStaleDocument } from '../documents/document-service'
 import { chapterNodesFromPdfOutline } from '../documents/chapter-model'
 import { newStableId } from '../engine/types'
 import {
   PDF_CONTEXT_SOFT_WARNING_PAGES, MAX_PDF_CONTEXT_PAGES, PDF_LARGE_PREVIEW_COUNT,
-  exceedsPdfContextHardLimit, exceedsPdfGroupByteBudget,
-  normalizePdfRanges, countPdfRangePages, expandPdfRangePages,
+  normalizePdfRanges,
   type LocalPdfDocument, type RenderedPdfPage, type PdfRange,
 } from './pdf-types'
 
@@ -126,65 +126,57 @@ export function usePdfPreview(): PdfPreviewApi {
     }
   }, [revokeAll])
 
-  // Stage 9.1: the pipeline consumes ALREADY-normalized PdfRange[] (never a fake
-  // contiguous span). Overlaps/duplicates are normalized again here for safety.
+  // Stage 9.1/9.2B2: ALL safety/render policy lives in the shared render core
+  // (renderPdfContextRanges) — the same one the Document Reader uses. This hook
+  // only keeps UI orchestration: preview URL ownership (first-3/last-3), pages
+  // state, progress display and user-facing error mapping.
   const generateRanges = useCallback(async (ranges: PdfRange[]) => {
     if (!doc) { setError('尚未打开 PDF 文件。'); return }
-    const norm = normalizePdfRanges(ranges)
-    if (norm.length === 0) { setError('请先选择页面范围。'); return }
-    for (const r of norm) {
-      if (r.startPage > doc.pageCount || r.endPage > doc.pageCount) {
-        setError('页码范围超出范围，该 PDF 共 ' + doc.pageCount + ' 页。'); return
-      }
-    }
-    const total = countPdfRangePages(norm)
-    if (exceedsPdfContextHardLimit(total)) {
-      setError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少选择的页面范围后重试。')
-      return
-    }
+    if (normalizePdfRanges(ranges).length === 0) { setError('请先选择页面范围。'); return }
     genRef.current++
     const gen = genRef.current
     revokeAll()
-    setPages([]); setError(undefined); setProgress({ done: 0, total, bytes: 0 })
+    setPages([]); setError(undefined)
     const built: RenderedPdfPage[] = []
-    // Preview strategy: <=30 pages -> all; >30 -> first 3 + last 3 (blobs all kept).
     const previewIdx = new Set<number>()
-    if (total <= PDF_CONTEXT_SOFT_WARNING_PAGES) {
-      for (let k = 0; k < total; k++) previewIdx.add(k)
-    } else {
-      for (let k = 0; k < PDF_LARGE_PREVIEW_COUNT; k++) { previewIdx.add(k); previewIdx.add(total - 1 - k) }
+    const markPreview = (total: number) => {
+      previewIdx.clear()
+      if (total <= PDF_CONTEXT_SOFT_WARNING_PAGES) { for (let k = 0; k < total; k++) previewIdx.add(k) }
+      else { for (let k = 0; k < PDF_LARGE_PREVIEW_COUNT; k++) { previewIdx.add(k); previewIdx.add(total - 1 - k) } }
     }
-    const pageNumbers = expandPdfRangePages(norm)
-    let totalBytes = 0
-    let failingPage = pageNumbers[0]
     try {
-      for (let idx = 0; idx < pageNumbers.length; idx++) {
-        const n = pageNumbers[idx]
-        if (gen !== genRef.current) return
-        failingPage = n
-        const { blob, width, height, mimeType } = await renderPdfPage(n)
-        if (gen !== genRef.current) return
-        totalBytes += blob.size
-        const previewUrl = previewIdx.has(idx) ? URL.createObjectURL(blob) : undefined
-        if (previewUrl) urlsRef.current.push(previewUrl)
-        built.push({ pageNumber: n, blob, ...(previewUrl ? { previewUrl } : {}), width, height, mimeType })
-        setProgress({ done: built.length, total, bytes: totalBytes })
-        setPages([...built])
-        if (exceedsPdfGroupByteBudget(totalBytes)) {
-          genRef.current++
-          revokeAll()
-          setPages([]); setProgress(undefined)
-          setError('该范围生成的图片数据过大，已超过当前单次 PDF Context 的安全限制。请减少选择的页面范围后重试。（本次处理到第 ' + n + ' 页时超过限制。）')
-          return
-        }
-      }
+      const result = await renderPdfContextRanges({
+        ranges,
+        pageCount: doc.pageCount,
+        renderPage: renderPdfPage,
+        isCancelled: () => gen !== genRef.current,
+        onProgress: (p) => { if (gen === genRef.current) setProgress(p) },
+        onPage: (page, index, total) => {
+          if (gen !== genRef.current) return
+          if (built.length === 0) markPreview(total)
+          const previewUrl = previewIdx.has(index) ? URL.createObjectURL(page.blob) : undefined
+          if (previewUrl) urlsRef.current.push(previewUrl)
+          built.push({ ...page, ...(previewUrl ? { previewUrl } : {}) })
+          setPages([...built])
+        },
+      })
       if (gen === genRef.current) setProgress(undefined)
     } catch (e: unknown) {
-      if (gen !== genRef.current) return
+      if (gen !== genRef.current) return // stale / cancelled -> silent
       genRef.current++
       revokeAll()
       setPages([]); setProgress(undefined)
-      setError('第 ' + failingPage + ' 页处理失败，本次范围未加入对话。你可以重新尝试，或切换到“选页”模式缩小范围。')
+      if (e instanceof PdfContextRenderError) {
+        if (e.kind === 'hard-limit') setError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少选择的页面范围后重试。')
+        else if (e.kind === 'byte-budget') setError('该范围生成的图片数据过大，已超过当前单次 PDF Context 的安全限制。请减少选择的页面范围后重试。（本次处理到第 ' + (e.pageNumber ?? '') + ' 页时超过限制。）')
+        else if (e.kind === 'render-failed') setError('第 ' + (e.pageNumber ?? '') + ' 页处理失败，本次范围未加入对话。你可以重新尝试，或切换到“选页”模式缩小范围。')
+        else if (e.kind === 'out-of-range') setError('页码范围超出范围，该 PDF 共 ' + doc.pageCount + ' 页。')
+        else setError(e.message)
+      } else {
+        setError('PDF 处理失败。')
+      }
+    } finally {
+      if (gen === genRef.current) setProgress(undefined)
     }
   }, [doc, revokeAll])
 

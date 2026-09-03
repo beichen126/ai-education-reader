@@ -11,7 +11,9 @@ export type PdfContextRenderErrorKind = 'empty' | 'out-of-range' | 'hard-limit' 
 
 export class PdfContextRenderError extends Error {
   readonly kind: PdfContextRenderErrorKind
-  constructor(kind: PdfContextRenderErrorKind, message: string) { super(message); this.name = 'PdfContextRenderError'; this.kind = kind }
+  /** Structured info for callers to build precise user messages (never parse message strings). */
+  readonly pageNumber?: number
+  constructor(kind: PdfContextRenderErrorKind, message: string, pageNumber?: number) { super(message); this.name = 'PdfContextRenderError'; this.kind = kind; if (pageNumber !== undefined) this.pageNumber = pageNumber }
 }
 
 export type ContextRenderProgress = { done: number; total: number; bytes: number }
@@ -21,6 +23,9 @@ export type PdfContextRenderOptions = {
   pageCount: number
   renderPage: (pageNumber: number) => Promise<{ blob: Blob; width: number; height: number; mimeType: string }>
   onProgress?: (p: ContextRenderProgress) => void
+  /** Incremental page callback: fires after a page passed EVERY safety check — allows
+   * progressive UIs (PdfPanel preview) WITHOUT putting preview policy in the core. */
+  onPage?: (page: RenderedPdfPage, index: number, total: number) => void
   isCancelled?: () => boolean
 }
 
@@ -40,15 +45,20 @@ export async function renderPdfContextRanges(opts: PdfContextRenderOptions): Pro
   let bytes = 0
   let failingPage = pageNumbers[0]
   for (let i = 0; i < pageNumbers.length; i++) {
+    // cancel before render AND after render — a stale single page that finishes
+    // after the user left must never be accepted as a successful result.
     if (opts.isCancelled && opts.isCancelled()) throw new PdfContextRenderError('cancelled', 'context render cancelled')
     const n = pageNumbers[i]
     failingPage = n
     let r
     try { r = await opts.renderPage(n) } catch { throw new PdfContextRenderError('render-failed', '第 ' + n + ' 页处理失败，本次范围未加入对话。') }
+    if (opts.isCancelled && opts.isCancelled()) throw new PdfContextRenderError('cancelled', 'context render cancelled')
     bytes += r.blob.size
-    pages.push({ pageNumber: n, ...r })
+    const page: RenderedPdfPage = { pageNumber: n, ...r }
+    if (exceedsPdfGroupByteBudget(bytes)) throw new PdfContextRenderError('byte-budget', '该范围生成的图片数据过大，已超过当前单次 PDF Context 的安全限制（' + (MAX_PDF_GROUP_RAW_BYTES / (1024 * 1024)).toFixed(0) + ' MiB）。请减少选择的页面范围后重试。', n)
+    pages.push(page)
+    opts.onPage && opts.onPage(page, i, total)
     opts.onProgress && opts.onProgress({ done: pages.length, total, bytes })
-    if (exceedsPdfGroupByteBudget(bytes)) throw new PdfContextRenderError('byte-budget', '该范围生成的图片数据过大，已超过当前单次 PDF Context 的安全限制（' + (MAX_PDF_GROUP_RAW_BYTES / (1024 * 1024)).toFixed(0) + ' MiB）。请减少选择的页面范围后重试。')
   }
   return { pages }
 }

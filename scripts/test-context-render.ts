@@ -51,5 +51,43 @@ let oor = false
 try { await renderPdfContextRanges({ ranges: [{ startPage: 5, endPage: 20 }], pageCount: 10, renderPage: fakeRender, isCancelled: noCancel }) } catch (e) { oor = e instanceof PdfContextRenderError && e.kind === 'out-of-range' }
 assert(oor, 'out-of-bounds range rejected')
 
+// ---- 9.2B2.1: post-await cancellation (user leaves WHILE a page renders) ----
+{
+  let leave = false
+  let ce2 = false
+  try {
+    await renderPdfContextRanges({
+      ranges: [{ startPage: 1, endPage: 2 }], pageCount: 5,
+      renderPage: (n) => new Promise(res => setTimeout(() => { if (n === 1) leave = true; res(fakeRender(n)) }, 5)),
+      isCancelled: () => leave,
+    })
+  } catch (e) { ce2 = e instanceof PdfContextRenderError && e.kind === 'cancelled' }
+  assert(ce2, 'cancel AFTER the render await finishes -> cancelled (stale page never accepted)')
+}
+// ---- 9.2B2.1: incremental onPage + structured pageNumber on byte-budget ----
+{
+  const seen: number[] = []
+  const d = await renderPdfContextRanges({
+    ranges: [{ startPage: 1, endPage: 3 }], pageCount: 5, renderPage: fakeRender,
+    onPage: (page, index, total) => { seen.push(page.pageNumber); assert(total === 3, 'onPage total known upfront') },
+    isCancelled: noCancel,
+  })
+  assert(seen.join(',') === '1,2,3' && d.pages.length === 3, 'onPage fires progressively per accepted page')
+}
+{
+  let pageInfo: number | undefined
+  try {
+    await renderPdfContextRanges({ ranges: [{ startPage: 1, endPage: 3 }], pageCount: 5, renderPage: (n) => fakeRender(n, 12 * MB + 1024), isCancelled: noCancel })
+  } catch (e) { if (e instanceof PdfContextRenderError) pageInfo = e.pageNumber }
+  assert(pageInfo === 2, 'byte-budget error carries structured pageNumber (got ' + pageInfo + ')')
+}
+// ---- 9.2B2.1: architecture assertion — PdfPanel path imports the shared core ----
+{
+  const src = (await import('node:fs')).readFileSync('src/pdf/use-pdf-preview.ts', 'utf8')
+  assert(src.includes("renderPdfContextRanges"), 'use-pdf-preview imports the shared render core (no forked policy)')
+  const core = (await import('node:fs')).readFileSync('src/pdf/pdf-context-render.ts', 'utf8')
+  assert(!core.includes('React') && !core.includes('useState'), 'shared core stays React-free')
+}
+
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)
