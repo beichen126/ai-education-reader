@@ -104,11 +104,54 @@ export function setManualPageOverride(items: MappedTocItem[], index: number, pag
  * row has a real physical page (unresolved is NEVER coerced to 1) AND the derived
  * chapter draft is a valid ChapterDraft. Returns the count of blocking problems.
  */
-export function validateMappedTocReview(items: MappedTocItem[], pageCount: number): { ok: boolean; unresolved: number; errors: string[] } {
-  const unresolved = items.filter(r => r.startPage == null).length
-  if (unresolved > 0) return { ok: false, unresolved, errors: ['unresolved-page'] }
-  // Build a ChapterDraft from resolved rows (stable local ids) and validate it.
-  const draft = items.map((it, i) => ({ id: 'ai' + i, title: it.title, level: it.level, startPage: it.startPage as number }))
+/** Aggregate review result from the SINGLE review-level domain validator (Stage 9.4C.1). */
+export type TocReviewValidation = {
+  ok: boolean
+  /** Number of rows whose physical page is still unresolved (never coerced to 1). */
+  unresolvedCount: number
+  /** Row indices that must be fixed before the review may be saved (deduplicated). */
+  blockingRowIndices: number[]
+  /** Human-readable error text per problematic row (a row with many problems = 1 entry). */
+  issuesByRow: Record<number, string[]>
+  /** Total count of DISTINCT rows that need correction (not the issue count). */
+  errorCount: number
+}
+
+/**
+ * Review-level validity (Stage 9.4C.1 — SINGLE source of truth for save/build gating).
+ * A mapped review may be saved ONLY when every row resolves to a real physical page
+ * (unresolved is NEVER coerced to 1) AND the derived ChapterDraft is a valid
+ * ChapterDraft. Returns per-row issues + the count of distinct blocking rows.
+ */
+export function validateMappedTocReview(items: MappedTocItem[], pageCount: number): TocReviewValidation {
+  const blocking: number[] = []
+  const issuesByRow: Record<number, string[]> = {}
+  let unresolvedCount = 0
+  items.forEach((it, i) => {
+    if (it.startPage == null) { unresolvedCount++; blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push('页码待确认'); return }
+    if (!Number.isInteger(it.startPage) || it.startPage < 1 || it.startPage > pageCount) { blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push('页码超出范围'); return }
+    if (!Number.isInteger(it.level) || it.level < 1) { blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push('层级非法'); return }
+    if (typeof it.title !== 'string' || it.title.trim() === '') { blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push('标题为空'); return }
+  })
+  // Derived draft-level validation (only resolved rows with valid page/level).
+  const draft = items
+    .filter(r => r.startPage != null && Number.isInteger(r.startPage))
+    .map((it, i) => ({ id: 'ai' + i, title: it.title, level: it.level, startPage: it.startPage as number }))
   const v = validateChapterDraft(draft, pageCount)
-  return { ok: v.ok && unresolved === 0, unresolved, errors: v.ok ? [] : v.issues.map(i => i.message) }
+  for (const issue of v.issues) {
+    const idx = issue.index
+    if (idx >= 0 && idx < items.length && !blocking.includes(idx)) {
+      blocking.push(idx)
+      issuesByRow[idx] = issuesByRow[idx] || []
+      if (!issuesByRow[idx].includes(issue.message)) issuesByRow[idx].push(issue.message)
+    }
+  }
+  const errorCount = blocking.length
+  return {
+    ok: errorCount === 0,
+    unresolvedCount,
+    blockingRowIndices: blocking,
+    issuesByRow,
+    errorCount,
+  }
 }

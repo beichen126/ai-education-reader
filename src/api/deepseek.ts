@@ -1,7 +1,7 @@
 // DeepSeek API adapter. Only boundary that performs fetch from the app.
 export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 export type ApiChatMessage = { role: 'user' | 'assistant' | 'system'; content: string | ChatContentPart[] }
-export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[] }
+export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal }
 export type SendTextChatResult = { content: string }
 
 /** DeepSeek vision API limit: max images in ONE chat request (API limit, not product). */
@@ -36,7 +36,7 @@ export function errorKindLabel(kind: ErrorKind): string {
 const DEFAULT_BASE = 'https://api.deepseek.com'
 
 export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChatResult> {
-  const { apiKey, baseUrl, model, messages } = args
+  const { apiKey, baseUrl, model, messages, signal } = args
   if (!apiKey) throw new DeepSeekError('no-api-key', 'missing api key')
   const endpoint = (baseUrl || DEFAULT_BASE).replace(/\/+$/, '') + '/chat/completions'
   let res: Response
@@ -45,8 +45,10 @@ export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChat
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
       body: JSON.stringify({ model, messages, stream: false }),
+      signal,
     })
   } catch {
+    if (signal && signal.aborted) throw new DeepSeekError('aborted', 'request aborted')
     throw new DeepSeekError('network-or-cors', 'fetch failed')
   }
   if (!res.ok) {
