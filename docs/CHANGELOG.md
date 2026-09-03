@@ -8,6 +8,8 @@ AI Education Reader 的用户可感知更新记录。
 
 ### Added
 
+- 新增本地“文件”资料入口，可查看和管理保存在浏览器中的 PDF 学习文档。
+- 新增完整 PDF Reader，可阅读整份文档、通过章节目录和页码导航，并自动恢复上次阅读位置。
 - 建立本地 Document Store：原始 PDF 可作为独立学习文档保存在浏览器 IndexedDB 中，为后续完整文件阅读器提供数据基础。
 - PDF Context 新增来源文档引用，可追溯到对应的本地 Document。
 - 统一 Document → Chapter → Context 数据模型（原始资料 → 书签/AI 目录/手动章节 → 发送给 AI 的页码集合）。
@@ -16,6 +18,7 @@ AI Education Reader 的用户可感知更新记录。
 
 ### Changed
 
+- 重构侧栏资料入口，将“图片”和“文件”明确分离，并以统一图标替代原有单字快捷按钮。
 - 图片 / PDF 页面全屏查看器不再常驻显示缩放工具条；缩放时仅显示当前百分比，并在最后一次缩放约 3 秒后自动隐藏。
 - PDF Context 页数限制改为按照去重后的真实页面数计算（父章节 + 子章节重叠不再重复计数）。
 - PDF 加入 Draft 后不再自动关闭选择窗口，可连续添加多组 Context（提供“完成”关闭）。
@@ -23,7 +26,6 @@ AI Education Reader 的用户可感知更新记录。
 
 ### Planned
 
-- 新增“文件”资料入口和完整 PDF Reader，可阅读未加入 AI Context 的页面。
 - 无书签 PDF 支持目录页缩略图选择、AI 目录识别与手动分章。
 - 支持导出带章节书签的新 PDF。
 - PPT / PPTX 作为导入格式：浏览器本地转换为 PDF 后复用完整 PDF 阅读链路，不建设第二套 PPT Reader。

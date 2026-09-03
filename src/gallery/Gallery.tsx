@@ -16,7 +16,7 @@ export function Gallery() {
   const count = imageIds.length
   return (
     <div className={css.overlay}>
-      <div className={css.head}><span className={css.title}>资料</span><button className={css.closeBtn} onClick={galleryActions.close}>关闭</button></div>
+      <div className={css.head}><span className={css.title}>图片</span><button className={css.closeBtn} onClick={galleryActions.close}>关闭</button></div>
       {count === 0 ? <div className={css.empty}>当前会话暂无图片资料</div> :
         g.view === 'list' ? (
           <div className={css.grid}>{imageIds.map((id, i) => <Thumb key={id} id={id} index={i} />)}</div>

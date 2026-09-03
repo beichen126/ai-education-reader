@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { openPdf, renderPdfPage, closePdf, readPdfOutline, pdfErrorMessage, PdfError } from './pdf-service'
 import { PdfOutlineError, type PdfOutlineResult } from './pdf-outline'
-import { createDocument, updateDocumentChapters } from '../documents/document-service'
+import { createDocument, updateDocumentChapters, cleanupStaleDocument } from '../documents/document-service'
 import { chapterNodesFromPdfOutline } from '../documents/chapter-model'
 import { newStableId } from '../engine/types'
 import {
@@ -105,7 +105,11 @@ export function usePdfPreview(): PdfPreviewApi {
           sourceBlob: file,
           importSource: { kind: 'pdf', originalFileName: file.name },
         })
-        if (gen !== genRef.current) return
+        if (gen !== genRef.current) {
+          // Import superseded while the write was in flight: never leave a ghost Document.
+          void cleanupStaleDocument(created.id)
+          return
+        }
         docId = created.id
         setDocumentId(created.id)
       } catch {

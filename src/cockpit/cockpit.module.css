@@ -65,6 +65,18 @@
 .noKeyBanner { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; padding: 8px 24px; background: var(--dsw-alias-bg-layer-1); border-bottom: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font-size: 12px; }
 .noKeyBtn { border: none; background: none; color: var(--dsw-alias-state-business-primary); cursor: pointer; font-size: 12px; }
 .sidebarHeadBtns { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.sidebarNew { padding: 4px 12px 2px; }
+.newChatBtn { display: flex; align-items: center; gap: 6px; width: 100%; justify-content: flex-start; min-height: 36px; padding: 6px 10px; border: none; border-radius: 8px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 13px; cursor: pointer; }
+.sidebarSection { padding: 10px 14px 4px; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.sidebarEntries { display: flex; gap: 8px; padding: 2px 12px 4px; }
+.entryBtn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
+.entryBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.sidebarFoot { display: flex; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--dsw-alias-border-l2); }
+.footBtn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 13px; cursor: pointer; }
+.footBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.railBtn { width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; border-radius: 8px; }
+.railBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.railSpacer { flex: 1; }
 .stopBtn { border: 1px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-secondary); border-radius: 8px; padding: 2px 10px; font-size: 12px; cursor: pointer; }
 .stopBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .assistantBody[data-empty] { min-height: 8px; }

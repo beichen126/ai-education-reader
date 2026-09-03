@@ -83,10 +83,15 @@ export async function openPdf(file: File): Promise<LocalPdfDocument> {
 
 export type RenderedPage = { blob: Blob; width: number; height: number; mimeType: string }
 
-/** Render one physical page of the active document to a Canvas, then a Blob. */
+/** PdfPanel singleton path: render one page of the currently active document. */
 export async function renderPdfPage(pageNumber: number): Promise<RenderedPage> {
   const doc = activeDoc
   if (!doc) throw new PdfError('not-open', 'not open')
+  return renderPageForDocument(doc, pageNumber)
+}
+
+/** Shared render core used by BOTH the PdfPanel singleton and explicit PDF sessions. */
+export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number): Promise<RenderedPage> {
   const page = await doc.getPage(pageNumber)
   const vp1 = page.getViewport({ scale: 1 })
   const maxEdge = Math.max(vp1.width, vp1.height)
@@ -126,5 +131,10 @@ export async function renderPdfPage(pageNumber: number): Promise<RenderedPage> {
 export async function readPdfOutline(): Promise<PdfOutlineResult> {
   const doc = activeDoc
   if (!doc) throw new PdfError('not-open', 'not open')
+  return readOutlineForDocument(doc)
+}
+
+/** Shared outline core for BOTH the PdfPanel singleton and explicit PDF sessions. */
+export async function readOutlineForDocument(doc: import('pdfjs-dist').PDFDocumentProxy): Promise<PdfOutlineResult> {
   return parsePdfOutline(doc)
 }

@@ -195,7 +195,7 @@ async function drag(p, dx, dy) {
   assert(backToThumb2, 'A: keyboard-opened: focus restored to the exact opener thumb')
 
   // ============ B. Gallery list flow ============
-  await page.getByRole('button', { name: '资料' }).first().click()
+  await page.locator('[data-testid="sidebar-entry-images"], [data-testid="rail-images"]').first().click()
   await page.waitForTimeout(250)
   const galThumbs = page.locator('button[class*="thumb"] img')
   assert(await galThumbs.count() === 2, 'B: gallery list shows 2 thumbs (got ' + await galThumbs.count() + ')')

@@ -3,10 +3,12 @@ import { useSessions, sessionsActions, type ChatSession } from '../engine/sessio
 import { t } from '../engine/locale'
 import { uiActions } from '../engine/ui-store'
 import { galleryActions } from '../gallery/gallery-store'
+import { documentUiActions } from '../documents/document-ui-store'
 import { layoutStore, useLayoutStore } from '../engine/layout-store'
 import { NEW_TITLE } from '../engine/types'
 import { displayTitle, sanitizeTitle, MAX_TITLE_LEN } from '../engine/session-title'
-import { Button, IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, Input } from '../dsh/primitives'
+import { IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, IconClockOutline16, IconFullscreenOutline16, IconFolderOpenOutline16, Input } from '../dsh/primitives'
+import { IconPhoto16 } from './composer-icons'
 import css from './cockpit.module.css'
 
 function useFullscreen() {
@@ -30,31 +32,51 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   const narrow = useLayoutStore(s => s.narrow)
   const openHistory = () => { if (narrow) layoutStore.actions.openNarrowSidebar(); else layoutStore.actions.toggleSidebar() }
   const collapseSidebar = () => { if (narrow) layoutStore.actions.closeNarrowSidebar(); else layoutStore.actions.toggleSidebar() }
+
   if (collapsed) {
-    return <div className={css.sideRail} style={{ width }}>
-      <Button aria-label="新建会话" title="新建会话" icon={<IconNewChatOutline16 />} onClick={() => sessionsActions.newChat()} />
-      <Button aria-label="历史" title="历史会话" onClick={openHistory}><span className={css.railText}>历</span></Button>
-      <Button aria-label="资料" title="资料" onClick={() => galleryActions.open(currentConv?.id, 0)}><span className={css.railText}>图</span></Button>
-      <Button aria-label="全屏" title={fsTitle} onClick={toggle}><span className={css.railText}>全</span></Button>
-      <Button aria-label="设置" title="设置" icon={<IconSettingsOutline16 />} onClick={uiActions.openSettings} />
-    </div>
+    return (
+      <div className={css.sideRail} style={{ width }}>
+        <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label="新建会话" title="新建会话" onClick={() => sessionsActions.newChat()}><IconNewChatOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-history" aria-label="历史会话" title="历史会话" onClick={openHistory}><IconClockOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-images" aria-label="图片资料" title="图片资料" onClick={() => galleryActions.open(currentConv?.id, 0)}><IconPhoto16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-files" aria-label="本地文件" title="本地文件" onClick={() => documentUiActions.openLibrary()}><IconFolderOpenOutline16 /></button>
+        <div className={css.railSpacer} />
+        <button type="button" className={css.railBtn} data-testid="rail-fullscreen" aria-label={fsTitle} title={fsTitle} onClick={toggle}><IconFullscreenOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-settings" aria-label="设置" title="设置" onClick={uiActions.openSettings}><IconSettingsOutline16 /></button>
+      </div>
+    )
   }
   return (
     <div className={css.sidebar} style={{ width }}>
       <div className={css.sidebarHead}>
-        <div className={css.sidebarTitle}>会话</div>
+        <div className={css.sidebarTitle}>AI 学习阅读器</div>
         <div className={css.sidebarHeadBtns}>
-          <Button title="收起侧栏" onClick={collapseSidebar}><span aria-hidden className={css.railText}>‹ 收起</span></Button>
-          <Button size="sm" title="资料" onClick={() => galleryActions.open(currentConv?.id, 0)}>资料</Button>
-          <Button icon={<IconSettingsOutline16 />} onClick={uiActions.openSettings} />
-          <Button onClick={toggle}>{fsTitle}</Button>
-          <Button icon={<IconNewChatOutline16 />} onClick={() => sessionsActions.newChat()}>{t('sidebar.newChat')}</Button>
+          <button type="button" className={css.collapseBtn} data-testid="sidebar-collapse" aria-label="收起侧栏" title="收起侧栏" onClick={collapseSidebar}>‹ 收起</button>
         </div>
       </div>
+      <div className={css.sidebarNew}>
+        <button type="button" className={css.newChatBtn} data-testid="sidebar-new-chat" onClick={() => sessionsActions.newChat()}>
+          <IconNewChatOutline16 /> 新建会话
+        </button>
+      </div>
+      <div className={css.sidebarSection}>资料</div>
+      <div className={css.sidebarEntries}>
+        <button type="button" className={css.entryBtn} data-testid="sidebar-entry-images" onClick={() => galleryActions.open(currentConv?.id, 0)}>
+          <IconPhoto16 /> <span>图片</span>
+        </button>
+        <button type="button" className={css.entryBtn} data-testid="sidebar-entry-files" onClick={() => documentUiActions.openLibrary()}>
+          <IconFolderOpenOutline16 /> <span>文件</span>
+        </button>
+      </div>
+      <div className={css.sidebarSection}>会话</div>
       <div className={css.sidebarSearch}><Input icon={<IconSearchOutline16 />} value={q} onChange={e => setQ(e.target.value)} placeholder={t('sidebar.search')} /></div>
       <div className={css.sidebarList}>
         {filtered.map(s => <SessionRow key={s.id} session={s} active={s.id === current} busy={busy} narrow={narrow} />)}
         {filtered.length === 0 && <div className={css.sidebarEmpty}>暂无会话</div>}
+      </div>
+      <div className={css.sidebarFoot}>
+        <button type="button" className={css.footBtn} data-testid="sidebar-fullscreen" onClick={toggle}><IconFullscreenOutline16 /> <span>{fsTitle}</span></button>
+        <button type="button" className={css.footBtn} data-testid="sidebar-settings" onClick={uiActions.openSettings}><IconSettingsOutline16 /> <span>设置</span></button>
       </div>
     </div>
   )
@@ -69,14 +91,12 @@ function SessionRow({ session, active, busy, narrow }: { session: ChatSession; a
   const startRename = () => { setMenuOpen(false); setConfirming(false); setRenameVal(displayTitle(session)); setRenaming(true) }
   const commitRename = () => {
     const v = sanitizeTitle(renameVal)
-    // Empty/whitespace-only title is never saved; a no-op rename just exits.
     if (v && v !== displayTitle(session)) void sessionsActions.setTitle(session.id, v)
     setRenaming(false)
   }
   const cancelRename = () => setRenaming(false)
   const onDeleteClick = () => { setMenuOpen(false); setConfirming(true) }
   const doDelete = () => { if (confirming) { sessionsActions.remove(session.id); setConfirming(false) } }
-
   if (renaming) {
     return (
       <div className={css.sessionRowWrap + (active ? ' ' + css.sessionRowWrapActive : '')}>
@@ -112,4 +132,3 @@ function SessionRow({ session, active, busy, narrow }: { session: ChatSession; a
     </div>
   )
 }
-

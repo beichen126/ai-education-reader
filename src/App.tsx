@@ -13,6 +13,8 @@ import { Sidebar } from './cockpit/Sidebar'
 import { Conversation } from './cockpit/Conversation'
 import { SettingsDialog } from './cockpit/SettingsDialog'
 import { Gallery } from './gallery/Gallery'
+import { DocumentLibrary } from './documents/DocumentLibrary'
+import { DocumentReader } from './documents/DocumentReader'
 
 function renderSlot(key: string, owner?: any): ReactNode {
   if (key === 'sidebar') return <Sidebar collapsed={!!owner?.collapsed} width={owner?.width ?? 0} />
@@ -65,6 +67,8 @@ export function App() {
       />
       {settingsOpen && <SettingsDialog />}
       <Gallery />
+      <DocumentLibrary />
+      <DocumentReader />
     </>
   )
 }
