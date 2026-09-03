@@ -1,4 +1,6 @@
 // Edge (Windows / local) acceptance e2e for the unified zoomable image viewer.
+// Stage 9.3: transient zoom HUD — no persistent zoom toolbar; the percent shows
+// only while zooming and auto-hides ~3s after the last effective zoom input.
 //
 // Run:
 //   1) npm run build && npm run preview -- --port 5299
@@ -28,7 +30,9 @@ async function newPage(w = 1440, h = 900, hasTouch = false) {
   return { ctx, page }
 }
 const DIAG = '[role="dialog"][aria-modal="true"]'
-const percent = p => p.locator('[data-testid="viewer-percent"]').textContent()
+const HUD = '[data-testid="viewer-zoom-hud"]'
+const hudCount = p => p.locator(HUD).count()
+const hudText = p => p.locator(HUD).textContent()
 const zstyle = p => p.locator('[data-testid="viewer-image"]').getAttribute('style')
 const counter = p => p.locator('span[class*="counter"]').textContent()
 const translate = p => p.locator('[data-testid="viewer-image"]').evaluate(el => {
@@ -44,7 +48,6 @@ const wheel = async (p, dy) => {
   await p.waitForTimeout(120)
   return { cx, cy }
 }
-// drag from the stage center by (dx,dy); returns final translation
 async function drag(p, dx, dy) {
   const box = await p.locator('[data-testid="viewer-stage"]').boundingBox()
   const cx = box.x + box.width / 2, cy = box.y + box.height / 2
@@ -56,7 +59,7 @@ async function drag(p, dx, dy) {
   return translate(p)
 }
 
-// ============ A. sent image -> Gallery viewer ============
+// ============ A. sent image -> Gallery viewer + HUD behavior ============
 {
   const { ctx, page } = await newPage()
   const imgInput = page.locator('input[type="file"][accept*="image/"]')
@@ -70,13 +73,14 @@ async function drag(p, dx, dy) {
   await thumbs.first().click()
   await page.locator(DIAG).waitFor({ state: 'visible', timeout: 10000 })
   assert(await closeFocused(page), 'A: initial focus lands on viewer close button')
-  assert((await percent(page)).trim() === '100%', 'A: initial scale 100%')
+  assert(await hudCount(page) === 0, 'A: initial state has NO persistent zoom HUD/toolbar')
   const s0 = await zstyle(page)
   assert(s0.includes('scale(1)') && s0.includes('translate3d(0px, 0px, 0'), 'A: initial transform fit')
-  // wheel up -> zoom in
+  assert(await page.locator('span[class*="counter"]').count() === 1, 'A: nav bar (counter) present')
+  assert(await page.locator('[data-testid="viewer-prev"]').count() === 1, 'A: prev kept')
   await wheel(page, -600)
-  const p1 = (await percent(page)).trim()
-  assert(p1 !== '100%', 'A: wheel up -> zoom in (' + p1 + ')')
+  const h1 = (await hudText(page)).trim()
+  assert(h1 !== '100%', 'A: HUD visible on wheel zoom (' + h1 + ')')
 
   // ---- four-direction pan limits (center-coordinate model) ----
   const geo = await page.evaluate(() => {
@@ -98,52 +102,73 @@ async function drag(p, dx, dy) {
   assert(top.ty < 0 && Math.abs(top.ty + oy) < 2, 'A: top limit reachable ty=' + top.ty.toFixed(1) + ' ~ -' + oy.toFixed(1))
   assert(Math.abs(Math.abs(left.tx) - right.tx) < 2, 'A: horizontal bounds symmetric')
   assert(Math.abs(Math.abs(top.ty) - bottom.ty) < 2, 'A: vertical bounds symmetric')
-  const mid = await drag(page, -(left.tx) / 2, 0)   // half-way back: clamp must not fight
-  assert(Math.abs(mid.tx - left.tx / 2) < 30, 'A: in-range pan not clamped mid-drag (got ' + mid.tx.toFixed(1) + ' ~ ' + (left.tx / 2).toFixed(1) + ')')
 
-  // wheel down -> back to 100%
+  // ---- wheel down back to fit (HUD still a live zoom) ----
   await wheel(page, 600)
-  assert((await percent(page)).trim() === '100%', 'A: wheel down -> back to 100%')
-  await wheel(page, -600)
-  await page.locator('[data-testid="viewer-fit"]').click()
+  assert((await hudText(page)).trim() === '100%' && (await zstyle(page)).includes('scale(1)'), 'A: wheel down -> fit, HUD 100%')
+
+  // ---- keyboard zoom: +/-/0 each show the HUD ----
+  await page.keyboard.press('+')
   await page.waitForTimeout(80)
-  const s2 = await zstyle(page)
-  assert((await percent(page)).trim() === '100%' && s2.includes('translate3d(0px, 0px, 0') && s2.includes('scale(1)'), 'A: fit resets scale+pan')
-  // double click -> 200% -> fit
+  assert((await hudText(page)).trim() === '125%', 'A: + key -> HUD 125%')
+  await page.keyboard.press('-')
+  await page.waitForTimeout(80)
+  assert((await hudText(page)).trim() === '100%', 'A: - key -> HUD 100%')
+  await page.keyboard.press('+')
+  await page.waitForTimeout(80)
+  assert(await hudCount(page) === 1, 'A: + again keeps HUD visible')
+  await page.keyboard.press('0')
+  await page.waitForTimeout(80)
+  const sZero = await zstyle(page)
+  assert((await hudText(page)).trim() === '100%' && sZero.includes('translate3d(0px, 0px, 0'), 'A: 0 key -> fit + HUD 100%')
+
+  // ---- Case D: double click toggles 200% <-> 100% ----
   const box = await page.locator('[data-testid="viewer-stage"]').boundingBox()
   const cx = box.x + box.width / 2, cy = box.y + box.height / 2
   await page.mouse.dblclick(cx, cy)
   await page.waitForTimeout(80)
-  assert((await percent(page)).trim() === '200%', 'A: dblclick -> 200%')
+  assert((await hudText(page)).trim() === '200%', 'A: dblclick -> HUD 200%')
   await page.mouse.dblclick(cx, cy)
   await page.waitForTimeout(80)
-  assert((await percent(page)).trim() === '100%', 'A: dblclick again -> fit')
-  // keyboard +/-/0
-  await page.keyboard.press('+')
-  await page.waitForTimeout(60)
-  assert((await percent(page)).trim() === '125%', 'A: + key -> 125%')
-  await page.keyboard.press('-')
-  await page.waitForTimeout(60)
-  assert((await percent(page)).trim() === '100%', 'A: - key -> 100%')
-  await page.keyboard.press('+')
-  await page.waitForTimeout(60)
+  assert((await hudText(page)).trim() === '100%', 'A: dblclick again -> HUD 100%')
+
+  // ---- Case B: auto-hide ~3s after last zoom ----
+  await wheel(page, -600)
+  assert(await hudCount(page) === 1, 'A: HUD visible before auto-hide')
+  await page.waitForTimeout(3400)
+  assert(await hudCount(page) === 0, 'A: HUD auto-hidden after ~3s')
+
+  // ---- Case F: pure pan never re-triggers the HUD (scale>1, HUD already hidden) ----
+  const pan0 = await drag(page, -120, -60)
+  assert(pan0.tx < 0 && Math.abs(pan0.tx + 120) < 3, 'A: pan works while HUD hidden (' + pan0.tx + ')')
+  assert(await hudCount(page) === 0, 'A: pan does NOT trigger the HUD')
+
+  // ---- Case C: timer resets on new zoom input ----
+  // zoom 2 must be an EFFECTIVE zoom (here back towards 100%): a wheel that is
+  // already clamped at MIN/MAX scale is correctly ignored (no HUD refresh).
+  await wheel(page, -600)
+  assert(await hudCount(page) === 1, 'A: zoom 1 shows HUD')
+  await page.waitForTimeout(2000)
+  await wheel(page, 300)
+  assert(await hudCount(page) === 1, 'A: zoom 2 keeps HUD')
+  await page.waitForTimeout(2000) // 4s since zoom 1 (old 3s timer would have fired)
+  assert(await hudCount(page) === 1, 'A: HUD still visible after old timer would have fired (timer reset)')
+  await page.waitForTimeout(1400)
+  assert(await hudCount(page) === 0, 'A: HUD hidden after reset timer elapses')
+
+  // ---- prev/next reset (Case G) ----
   await page.keyboard.press('0')
-  await page.waitForTimeout(60)
-  assert((await percent(page)).trim() === '100%', 'A: 0 key -> fit')
-  // toolbar buttons
-  await page.locator('[data-testid="viewer-zoom-in"]').click()
-  await page.waitForTimeout(60)
-  assert((await percent(page)).trim() === '125%', 'A: + button -> 125%')
-  await page.locator('[data-testid="viewer-zoom-out"]').click()
-  await page.waitForTimeout(60)
-  assert((await percent(page)).trim() === '100%', 'A: - button -> 100%')
-  // prev/next + reset
+  await page.waitForTimeout(80)
+  await page.keyboard.press('+')
+  await page.waitForTimeout(80)
+  assert(await hudCount(page) === 1, 'A: HUD visible before next')
   assert(await page.locator('[data-testid="viewer-prev"]').isDisabled(), 'A: prev disabled at index 0')
   assert((await counter(page)).trim() === '1 / 2', 'A: counter 1 / 2')
   await page.locator('[data-testid="viewer-next"]').click()
   await page.waitForTimeout(250)
   const s3 = await zstyle(page)
-  assert((await percent(page)).trim() === '100%' && s3.includes('translate3d(0px, 0px, 0'), 'A: next resets to 100%/0')
+  assert(s3.includes('scale(1)') && s3.includes('translate3d(0px, 0px, 0'), 'A: next resets to fit')
+  assert(await hudCount(page) === 0, 'A: next hides the HUD (no inheritance from image 1)')
   assert((await counter(page)).trim() === '2 / 2', 'A: counter 2 / 2')
   assert(await page.locator('[data-testid="viewer-next"]').isDisabled(), 'A: next disabled at end')
   await page.keyboard.press('ArrowLeft')
@@ -176,6 +201,7 @@ async function drag(p, dx, dy) {
   assert(await galThumbs.count() === 2, 'B: gallery list shows 2 thumbs (got ' + await galThumbs.count() + ')')
   await galThumbs.first().click()
   await page.locator(DIAG).waitFor({ state: 'visible', timeout: 10000 })
+  assert(await hudCount(page) === 0, 'B: gallery viewer opens with HUD hidden')
   assert((await counter(page)).trim() === '1 / 2', 'B: gallery viewer counter 1 / 2')
   await page.getByRole('button', { name: '返回列表' }).click()
   await page.waitForTimeout(250)
@@ -197,10 +223,9 @@ async function drag(p, dx, dy) {
   await draftImg.click()
   await page.locator(DIAG).waitFor({ state: 'visible', timeout: 10000 })
   assert(await closeFocused(page), 'C: draft viewer initial focus close button')
-  assert((await percent(page)).trim() === '100%', 'C: draft viewer initial 100%')
+  assert(await hudCount(page) === 0, 'C: draft viewer HUD hidden on open')
   await wheel(page, -600)
-  const c1 = (await percent(page)).trim()
-  assert(c1 !== '100%', 'C: draft viewer wheel zoom (' + c1 + ')')
+  assert(await hudCount(page) === 1, 'C: draft viewer HUD on wheel zoom')
   const cs = await drag(page, -90, -40)
   assert(cs.tx < 0 && Math.abs(cs.tx + 90) < 3, 'C: draft viewer drag pan (' + JSON.stringify(cs) + ')')
   await page.keyboard.press('Escape')
@@ -219,7 +244,7 @@ async function drag(p, dx, dy) {
   const draftBack2 = await page.evaluate(() => document.activeElement === document.querySelector('img[role="button"][aria-label="查看图片"]'))
   assert(draftBack2, 'C: keyboard-opened draft: focus restored to the draft thumb')
 
-  // ============ D. PDF page viewer + focus ============
+  // ============ D. PDF page viewer (Case H) + focus ============
   await page.locator('[data-testid="composer-attach-pdf"] input[type="file"]').setInputFiles(PDF)
   await page.locator('[data-testid="pdf-mode-chapter"]').waitFor({ state: 'visible', timeout: 25000 })
   await page.locator('[data-testid="pdf-mode-manual"]').click()
@@ -239,15 +264,16 @@ async function drag(p, dx, dy) {
   await pageBtns.first().click()
   await page.locator(DIAG).waitFor({ state: 'visible', timeout: 10000 })
   assert(await closeFocused(page), 'D: pdf viewer initial focus close button')
+  assert(await hudCount(page) === 0, 'D: pdf viewer HUD hidden on open')
   assert((await counter(page)).trim() === '1 / 3', 'D: pdf viewer counter 1 / 3')
   await wheel(page, -600)
-  const d1 = (await percent(page)).trim()
-  assert(d1 !== '100%', 'D: pdf viewer wheel zoom (' + d1 + ')')
+  assert(await hudCount(page) === 1, 'D: pdf viewer HUD on wheel zoom (same as images)')
   await page.locator('[data-testid="viewer-next"]').click()
   await page.waitForTimeout(250)
   assert((await counter(page)).trim() === '2 / 3', 'D: next -> 2 / 3')
   const d2 = await zstyle(page)
-  assert((await percent(page)).trim() === '100%' && d2.includes('translate3d(0px, 0px, 0'), 'D: page switch resets zoom')
+  assert(d2.includes('scale(1)') && d2.includes('translate3d(0px, 0px, 0'), 'D: page switch resets zoom')
+  assert(await hudCount(page) === 0, 'D: HUD hidden after pdf page switch')
   await page.locator('[data-testid="viewer-prev"]').click()
   await page.waitForTimeout(250)
   assert((await counter(page)).trim() === '1 / 3', 'D: prev -> 1 / 3')
@@ -256,7 +282,6 @@ async function drag(p, dx, dy) {
   assert(await page.locator(DIAG).count() === 0, 'D: pdf viewer Escape')
   const pdfBack = await page.evaluate(() => document.activeElement === document.querySelectorAll('[data-testid^="pdf-page-open-"]')[0])
   assert(pdfBack, 'D: click-opened pdf page: focus restored to the page button')
-  // keyboard-opened pdf page roundtrip
   await pageBtns.nth(1).focus()
   await page.keyboard.press('Enter')
   await page.locator(DIAG).waitFor({ state: 'visible', timeout: 10000 })
@@ -267,7 +292,7 @@ async function drag(p, dx, dy) {
   const pdfBack2 = await page.evaluate(() => document.activeElement === document.querySelectorAll('[data-testid^="pdf-page-open-"]')[1])
   assert(pdfBack2, 'D: keyboard-opened pdf page: focus restored to the page button')
 
-  // F: responsive control visibility
+  // ============ F. responsive: HUD overlay stays inside the viewport ============
   const vpCheck = async (w, h, tag) => {
     await page.setViewportSize({ width: w, height: h })
     await page.waitForTimeout(200)
@@ -275,10 +300,9 @@ async function drag(p, dx, dy) {
     await page.locator(DIAG).waitFor({ state: 'visible', timeout: 10000 })
     const sb = await page.locator('[data-testid="viewer-stage"]').boundingBox()
     assert(sb && sb.width >= 60 && sb.height >= 60, tag + ': stage visible ' + JSON.stringify(sb))
-    for (const t of ['viewer-zoom-out', 'viewer-zoom-in', 'viewer-fit', 'viewer-percent']) {
-      const b = await page.locator('[data-testid="' + t + '"]').boundingBox()
-      assert(b && b.x >= -1 && b.x + b.width <= w + 1, tag + ': ' + t + ' inside viewport ' + w + ' (' + JSON.stringify(b) + ')')
-    }
+    await wheel(page, -600)
+    const hb = await page.locator(HUD).boundingBox()
+    assert(hb && hb.x >= -1 && hb.x + hb.width <= w + 1 && hb.y >= 0 && hb.y + hb.height <= h + 1, tag + ': zoom HUD inside viewport (' + JSON.stringify(hb) + ')')
     await page.keyboard.press('Escape')
     await page.waitForTimeout(200)
   }
@@ -288,7 +312,7 @@ async function drag(p, dx, dy) {
   await ctx.close()
 }
 
-// ============ E. touch pinch / single-finger pan at 390x844 ============
+// ============ E. touch pinch (live HUD) + single-finger pan at 390x844 ============
 {
   const { ctx, page } = await newPage(390, 844, true)
   const imgInput = page.locator('input[type="file"][accept*="image/"]')
@@ -296,6 +320,7 @@ async function drag(p, dx, dy) {
   await page.getByText('已添加 1 张图片').waitFor({ state: 'visible', timeout: 20000 })
   await page.locator('span[class*="pic"] > img[alt=""]').click()
   await page.locator(DIAG).waitFor({ state: 'visible', timeout: 10000 })
+  assert(await hudCount(page) === 0, 'E: touch viewer HUD hidden on open')
   const box = await page.locator('[data-testid="viewer-stage"]').boundingBox()
   const cx = box.x + box.width / 2, cy = box.y + box.height / 2
   const cdp = await ctx.newCDPSession(page)
@@ -306,8 +331,12 @@ async function drag(p, dx, dy) {
   }
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
   await page.waitForTimeout(200)
-  const e1 = (await percent(page)).trim()
-  assert(e1 !== '100%', 'E: synthetic pinch increases scale (' + e1 + ')')
+  const e1 = (await hudText(page)).trim()
+  assert(e1 !== '100%', 'E: pinch shows live HUD (' + e1 + ')')
+  const hb = await page.locator(HUD).boundingBox()
+  assert(hb && hb.x >= -1 && hb.x + hb.width <= 391, 'E: HUD inside 390 viewport (' + JSON.stringify(hb) + ')')
+  await page.waitForTimeout(3400)
+  assert(await hudCount(page) === 0, 'E: HUD auto-hidden after pinch')
   const sa = await zstyle(page)
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: cx, y: cy }] })
   for (let i = 1; i <= 6; i++) {
@@ -317,12 +346,9 @@ async function drag(p, dx, dy) {
   await page.waitForTimeout(200)
   const sb = await zstyle(page)
   assert(sa !== sb, 'E: single-finger drag pans (' + sb + ')')
+  assert(await hudCount(page) === 0, 'E: single-finger pan does NOT trigger the HUD')
   const ta = await page.locator('[data-testid="viewer-stage"]').evaluate(el => getComputedStyle(el).touchAction)
   assert(ta === 'none', 'E: stage touch-action none (' + ta + ')')
-  for (const t of ['viewer-zoom-out', 'viewer-zoom-in', 'viewer-fit']) {
-    const b = await page.locator('[data-testid="' + t + '"]').boundingBox()
-    assert(b && b.x >= -1 && b.x + b.width <= 391, 'E: ' + t + ' inside 390 viewport (' + JSON.stringify(b) + ')')
-  }
   await page.keyboard.press('Escape')
   await page.waitForTimeout(200)
   assert(await page.locator(DIAG).count() === 0, 'E: Escape on touch context')

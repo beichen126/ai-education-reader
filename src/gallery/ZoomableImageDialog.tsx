@@ -43,6 +43,16 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
   const pinchRef = useRef<{ d0: number; s0: number; tx0: number; ty0: number } | null>(null)
   const dragRef = useRef<{ x: number; y: number; moved: number } | null>(null)
   const lastMovedRef = useRef(0)
+  // Transient zoom HUD: shows the current percent only while the user actually
+  // zooms (wheel / pinch / dblclick / keyboard), auto-hidden ~3s after the last
+  // effective zoom input. No persistent toolbar, no layout footprint.
+  const [zoomHudVisible, setZoomHudVisible] = useState(false)
+  const zoomHudTimerRef = useRef<number | null>(null)
+  const showZoomHud = useCallback(() => {
+    setZoomHudVisible(true)
+    if (zoomHudTimerRef.current !== null) { window.clearTimeout(zoomHudTimerRef.current) }
+    zoomHudTimerRef.current = window.setTimeout(() => { setZoomHudVisible(false); zoomHudTimerRef.current = null }, 3000)
+  }, [])
 
   const base = useCallback(() => {
     if (!nat || stage.w <= 0 || stage.h <= 0) return null
@@ -67,8 +77,18 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
     setT(ns, z.tx, z.ty)
   }, [setT])
 
-  // Reset transform on image change.
-  useEffect(() => { const t = resetTransform(); setScale(t.scale); setTx(t.tx); setTy(t.ty) }, [src, resetKey])
+  // Reset transform on image change — and drop any zoom HUD state so image 2
+  // never inherits image 1's visible percent or pending hide timer.
+  useEffect(() => {
+    const t = resetTransform(); setScale(t.scale); setTx(t.tx); setTy(t.ty)
+    setZoomHudVisible(false)
+    if (zoomHudTimerRef.current !== null) { window.clearTimeout(zoomHudTimerRef.current); zoomHudTimerRef.current = null }
+  }, [src, resetKey])
+
+  // Unmount cleanup: never let the hide timer fire state updates after close.
+  useEffect(() => () => {
+    if (zoomHudTimerRef.current !== null) { window.clearTimeout(zoomHudTimerRef.current); zoomHudTimerRef.current = null }
+  }, [])
 
   // On mount (layout phase, before paint): capture the opener once, then move
   // initial focus into the dialog (the close button) so the background opener
@@ -87,12 +107,13 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
   const onNextRef = useRef(onNext); onNextRef.current = onNext
   const bumpRef = useRef(bump); bumpRef.current = bump
   const setTRef = useRef(setT); setTRef.current = setT
+  const showZoomHudRef = useRef(showZoomHud); showZoomHudRef.current = showZoomHud
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { onCloseRef.current(); return }
-      if (e.key === '+' || e.key === '=') { e.preventDefault(); bumpRef.current(1.25) }
-      else if (e.key === '-') { e.preventDefault(); bumpRef.current(1 / 1.25) }
-      else if (e.key === '0') { e.preventDefault(); setTRef.current(1, 0, 0) }
+      if (e.key === '+' || e.key === '=') { e.preventDefault(); bumpRef.current(1.25); showZoomHudRef.current() }
+      else if (e.key === '-') { e.preventDefault(); bumpRef.current(1 / 1.25); showZoomHudRef.current() }
+      else if (e.key === '0') { e.preventDefault(); setTRef.current(1, 0, 0); showZoomHudRef.current() }
       else if (e.key === 'ArrowLeft') { if (onPrevRef.current) onPrevRef.current() }
       else if (e.key === 'ArrowRight') { if (onNextRef.current) onNextRef.current() }
     }
@@ -116,14 +137,15 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
       e.preventDefault()
       const s = scaleRef.current
       const ns = clampScale(s * Math.pow(1.0015, -e.deltaY))
-      if (ns === s) return
+      if (ns === s) return // clamped at min/max: no effective zoom -> no HUD pulse
       const rect = el.getBoundingClientRect()
       const z = zoomAtPoint(s, ns, e.clientX - rect.left, e.clientY - rect.top, rect.width / 2, rect.height / 2, txRef.current, tyRef.current)
       setT(ns, z.tx, z.ty)
+      showZoomHud()
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [setT])
+  }, [setT, showZoomHud])
 
   const onPointerDown = (e: React.PointerEvent) => {
     lastMovedRef.current = 0
@@ -151,6 +173,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
       const cx = rect ? rect.width / 2 : 0, cy = rect ? rect.height / 2 : 0
       const z = zoomAtPoint(p.s0, ns, mx - (rect?.left || 0), my - (rect?.top || 0), cx, cy, p.tx0, p.ty0)
       setT(ns, z.tx, z.ty)
+      showZoomHud() // live percent while pinching; timer keeps resetting
       lastMovedRef.current = 10
       return
     }
@@ -178,6 +201,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
     const target = s < DOUBLE_CLICK_SCALE ? DOUBLE_CLICK_SCALE : 1
     const z = zoomAtPoint(s, target, e.clientX - rect.left, e.clientY - rect.top, rect.width / 2, rect.height / 2, txRef.current, tyRef.current)
     setT(target, z.tx, z.ty)
+    showZoomHud()
   }
   // Click on empty stage area closes; a pan suppresses it; clicks on the image don't close.
   const onStageClick = (e: React.MouseEvent) => {
@@ -210,20 +234,19 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
           onLoad={e => { const el = e.currentTarget; setNat({ w: el.naturalWidth, h: el.naturalHeight }) }}
         /> : <div className={css.missing}>无法读取这张图片</div>}
       </div>
-      <div className={css.topbar}>
-        <div className={css.toolbar} onPointerDown={e => e.stopPropagation()}>
-          <button type="button" className={css.zbtn} aria-label="缩小" data-testid="viewer-zoom-out" onClick={() => bump(1 / 1.25)}>−</button>
-          <span className={css.percent} data-testid="viewer-percent">{percent}%</span>
-          <button type="button" className={css.zbtn} aria-label="放大" data-testid="viewer-zoom-in" onClick={() => bump(1.25)}>+</button>
-          <button type="button" className={css.zfit} data-testid="viewer-fit" onClick={() => setT(1, 0, 0)}>适应屏幕</button>
+      {zoomHudVisible && (
+        <div className={css.zoomHud} data-testid="viewer-zoom-hud" aria-hidden="true">{percent}%</div>
+      )}
+      {(hasNav || onBackToList) && (
+        <div className={css.topbar}>
+          <div className={css.navBar} onPointerDown={e => e.stopPropagation()}>
+            {hasNav && onPrev && <button type="button" className={css.ctrl} data-testid="viewer-prev" disabled={index! <= 0} onClick={onPrev}>{labels.prev || '上一张'}</button>}
+            {hasNav && <span className={css.counter}>{index! + 1} / {count}</span>}
+            {hasNav && onNext && <button type="button" className={css.ctrl} data-testid="viewer-next" disabled={index! >= count! - 1} onClick={onNext}>{labels.next || '下一张'}</button>}
+            {onBackToList && <button type="button" className={css.ctrl} onClick={onBackToList}>{labels.backToList || '返回列表'}</button>}
+          </div>
         </div>
-        <div className={css.toolbar} onPointerDown={e => e.stopPropagation()}>
-          {hasNav && onPrev && <button type="button" className={css.ctrl} data-testid="viewer-prev" disabled={index! <= 0} onClick={onPrev}>{labels.prev || '上一张'}</button>}
-          {hasNav && <span className={css.counter}>{index! + 1} / {count}</span>}
-          {hasNav && onNext && <button type="button" className={css.ctrl} data-testid="viewer-next" disabled={index! >= count! - 1} onClick={onNext}>{labels.next || '下一张'}</button>}
-          {onBackToList && <button type="button" className={css.ctrl} onClick={onBackToList}>{labels.backToList || '返回列表'}</button>}
-        </div>
-      </div>
+      )}
       <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>✕</button>
     </div>,
     document.body,
