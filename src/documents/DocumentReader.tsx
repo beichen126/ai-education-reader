@@ -6,7 +6,7 @@
 // progress flushed with the document id bound at call time). App-level unmount
 // effect only keeps pagehide/visibility flush.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getDocument, updateLastReadPage } from './document-service'
+import { getDocument, updateLastReadPage, updateDocumentChapters } from './document-service'
 import { useSessions } from '../engine/sessions-store'
 import { formatBytes } from '../storage/diagnostics'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
@@ -19,6 +19,7 @@ import { openPdfSession, renderSessionPage, closePdfSession, pdfErrorMessage, ty
 import { PdfError } from '../pdf/pdf-service'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { createUrlOwner } from './url-owner'
+import { ChapterBuilder, type ChapterBuilderSave } from './ChapterBuilder'
 import type { LearningDocument, ChapterNode } from './document-types'
 import css from './document-reader.module.css'
 
@@ -66,6 +67,10 @@ export function DocumentReader() {
   const [ctxPending, setCtxPending] = useState<ReaderContextRequest | null>(null)
   const ctxGenRef = useRef(0)
   const ctxMenuOpenRef = useRef(false); ctxMenuOpenRef.current = ctxMenuOpen
+  // ---- Manual Chapter Builder (Stage 9.4A) ----
+  const [builderOpen, setBuilderOpen] = useState(false)
+  const [builderSeed, setBuilderSeed] = useState(false)
+  const builderOpenRef = useRef(false); builderOpenRef.current = builderOpen
 
   // ---- docId-BOUND progress persistence: each write carries the id it belongs to ----
   const persist = useCallback((targetDocId: string, p: number) => {
@@ -87,6 +92,7 @@ export function DocumentReader() {
       ctxGenRef.current++ // any in-flight Reader Context generation becomes cancelled
       setCtxBusy(false); setCtxProgress(null); setCtxMsg(null)
       setCtxPending(null); setCtxMenuOpen(false); setCtxMode('menu'); setManualError(null)
+      setBuilderOpen(false)
       sessionRef.current = null
       urlOwnerRef.current.revokeAll()
       setPageUrl(null)
@@ -107,6 +113,7 @@ export function DocumentReader() {
       setPageCount(0); setPage(1); setPageInput(''); setPageError(null)
       setTocState({ expanded: new Set() }); setTocOpen(false)
       setViewerUrl(null); viewerOpenRef.current = false
+      setBuilderOpen(false)
       urlOwnerRef.current.revokeAll(); setPageUrl(null)
       sessionRef.current = null
       try {
@@ -260,11 +267,30 @@ export function DocumentReader() {
     void requestContext(sel, sel.ranges)
   }
 
+  // ---- Save the manual chapter tree: persist once, then refresh from IDB so the
+  // Reader TOC updates immediately. The current page is NEVER re-seeked (a builder
+  // save is not re-opening the Reader). ----
+  const saveBuilder = useCallback(async (save: ChapterBuilderSave) => {
+    if (!doc) return
+    try {
+      await updateDocumentChapters(doc.id, save.chapters, save.source)
+      const fresh = await getDocument(doc.id)
+      if (fresh) {
+        setDoc(fresh)
+        setTocState(prev => ({ expanded: prev.expanded })) // keep expansion; tree refresh below
+      }
+    } catch { /* persist failure surfaces as a non-jump; keep stale doc */ }
+    setBuilderOpen(false)
+    // Page state is local and untouched by setDoc, so the current page is preserved.
+  }, [doc])
+
   // ---- keyboard: arrows page, Escape closes (viewer gets priority) ----
   useEffect(() => {
     if (!doc) return
     const onKey = (e: KeyboardEvent) => {
       if (viewerOpenRef.current) return
+      // Chapter Builder owns keyboard priority while open — no page-turning.
+      if (builderOpenRef.current) return
       const t = document.activeElement as HTMLElement | null
       // Context menu takes Escape ONLY — arrows / typing / everything else pass through.
       if (ctxMenuOpenRef.current && e.key === 'Escape') { e.preventDefault(); setCtxMenuOpen(false); setCtxMode('menu'); return }
@@ -304,6 +330,9 @@ export function DocumentReader() {
               {ctxBusy ? '处理中' : '加入对话'}
             </button>
           )}
+          {doc && doc.chapterSource !== 'native' && (
+            <button className={css.buildBtn} data-testid="reader-build" title="从此页新建章节" onClick={() => { setBuilderSeed(true); setBuilderOpen(true) }}>从此页新建章节</button>
+          )}
           <button className={css.tocToggle} data-testid="reader-toc-toggle" onClick={() => setTocOpen(o => !o)}>目录</button>
           <button className={css.closeBtn} data-testid="reader-close" onClick={() => { documentUiActions.close() }}>关闭</button>
         </div>
@@ -320,7 +349,10 @@ export function DocumentReader() {
                   {doc.chapters.map(c => <TocRow key={c.id} node={c} depth={0} state={tocState} onOpen={clickChapter} onToggle={toggleTocNode} />)}
                 </div>
               ) : (
-                <div className={css.tocEmpty} data-testid="reader-toc-empty">这份 PDF 暂无章节目录。</div>
+                <div className={css.tocEmpty}>
+                  <div data-testid="reader-toc-empty">这份 PDF 暂无章节目录。</div>
+                  <button type="button" className={css.tocCreate} data-testid="reader-toc-create" onClick={() => { setBuilderSeed(false); setBuilderOpen(true) }}>创建章节</button>
+                </div>
               )}
             </aside>
             <main className={css.stage}>
@@ -395,6 +427,16 @@ export function DocumentReader() {
           resetKey={page}
           onClose={() => { viewerOpenRef.current = false; setViewerUrl(null) }}
           labels={{ close: '关闭', dialog: 'PDF 页面查看' }}
+        />
+      )}
+      {builderOpen && doc && (
+        <ChapterBuilder
+          pageCount={doc.pageCount}
+          initialChapters={doc.chapters}
+          currentPage={page}
+          seedFromCurrentPage={builderSeed}
+          onSave={saveBuilder}
+          onClose={() => { setBuilderOpen(false); setBuilderSeed(false) }}
         />
       )}
     </div>

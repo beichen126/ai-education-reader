@@ -17,7 +17,11 @@
 .tocChevron { flex: none; width: 22px; font-size: 10px; color: var(--dsw-alias-label-tertiary); }
 .tocText { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .tocRange { flex: none; font-size: 11px; color: var(--dsw-alias-label-tertiary); }
-.tocEmpty { padding: 10px 8px; font-size: 13px; color: var(--dsw-alias-label-tertiary); }
+.tocEmpty { padding: 10px 8px; font-size: 13px; color: var(--dsw-alias-label-tertiary); display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.tocCreate { min-height: 34px; padding: 5px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 12px; cursor: pointer; }
+.tocCreate:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.buildBtn { min-height: 36px; padding: 4px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; white-space: nowrap; }
+.buildBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .stage { flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 12px; position: relative; }
 .hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .pageBtn { border: none; background: transparent; padding: 0; cursor: zoom-in; display: block; max-width: 100%; max-height: 100%; }

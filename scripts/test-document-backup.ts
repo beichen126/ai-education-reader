@@ -1,7 +1,7 @@
 // Stage 9.2A: Backup V2 (documents) + V1 compatibility + import validation.
 import 'fake-indexeddb/auto'
 import { readFileSync } from 'node:fs'
-import { createDocument, getDocument, listDocuments } from '../src/documents/document-service.ts'
+import { createDocument, getDocument, listDocuments, updateDocumentChapters } from '../src/documents/document-service.ts'
 import { buildBackup } from '../src/export/backup-export.ts'
 import { parseAndValidate, restoreBackup, BackupError } from '../src/export/backup-import.ts'
 import { idbClearAll } from '../src/storage/idb.ts'
@@ -60,6 +60,23 @@ assert(!!restored && restored.fileSize === 100, 'restored document present')
 const rb = new Uint8Array(await restored!.sourceBlob.arrayBuffer())
 assert(rb.length === 100 && rb.every(v => v === 7), 'restored PDF blob byte-for-byte identical')
 assert(restored!.chapters.length === 1 && restored!.chapters[0].id === '0', 'restored chapter tree kept')
+
+// --- manual-source chapters round-trip (Stage 9.4A): no schema change, manual tree survives ---
+await idbClearAll()
+await createDocument({ id: 'docM', fileName: '手册.pdf', mimeType: 'application/pdf', fileSize: 50, pageCount: 12, sourceBlob: new Blob([new Uint8Array(50).fill(9)], { type: 'application/pdf' }), importSource: { kind: 'pdf', originalFileName: '手册.pdf' } })
+await updateDocumentChapters('docM', [
+  { id: 'm1', title: '第一章', level: 1, startPage: 1, endPage: 6, selectable: true, source: 'manual', children: [
+    { id: 'm1a', title: '1.1', level: 2, startPage: 2, endPage: 4, selectable: true, source: 'manual', children: [] },
+  ] },
+  { id: 'm2', title: '第二章', level: 1, startPage: 8, endPage: 12, selectable: true, source: 'manual', children: [] },
+], 'manual')
+const manualBackup = await buildBackup()
+await idbClearAll()
+await restoreBackup(parseAndValidate(JSON.parse(JSON.stringify(manualBackup))))
+const manualRestored = await getDocument('docM')
+assert(!!manualRestored && manualRestored.chapterSource === 'manual', 'manual chapterSource survives backup round-trip')
+assert(!!manualRestored && manualRestored.chapters.length === 2 && manualRestored.chapters[0].id === 'm1' && manualRestored.chapters[0].children[0].id === 'm1a' && manualRestored.chapters[0].children[0].level === 2, 'manual chapter tree (with nested child) survives backup round-trip')
+assert(!!manualRestored && manualRestored.chapters[0].source === 'manual' && manualRestored.chapters[1].startPage === 8, 'manual source + startPage preserved')
 
 // --- V1 compatibility: accepted, restores conversations/attachments, documents=[] ---
 await idbClearAll()
