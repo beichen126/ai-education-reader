@@ -1,6 +1,8 @@
-// attachmentService — the single authority for attachment lifecycle. The UI never touches IndexedDB, Blob, objectURL, or base64 directly.
+// attachmentService — the single authority for attachment lifecycle. The UI never
+// touches IndexedDB, OPFS, Blob, objectURL, or base64 directly.
 import { newStableId, type Attachment, type PdfAttachmentSource, type StableId } from './types'
-import { saveAttachments, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists } from '../storage/storage'
+import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, listAllAttachmentRows, type StoredAttachmentRow } from '../storage/storage'
+import { persistBinary, readBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
 
 export type AttachmentErrorKind = 'unsupported-format' | 'read-failed' | 'missing-attachment' | 'image-too-large' | 'vision-unsupported'
 export class AttachmentError extends Error { readonly kind: AttachmentErrorKind; constructor(kind: AttachmentErrorKind, m: string) { super(m); this.kind = kind } }
@@ -17,88 +19,95 @@ export function attachmentErrorLabel(kind: AttachmentErrorKind): string {
 
 const SUPPORTED_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024
-/** Product-side guard on the INLINE base64 image payload sent in one request.
- * Not a DeepSeek absolute limit — 30 MiB raw ≈ 40 MiB base64, leaving headroom
- * under the ~48 MiB HTTP body cap for JSON/text/data-URL prefixes. */
 export const MAX_INLINE_IMAGE_RAW_BYTES = 30 * 1024 * 1024
 const urlRegistry = new Map<string, { url: string; refs: number }>()
 
 export function isSupportedImage(file: { type: string; size: number }): boolean { return SUPPORTED_MIME.has(file.type) && file.size > 0 }
 
-/**
- * Persist a batch of files. All-or-nothing: we FIRST validate every file, and only if
- * all pass do we write them in ONE IndexedDB readwrite transaction. A single invalid
- * / too-large file aborts the whole batch and leaves no orphan blobs behind.
- */
+// ---- batch write with all-or-nothing semantics ----------------
+// Binary bytes are persisted to OPFS FIRST (each gets a unique app path), refs are
+// collected, then ALL metadata rows are committed in ONE IndexedDB transaction. If
+// any binary write or the metadata commit fails, every already-written OPFS file is
+// deleted best-effort and nothing is left behind (no partial batch, no orphan).
+async function writeBatch(namespace: 'attachments', metas: Attachment[], blobs: Blob[]): Promise<StoredAttachmentRow[]> {
+  if (metas.length === 0) return []
+  const refs: StoredBinary[] = []
+  const written: { ref: StoredBinary }[] = []
+  try {
+    for (let i = 0; i < metas.length; i++) {
+      const ref = await persistBinary(namespace, metas[i].id, blobs[i], { requireOpfsWhenAvailable: true });
+      refs.push(ref); written.push({ ref });
+    }
+    const rows: StoredAttachmentRow[] = metas.map((m, i) => ({ id: m.id, meta: m, binary: refs[i], recordVersion: 2 }));
+    await saveAttachmentRows(rows);
+    return rows;
+  } catch (e) {
+    for (const w of written) { try { await deleteBinary(w.ref) } catch { /* orphan */ } }
+    throw e;
+  }
+}
+
 export async function saveFiles(files: File[]): Promise<Attachment[]> {
   const now = Date.now()
   const metas: Attachment[] = []
+  const blobs: Blob[] = []
   for (const f of files) {
-    if (!isSupportedImage(f)) throw new AttachmentError('unsupported-format', 'unsupported image')
-    if (f.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large')
-    metas.push({ id: newStableId(), name: f.name, mimeType: f.type, size: f.size, createdAt: now, updatedAt: now })
+    if (!isSupportedImage(f)) throw new AttachmentError('unsupported-format', 'unsupported image');
+    if (f.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large');
+    metas.push({ id: newStableId(), name: f.name, mimeType: f.type, size: f.size, createdAt: now, updatedAt: now });
+    blobs.push(f);
   }
-  if (metas.length) await saveAttachments(metas, files)
-  return metas
+  await writeBatch('attachments', metas, blobs);
+  return metas;
 }
 
-/** Input for an app-generated image Blob (e.g. rendered PDF page).
- * source is OPTIONAL and supplied by the caller (the PDF flow) — the service
- * never guesses fileName/pageNumber/selection from names. */
 export type GeneratedImageInput = { blob: Blob; name: string; source?: PdfAttachmentSource }
 
-/**
- * Persist a batch of app-generated image Blobs (NOT user-picked files). Semantically
- * distinct from saveFiles(): these are produced internally (BMP/PDF page renders),
- * so they carry a generated name and must be pre-validated here (the UI file input
- * never saw them). Both paths funnel through the same single-transaction
- * saveAttachments() write, so a failed batch leaves zero orphan blobs.
- */
 export async function saveGeneratedImages(images: GeneratedImageInput[]): Promise<Attachment[]> {
-  if (!Array.isArray(images) || images.length === 0) throw new AttachmentError('read-failed', 'no generated images')
+  if (!Array.isArray(images) || images.length === 0) throw new AttachmentError('read-failed', 'no generated images');
   const now = Date.now()
   const metas: Attachment[] = []
   const blobs: Blob[] = []
   for (const g of images) {
-    if (!(g.blob instanceof Blob) || g.blob.size <= 0) throw new AttachmentError('read-failed', 'empty blob')
-    if (!SUPPORTED_MIME.has(g.blob.type)) throw new AttachmentError('unsupported-format', 'unsupported image')
-    if (g.blob.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large')
-    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}) })
-    blobs.push(g.blob)
+    if (!(g.blob instanceof Blob) || g.blob.size <= 0) throw new AttachmentError('read-failed', 'empty blob');
+    if (!SUPPORTED_MIME.has(g.blob.type)) throw new AttachmentError('unsupported-format', 'unsupported image');
+    if (g.blob.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large');
+    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}) });
+    blobs.push(g.blob);
   }
-  await saveAttachments(metas, blobs)
-  return metas
+  await writeBatch('attachments', metas, blobs);
+  return metas;
 }
 
-/** Sum the recorded raw byte size of a set of attachment ids (no base64/read). */
 export async function sumAttachmentBytes(ids: StableId[]): Promise<number> {
   let total = 0
-  for (const id of ids) {
-    const a = await getAttachment(id)
-    if (a) total += a.size
-  }
+  for (const id of ids) { const a = await getAttachment(id); if (a) total += a.size }
   return total
 }
 
-/** True when the sum exceeds our inline-base64 request-size protection budget. */
-export function isInlineImageOverBudget(totalBytes: number): boolean {
-  return totalBytes > MAX_INLINE_IMAGE_RAW_BYTES
-}
-
-/** Draft early guard: existing draft bytes + new group bytes must fit the 30 MiB budget. */
-export function wouldExceedInlineBudget(existingBytes: number, newBytes: number): boolean {
-  return existingBytes + newBytes > MAX_INLINE_IMAGE_RAW_BYTES
-}
+export function isInlineImageOverBudget(totalBytes: number): boolean { return totalBytes > MAX_INLINE_IMAGE_RAW_BYTES }
+export function wouldExceedInlineBudget(existingBytes: number, newBytes: number): boolean { return existingBytes + newBytes > MAX_INLINE_IMAGE_RAW_BYTES }
 
 export async function getAttachment(id: StableId): Promise<Attachment | undefined> { const row = await getAttachmentRow(id); return row ? row.meta : undefined }
-/** Load metadata for many attachment ids in order (missing ids are skipped). */
 export async function getAttachments(ids: StableId[]): Promise<Attachment[]> {
   const out: Attachment[] = []
   for (const id of ids) { const a = await getAttachment(id); if (a) out.push(a) }
   return out
 }
 export async function existsAttachment(id: StableId): Promise<boolean> { return attachmentExists(id) }
-async function blobOf(id: StableId): Promise<Blob> { const row = await getAttachmentRow(id); if (!row) throw new AttachmentError('missing-attachment', 'attachment missing'); try { if (!(row.blob instanceof Blob)) throw new Error('not blob'); return row.blob } catch { throw new AttachmentError('read-failed', 'read failed') } }
+
+async function blobOf(id: StableId): Promise<Blob> {
+  const row = await getAttachmentRow(id);
+  if (!row) throw new AttachmentError('missing-attachment', 'attachment missing');
+  try {
+    if (row.binary) return await readBinary(row.binary);
+    if (row.blob instanceof Blob) return row.blob;
+    throw new Error('no binary');
+  } catch (e) {
+    if (e instanceof AttachmentError) throw e;
+    throw new AttachmentError('missing-attachment', 'binary missing');
+  }
+}
 
 export async function ensurePreviewUrl(id: StableId): Promise<string> {
   const existing = urlRegistry.get(id); if (existing) { existing.refs++; return existing.url }
@@ -123,6 +132,8 @@ export async function toDataUrl(id: StableId): Promise<string> {
 
 export async function deleteAttachment(id: StableId): Promise<void> {
   const e = urlRegistry.get(id); if (e) { URL.revokeObjectURL(e.url); urlRegistry.delete(id) }
-  await deleteAttachmentRow(id)
+  const row = await getAttachmentRow(id);
+  await deleteAttachmentRow(id);
+  if (row && row.binary && row.binary.storage === 'opfs') { try { await deleteBinary(row.binary) } catch { /* orphan */ } }
 }
 export function releaseAllPreviews(): void { for (const [id, e] of urlRegistry) { URL.revokeObjectURL(e.url); urlRegistry.delete(id) } }

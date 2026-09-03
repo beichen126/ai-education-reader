@@ -61,7 +61,8 @@ export function SettingsDialog() {
     setClearing(true)
     try {
       releaseAllPreviews()
-      await clearAllLocalData()
+      const r = await clearAllLocalData()
+      if (r && r.partialCleanup) { setMsg('本地记录已清除，但部分文件数据清理失败，请再次点击清除重试。'); setClearing(false); return }
       window.location.reload()
     } catch (e) { setClearing(false); setMsg('清除本地数据失败，请重试。') }
   }
@@ -126,7 +127,10 @@ export function SettingsDialog() {
         {storageState === 'error' && <div className={css.storageHint}>本地存储信息暂时无法读取</div>}
         {storageState === 'ready' && storage && (
           <div className={css.storageRows}>
+            <div className={css.storageRow}><span className={css.storageLabel}>文件存储</span><span className={css.storageValue}>{storage.opfsSupported ? 'OPFS（推荐）' : 'IndexedDB 兼容模式'}</span></div>
+            <div className={css.storageRow}><span className={css.storageLabel}>持久化存储</span><span className={css.storageValue}>{storage.storagePersistent === undefined ? '不支持' : (storage.storagePersistent ? '已授予' : '未授予')}</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>本站总占用</span><span className={css.storageValue}>{storage.originUsageBytes !== undefined ? formatBytes(storage.originUsageBytes) : '浏览器未提供'}</span></div>
+            {storage.legacyBinaryCount > 0 && <div className={css.storageRow}><span className={css.storageLabel}>旧版 IndexedDB 二进制</span><span className={css.storageValue}>{storage.legacyBinaryCount} 个等待迁移</span></div>}
             <div className={css.storageRow}><span className={css.storageLabel}>图片附件</span><span className={css.storageValue}>{storage.attachmentCount} 张</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>图片附件占用</span><span className={css.storageValue}>{formatBytes(storage.attachmentBytes)}</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>本地文档</span><span className={css.storageValue}>{storage.documentCount} 份</span></div>

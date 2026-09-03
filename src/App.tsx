@@ -5,6 +5,7 @@ import { AppFrame } from './dsh/layout/AppFrame'
 import { useSessions, initStore } from './engine/sessions-store'
 import { flushAllDrafts } from './engine/draft-store'
 import { initSettings } from './engine/settings-store'
+import { migrateLegacyBinaryStorage } from './storage/migration'
 import { useUi } from './engine/ui-store'
 import { layoutStore, useLayoutStore } from './engine/layout-store'
 import { SessionProvider } from './engine/session-context'
@@ -33,6 +34,12 @@ export function App() {
     catch (e) { console.error('本地数据载入失败', e); setBoot('error') }
   }, [])
   useEffect(() => { void bootFn() }, [bootFn])
+  // Stage 9.4D: best-effort, NON-blocking legacy-blob -> OPFS background migration + a
+  // one-time persistent-storage request (never a hard requirement, never a blocking modal).
+  useEffect(() => {
+    if (boot !== 'ready') return
+    void migrateLegacyBinaryStorage().catch((e) => console.warn('binary migration failed', e))
+  }, [boot])
   // Best-effort flush of any pending debounced text draft when the page is hidden/unloaded,
   // so quick navigation / system kill doesn't lose the last keystrokes.
   useEffect(() => {

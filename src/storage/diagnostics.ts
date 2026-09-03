@@ -1,25 +1,27 @@
 import { idbScan } from './idb'
+import { isOpfsAvailable, isStoragePersistent } from './binary-store'
 
 export type StorageDiagnostics = {
-  /** Origin's total estimated storage usage (navigator.storage.estimate). undefined when API unavailable. */
   originUsageBytes?: number
-  /** Browser quota estimate for this Origin (navigator.storage.estimate). undefined when API unavailable. */
   originQuotaBytes?: number
   attachmentCount: number
   attachmentBytes: number
-  /** Persistent local Documents (original PDFs, Stage 9.2A). */
   documentCount: number
   documentBytes: number
-  /** Locally measured bytes: attachments + documents. */
   totalBytes: number
+  opfsSupported: boolean
+  storagePersistent?: boolean
+  opfsDocumentCount: number
+  opfsDocumentBytes: number
+  opfsAttachmentCount: number
+  opfsAttachmentBytes: number
+  idbBinaryCount: number
+  idbBinaryBytes: number
+  legacyBinaryCount: number
 }
 
-function trimZeros(s: string): string {
-  if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, '')
-  return s
-}
+function trimZeros(s: string): string { if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, ''); return s }
 
-/** Human-readable byte size: B / KB / MB / GB (1-2 decimals; never a raw byte count). */
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '0 B'
   if (bytes < 1024) return Math.round(bytes) + ' B'
@@ -30,16 +32,8 @@ export function formatBytes(bytes: number): string {
   return trimZeros((mb / 1024).toFixed(2)) + ' GB'
 }
 
-/**
- * READ-ONLY storage diagnostics.
- * - originUsageBytes / originQuotaBytes come from navigator.storage.estimate()
- *   (feature-detected; left undefined when it is unavailable).
- * - attachmentCount / attachmentBytes are computed by scanning the 'attachments'
- *   store with a cursor and reading ONLY row.blob.size — never arrayBuffer(),
- *   base64, FileReader or Object URLs — so a large collection is counted without a
- *   big JS memory spike.
- * This function performs NO mutation, cleanup, GC or deletion.
- */
+// Storage diagnostics count from PERSISTED METADATA (meta.size / fileSize / StoredBinary.size).
+// It NEVER reads file bytes (no getFile/arrayBuffer/base64) just to compute usage.
 export async function getStorageDiagnostics(): Promise<StorageDiagnostics> {
   let usage: number | undefined
   let quota: number | undefined
@@ -51,33 +45,43 @@ export async function getStorageDiagnostics(): Promise<StorageDiagnostics> {
       if (r && typeof r.usage === 'number') usage = r.usage
       if (r && typeof r.quota === 'number') quota = r.quota
     }
-  } catch { /* feature unavailable -> leave usage/quota undefined */ }
-  let attachmentCount = 0
-  let attachmentBytes = 0
+  } catch { /* feature unavailable */ }
+  let attachmentCount = 0; let attachmentBytes = 0;
+  let opfsAttachmentCount = 0; let opfsAttachmentBytes = 0;
+  let idbBinaryBytes = 0; let idbBinaryCount = 0; let legacyBinaryCount = 0;
   try {
     await idbScan('attachments', (row) => {
-      attachmentCount++
-      const b = row?.blob
-      attachmentBytes += b && typeof b.size === 'number' ? b.size : 0
-    })
-  } catch { /* scan failure -> still return origin stats + zeros */ }
-  let documentCount = 0
-  let documentBytes = 0
+      attachmentCount++;
+      const size = row?.meta?.size ?? row?.binary?.size ?? row?.blob?.size ?? 0;
+      attachmentBytes += size;
+      if (row?.binary?.storage === 'opfs') { opfsAttachmentCount++; opfsAttachmentBytes += row.binary.size }
+      else if (row?.binary?.storage === 'idb') { idbBinaryCount++; idbBinaryBytes += row.binary.size }
+      else if (row?.blob) { legacyBinaryCount++ }
+    });
+  } catch { /* scan failure -> zeros */ }
+  let documentCount = 0; let documentBytes = 0;
+  let opfsDocumentCount = 0; let opfsDocumentBytes = 0;
   try {
     await idbScan('documents', (row) => {
-      documentCount++
-      const b = row?.sourceBlob
-      documentBytes += b && typeof b.size === 'number' ? b.size : 0
-    })
-  } catch { /* old DB without documents store -> 0 */ }
+      documentCount++;
+      const size = row?.fileSize ?? row?.source?.size ?? row?.sourceBlob?.size ?? 0;
+      documentBytes += size;
+      if (row?.source?.storage === 'opfs') { opfsDocumentCount++; opfsDocumentBytes += row.source.size }
+      else if (row?.source?.storage === 'idb') { idbBinaryCount++; idbBinaryBytes += row.source.size }
+      else if (row?.sourceBlob) { legacyBinaryCount++ }
+    });
+  } catch { /* old DB */ }
+  const opfsSupported = await isOpfsAvailable();
+  let storagePersistent: boolean | undefined
+  try { storagePersistent = await isStoragePersistent() } catch { /* unavailable */ }
   return {
     ...(usage !== undefined ? { originUsageBytes: usage } : {}),
     ...(quota !== undefined ? { originQuotaBytes: quota } : {}),
-    attachmentCount,
-    attachmentBytes,
-    documentCount,
-    documentBytes,
+    attachmentCount, attachmentBytes, documentCount, documentBytes,
     totalBytes: attachmentBytes + documentBytes,
-  }
+    opfsSupported,
+    ...(storagePersistent !== undefined ? { storagePersistent } : {}),
+    opfsDocumentCount, opfsDocumentBytes, opfsAttachmentCount, opfsAttachmentBytes,
+    idbBinaryCount, idbBinaryBytes, legacyBinaryCount,
+  };
 }
-

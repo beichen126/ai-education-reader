@@ -39,7 +39,7 @@ assert(du.startsWith('data:image/png;base64,'), 'data url prefix correct')
 await closeDb()
 const row = await getAttachmentRow(idA)
 assert(!!row, 'attachment row persists after reopen')
-const buf = await (row!.blob as Blob).arrayBuffer()
+const buf = await ((row!.binary && row!.binary.storage === 'idb' ? row!.binary.blob : row!.blob) as Blob).arrayBuffer()
 assert(buf.byteLength === 4, 'blob byte length restored after reopen')
 assert((await getAttachment(idA))!.id === idA, 'metadata id stable after reopen')
 

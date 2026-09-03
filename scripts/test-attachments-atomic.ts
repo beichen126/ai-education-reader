@@ -39,7 +39,7 @@ async function allIds(): Promise<string[]> { const rows = await idbGetAll('attac
   const f2 = await mkFile('b.jpg','image/jpeg',[255,216,255])
   const atts = await saveFiles([f1, f2])
   assert(atts.length === 2, 'valid batch -> 2 attachments returned')
-  for (const a of atts) { const row = await getAttachmentRow(a.id); assert(!!row && row.meta && (row.blob instanceof Blob), 'attachment '+a.id+' persisted with blob') }
+  for (const a of atts) { const row = await getAttachmentRow(a.id); assert(!!row && row.meta && ((row.binary && row.binary.storage === 'idb' && row.binary.blob instanceof Blob) || (row.binary && row.binary.storage === 'opfs') || row.blob instanceof Blob), 'attachment '+a.id+' persisted with binary') }
   assert((await allIds()).length >= 2, 'attachment rows exist for valid batch')
 }
 
@@ -52,4 +52,3 @@ async function allIds(): Promise<string[]> { const rows = await idbGetAll('attac
 
 console.log('\nRESULT pass='+pass+' fail='+fail)
 process.exit(fail===0?0:1)
-
