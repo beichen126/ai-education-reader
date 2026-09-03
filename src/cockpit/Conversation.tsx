@@ -180,7 +180,14 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
       const inputs = payload.pages.map(p => ({
         blob: p.blob,
         name: pdfPageAttachmentName(payload.fileName, p.pageNumber),
-        source: { type: 'pdf-page' as const, groupId, fileName: payload.fileName, pageNumber: p.pageNumber, selection: payload.selection },
+        source: {
+          type: 'pdf-page' as const,
+          groupId,
+          ...(payload.documentId ? { documentId: payload.documentId } : {}),
+          fileName: payload.fileName,
+          pageNumber: p.pageNumber,
+          selection: payload.selection,
+        },
       }))
       const atts = await saveGeneratedImages(inputs)
       try {

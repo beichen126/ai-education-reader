@@ -105,6 +105,10 @@ export type PdfSelection = {
 /** Payload handed from the PDF panel to the engine when the user clicks 加入对话. */
 export type PdfAddPayload = {
   fileName: string
+  /** Optional: the persistent local Document this context came from (undefined when
+   * the document could not be saved). Document provenance != Selection: a document
+   * may back many selections. Plain string to keep this module import-cycle free. */
+  documentId?: string
   selection: PdfSelection
   pages: RenderedPdfPage[]
 }

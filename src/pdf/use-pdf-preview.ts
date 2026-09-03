@@ -7,6 +7,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { openPdf, renderPdfPage, closePdf, readPdfOutline, pdfErrorMessage, PdfError } from './pdf-service'
 import { PdfOutlineError, type PdfOutlineResult } from './pdf-outline'
+import { createDocument, updateDocumentChapters } from '../documents/document-service'
+import { chapterNodesFromPdfOutline } from '../documents/chapter-model'
+import { newStableId } from '../engine/types'
 import {
   PDF_CONTEXT_SOFT_WARNING_PAGES, MAX_PDF_CONTEXT_PAGES, PDF_LARGE_PREVIEW_COUNT,
   exceedsPdfContextHardLimit, exceedsPdfGroupByteBudget,
@@ -41,6 +44,10 @@ export type PdfPreviewApi = {
   outline: PdfOutlineResult | null
   outlineStatus: PdfOutlineStatus
   outlineError: string | undefined
+  /** Persistent local Document id for the currently opened PDF (undefined when unsaved). */
+  documentId: string | undefined
+  /** Non-fatal warning: the PDF works temporarily but could NOT be saved locally. */
+  documentSaveError: string | undefined
   selectFile: (file: File) => Promise<void>
   generateRanges: (ranges: PdfRange[]) => Promise<void>
   clearPreview: () => void
@@ -56,6 +63,8 @@ export function usePdfPreview(): PdfPreviewApi {
   const [outline, setOutline] = useState<PdfOutlineResult | null>(null)
   const [outlineStatus, setOutlineStatus] = useState<PdfOutlineStatus>('idle')
   const [outlineError, setOutlineError] = useState<string | undefined>(undefined)
+  const [documentId, setDocumentId] = useState<string | undefined>(undefined)
+  const [documentSaveError, setDocumentSaveError] = useState<string | undefined>(undefined)
   const urlsRef = useRef<string[]>([])
   const genRef = useRef(0)
 
@@ -78,14 +87,40 @@ export function usePdfPreview(): PdfPreviewApi {
     revokeAll()
     setDoc(null); setPages([]); setStatus('loading'); setError(undefined); setProgress(undefined)
     setOutline(null); setOutlineStatus('loading'); setOutlineError(undefined)
+    setDocumentId(undefined); setDocumentSaveError(undefined)
     try {
       const d = await openPdf(file)
       if (gen !== genRef.current) return
       setDoc(d); setStatus('ready')
+      // Stage 9.2A: persistent local Document — the original file becomes a
+      // first-class object. A storage failure never breaks the temporary workflow.
+      let docId: string | undefined
+      try {
+        const created = await createDocument({
+          id: newStableId(),
+          fileName: d.fileName,
+          mimeType: 'application/pdf',
+          fileSize: d.fileSize,
+          pageCount: d.pageCount,
+          sourceBlob: file,
+          importSource: { kind: 'pdf', originalFileName: file.name },
+        })
+        if (gen !== genRef.current) return
+        docId = created.id
+        setDocumentId(created.id)
+      } catch {
+        if (gen !== genRef.current) return
+        setDocumentSaveError('该 PDF 可以继续临时使用，但无法保存到本地文件库（存储空间不足或写入失败）。')
+      }
       try {
         const o = await readPdfOutline()
         if (gen !== genRef.current) return
         setOutline(o); setOutlineStatus('ready'); setOutlineError(undefined)
+        if (docId && o.items.length > 0) {
+          // Persist the chapter tree; failure only loses future reader metadata,
+          // never the already-created document or the current preview flow.
+          void updateDocumentChapters(docId, chapterNodesFromPdfOutline(o.items), 'native').catch(() => {})
+        }
       } catch (e) {
         if (gen !== genRef.current) return
         setOutlineStatus('error')
@@ -170,7 +205,8 @@ export function usePdfPreview(): PdfPreviewApi {
     await cleanup()
     setDoc(null); setPages([]); setStatus('idle'); setError(undefined); setProgress(undefined)
     setOutline(null); setOutlineStatus('idle'); setOutlineError(undefined)
+    setDocumentId(undefined); setDocumentSaveError(undefined)
   }, [cleanup])
 
-  return { doc, pages, status, error, progress, outline, outlineStatus, outlineError, selectFile, generateRanges, clearPreview, reset }
+  return { doc, pages, status, error, progress, outline, outlineStatus, outlineError, documentId, documentSaveError, selectFile, generateRanges, clearPreview, reset }
 }

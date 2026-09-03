@@ -1,6 +1,6 @@
 const DB_NAME = 'ai-education-reader'
-const DB_VERSION = 3
-const STORES = ['settings', 'conversations', 'attachments', 'annotations'] as const
+const DB_VERSION = 4
+const STORES = ['settings', 'conversations', 'attachments', 'annotations', 'documents'] as const
 
 let dbPromise: Promise<IDBDatabase> | null = null
 function openDb(): Promise<IDBDatabase> {
@@ -18,6 +18,10 @@ function openDb(): Promise<IDBDatabase> {
       if (!ann.indexNames.contains('by_conversation_message')) ann.createIndex('by_conversation_message', ['conversationId', 'messageId'])
       const conv = req.transaction!.objectStore('conversations')
       if (!conv.indexNames.contains('by_updatedAt')) conv.createIndex('by_updatedAt', 'updatedAt')
+      // Stage 9.2A: persistent local Document Library (original PDFs, global ownership).
+      if (!db.objectStoreNames.contains('documents')) db.createObjectStore('documents', { keyPath: 'id' })
+      const docs = req.transaction!.objectStore('documents')
+      if (!docs.indexNames.contains('by_updatedAt')) docs.createIndex('by_updatedAt', 'updatedAt')
     }
     req.onsuccess = () => resolve(req.result)
     // A rejected open must not stay cached forever: reset so a later call can retry.
@@ -71,17 +75,18 @@ export async function idbClearAll(): Promise<void> {
 }
 
 export async function closeDb(): Promise<void> { if (dbPromise) { const db = await dbPromise; db.close(); dbPromise = null } }
-export async function idbReplaceAll(records: { settings: any[]; conversations: any[]; attachments: any[]; annotations: any[] }): Promise<void> {
+export async function idbReplaceAll(records: { settings: any[]; conversations: any[]; attachments: any[]; annotations: any[]; documents?: any[] }): Promise<void> {
   const db = await openDb()
   await new Promise<void>((resolve, reject) => {
-    const txn = db.transaction(['settings', 'conversations', 'attachments', 'annotations'], 'readwrite')
-    const stores = ['settings', 'conversations', 'attachments', 'annotations'] as const
+    const txn = db.transaction(['settings', 'conversations', 'attachments', 'annotations', 'documents'], 'readwrite')
+    const stores = ['settings', 'conversations', 'attachments', 'annotations', 'documents'] as const
     for (const s of stores) txn.objectStore(s).clear()
     const put = (store: string, vals: any[]) => { const os = txn.objectStore(store); for (const v of vals) os.put(v) }
     put('settings', records.settings)
     put('conversations', records.conversations)
     put('attachments', records.attachments)
     put('annotations', records.annotations)
+    if (records.documents) put('documents', records.documents)
     txn.oncomplete = () => resolve(undefined)
     txn.onerror = () => reject(txn.error)
     txn.onabort = () => reject(txn.error)

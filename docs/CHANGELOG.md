@@ -8,6 +8,9 @@ AI Education Reader 的用户可感知更新记录。
 
 ### Added
 
+- 建立本地 Document Store：原始 PDF 可作为独立学习文档保存在浏览器 IndexedDB 中，为后续完整文件阅读器提供数据基础。
+- PDF Context 新增来源文档引用，可追溯到对应的本地 Document。
+- 统一 Document → Chapter → Context 数据模型（原始资料 → 书签/AI 目录/手动章节 → 发送给 AI 的页码集合）。
 - PDF Outline 支持多章节选择（真实 checkbox，展开/选择分离）。
 - 支持多个不连续 PDF 页码范围作为同一 Context：选择章节 → 规范化范围 → 去重 → 合计页数 → 渲染 → 一个 PDF Context Group 加入对话。
 
@@ -21,7 +24,6 @@ AI Education Reader 的用户可感知更新记录。
 ### Planned
 
 - 新增“文件”资料入口和完整 PDF Reader，可阅读未加入 AI Context 的页面。
-- 统一 Document → Chapter → Context 数据模型。
 - 无书签 PDF 支持目录页缩略图选择、AI 目录识别与手动分章。
 - 支持导出带章节书签的新 PDF。
 - PPT / PPTX 作为导入格式：浏览器本地转换为 PDF 后复用完整 PDF 阅读链路，不建设第二套 PPT Reader。

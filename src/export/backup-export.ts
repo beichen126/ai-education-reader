@@ -1,7 +1,8 @@
 import { listConversations, getAnnotationsByConversation, getAttachmentRow, getSetting } from '../storage/storage'
+import { listDocuments } from '../documents/document-service'
 import type { Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
-import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupV1 } from './backup-types'
+import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupDocument, type BackupV2 } from './backup-types'
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer()
@@ -11,8 +12,8 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(bin)
 }
 
-/** Build a full BackupV1 from current local data. The DeepSeek API key is EXCLUDED. */
-export async function buildBackup(): Promise<BackupV1> {
+/** Build a full BackupV2 from current local data. The DeepSeek API key is EXCLUDED. */
+export async function buildBackup(): Promise<BackupV2> {
   const conversations = await listConversations()
   const annotations: Annotation[] = []
   const attachments: BackupAttachment[] = []
@@ -39,5 +40,11 @@ export async function buildBackup(): Promise<BackupV1> {
     customSystemPrompt: (typeof customSystemPrompt === 'string' ? customSystemPrompt : ''),
     customSystemPromptEnabled: customSystemPromptEnabled === 'true',
   }
-  return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments }
+  // Local Document Library: full original PDF Blobs (never AI-sent) as base64.
+  const documents: BackupDocument[] = []
+  for (const doc of await listDocuments()) {
+    const { sourceBlob, ...meta } = doc
+    documents.push({ id: doc.id, meta: meta as BackupDocument['meta'], mimeType: sourceBlob.type || 'application/pdf', data: await blobToBase64(sourceBlob) })
+  }
+  return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents }
 }

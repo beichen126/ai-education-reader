@@ -57,7 +57,7 @@ export function SettingsDialog() {
   const onClearKey = () => { setKey(''); setTest(null); setTestOk(null) }
 
   const onClearData = async () => {
-    if (!window.confirm('清除全部本地数据（不可恢复）？\n\n将删除：会话、图片附件、PDF 页面、标注、草稿、API 设置与 API Key。\n\n取消 / 继续清除')) return
+    if (!window.confirm('清除全部本地数据（不可恢复）？\n\n将删除：会话、图片附件、PDF 页面、标注、草稿、本地文档（含原始 PDF）、API 设置与 API Key。\n\n取消 / 继续清除')) return
     setClearing(true)
     try {
       releaseAllPreviews()
@@ -123,6 +123,9 @@ export function SettingsDialog() {
             <div className={css.storageRow}><span className={css.storageLabel}>本站总占用</span><span className={css.storageValue}>{storage.originUsageBytes !== undefined ? formatBytes(storage.originUsageBytes) : '浏览器未提供'}</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>图片附件</span><span className={css.storageValue}>{storage.attachmentCount} 张</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>图片附件占用</span><span className={css.storageValue}>{formatBytes(storage.attachmentBytes)}</span></div>
+            <div className={css.storageRow}><span className={css.storageLabel}>本地文档</span><span className={css.storageValue}>{storage.documentCount} 份</span></div>
+            <div className={css.storageRow}><span className={css.storageLabel}>本地文档占用</span><span className={css.storageValue}>{formatBytes(storage.documentBytes)}</span></div>
+            <div className={css.storageRow}><span className={css.storageLabel}>本地数据合计（附件 + 文档）</span><span className={css.storageValue}>{formatBytes(storage.totalBytes)}</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>浏览器存储配额</span><span className={css.storageValue}>{storage.originQuotaBytes !== undefined ? formatBytes(storage.originQuotaBytes) : '浏览器未提供'}</span></div>
           </div>
         )}

@@ -17,6 +17,9 @@ export type PdfAttachmentSource = {
   type: 'pdf-page'
   /** One user-performed PDF context selection = one group. Never auto-merged by fileName. */
   groupId: StableId
+  /** Optional reference to the persistent local LearningDocument this page came from.
+   * Legacy Stage 4-9.3 attachments have no documentId and keep working as-is. */
+  documentId?: string
   fileName: string
   pageNumber: number
   /** Accepted in BOTH shapes so pre-Stage-9.1 attachments keep loading/displaying. */

@@ -32,6 +32,7 @@
 .summaryRange { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .summaryCount { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .summaryEmpty { font-size: 13px; color: var(--dsw-alias-label-tertiary); }
+.warning { padding: 8px 12px; border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-state-warning-primary, #b58a2a); border: 1px solid var(--dsw-alias-border-l2); font-size: 12px; }
 
 .rangeRow { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
 .rangeField { display: flex; flex-direction: column; gap: 4px; }

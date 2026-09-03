@@ -7,6 +7,11 @@ export type StorageDiagnostics = {
   originQuotaBytes?: number
   attachmentCount: number
   attachmentBytes: number
+  /** Persistent local Documents (original PDFs, Stage 9.2A). */
+  documentCount: number
+  documentBytes: number
+  /** Locally measured bytes: attachments + documents. */
+  totalBytes: number
 }
 
 function trimZeros(s: string): string {
@@ -56,11 +61,23 @@ export async function getStorageDiagnostics(): Promise<StorageDiagnostics> {
       attachmentBytes += b && typeof b.size === 'number' ? b.size : 0
     })
   } catch { /* scan failure -> still return origin stats + zeros */ }
+  let documentCount = 0
+  let documentBytes = 0
+  try {
+    await idbScan('documents', (row) => {
+      documentCount++
+      const b = row?.sourceBlob
+      documentBytes += b && typeof b.size === 'number' ? b.size : 0
+    })
+  } catch { /* old DB without documents store -> 0 */ }
   return {
     ...(usage !== undefined ? { originUsageBytes: usage } : {}),
     ...(quota !== undefined ? { originQuotaBytes: quota } : {}),
     attachmentCount,
     attachmentBytes,
+    documentCount,
+    documentBytes,
+    totalBytes: attachmentBytes + documentBytes,
   }
 }
 

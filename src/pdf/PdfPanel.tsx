@@ -42,7 +42,7 @@ export function PdfPanel({
   onClose: () => void
   onAddToDraft: (payload: PdfAddPayload) => Promise<PdfAddResult>
 }) {
-  const { doc, pages, status, error, progress, outline, outlineStatus, outlineError, selectFile, generateRanges, clearPreview } = usePdfPreview()
+  const { doc, pages, status, error, progress, outline, outlineStatus, outlineError, documentId, documentSaveError, selectFile, generateRanges, clearPreview } = usePdfPreview()
   const [mode, setMode] = useState<'chapter' | 'manual'>('chapter')
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
@@ -144,7 +144,12 @@ export function PdfPanel({
             selectedChapterIds: [...selectedIds],
           }
         : { kind: 'manual' as const, ranges: lastRanges ?? [{ startPage: pages[0].pageNumber, endPage: pages[pages.length - 1].pageNumber }] }
-      const res = await onAddToDraft({ fileName: doc.fileName, selection, pages })
+      const res = await onAddToDraft({
+        fileName: doc.fileName,
+        ...(documentId ? { documentId } : {}),
+        selection,
+        pages,
+      })
       setAddMsg(res.ok ? '已加入 ' + res.count + ' 页' : res.error)
     } catch { setAddMsg('无法将 PDF 页面加入对话。') }
     setAdding(false)
@@ -175,6 +180,10 @@ export function PdfPanel({
                 <span className={css.fileName}>{doc.fileName}</span>
                 <span className={css.fileMeta}>{formatBytes(doc.fileSize)} · 共 {doc.pageCount} 页</span>
               </div>
+
+              {documentSaveError && (
+                <div className={css.warning} data-testid="pdf-doc-warning">{documentSaveError}</div>
+              )}
 
               {outlineStatus === 'loading' && <div className={css.empty} data-testid="pdf-outline-loading">正在读取 PDF 书签…</div>}
               {outlineStatus === 'error' && <div className={css.error} data-testid="pdf-outline-error">{outlineError || '无法读取该 PDF 的书签，可以继续手动选择页面。'}</div>}
