@@ -51,7 +51,7 @@ export async function renderPdfContextRanges(opts: PdfContextRenderOptions): Pro
     const n = pageNumbers[i]
     failingPage = n
     let r
-    try { r = await opts.renderPage(n) } catch { throw new PdfContextRenderError('render-failed', '第 ' + n + ' 页处理失败，本次范围未加入对话。') }
+    try { r = await opts.renderPage(n) } catch { throw new PdfContextRenderError('render-failed', '第 ' + n + ' 页处理失败，本次范围未加入对话。', n) }
     if (opts.isCancelled && opts.isCancelled()) throw new PdfContextRenderError('cancelled', 'context render cancelled')
     bytes += r.blob.size
     const page: RenderedPdfPage = { pageNumber: n, ...r }

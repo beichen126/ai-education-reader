@@ -28,9 +28,11 @@ let over = false
 try { await renderPdfContextRanges({ ranges: [{ startPage: 1, endPage: 3 }], pageCount: 10, renderPage: (n) => fakeRender(n, 12 * MB + 1024), isCancelled: noCancel }) } catch (e) { over = e instanceof PdfContextRenderError && e.kind === 'byte-budget' }
 assert(over, '24 MiB + 1 -> byte-budget error')
 // render failure -> all-or-nothing error
-let rf = false
-try { await renderPdfContextRanges({ ranges: [{ startPage: 1, endPage: 3 }], pageCount: 10, renderPage: (n) => { if (n === 2) throw new Error('boom'); return fakeRender(n) }, isCancelled: noCancel }) } catch (e) { rf = e instanceof PdfContextRenderError && e.kind === 'render-failed' }
-assert(rf, 'page render failure -> render-failed (no partial result)')
+let rf: PdfContextRenderError | null = null
+try { await renderPdfContextRanges({ ranges: [{ startPage: 1, endPage: 3 }], pageCount: 10, renderPage: (n) => { if (n === 2) throw new Error('boom'); return fakeRender(n) }, isCancelled: noCancel }) } catch (e) { if (e instanceof PdfContextRenderError && e.kind === 'render-failed') rf = e }
+assert(rf !== null, 'page render failure -> render-failed (no partial result)')
+assert(rf !== null && rf.pageNumber === 2, 'render-failed carries failing pageNumber 2 (got ' + (rf ? String(rf.pageNumber) : 'null') + ')')
+assert(rf !== null && rf.message.includes('第 2 页'), 'render-failed message still names page (got ' + (rf ? rf.message : 'null') + ')')
 // cancel -> stops
 let rendered = 0
 let cancelled = false
