@@ -95,15 +95,6 @@ export function validateChapterDraft(items: ChapterDraftItem[], pageCount: numbe
         issues.push({ index: i, code: 'page-decreases', message: '「' + label + '」的起始页不能小于上一章节。' })
       }
     }
-    // Sibling same-page: in preorder two CONSECUTIVE items at the SAME level are
-    // always siblings (a parent change would require a shallower level between them).
-    // Same-level siblings must have strictly increasing startPage, else we could not
-    // derive two non-empty sibling ranges.
-    if (i > 0 && Number.isInteger(items[i - 1].level) && Number.isInteger(it.level) && items[i - 1].level === it.level) {
-      if (Number.isInteger(items[i - 1].startPage) && Number.isInteger(it.startPage) && it.startPage === items[i - 1].startPage) {
-        issues.push({ index: i, code: 'sibling-same-page', message: '「' + label + '」的起始页不能与同级上一项相同（' + it.startPage + '）。' })
-      }
-    }
     if (seen.has(it.id)) {
       issues.push({ index: i, code: 'duplicate-id', message: '存在重复的章节标识。' })
     }
@@ -120,12 +111,22 @@ export function validateChapterDraft(items: ChapterDraftItem[], pageCount: numbe
 export function deriveChapterEndPages(items: ChapterDraftItem[], pageCount: number): number[] {
   const ends: number[] = new Array(items.length).fill(pageCount)
   for (let i = 0; i < items.length; i++) {
-    const level = items[i].level
-    let next = pageCount
+    const it = items[i]
+    const level = it.level
+    let end = pageCount
     for (let j = i + 1; j < items.length; j++) {
-      if (items[j].level <= level) { next = items[j].startPage - 1; break }
+      if (items[j].level <= level) {
+        // Same-page siblings may legitimately share a physical start page (the PDF
+        // page-level model cannot express a half-page boundary). In that case the
+        // node's range collapses to its own start page rather than to start-1 (which
+        // would be < startPage). Only when the next node is strictly LATER does the
+        // range end just before it.
+        end = items[j].startPage > it.startPage ? items[j].startPage - 1 : it.startPage
+        break
+      }
     }
-    ends[i] = next
+    // Invariant: endPage >= startPage always holds for a validated (non-decreasing) draft.
+    ends[i] = Math.max(it.startPage, end)
   }
   return ends
 }
@@ -295,28 +296,27 @@ function previousSiblingIndex(items: ChapterDraftItem[], index: number): number 
 }
 
 /**
- * Page-aware top-level insertion for a NEW chapter (Stage 9.4A.1). The chapter
- * order in a manual draft derives from physical page order, so a new top-level
- * chapter (level 1, startPage P) is inserted BEFORE the first existing root
- * whose startPage > P — never blindly appended to the end. If an existing
- * level-1 root already starts at exactly P, inserting another would be an
- * illegal sibling-same-page, so we report a conflict and do NOT fabricate an
- * unsavable draft. Returns a NEW array (input never mutated).
+ * Page-aware top-level insertion for a NEW chapter (Stage 9.4B.1). The chapter
+ * order in a manual draft derives from physical page order (non-decreasing), so a
+ * new top-level chapter (level 1, startPage P) is inserted after every item with
+ * startPage < P, after the existing run of SAME-PAGE level-1 siblings (stable
+ * append-within-same-page), and before the first item with startPage > P. Siblings
+ * may legitimately share a start page; users can reorder same-page siblings with a
+ * zone-validated move. Never returns a conflict. Returns a NEW array (input never
+ * mutated).
  */
 export type InsertChapterByPageResult =
   | { ok: true; items: ChapterDraftItem[] }
-  | { ok: false; reason: 'same-page-conflict' }
 
 export function insertChapterByPage(items: ChapterDraftItem[], newItem: ChapterDraftItem): InsertChapterByPageResult {
   // This helper is deliberately top-level-only for now (Stage 9.4A.1 semantics).
   if (newItem.level !== 1) return { ok: true, items: insertItem(items, newItem) }
   const P = newItem.startPage
-  for (const it of items) {
-    if (it.level === 1 && it.startPage === P) return { ok: false, reason: 'same-page-conflict' }
-  }
   let insertAt = items.length
   for (let i = 0; i < items.length; i++) {
-    if (items[i].level === 1 && items[i].startPage > P) { insertAt = i; break }
+    // Skip items strictly before P and the same-page run; land before the first > P.
+    const sp = items[i].startPage
+    if (sp > P) { insertAt = i; break }
   }
   return { ok: true, items: [...items.slice(0, insertAt), newItem, ...items.slice(insertAt)] }
 }
@@ -347,6 +347,50 @@ function sameDraftSequence(a: ChapterDraftItem[], b: ChapterDraftItem[]): boolea
     if (x.id !== y.id || x.title !== y.title || x.level !== y.level || x.startPage !== y.startPage) return false
   }
   return true
+}
+
+/** Index of the nearest same-parent sibling immediately after `index`, or -1. */
+function nextSiblingIndex(items: ChapterDraftItem[], index: number): number {
+  const level = items[index].level
+  let k = index + 1
+  while (k < items.length && items[k].level > level) k++
+  if (k >= items.length) return -1
+  return items[k].level === level ? k : -1
+}
+
+/**
+ * Move a subtree (node + its descendants) UP by one same-parent sibling position.
+ * The subtree stays under the SAME parent; never crosses a parent. Returns a NEW
+ * array. Callers must gate this with canApplyChapterDraftOperation (a move that would
+ * make the draft invalid — e.g. different physical pages swapping -> page decreases —
+ * is disabled at the UI).
+ */
+export function moveUp(items: ChapterDraftItem[], index: number): ChapterDraftItem[] {
+  const prev = previousSiblingIndex(items, index)
+  if (prev < 0) return items
+  const size = subtreeSize(items, index)
+  const prevSize = subtreeSize(items, prev)
+  const block = items.slice(index, index + size)
+  const before = items.slice(0, prev)
+  const prevBlock = items.slice(prev, prev + prevSize)
+  const after = items.slice(index + size)
+  return [...before, ...block, ...prevBlock, ...after]
+}
+
+/**
+ * Move a subtree DOWN by one same-parent sibling position. The subtree stays under
+ * the SAME parent. Returns a NEW array. Gate with canApplyChapterDraftOperation.
+ */
+export function moveDown(items: ChapterDraftItem[], index: number): ChapterDraftItem[] {
+  const next = nextSiblingIndex(items, index)
+  if (next < 0) return items
+  const size = subtreeSize(items, index)
+  const nextSize = subtreeSize(items, next)
+  const block = items.slice(index, index + size)
+  const before = items.slice(0, index)
+  const nextBlock = items.slice(next, next + nextSize)
+  const after = items.slice(next + nextSize)
+  return [...before, ...nextBlock, ...block, ...after]
 }
 
 /** Insert a new item AFTER `index` (or at the start when index < 0). Low-level. */

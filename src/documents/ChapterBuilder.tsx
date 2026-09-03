@@ -11,6 +11,7 @@ import {
   validateChapterDraft, buildManualChapterTree, flattenManualChapters,
   cloneChapterDraft, makeNewChapterItem, chapterSourceForTree,
   deleteDraftSubtree, draftHasChildren, indentSubtree, outdentSubtree,
+  moveUp, moveDown,
   insertChapterByPage, canApplyChapterDraftOperation,
   type ChapterDraftItem, type ChapterDraftValidation,
 } from './chapter-builder'
@@ -164,11 +165,15 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
               key={it.id}
               item={it}
               index={i}
+              canUp={canApplyChapterDraftOperation(items, pageCount, moveUp, i)}
+              canDown={canApplyChapterDraftOperation(items, pageCount, moveDown, i)}
               canIndent={canApplyChapterDraftOperation(items, pageCount, indentSubtree, i)}
               canOutdent={canApplyChapterDraftOperation(items, pageCount, outdentSubtree, i)}
               error={rowErrors[i]}
               onTitle={v => updateItem(i, { title: v })}
               onPage={v => updateItem(i, { startPage: pageFromInput(v) })}
+              onUp={() => applyOp(moveUp, i)}
+              onDown={() => applyOp(moveDown, i)}
               onIndent={() => applyOp(indentSubtree, i)}
               onOutdent={() => applyOp(outdentSubtree, i)}
               onDelete={() => requestDelete(i)}
@@ -226,11 +231,11 @@ function subtreeCount(items: ChapterDraftItem[], index: number): number {
 
 function BuilderRow(props: {
   item: ChapterDraftItem; index: number
-  canIndent: boolean; canOutdent: boolean; error?: string
+  canUp: boolean; canDown: boolean; canIndent: boolean; canOutdent: boolean; error?: string
   onTitle: (v: string) => void; onPage: (v: string) => void
-  onIndent: () => void; onOutdent: () => void; onDelete: () => void
+  onUp: () => void; onDown: () => void; onIndent: () => void; onOutdent: () => void; onDelete: () => void
 }) {
-  const { item, index, canIndent, canOutdent, error, onTitle, onPage, onIndent, onOutdent, onDelete } = props
+  const { item, index, canUp, canDown, canIndent, canOutdent, error, onTitle, onPage, onUp, onDown, onIndent, onOutdent, onDelete } = props
   const pad = (item.level - 1) * 14
   return (
     <div className={css.row + (error ? ' ' + css.rowErr : '')} data-testid="cb-row">
@@ -241,6 +246,8 @@ function BuilderRow(props: {
         <input className={css.pageInput} data-testid={'cb-page-' + index} inputMode="numeric" value={String(item.startPage)} onChange={e => onPage(e.target.value)} />
       </div>
       <div className={css.rowOps}>
+        <button type="button" className={css.op} data-testid={'cb-up-' + index} title="上移" disabled={!canUp} onClick={onUp}>↑</button>
+        <button type="button" className={css.op} data-testid={'cb-down-' + index} title="下移" disabled={!canDown} onClick={onDown}>↓</button>
         <button type="button" className={css.op + ' ' + css.opDanger} data-testid={'cb-del-' + index} title="删除" onClick={onDelete}>×</button>
         <button type="button" className={css.op} data-testid={'cb-outdent-' + index} title="减少缩进" disabled={!canOutdent} onClick={onOutdent}>←</button>
         <button type="button" className={css.op} data-testid={'cb-indent-' + index} title="缩进" disabled={!canIndent} onClick={onIndent}>→</button>

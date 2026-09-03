@@ -2,7 +2,7 @@
 import { parseAiToc, mergeAiTocChunks, chunkTocPages, normalizeTitle } from '../src/documents/ai-toc.ts'
 import {
   exactLabelToPage, labelsArePlainNumeric, buildInitialMapping, numericOffsetFromAnchor,
-  applyGlobalOffset, pickVerificationAnchor, setManualPageOverride,
+  applyGlobalOffset, pickVerificationAnchor, setManualPageOverride, validateMappedTocReview,
 } from '../src/documents/toc-mapping.ts'
 
 let pass = 0, fail = 0
@@ -120,6 +120,30 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   const items = [{ title: 'A', level: 1, pageLabel: '1', tocPage: 7, startPage: null }]
   const r = setManualPageOverride(items, 0, 31)
   assert(r[0].startPage === 31 && r[0].manualOverride === true, 'manual page override set + flagged')
+}
+
+// --- review correctness (Stage 9.4B.1 A5): unresolved never coerced to 1; block save ---
+{
+  const items = [{ title: 'A', level: 1, pageLabel: '1', tocPage: 7, startPage: null }]
+  const v = validateMappedTocReview(items, 30)
+  assert(v.ok === false && v.unresolved === 1, 'unresolved -> review invalid (no save)')
+}
+{
+  const items = [{ title: 'A', level: 1, pageLabel: '1', tocPage: 7, startPage: 15 }]
+  const v = validateMappedTocReview(items, 30)
+  assert(v.ok === true && v.unresolved === 0, 'all resolved -> review valid')
+}
+{
+  // resolved but invalid draft (page decreases) -> blocked
+  const items = [{ title: 'A', level: 1, pageLabel: '1', tocPage: 7, startPage: 20 }, { title: 'B', level: 1, pageLabel: '2', tocPage: 7, startPage: 10 }]
+  const v = validateMappedTocReview(items, 30)
+  assert(v.ok === false, 'resolved but page decreases -> invalid')
+}
+{
+  // unresolved NEVER becomes page 1 (a resolved all-at-1 is valid, unresolved stays null)
+  const items = [{ title: 'A', level: 1, pageLabel: '1', tocPage: 7, startPage: 1 }, { title: 'B', level: 1, pageLabel: '2', tocPage: 7, startPage: null }]
+  const v = validateMappedTocReview(items, 30)
+  assert(v.ok === false && v.unresolved === 1, 'one unresolved, one resolved@p1 (B never coerced to 1)')
 }
 
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)

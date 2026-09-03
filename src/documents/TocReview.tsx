@@ -18,11 +18,12 @@ type Props = {
   onJump: (page: number) => void
   onSave: (save: TocReviewSave) => Promise<void>
   onClose: () => void
+  onEditAll: (items: MappedTocItem[]) => void
 }
 
 type ReviewState = Record<number, 'unchecked' | 'verified' | 'issue'>
 
-export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump, onSave, onClose }: Props) {
+export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump, onSave, onClose, onEditAll }: Props) {
   const [rows, setRows] = useState<MappedTocItem[]>(items)
   const [state, setState] = useState<ReviewState>(() => { const s: ReviewState = {}; items.forEach((_, i) => s[i] = 'unchecked'); return s })
   const [idx, setIdx] = useState(0)
@@ -35,16 +36,40 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
   // Rebuild rows when a new mapped draft arrives.
   useEffect(() => { setRows(items); setState(() => { const s: ReviewState = {}; items.forEach((_, i) => s[i] = 'unchecked'); return s }); setIdx(0) }, [items])
 
-  const toDraft = (r: MappedTocItem[]): ChapterDraftItem[] => r.map((it, i) => ({ id: 'ai' + i, title: it.title, level: it.level, startPage: it.startPage ?? 1 }))
-  const validation = useMemo(() => validateChapterDraft(toDraft(rows), pageCount), [rows, pageCount])
+  // --- Review correctness (Stage 9.4B.1): unresolved NEVER fabricates page 1; only
+  // resolved rows become a ChapterDraft; build/save is blocked while any row is
+  // unresolved or the draft is invalid. ---
+  const hasUnresolved = rows.some(r => r.startPage == null)
+  const toDraft = (r: MappedTocItem[]): ChapterDraftItem[] => r
+    .filter((it) => it.startPage != null)
+    .map((it, i) => ({ id: 'ai' + i, title: it.title, level: it.level, startPage: it.startPage as number }))
+  const validation = useMemo(() => {
+    if (hasUnresolved) return { ok: false, issues: [{ index: 0, code: 'unresolved-page' as const, message: '存在页码待确认的条目' }] }
+    return validateChapterDraft(toDraft(rows), pageCount)
+  }, [rows, pageCount, hasUnresolved])
 
-  const unresolvedCount = rows.filter(r => r.startPage == null).length
   const invalid = !validation.ok
+  const unresolvedCount = rows.filter(r => r.startPage == null).length
+  const invalidCount = hasUnresolved
+    ? unresolvedCount + Math.max(0, validation.issues.filter(x => x.code !== 'unresolved-page').length)
+    : validation.issues.length
 
   const jump = (i: number) => { const p = rows[i]?.startPage; if (p != null) onJump(p); setIdx(i) }
   const markVerified = (i: number) => setState(s => ({ ...s, [i]: 'verified' }))
   const markIssue = (i: number) => setState(s => ({ ...s, [i]: 'issue' }))
-  const nextUnchecked = () => { const j = rows.findIndex((_, i) => state[i] === 'unchecked' && i > idx); if (j >= 0) jump(j); else { for (let k = 0; k < rows.length; k++) if (state[k] === 'unchecked') { jump(k); return } } }
+
+  // 继续检查: mark the CURRENT item verified (only when resolved + the single-row draft
+  // validates), then move to the next unchecked item and jump the reader to it.
+  const continueReview = () => {
+    const cur = rows[idx]
+    if (cur && cur.startPage != null) {
+      const one = [{ id: 'x', title: cur.title, level: cur.level, startPage: cur.startPage }]
+      if (validateChapterDraft(one, pageCount).ok) markVerified(idx)
+    }
+    const next = rows.findIndex((_, i) => state[i] === 'unchecked' && i > idx)
+    const target = next >= 0 ? next : rows.findIndex((_, k) => state[k] === 'unchecked')
+    if (target >= 0) jump(target)
+  }
 
   const editRow = (i: number, patch: Partial<Pick<MappedTocItem, 'title' | 'level' | 'startPage'>>) => setRows(r => r.map((it, j) => (j === i ? { ...it, ...patch } : it)))
 
@@ -53,15 +78,27 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
     if (!Number.isFinite(n)) return
     setRows(r => applyGlobalOffset(r, n))
   }
-  const overridePage = (i: number, page: number) => setRows(r => setManualPageOverride(r, i, page))
+  // Page input: empty -> null (unresolved); valid integer >=1 -> page override; other text
+  // left as-is (validation state flags it) — never coerced to 1.
+  const onPageInput = (i: number, raw: string) => {
+    if (raw.trim() === '') { setRows(r => r.map((it, j) => (j === i ? { ...it, startPage: null } : it))); return }
+    const n = Number(raw.trim())
+    if (Number.isInteger(n) && n >= 1) setRows(r => setManualPageOverride(r, i, n))
+  }
 
   const save = async () => {
-    if (invalid || saving) return
-    const draft = toDraft(rows)
-    const tree = buildChapterTreeFromDraft(draft, pageCount, 'ai-toc')
+    if (saving) return
+    if (invalid || hasUnresolved) { setSaveError('还有 ' + invalidCount + ' 项需要修正后才能保存。'); return }
+    const unchecked = rows.filter((_, i) => state[i] === 'unchecked').length
+    if (unchecked > 0) { setConfirmUnchecked(true); return }
+    await doSave()
+  }
+  const doSave = async () => {
     setSaving(true); setSaveError(null)
-    try { await onSave({ chapters: tree, source: 'ai-toc' }) }
-    catch { setSaveError('保存目录失败，请重试。'); setSaving(false) }
+    try {
+      const tree = buildChapterTreeFromDraft(toDraft(rows), pageCount, 'ai-toc')
+      await onSave({ chapters: tree, source: 'ai-toc' })
+    } catch { setSaveError('保存目录失败，请重试。'); setSaving(false) }
   }
 
   const verifiedCount = Object.values(state).filter(v => v === 'verified' || v === 'issue').length
@@ -80,12 +117,13 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
           <span className={css.title}>检查目录</span>
           <span className={css.sub} data-testid="toc-review-progress">已检查 {verifiedCount} / {rows.length}</span>
           <div className={css.headerBtns}>
+            <button type="button" className={css.btn} data-testid="toc-review-edit-all" onClick={() => onEditAll(rows)}>编辑全部目录</button>
             <button type="button" className={css.btn} data-testid="toc-review-close" onClick={onClose}>取消</button>
             <button type="button" className={css.btnPrimary} data-testid="toc-review-save" disabled={saving || invalid} onClick={save}>{saving ? '保存中…' : '保存目录'}</button>
           </div>
         </div>
         {saveError && <div className={css.err} data-testid="toc-review-error">{saveError}</div>}
-        {invalid && <div className={css.err} data-testid="toc-review-invalid">还有 {unresolvedCount + rows.filter(r => r.startPage == null).length} 项需要修正后才能保存。</div>}
+        {invalid && <div className={css.err} data-testid="toc-review-invalid">还有 {invalidCount} 项需要修正后才能保存。</div>}
         {unresolvedCount > 0 && <div className={css.warn} data-testid="toc-review-unresolved">有 {unresolvedCount} 项页码待确认。</div>}
         <div className={css.body}>
           <div className={css.list} data-testid="toc-review-list">
@@ -105,7 +143,7 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
             <div className={css.adjustTitle}>快速调整当前项（{rows[idx]?.title || '—'}）</div>
             <label className={css.field}>标题 <input className={css.input} data-testid="toc-review-title" value={rows[idx]?.title || ''} onChange={e => editRow(idx, { title: e.target.value })} /></label>
             <label className={css.field}>层级 <input className={css.input} data-testid="toc-review-level" value={String(rows[idx]?.level || '')} onChange={e => editRow(idx, { level: parseInt(e.target.value, 10) || 1 })} /></label>
-            <label className={css.field}>PDF页 <input className={css.input} data-testid="toc-review-page" value={rows[idx]?.startPage ?? ''} placeholder="待确认" onChange={e => overridePage(idx, parseInt(e.target.value, 10) || 1)} /></label>
+            <label className={css.field}>PDF页 <input className={css.input} data-testid="toc-review-page" value={rows[idx]?.startPage ?? ''} placeholder="待确认" onChange={e => onPageInput(idx, e.target.value)} /></label>
             {labelsPlainNumeric && (
               <div className={css.offset}>
                 <div className={css.adjustTitle}>页码映射（offset）</div>
@@ -116,9 +154,20 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
           </div>
           <div className={css.nav}>
             <button type="button" className={css.btn} data-testid="toc-review-prev" onClick={() => idx > 0 && jump(idx - 1)}>上一项</button>
-            <button type="button" className={css.btn} data-testid="toc-review-next" onClick={nextUnchecked}>继续检查</button>
+            <button type="button" className={css.btn} data-testid="toc-review-next" onClick={continueReview}>继续检查</button>
           </div>
         </div>
+        {confirmUnchecked && (
+          <div className={css.confirmWrap} data-testid="toc-review-unchecked-confirm">
+            <div className={css.confirmBox}>
+              <div>还有 {rows.filter((_, i) => state[i] === 'unchecked').length} 项未检查，仍然保存目录？</div>
+              <div className={css.confirmBtns}>
+                <button type="button" className={css.btn} data-testid="toc-review-unchecked-no" onClick={() => setConfirmUnchecked(false)}>继续检查</button>
+                <button type="button" className={css.btnPrimary} data-testid="toc-review-unchecked-yes" onClick={() => { setConfirmUnchecked(false); void doSave() }}>仍然保存</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -11,6 +11,8 @@ import {
   subtreeSize,
   indentSubtree,
   outdentSubtree,
+  moveUp,
+  moveDown,
   insertItem,
   insertChapterByPage,
   canApplyChapterDraftOperation,
@@ -68,7 +70,7 @@ const item = (id: string, title: string, level: number, startPage: number): Chap
 }
 {
   const v = okFc([item('a', 'A', 1, 10), item('b', 'B', 1, 10)])
-  assert(!v.ok && hasCode(v.issues, 'sibling-same-page'), 'siblings same page invalid')
+  assert(v.ok === true, 'same-page siblings now VALID (Stage 9.4B.1)')
 }
 {
   const v = okFc([item('a', '  ', 1, 1)])
@@ -255,16 +257,19 @@ const base: ChapterDraftItem[] = [
   assert(r.ok && r.items.map(i => i.id).join(',') === 'a,b,x', 'page-aware append (got ' + r.items.map(i => i.id).join(',') + ')')
 }
 {
-  // same-page conflict: [A p5] + new p5 -> conflict, no fabricated unsavable draft
+  // same-page insert (Stage 9.4B.1): [A p5] + new p5 -> stable append-within-same-page (no conflict)
   const base = [item('a', 'A', 1, 5)]
   const r = insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 5 })
-  assert(!r.ok && r.reason === 'same-page-conflict', 'same-page conflict reported')
+  assert(r.ok === true, 'same-page insert now ok (no conflict)')
+  assert(r.ok && r.items.map(i => i.id).join(',') === 'a,x', 'same-page new inserted AFTER existing same-page sibling (got ' + r.items.map(i => i.id).join(',') + ')')
+  assert(validateChapterDraft(r.items, 10).ok, 'same-page insert result valid')
 }
 {
-  // conflict keeps the base untouched (no mutation)
-  const base = [item('a', 'A', 1, 5)]
-  insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 5 })
-  assert(base.map(i => i.id).join(',') === 'a' && base[0].startPage === 5, 'conflict leaves input draft unchanged')
+  // insert same page into a run of same-page siblings -> appended at end of run
+  const base = [item('a', 'A', 1, 5), item('b', 'B', 1, 5), item('c', 'C', 1, 9)]
+  const r = insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 5 })
+  assert(r.ok && r.items.map(i => i.id).join(',') === 'a,b,x,c', 'same-page inserted after same-page run (got ' + r.items.map(i => i.id).join(',') + ')')
+  assert(validateChapterDraft(r.items, 12).ok, 'same-page run insert valid')
 }
 {
   // inserting BEFORE a root with children keeps the whole subtree after the new root
@@ -281,9 +286,9 @@ const base: ChapterDraftItem[] = [
   assert(canApplyChapterDraftOperation(base, 10, indentSubtree, 1) === true, 'indent candidacy valid (B can indent under A)')
 }
 {
-  // outdent candidate INVALID (B L2 p5 outdents to L1 p5 == A L1 p5 sibling same page) -> disabled
+  // outdent candidate now VALID even if it creates same-page siblings (Stage 9.4B.1 allows same-page)
   const base = [item('a', 'A', 1, 5), item('b', 'B', 2, 5)]
-  assert(canApplyChapterDraftOperation(base, 10, outdentSubtree, 1) === false, 'outdent candidacy invalid (would create sibling same page)')
+  assert(canApplyChapterDraftOperation(base, 10, outdentSubtree, 1) === true, 'outdent candidacy valid (same-page siblings allowed)')
 }
 {
   // outdent candidacy valid when it keeps order (B L2 p6 outdents to L1 p6 > A p5)
@@ -296,22 +301,32 @@ const base: ChapterDraftItem[] = [
   assert(canApplyChapterDraftOperation(base, 10, indentSubtree, 0) === false, 'first item indent candidacy invalid')
 }
 
-// ===================== page-order invariant / move not exposed (§10-11,16-17) =====================
-{
-  // Stage 9.4A.1 removes the arbitrary "move reorders array" operation: chapter order
-  // derives from physical page order. Swapping [A p2, B p5] -> [B p5, A p2] is an INVALID
-  // draft (page decreases); no Builder-exposed operation may produce it.
-  const swapped = [item('b', 'B', 1, 5), item('a', 'A', 1, 2)]
-  assert(!validateChapterDraft(swapped, 10).ok, 'A p2 / B p5 cannot be swapped into an invalid draft (page decreases rejected)')
+// ===================== same-page sibling reorder (Stage 9.4B.1 A2) =====================
+{ // different-page reorder DISABLED (page decreases)
+  const base = [item('a', 'A', 1, 10), item('b', 'B', 1, 20)]
+  assert(canApplyChapterDraftOperation(base, 30, moveUp, 1) === false, 'B(p20) cannot moveUp above A(p10) (page decreases -> disabled)')
 }
-{
-  // no moveUp/moveDown export exists anymore (compiled check via import would fail); the
-  // domain's only ordering primitive is page-aware insertion. Assert a valid draft stays
-  // valid after the remaining exposed ops (delete/indent/outdent).
-  const base = [item('a', 'A', 1, 1), item('b', 'B', 2, 2), item('c', 'C', 2, 3)]
-  assert(validateChapterDraft(deleteDraftSubtree(base, 1), 10).ok, 'delete leaf keeps a valid draft')
-  assert(validateChapterDraft(indentSubtree([item('a', 'A', 1, 1), item('b', 'B', 1, 2)], 1), 10).ok, 'indent keeps a valid draft')
-  assert(validateChapterDraft(outdentSubtree([item('a', 'A', 1, 1), item('b', 'B', 2, 2)], 1), 10).ok, 'outdent keeps a valid draft')
+{ // same-page sibling reorder ENABLED
+  const base = [item('a', 'A', 1, 19), item('b', 'B', 1, 19)]
+  assert(canApplyChapterDraftOperation(base, 30, moveUp, 1) === true, 'B(p19) can moveUp above A(p19) (same page -> valid, enabled)')
+  const moved = moveUp(base, 1)
+  assert(moved.map(i => i.id).join(',') === 'b,a', 'same-page sibling swap reorders (got ' + moved.map(i => i.id).join(',') + ')')
+  assert(validateChapterDraft(moved, 30).ok, 'reordered same-page draft still valid')
+}
+{ // subtree moves together, same parent only
+  const base = [item('a', 'A', 1, 1), item('b', 'B', 1, 1), item('c', 'C', 1, 1)]
+  const moved = moveDown(base, 0) // move A down one same-page sibling position
+  assert(moved.map(i => i.id).join(',') === 'b,a,c', 'subtree-preserving sibling move (got ' + moved.map(i => i.id).join(',') + ')')
+  assert(validateChapterDraft(moved, 10).ok, 'subtree move (same-page) stays valid')
+}
+{ // cross-parent move disabled
+  const base = [item('a', 'A', 1, 1), item('a1', 'A.1', 2, 1), item('b', 'B', 1, 5)]
+  // A.1 (level2) has NO same-parent sibling -> moveDown no-op -> candidacy false
+  assert(canApplyChapterDraftOperation(base, 10, moveDown, 1) === false, 'cross-parent moveDown disabled (no same-parent sibling)')
+}
+{ // different-page swap produces an invalid draft (never built)
+  const swapped = [item('b', 'B', 1, 5), item('a', 'A', 1, 2)]
+  assert(!validateChapterDraft(swapped, 10).ok, 'A p2 / B p5 swapped -> page decreases invalid')
 }
 
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)

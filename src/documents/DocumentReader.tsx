@@ -379,6 +379,18 @@ export function DocumentReader() {
     }
   }, [doc, pageCount])
 
+  // 编辑全部目录: hand the reviewed rows to the existing ChapterBuilder (no second editor).
+  const editAiTocAll = useCallback((rows: MappedTocItem[]) => {
+    const items: ChapterDraftItem[] = rows
+      .filter(r => r.startPage != null)
+      .map((r, i) => ({ id: 'ai' + i, title: r.title, level: r.level, startPage: r.startPage as number }))
+    setNativeDraft({ items, skipped: rows.filter(r => r.startPage == null).length })
+    setBuilderHint('正在编辑 AI 识别并已检查的目录。保存后仅修改本地目录，不会改动原 PDF。')
+    setBuilderSeed(false)
+    setTocReviewOpen(false)
+    setBuilderOpen(true)
+  }, [])
+
   // Save the AI-reviewed draft as chapterSource 'ai-toc' — the ONLY persistence step.
   const saveAiToc = useCallback(async (save: TocReviewSave) => {
     if (!doc) throw new Error('no document')
@@ -594,6 +606,7 @@ export function DocumentReader() {
           onJump={(p) => go(p, pageCount)}
           onSave={saveAiToc}
           onClose={() => setTocReviewOpen(false)}
+          onEditAll={editAiTocAll}
         />
       )}
       {tocPickerOpen && sessionRef.current && (

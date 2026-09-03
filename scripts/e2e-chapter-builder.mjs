@@ -113,14 +113,15 @@ assert(tocRows2.join('|').includes('Chapter X'), 'D: TOC has Chapter X after mid
 assert((await inputVal()).trim() === '5', 'D: reader page unchanged after builder save (got ' + await inputVal() + ')')
 assert(!tocRows2.join('|').includes('B') || tocRows2.join('|').split('|').findIndex(t => t.includes('B')) > tocRows2.join('|').split('|').findIndex(t => t.includes('X')), 'D: X order before B in TOC')
 
-// ---- E. same-page conflict: jump page 5 (X starts at 5) -> no fabricated draft §8 ---------------
+// ---- E. same-page insertion now SUCCEEDS (Stage 9.4B.1): jump page 5, add a row at 5 ---------------
 await jumpTo(5)
 await page.locator('[data-testid="reader-build"]').click()
 await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
-assert(await page.locator('[data-testid="cb-insert-error"]').count() === 1, 'E: same-page conflict hint shown')
+assert(await page.locator('[data-testid="cb-insert-error"]').count() === 0, 'E: no same-page conflict error (same-page allowed)')
 const rowsE = await page.locator('[data-testid^="cb-row"]').count()
-assert(rowsE === 3, 'E: no extra row fabricated on conflict (got ' + rowsE + ')')
+assert(rowsE === 4, 'E: same-page new row inserted (4 rows: A,X,NEW,B; got ' + rowsE + ')')
 await page.locator('[data-testid="cb-cancel"]').click()
+if (await page.locator('[data-testid="cb-discard-confirm"]').count()) { await page.locator('[data-testid="cb-discard-yes"]').click() }
 await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'detached', timeout: 10000 })
 
 // ---- F. save-failure retry: draft preserved, error shown, stays open, retry succeeds §21 ---------------
@@ -147,7 +148,10 @@ await page.locator('[data-testid="reader-ctx-menu"]').waitFor({ state: 'visible'
 const chapBtn = page.locator('[data-testid="reader-ctx-current-chapter"]')
 assert(!(await chapBtn.isDisabled()), 'G: 当前章节 enabled at page 6')
 const chapMeta = (await chapBtn.textContent()) || ''
-assert(chapMeta.includes('Chapter X'), 'G: current chapter is Chapter X (got ' + chapMeta + ')')
+// Same-page ambiguity (Stage 9.4B.1 A4): page 6 falls within multiple same-page chapters
+// (X and the page-5 row both cover 5–7); the resolver picks deterministically but the
+// exact title here is not guaranteed to be X — assert it is one of the page-5 chapters.
+assert(chapMeta.includes('Chapter X') || chapMeta.includes('新章节'), 'G: current chapter is a same-page chapter (got ' + chapMeta + ')')
 await chapBtn.click()
 await page.getByText(/已加入「.*」/).waitFor({ state: 'visible', timeout: 30000 })
 assert(await page.locator('[data-testid="document-reader"]').count() === 1, 'G: reader stays open after context add')

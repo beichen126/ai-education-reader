@@ -3,6 +3,7 @@
 // PDF has none we fall back to a human-calibrated numeric offset. Never fabricates
 // a page: an unmappable label stays unresolved (kept in the review list) until the
 // user confirms it. Individual manual overrides survive a global remap.
+import { validateChapterDraft } from './chapter-builder'
 export type MappedTocItem = {
   title: string
   level: number
@@ -96,4 +97,18 @@ export function pickVerificationAnchor(items: MappedTocItem[], anchorPhysicalPag
 /** Set a manual physical page override on an item (marks it manualOverride). */
 export function setManualPageOverride(items: MappedTocItem[], index: number, page: number): MappedTocItem[] {
   return items.map((it, i) => (i === index ? { ...it, startPage: page, manualOverride: true } : it))
+}
+
+/**
+ * Review-level validity (Stage 9.4B.1): a mapped review may be saved ONLY when every
+ * row has a real physical page (unresolved is NEVER coerced to 1) AND the derived
+ * chapter draft is a valid ChapterDraft. Returns the count of blocking problems.
+ */
+export function validateMappedTocReview(items: MappedTocItem[], pageCount: number): { ok: boolean; unresolved: number; errors: string[] } {
+  const unresolved = items.filter(r => r.startPage == null).length
+  if (unresolved > 0) return { ok: false, unresolved, errors: ['unresolved-page'] }
+  // Build a ChapterDraft from resolved rows (stable local ids) and validate it.
+  const draft = items.map((it, i) => ({ id: 'ai' + i, title: it.title, level: it.level, startPage: it.startPage as number }))
+  const v = validateChapterDraft(draft, pageCount)
+  return { ok: v.ok && unresolved === 0, unresolved, errors: v.ok ? [] : v.issues.map(i => i.message) }
 }
