@@ -41,6 +41,7 @@ export function DocumentReader() {
   const [page, setPage] = useState(1)
   const [pageCount, setPageCount] = useState(0)
   const [pageUrl, setPageUrl] = useState<string | null>(null)
+  const [renderSize, setRenderSize] = useState<{ w: number; h: number } | null>(null)
   const urlOwnerRef = useRef(createUrlOwner())
   const [rendering, setRendering] = useState(false)
   const [pageInput, setPageInput] = useState('')
@@ -95,7 +96,7 @@ export function DocumentReader() {
       setBuilderOpen(false)
       sessionRef.current = null
       urlOwnerRef.current.revokeAll()
-      setPageUrl(null)
+      setPageUrl(null); setRenderSize(null)
       setViewerUrl(null); viewerOpenRef.current = false
       setDoc(null); setPageCount(0); setPage(1); setPageInput('')
       setPageError(null); setRendering(false); setLoadError(null)
@@ -156,6 +157,7 @@ export function DocumentReader() {
       if (gen !== genRef.current) return // stale (page switch / document switch / leave)
       urlOwnerRef.current.replace(URL.createObjectURL(r.blob))
       setPageUrl(urlOwnerRef.current.current)
+      setRenderSize({ w: r.width, h: r.height })
       setRendering(false)
     }).catch(() => {
       if (gen !== genRef.current) return
@@ -366,7 +368,7 @@ export function DocumentReader() {
               {pageError && <div className={css.errorBox} data-testid="reader-page-error">{pageError}</div>}
               {pageUrl && (
                 <button className={css.pageBtn} data-testid="reader-page" onClick={() => { viewerOpenRef.current = true; setViewerUrl(pageUrl) }}>
-                  <img className={css.pageImg} data-testid="reader-page-img" src={pageUrl} alt={'第 ' + page + ' 页'} />
+                  <img className={css.pageImg} data-testid="reader-page-img" src={pageUrl} alt={'第 ' + page + ' 页'} data-render-width={renderSize ? String(renderSize.w) : undefined} data-render-height={renderSize ? String(renderSize.h) : undefined} />
                 </button>
               )}
             </main>

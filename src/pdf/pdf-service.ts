@@ -10,6 +10,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 // app, uses this URL directly (no CDN wrapper, no fake worker, no 404 under the
 // /ai-education-reader/ base path).
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { createPdfDocumentInit } from './pdf-runtime'
 import { PDF_FILE_MIME, type LocalPdfDocument } from './pdf-types.ts'
 import { parsePdfOutline, type PdfOutlineResult } from './pdf-outline.ts'
 
@@ -71,7 +72,7 @@ export async function openPdf(file: File): Promise<LocalPdfDocument> {
   if (!looksLikePdf) throw new PdfError('not-pdf', 'not a pdf')
   let data: ArrayBuffer
   try { data = await file.arrayBuffer() } catch { throw new PdfError('read-failed', 'read failed') }
-  const task = pdfjsLib.getDocument({ data })
+  const task = pdfjsLib.getDocument(createPdfDocumentInit(data))
   activeLoadingTask = task
   let doc: import('pdfjs-dist').PDFDocumentProxy
   try { doc = await task.promise } catch { activeLoadingTask = null; throw new PdfError('parse-failed', 'parse failed') }

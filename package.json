@@ -59,7 +59,8 @@
     "test:backup-security": "npx tsx scripts/test-backup-security.ts",
     "test:zoom": "npx tsx scripts/test-zoom.ts",
     "test:e2e-viewer": "node scripts/e2e-viewer-edge.mjs",
-    "test:e2e-chapter-builder": "node scripts/e2e-chapter-builder.mjs"
+    "test:e2e-chapter-builder": "node scripts/e2e-chapter-builder.mjs",
+    "test:pdf-codec": "node scripts/test-pdf-codec.mjs"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",
