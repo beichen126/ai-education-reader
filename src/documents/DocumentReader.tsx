@@ -74,6 +74,10 @@ export function DocumentReader() {
       setTocState({ expanded: new Set() }); setTocOpen(false)
       return
     }
+    // Ownership contract: the effect remembers the documentId IT was created for.
+    // React updates refs on render — a cleanup that reads docIdRef.current would
+    // see the NEW document id after A->B / reader->closed and write A's page into B.
+    const ownedDocId = docId
     let cancelled = false
     let ownedSession: PdfSession | null = null
     void (async () => {
@@ -101,13 +105,14 @@ export function DocumentReader() {
     return () => {
       cancelled = true
       genRef.current++ // invalidate pending renders of THIS document immediately
-      flushRef.current() // last meaningful page of THIS document (id bound via docIdRef)
+      // last meaningful page of the OWNED document — closure id, NEVER docIdRef
+      if (ownedDocId) persist(ownedDocId, pageRef.current)
       if (ownedSession) { void closePdfSession(ownedSession) }
       if (sessionRef.current === ownedSession) sessionRef.current = null
       urlOwnerRef.current.revokeAll()
       setViewerUrl(null); viewerOpenRef.current = false
     }
-  }, [docId])
+  }, [docId, persist])
 
   // ---- render current page (generation token discards stale results) ----
   useEffect(() => {
@@ -159,7 +164,8 @@ export function DocumentReader() {
     const onKey = (e: KeyboardEvent) => {
       if (viewerOpenRef.current) return
       const t = document.activeElement as HTMLElement | null
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return
+      // Page-input editing defers ARROWS only; Escape always closes the reader.
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && e.key !== 'Escape') return
       if (e.key === 'ArrowLeft') { e.preventDefault(); go(pageRef.current - 1, pageCount) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); go(pageRef.current + 1, pageCount) }
       else if (e.key === 'Escape') { documentUiActions.close() }
@@ -185,11 +191,11 @@ export function DocumentReader() {
   return (
     <div className={css.overlay} data-testid="document-reader">
       <div className={css.topbar}>
-        <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushRef.current(); documentUiActions.backToLibrary() }}>← 文件</button>
+        <button className={css.backBtn} data-testid="reader-back" onClick={() => { documentUiActions.backToLibrary() }}>← 文件</button>
         <span className={css.title} data-testid="reader-title">{doc ? doc.fileName : '…'}</span>
         <div className={css.topActions}>
           <button className={css.tocToggle} data-testid="reader-toc-toggle" onClick={() => setTocOpen(o => !o)}>目录</button>
-          <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushRef.current(); documentUiActions.close() }}>关闭</button>
+          <button className={css.closeBtn} data-testid="reader-close" onClick={() => { documentUiActions.close() }}>关闭</button>
         </div>
       </div>
       <div className={css.body}>

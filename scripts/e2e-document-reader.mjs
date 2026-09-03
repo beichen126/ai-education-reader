@@ -177,6 +177,25 @@ await page.locator('[data-testid="reader-close"]').click()
 await page.waitForTimeout(300)
 await openLibrary()
 
+// ---- L. Escape BEFORE the debounce (1000ms) — cleanup flush must restore the page ----
+await openLibrary()
+await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(PDF)
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
+await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+await page.locator('[data-testid="reader-page-input"]').fill('6')
+await page.locator('[data-testid="reader-page-input"]').press('Enter')
+await page.waitForTimeout(120) // deliberately FAR below the 1000ms debounce
+await page.keyboard.press('Escape') // reader -> closed via cleanup path (no button flush)
+await page.waitForTimeout(250)
+assert(await page.locator('[data-testid="document-reader"]').count() === 0, 'L: Escape closes the reader')
+await openLibrary()
+await page.locator('[data-testid^="doc-open-"]').first().click()
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+assert((await inputVal()).trim() === '6', 'L: reopen restores page 6 via cleanup flush (<1000ms, got ' + (await inputVal()) + ')')
+await page.locator('[data-testid="reader-close"]').click()
+await page.waitForTimeout(300)
+
 // ---- I. delete document (confirm accepted via dialog handler) ----
 await openLibrary()
 const beforeDel = await page.locator('[data-testid^="doc-card-"]').count()

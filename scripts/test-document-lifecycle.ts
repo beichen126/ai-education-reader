@@ -60,5 +60,58 @@ const gB = nextGen()      // Document B renders
 applyResult(gB, 1)
 assert(latest === 1, 'new document fresh render accepted')
 
+// ---- Stage 9.2B1.2: cleanup ownership vs the already-updated docIdRef ----
+// React sequence: render(newDocId) updates docIdRef BEFORE the OLD effect cleanup runs.
+// The cleanup must use the closure-captured ownedDocId, never docIdRef.current.
+function makeEffectModel(initialDocId: string) {
+  const writes: Array<{ id: string | null; page: number }> = []
+  return {
+    writes,
+    ownedDocId: initialDocId,            // captured in the effect closure
+    docIdRef: initialDocId,              // updated on every render (the trap)
+    pageRef: 1,
+    // simulate render: only the REF changes, then React runs the OLD cleanup
+    render(nextDocId: string | null) { this.docIdRef = nextDocId },
+    cleanupWithRef() { this.writes.push({ id: this.docIdRef, page: this.pageRef }) },   // BUGGY variant
+    cleanupOwned() { this.writes.push({ id: this.ownedDocId, page: this.pageRef }) },   // FIXED variant
+    persistBound(id: string | null, page: number) { this.writes.push({ id, page }) },
+  }
+}
+// A -> B: new render already set ref = B, then A cleanup runs
+{
+  const m = makeEffectModel('A')
+  m.pageRef = 20
+  m.render('B')
+  m.cleanupOwned()
+  assert(m.writes.length === 1 && m.writes[0].id === 'A' && m.writes[0].page === 20, 'A->B: cleanup persists OWNED A/20 (ref already B)')
+}
+// reader -> closed: ref = null, cleanup still persists A/20
+{
+  const m = makeEffectModel('A')
+  m.pageRef = 20
+  m.render(null)
+  m.cleanupOwned()
+  assert(m.writes.length === 1 && m.writes[0].id === 'A' && m.writes[0].page === 20, 'reader->closed: cleanup persists OWNED A/20 (ref already null)')
+}
+// latest page wins: pageRef advanced after effect creation (initial page was 1)
+{
+  const m = makeEffectModel('A')
+  m.render('B')
+  m.cleanupWithRef()
+  assert(m.writes[0].id === 'B', 'reference: BUGGY variant writes B (documents the trap)')
+  const m2 = makeEffectModel('A')
+  m2.pageRef = 20
+  m2.render('B')
+  m2.cleanupOwned()
+  assert(m2.writes[0].page === 20, 'latest page used, not the stale initial page')
+}
+// badging variant never used by production: persist is bound at persist() call time
+{
+  const m = makeEffectModel('A')
+  m.pageRef = 42
+  m.persistBound('A', m.pageRef)
+  assert(m.writes[0].id === 'A' && m.writes[0].page === 42, 'persist(docId, page) explicit binding keeps A/42')
+}
+
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)
