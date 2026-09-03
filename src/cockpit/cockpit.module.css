@@ -63,6 +63,7 @@
 .sendingBar { display: flex; align-items: center; gap: 8px; padding: 6px 16px; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .errorBanner { margin: 8px 24px 0; padding: 8px 12px; border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-state-error-primary); font-size: 12px; }
 .noKeyBanner { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; padding: 8px 24px; background: var(--dsw-alias-bg-layer-1); border-bottom: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.noKeyLink { font-size: 12px; color: var(--dsw-alias-label-link, #2b7bd8); text-decoration: underline; cursor: pointer; }
 .noKeyBtn { border: none; background: none; color: var(--dsw-alias-state-business-primary); cursor: pointer; font-size: 12px; }
 .sidebarHeadBtns { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
 .sidebarNew { padding: 4px 12px 2px; }
@@ -150,3 +151,9 @@
 .settingsScroll { max-height: calc(100vh - 96px); overflow-y: auto; }
 .groupPageBtn { display: block; border: none; padding: 0; background: none; cursor: zoom-in; border-radius: 8px; overflow: hidden; }
 .groupPageBtn img { display: block; width: 56px; height: 56px; object-fit: cover; border-radius: 8px; }
+.settingsDialog { width: min(640px, 100%) !important; }
+@media (max-width: 640px) { .settingsDialog { width: 100% !important; } }
+.byokBlock { padding: 10px 0; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--dsw-alias-border-l2); margin-bottom: 10px; }
+.byokTitle { font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.byokLink { font-size: 13px; color: var(--dsw-alias-label-link, #2b7bd8); text-decoration: underline; cursor: pointer; width: fit-content; }
+.byokLinkSub { font-size: 12px; color: var(--dsw-alias-label-tertiary); text-decoration: underline; cursor: pointer; width: fit-content; }

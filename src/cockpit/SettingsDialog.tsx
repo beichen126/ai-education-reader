@@ -78,8 +78,14 @@ export function SettingsDialog() {
   }
 
   return (
-    <Modal open onClose={uiActions.closeSettings} title="设置" closeLabel="关闭" contentClassName={css.settingsScroll}>
+    <Modal open onClose={uiActions.closeSettings} title="设置" closeLabel="关闭" className={css.settingsDialog} contentClassName={css.settingsScroll}>
       <div className={css.settingsHint}>{APP_NAME} · v{APP_VERSION} · Alpha</div>
+      <div className={css.byokBlock} data-testid="settings-byok">
+        <div className={css.byokTitle}>BYOK（自备 API Key）</div>
+        <div className={css.settingsHint}>本项目采用 BYOK：应用本身不提供模型额度。默认可使用 DeepSeek API，也可以填写兼容的 API Base URL 和模型。API Key 仅保存在当前浏览器本地。</div>
+        <a className={css.byokLink} href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer" data-testid="settings-deepseek-link">打开 DeepSeek 开放平台获取 API Key</a>
+        <a className={css.byokLinkSub} href="https://api-docs.deepseek.com/zh-cn/" target="_blank" rel="noopener noreferrer">DeepSeek API 文档</a>
+      </div>
       <div className={css.field}><label>API Base URL</label><Input className={css.fieldInput} value={base} onChange={e => setBase(e.target.value)} placeholder={DEFAULT_SETTINGS.apiBaseUrl} /></div>
       <div className={css.field}>
         <label>API Key</label>

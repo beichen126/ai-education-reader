@@ -65,7 +65,8 @@
     "test:native-toc": "npx tsx scripts/test-native-toc.ts",
     "test:ai-toc": "npx tsx scripts/test-ai-toc.ts",
     "test:e2e-native-toc": "node scripts/e2e-native-toc.mjs",
-    "test:e2e-ai-toc": "node scripts/e2e-ai-toc.mjs"
+    "test:e2e-ai-toc": "node scripts/e2e-ai-toc.mjs",
+    "test:e2e-settings-byok": "node scripts/e2e-settings-byok.mjs"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",

@@ -49,8 +49,9 @@ export function Conversation() {
     <div className={css.conversation}>
       {!hasKey && (
         <div className={css.noKeyBanner}>
-          <span>尚未配置 API Key，请先在设置中填写，否则无法发送。</span>
+          <span>本项目使用 BYOK，需要配置你自己的 API Key 才能调用模型。</span>
           <button className={css.noKeyBtn} onClick={uiActions.openSettings}>打开设置</button>
+          <a className={css.noKeyLink} href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">获取 DeepSeek API Key</a>
         </div>
       )}
       {busy && (
