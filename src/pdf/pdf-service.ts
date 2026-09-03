@@ -16,17 +16,15 @@ import { parsePdfOutline, type PdfOutlineResult } from './pdf-outline.ts'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-/** Long edge target in px for rendered pages (text legibility vs memory). */
-export const MAX_RENDER_EDGE = 1800
-/** Hard cap on the render scale (never blindly upscale to absurd sizes). */
-export const MAX_SCALE = 3
+import { MAX_RENDER_EDGE, MAX_SCALE, MAX_RENDER_PIXELS, clampRenderScale, isPasswordError } from './pdf-render-policy'
+export { MAX_RENDER_EDGE, MAX_SCALE, MAX_RENDER_PIXELS, clampRenderScale, isPasswordError } from './pdf-render-policy'
 /** Output image format for Stage 1 preview pages. */
 export const OUTPUT_IMAGE_MIME = 'image/jpeg'
 export const JPEG_QUALITY = 0.88
 
 export type PdfErrorKind =
   | 'not-pdf' | 'read-failed' | 'parse-failed' | 'empty'
-  | 'not-open' | 'render-failed'
+  | 'not-open' | 'render-failed' | 'password'
 
 export class PdfError extends Error {
   readonly kind: PdfErrorKind
@@ -41,6 +39,7 @@ export function pdfErrorMessage(kind: PdfErrorKind): string {
     case 'empty': return '该 PDF 没有页面。'
     case 'not-open': return '尚未打开 PDF 文件。'
     case 'render-failed': return '页面渲染失败。'
+    case 'password': return '此 PDF 需要密码，当前版本暂未支持打开受密码保护的文件。'
     default: return 'PDF 处理失败。'
   }
 }
@@ -75,7 +74,11 @@ export async function openPdf(file: File): Promise<LocalPdfDocument> {
   const task = pdfjsLib.getDocument(createPdfDocumentInit(data))
   activeLoadingTask = task
   let doc: import('pdfjs-dist').PDFDocumentProxy
-  try { doc = await task.promise } catch { activeLoadingTask = null; throw new PdfError('parse-failed', 'parse failed') }
+  try { doc = await task.promise } catch (err) {
+    activeLoadingTask = null
+    if (isPasswordError(err)) throw new PdfError('password', 'password protected')
+    throw new PdfError('parse-failed', 'parse failed')
+  }
   if (doc.numPages < 1) { try { await task.destroy() } catch { /* ignore */ } activeLoadingTask = null; throw new PdfError('empty', 'empty') }
   activeDoc = doc
   // Keep the loading task so closePdf() can destroy this document later.
@@ -95,8 +98,7 @@ export async function renderPdfPage(pageNumber: number): Promise<RenderedPage> {
 export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number): Promise<RenderedPage> {
   const page = await doc.getPage(pageNumber)
   const vp1 = page.getViewport({ scale: 1 })
-  const maxEdge = Math.max(vp1.width, vp1.height)
-  const scale = Math.min(MAX_SCALE, maxEdge > 0 ? MAX_RENDER_EDGE / maxEdge : 1)
+  const scale = clampRenderScale(vp1)
   const vp = page.getViewport({ scale })
   const width = Math.max(1, Math.floor(vp.width))
   const height = Math.max(1, Math.floor(vp.height))

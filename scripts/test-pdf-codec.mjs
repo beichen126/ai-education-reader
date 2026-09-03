@@ -8,9 +8,9 @@
 // Run: node scripts/test-pdf-codec.mjs   (preview must be up)
 //
 // Fixture sources:
-//   - test/fixtures/jpx-codec.pdf  = pdf.js test/pdfs/bug_jpx.pdf (Apache-2.0),
+//   - test/fixtures/pdf-compat/jpx/jpx-codec.pdf = pdf.js test/pdfs/bug_jpx.pdf (Apache-2.0),
 //     a small PDF embedding a JPEG2000 (JPXDecode) image.
-//   - test/fixtures/jpeg-image.pdf = generated (a normal DCT/JPEG image), the
+//   - test/fixtures/pdf-compat/jpeg/jpeg-image.pdf = generated (a normal DCT/JPEG image), the
 //     "plain JPEG should never be blank" control.
 //   - test/fixtures/outline-sample.pdf = vector/text-only PDF control.
 import { chromium } from 'playwright-core'
@@ -65,11 +65,11 @@ const vec = await renderPage('test/fixtures/outline-sample.pdf', 1)
 assert(vec && vec.nonWhite > 0.01, 'vector/text PDF renders non-white (got ' + (vec ? vec.nonWhite.toFixed(4) : 'err') + ')')
 
 // 2. normal JPEG (DCT) image PDF control -> must have content
-const jpg = await renderPage('test/fixtures/jpeg-image.pdf', 1)
+const jpg = await renderPage('test/fixtures/pdf-compat/jpeg/jpeg-image.pdf', 1)
 assert(jpg && jpg.nonWhite > 0.01, 'plain JPEG image PDF renders non-white (got ' + (jpg ? jpg.nonWhite.toFixed(4) : 'err') + ')')
 
 // 3. WASM-codec JPEG2000 (JPX) PDF -> THE regression case: must NOT be pure white
-const jpx = await renderPage('test/fixtures/jpx-codec.pdf', 1)
+const jpx = await renderPage('test/fixtures/pdf-compat/jpx/jpx-codec.pdf', 1)
 assert(jpx && jpx.nonWhite > 0.005, 'JPX/JPEG2000 codec PDF renders non-white (got ' + (jpx ? jpx.nonWhite.toFixed(4) : 'err') + ')')
 assert(jpx && jpx.err === undefined, 'JPX page sampled successfully (no err)')
 

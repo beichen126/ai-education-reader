@@ -7,7 +7,7 @@ import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { createPdfDocumentInit } from './pdf-runtime'
 import { PDF_FILE_MIME, type LocalPdfDocument } from './pdf-types.ts'
-import { PdfError, pdfErrorMessage, renderPageForDocument, readOutlineForDocument, type RenderedPage } from './pdf-service.ts'
+import { PdfError, pdfErrorMessage, renderPageForDocument, readOutlineForDocument, isPasswordError, type RenderedPage } from './pdf-service.ts'
 import type { PdfOutlineResult } from './pdf-outline.ts'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
@@ -25,7 +25,7 @@ export async function openPdfSession(blob: Blob): Promise<{ session: PdfSession;
   if (!looksLikePdf) throw new PdfError('not-pdf', 'not a pdf')
   const task = pdfjsLib.getDocument(createPdfDocumentInit(await blob.arrayBuffer()))
   let proxy: import('pdfjs-dist').PDFDocumentProxy
-  try { proxy = await task.promise } catch { try { await task.destroy() } catch { /* ignore */ } throw new PdfError('parse-failed', 'parse failed') }
+  try { proxy = await task.promise } catch (err) { try { await task.destroy() } catch { /* ignore */ } if (isPasswordError(err)) throw new PdfError('password', 'password protected'); throw new PdfError('parse-failed', 'parse failed') }
   if (proxy.numPages < 1) { try { await task.destroy() } catch { /* ignore */ } throw new PdfError('empty', 'empty') }
   return {
     session: { loadingTask: task, documentProxy: proxy },
