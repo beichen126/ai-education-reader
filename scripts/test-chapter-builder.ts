@@ -329,5 +329,33 @@ const base: ChapterDraftItem[] = [
   assert(!validateChapterDraft(swapped, 10).ok, 'A p2 / B p5 swapped -> page decreases invalid')
 }
 
+// ===================== top-level insertion never reparents (Stage 9.4C.1 §13) =====================
+{ // legal: insert between complete root subtrees (same-page run)
+  const base = [item('a', 'A', 1, 1), item('b', 'B', 1, 5), item('c', 'C', 1, 5), item('d', 'D', 1, 10)]
+  const r = insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 5 })
+  assert(r.ok && r.items.map(i => i.id).join(',') === 'a,b,c,x,d', 'stable append within same-page root run (got ' + (r.ok ? r.items.map(i=>i.id).join(',') : 'conflict') + ')')
+  if (r.ok) assert(validateChapterDraft(r.items, 12).ok, 'same-page root run insert valid')
+}
+{ // legal: insert between root subtrees where a descendant with page <= P sits before the boundary
+  const base = [item('a', 'A', 1, 1), item('a1', 'A.1', 2, 2), item('b', 'B', 1, 8)]
+  const r = insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 5 })
+  assert(r.ok && r.items.map(i => i.id).join(',') === 'a,a1,x,b', 'insert after a completed subtree (descendant page <= P) preserved (got ' + (r.ok ? r.items.map(i=>i.id).join(',') : 'conflict') + ')')
+  if (r.ok) assert(validateChapterDraft(r.items, 10).ok, 'result valid')
+}
+{ // inside existing subtree, descendant already past P -> structured conflict (NO reparent)
+  const base = [item('a', 'A', 1, 1), item('a1', 'A.1', 2, 5), item('b', 'B', 1, 10)]
+  const r = insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 3 })
+  assert(r.ok === false && ('reason' in r) && r.reason === 'inside-existing-subtree', 'new L1 inside subtree w/ past-P descendant -> structured conflict')
+}
+{ // when the descendant's page is <= P, a boundary after the completed subtree is LEGAL
+  const base = [item('a', 'A', 1, 1), item('a1', 'A.1', 2, 3), item('b', 'B', 1, 10)]
+  const r = insertChapterByPage(base, { id: 'x', title: 'X', level: 1, startPage: 3 })
+  assert(r.ok === true, 'a1(p3) <= P=3 -> legal insert after a-subtree, no conflict')
+  if (r.ok) assert(r.items.map(i => i.id).join(',') === 'a,a1,x,b' && validateChapterDraft(r.items, 12).ok, 'result a,a1,x,b valid (a1 kept under a)')
+  // existing parent relation must be UNCHANGED
+  const flat = base.map(i => i.id + '@' + i.level)
+  assert(flat.join(',') === 'a@1,a1@2,b@1', 'existing parent relation preserved (input untouched)')
+}
+
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)

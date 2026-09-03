@@ -307,16 +307,40 @@ function previousSiblingIndex(items: ChapterDraftItem[], index: number): number 
  */
 export type InsertChapterByPageResult =
   | { ok: true; items: ChapterDraftItem[] }
+  | { ok: false; reason: 'inside-existing-subtree' }
 
+/**
+ * Page-aware top-level insertion for a NEW chapter (Stage 9.4C.1). A new top-level
+ * chapter (level 1, startPage P) is inserted at the first ROOT-subtree boundary
+ * after the same-page root run and before the first root with startPage > P —
+ * so it NEVER slices an existing root's subtree (which would silently reparent
+ * that subtree's descendants to the new node).
+ *
+ * Structural rule (13.2/13.3): a legal insertion point is one where EITHER the
+ * list is empty / we append at the very end, OR the new node lands before a root
+ * whose startPage > P AND every item before that point has startPage <= P. If the
+ * item immediately before the insertion boundary has a startPage > P (a descendant
+ * of an earlier root already sits past P), there is NO legal boundary that both
+ * preserves parentage and keeps the global page order non-decreasing — we return a
+ * structured conflict instead of silently reparenting. Returns a NEW array.
+ */
 export function insertChapterByPage(items: ChapterDraftItem[], newItem: ChapterDraftItem): InsertChapterByPageResult {
   // This helper is deliberately top-level-only for now (Stage 9.4A.1 semantics).
   if (newItem.level !== 1) return { ok: true, items: insertItem(items, newItem) }
   const P = newItem.startPage
   let insertAt = items.length
   for (let i = 0; i < items.length; i++) {
-    // Skip items strictly before P and the same-page run; land before the first > P.
-    const sp = items[i].startPage
-    if (sp > P) { insertAt = i; break }
+    const it = items[i]
+    // Only a ROOT (level 1) with a strictly later page is a boundary after the
+    // same-page run. Descendants are skipped (they belong to a root before them).
+    if (it.level === 1 && it.startPage > P) { insertAt = i; break }
+  }
+  // A legal boundary requires: at the end (new root after everything), or the item
+  // immediately before the boundary has startPage <= P (so the flat order stays
+  // non-decreasing). If a descendant of an earlier root already sits past P, there
+  // is no legal boundary -> inside-existing-subtree conflict.
+  if (insertAt > 0 && items[insertAt - 1].startPage > P) {
+    return { ok: false, reason: 'inside-existing-subtree' }
   }
   return { ok: true, items: [...items.slice(0, insertAt), newItem, ...items.slice(insertAt)] }
 }

@@ -79,6 +79,7 @@ export function DocumentReader() {
   // ---- Manual Chapter Builder (Stage 9.4A) ----
   const [builderOpen, setBuilderOpen] = useState(false)
   const [builderSeed, setBuilderSeed] = useState(false)
+  const [builderSaveSource, setBuilderSaveSource] = useState<'manual' | 'ai-toc'>('manual')
   const builderOpenRef = useRef(false); builderOpenRef.current = builderOpen
   // ---- Native TOC override (Stage 9.4A.2) ----
   const [nativeDraft, setNativeDraft] = useState<{ items: ChapterDraftItem[]; skipped: number } | null>(null)
@@ -98,6 +99,7 @@ export function DocumentReader() {
   const [tocReviewOpen, setTocReviewOpen] = useState(false)
   const tocReviewOpenRef = useRef(false); tocReviewOpenRef.current = tocReviewOpen
   const aiTocGenRef = useRef(0)
+  const aiTocAbortRef = useRef<AbortController | null>(null)
 
   // ---- docId-BOUND progress persistence: each write carries the id it belongs to ----
   const persist = useCallback((targetDocId: string, p: number) => {
@@ -129,6 +131,10 @@ export function DocumentReader() {
       setTocState({ expanded: new Set() }); setTocOpen(false)
       setNativeDraft(null); setBuilderHint(null); setHasNativeOutline(false); setNativeOutlineStatus('unknown')
       setRestoreConfirmOpen(false); setRestoreMsg(null)
+      aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
+      aiTocGenRef.current++
+      setTocPickerOpen(false); setAiTocExtracting(false); setAiTocMsg(null)
+      setAiTocItems(null); setAiTocLabels(null); setAiTocLabelsPlainNumeric(false); setTocReviewOpen(false)
       return
     }
     // Ownership contract: the effect remembers the documentId IT was created for.
@@ -145,6 +151,10 @@ export function DocumentReader() {
       setBuilderOpen(false)
       urlOwnerRef.current.revokeAll(); setPageUrl(null)
       sessionRef.current = null
+      aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
+      aiTocGenRef.current++
+      setTocPickerOpen(false); setAiTocExtracting(false); setAiTocMsg(null)
+      setAiTocItems(null); setAiTocLabels(null); setAiTocLabelsPlainNumeric(false); setTocReviewOpen(false)
       try {
         const d = await getDocument(docId)
         if (cancelled) return
@@ -180,6 +190,8 @@ export function DocumentReader() {
       setCtxPending(null); setCtxMenuOpen(false)
       // last meaningful page of the OWNED document — closure id, NEVER docIdRef
       if (ownedDocId) persist(ownedDocId, pageRef.current)
+      aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
+      aiTocGenRef.current++
       if (ownedSession) { void closePdfSession(ownedSession) }
       if (sessionRef.current === ownedSession) sessionRef.current = null
       urlOwnerRef.current.revokeAll()
@@ -341,7 +353,7 @@ export function DocumentReader() {
     const { items, skippedUnresolved } = chaptersToEditableDraft(doc.chapters)
     setNativeDraft({ items, skipped: skippedUnresolved })
     setBuilderHint('正在整理 PDF 原始目录。保存后仅修改本地目录，不会改动原 PDF。')
-    setBuilderSeed(false)
+    setBuilderSeed(false); setBuilderSaveSource('manual')
     setBuilderOpen(true)
   }, [doc])
   // 编辑目录: edit the current (manual override) tree in place — no native origin hint.
@@ -350,24 +362,31 @@ export function DocumentReader() {
     const { items, skippedUnresolved } = chaptersToEditableDraft(doc.chapters)
     setNativeDraft({ items, skipped: skippedUnresolved })
     setBuilderHint(null)
-    setBuilderSeed(false)
+    setBuilderSeed(false); setBuilderSaveSource('manual')
     setBuilderOpen(true)
   }, [doc])
-  // ---- AI TOC extraction runner (commit 1): picker -> vision -> mapped draft ----
+  // ---- AI TOC extraction runner (Stage 9.4C.1): snapshot -> vision -> mapped draft ----
+  // Ownership: a NEW run aborts the previous one (same doc / A->B / reader close / unmount).
+  // AiToc snapshot is taken ONCE at start; a stale result that resolves later never setState.
   const runAiToc = useCallback(async (selectedPages: number[]) => {
     const session = sessionRef.current
     if (!doc || !session) return
+    aiTocAbortRef.current?.abort()
+    const controller = new AbortController()
+    aiTocAbortRef.current = controller
     setTocPickerOpen(false)
     setAiTocExtracting(true); setAiTocMsg(null)
     const gen = ++aiTocGenRef.current
+    const ownedDocId = doc.id
     try {
       const s = getSettingsSnapshot()
       const res = await extractAiToc({
         session, pageCount, selectedPages,
         apiKey: s.apiKey, baseUrl: s.apiBaseUrl, model: s.model,
         getPageLabels: async () => readSessionPageLabels(session),
+        signal: controller.signal,
       })
-      if (gen !== aiTocGenRef.current) return
+      if (gen !== aiTocGenRef.current || docIdRef.current !== ownedDocId) return
       if (!res.ok) { setAiTocMsg((res as { error: string }).error); return }
       setAiTocItems(res.items); setAiTocLabels(res.labels); setAiTocLabelsPlainNumeric(res.labelsPlainNumeric)
       setAiTocMsg(null)
@@ -386,7 +405,7 @@ export function DocumentReader() {
       .map((r, i) => ({ id: 'ai' + i, title: r.title, level: r.level, startPage: r.startPage as number }))
     setNativeDraft({ items, skipped: rows.filter(r => r.startPage == null).length })
     setBuilderHint('正在编辑 AI 识别并已检查的目录。保存后仅修改本地目录，不会改动原 PDF。')
-    setBuilderSeed(false)
+    setBuilderSeed(false); setBuilderSaveSource('ai-toc')
     setTocReviewOpen(false)
     setBuilderOpen(true)
   }, [])
@@ -478,7 +497,7 @@ export function DocumentReader() {
             </button>
           )}
           {doc && doc.chapterSource !== 'native' && (
-            <button className={css.buildBtn} data-testid="reader-build" title="从此页新建章节" onClick={() => { setBuilderSeed(true); setBuilderOpen(true) }}>从此页新建章节</button>
+            <button className={css.buildBtn} data-testid="reader-build" title="从此页新建章节" onClick={() => { setBuilderSeed(true); setBuilderSaveSource('manual'); setBuilderOpen(true) }}>从此页新建章节</button>
           )}
           <button className={css.tocToggle} data-testid="reader-toc-toggle" onClick={() => setTocOpen(o => !o)}>目录</button>
           <button className={css.closeBtn} data-testid="reader-close" onClick={() => { documentUiActions.close() }}>关闭</button>
@@ -498,7 +517,7 @@ export function DocumentReader() {
               ) : (
                 <div className={css.tocEmpty}>
                   <div data-testid="reader-toc-empty">这份 PDF 暂无章节目录。</div>
-                  <button type="button" className={css.tocCreate} data-testid="reader-toc-create" onClick={() => { setBuilderSeed(false); setBuilderOpen(true) }}>创建章节</button>
+                  <button type="button" className={css.tocCreate} data-testid="reader-toc-create" onClick={() => { setBuilderSeed(false); setBuilderSaveSource('manual'); setBuilderOpen(true) }}>创建章节</button>
                 </div>
               )}
               {doc && doc.chapterSource !== 'none' && (
@@ -626,6 +645,7 @@ export function DocumentReader() {
           draftSeed={nativeDraft ? nativeDraft.items : undefined}
           skippedUnresolved={nativeDraft ? nativeDraft.skipped : 0}
           hint={builderHint || undefined}
+          saveSource={builderSaveSource}
           onSave={saveBuilder}
           onClose={() => { setBuilderOpen(false); setBuilderSeed(false); setNativeDraft(null); setBuilderHint(null) }}
         />

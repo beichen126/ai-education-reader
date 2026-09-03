@@ -42,6 +42,38 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   assert(w*h <= MAX_RENDER_PIXELS+1 && Math.max(w,h) <= MAX_RENDER_EDGE+1, 'A4 page safe')
 }
 
+// --- HARD pixel budget extreme dimensions (Stage 9.4C.1) ---
+// These must NEVER exceed MAX_RENDER_PIXELS / MAX_RENDER_EDGE; the scale may drop below 0.01.
+const extremeCases = [
+  { w: 1000000, h: 1000000 }, // 1e12 px
+  { w: 1000000, h: 10 },      // hugely wide
+  { w: 10, h: 1000000 },      // hugely tall
+  { w: 100000000, h: 100 },   // extreme wide
+  { w: 595, h: 842 },         // A4
+]
+for (const c of extremeCases) {
+  const scale = clampRenderScale({ width: c.w, height: c.h })
+  const sw = c.w * scale, sh = c.h * scale
+  const budgetOk = Number.isFinite(scale) && sw * sh <= MAX_RENDER_PIXELS + 1
+  const edgeOk = Math.max(sw, sh) <= MAX_RENDER_EDGE + 1
+  const pos = Number.isFinite(scale) && scale > 0
+  assert(budgetOk && edgeOk && pos, 'extreme ' + c.w + 'x' + c.h + ' stays in budget & edge (scale=' + Number(scale.toFixed(8)) + ')')
+}
+
+// --- NaN / Infinity / -Infinity / 0 / negative viewport -> safe scale 1 (no crash / overflow) ---
+for (const v of [
+  { width: NaN, height: 842 },
+  { width: Infinity, height: 842 },
+  { width: -Infinity, height: 842 },
+  { width: 0, height: 842 },
+  { width: 595, height: -1 },
+]) {
+  const scale = clampRenderScale(v)
+  assert(scale === 1, 'non-finite/zero/negative viewport -> safe scale 1 (' + v.width + 'x' + v.height + ')')
+}
+
+// --- canvas dimension never lands below 1px via Math.max(1, floor) ---
+assert(Math.max(1, Math.floor(0.4)) === 1, 'canvas minimum floor -> 1px');
 // --- password classification ---
 {
   assert(isPasswordError({ name: 'PasswordException' }) === true, 'PasswordException recognized')

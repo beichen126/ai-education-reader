@@ -8,7 +8,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChapterNode, DocumentChapterSource } from './document-types'
 import {
-  validateChapterDraft, buildManualChapterTree, flattenManualChapters,
+  validateChapterDraft, buildManualChapterTree, buildChapterTreeFromDraft, flattenManualChapters,
   cloneChapterDraft, makeNewChapterItem, chapterSourceForTree,
   deleteDraftSubtree, draftHasChildren, indentSubtree, outdentSubtree,
   moveUp, moveDown,
@@ -31,14 +31,19 @@ type Props = {
   hint?: string
   /** Count of native items that had no resolvable page and were not imported. */
   skippedUnresolved?: number
+  /** Provenance for the built tree: 'manual' (native organize / manual edit) or
+   *  'ai-toc' (AI review -> edit all; stays ai-toc even after human fixes).
+   *  The Reader/UI never guesses. Defaults to 'manual'. */
+  saveSource?: 'manual' | 'ai-toc'
   onSave: (save: ChapterBuilderSave) => Promise<void>
   onClose: () => void
 }
 
 const SAVE_FAILED_MSG = '无法保存章节，请检查浏览器存储空间后重试。'
 const SAME_PAGE_MSG = '第 {P} 页已有同级章节，请编辑现有章节或调整新章节层级。'
+const INSIDE_SUBTREE_MSG = '当前页位于已有章节结构内部，请在章节编辑器中调整层级或目录结构。'
 
-export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFromCurrentPage, draftSeed, hint, skippedUnresolved = 0, onSave, onClose }: Props) {
+export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFromCurrentPage, draftSeed, hint, skippedUnresolved = 0, saveSource = 'manual', onSave, onClose }: Props) {
   const seedConflictRef = useRef<string | null>(null)
   const [items, setItems] = useState<ChapterDraftItem[]>(() => {
     // A pre-computed draftSeed (native / ai-toc) wins; otherwise derive from the tree.
@@ -47,8 +52,8 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
     const item = makeNewChapterItem({ currentPage, pageCount, level: 1 })
     const r = insertChapterByPage(base, item)
     if (r.ok) return r.items
-    // A same-page conflict must NOT fabricate an unsavable draft — keep base + note it.
-    seedConflictRef.current = SAME_PAGE_MSG.replace('{P}', String(item.startPage))
+    // A same-page / inside-subtree conflict must NOT fabricate an unsavable draft — keep base + note it.
+    seedConflictRef.current = ('reason' in r && r.reason === 'inside-existing-subtree') ? INSIDE_SUBTREE_MSG : SAME_PAGE_MSG.replace('{P}', String(item.startPage))
     return base
   })
   useEffect(() => { if (seedConflictRef.current) { setInsertError(seedConflictRef.current); seedConflictRef.current = null } }, [])
@@ -83,7 +88,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
     const item = makeNewChapterItem({ currentPage, pageCount, level: 1 })
     setItems(prev => {
       const r = insertChapterByPage(prev, item)
-      if (!r.ok) { setInsertError(SAME_PAGE_MSG.replace('{P}', String(item.startPage))); return prev }
+      if (!r.ok) { setInsertError(('reason' in r && r.reason === 'inside-existing-subtree') ? INSIDE_SUBTREE_MSG : SAME_PAGE_MSG.replace('{P}', String(item.startPage))); return prev }
       return r.items
     })
   }
@@ -108,10 +113,11 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
       return
     }
     setRowErrors({})
-    const tree = buildManualChapterTree(items, pageCount)
+    // Empty tree -> 'none' (canonical cleared state); otherwise the caller's provenance.
+    const tree = buildChapterTreeFromDraft(items, pageCount, saveSource)
     setSaving(true)
     try {
-      await onSave({ chapters: tree, source: chapterSourceForTree(tree) })
+      await onSave({ chapters: tree, source: tree.length === 0 ? 'none' : saveSource })
       // Success: the Reader's onSave closes this Builder (unmount). No need to reset.
     } catch {
       // A failed save must NOT fabricate success: builder stays open, draft kept.

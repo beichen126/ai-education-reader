@@ -94,11 +94,20 @@ export async function renderPdfPage(pageNumber: number): Promise<RenderedPage> {
   return renderPageForDocument(doc, pageNumber)
 }
 
-/** Shared render core used by BOTH the PdfPanel singleton and explicit PDF sessions. */
-export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number): Promise<RenderedPage> {
+/** Optional render tuning so callers can request a LOW-RESOLUTION thumbnail (TOC picker)
+ *  without changing the正文 Reader's full-resolution policy. `maxEdge` sets a smaller
+ *  long-edge target (e.g. 260 for thumbnails); the safe-budget clamps still apply. */
+export type RenderOptions = { maxEdge?: number }
+
+/** Shared render core used by BOTH the PdfPanel singleton and explicit PDF sessions.
+ *  `opts.maxEdge` (optional) lowers the long-edge target for thumbnail-purpose renders;
+ *  the hard pixel-budget clamps always apply, so a thumbnail is NEVER upscaled to the
+ *  1800px body resolution. The Reader正文 path calls this with NO options (full policy). */
+export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number, opts?: RenderOptions): Promise<RenderedPage> {
   const page = await doc.getPage(pageNumber)
   const vp1 = page.getViewport({ scale: 1 })
-  const scale = clampRenderScale(vp1)
+  const targetEdge = opts && opts.maxEdge && opts.maxEdge > 0 ? opts.maxEdge : MAX_RENDER_EDGE
+  const scale = clampRenderScaleForEdge(vp1, targetEdge)
   const vp = page.getViewport({ scale })
   const width = Math.max(1, Math.floor(vp.width))
   const height = Math.max(1, Math.floor(vp.height))
@@ -124,6 +133,20 @@ export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumen
   canvas.height = 0
   return { blob, width, height, mimeType: OUTPUT_IMAGE_MIME }
 }
+
+/** Clamp the render scale for a page with a custom long-edge target (thumbnail renders).
+ *  Always respects the HARD pixel budget (MAX_RENDER_PIXELS / MAX_RENDER_EDGE). */
+export function clampRenderScaleForEdge(vp1: { width: number; height: number }, targetEdge: number): number {
+  const w = vp1.width
+  const h = vp1.height
+  if (!Number.isFinite(w) || !Number.isFinite(h) || !(w > 0) || !(h > 0)) return 1
+  const maxEdge = Math.max(w, h)
+  const edge = targetEdge > 0 ? Math.min(targetEdge, MAX_RENDER_EDGE) : MAX_RENDER_EDGE
+  const byEdge = edge / maxEdge
+  const byPixels = Math.sqrt(MAX_RENDER_PIXELS / (w * h))
+  return Math.min(MAX_SCALE, byEdge, byPixels)
+}
+
 
 /**
  * Read the OUTLINE of the currently open document into a parsed chapter tree.
