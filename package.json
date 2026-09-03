@@ -25,7 +25,7 @@
     "test:stream2": "npx tsx scripts/test-stream-store2.ts",
     "test:annotation-ops": "npx tsx scripts/test-annotation-ops.ts",
     "test:annotation-storage": "npx tsx scripts/test-annotation-storage.ts",
-    "test:all": "npm run test:storage && npm run test:sse && npm run test:sse2 && npm run test:stream && npm run test:stream2 && npm run test:attachments && npm run test:attachments-atomic && npm run test:block && npm run test:table && npm run test:export && npm run test:backup-validation && npm run test:backup-source && npm run test:backup-security && npm run test:math && npm run test:math-export && npm run test:multimodal && npm run test:multimodal-context && npm run test:annotation-ops && npm run test:annotation-storage && npm run test:annotation-ownership && npm run test:stream-preflight && npm run test:boot && npm run test:session-lifecycle && npm run test:drafts && npm run test:draft-attachments && npm run test:draft-send && npm run test:draft-persistence && npm run test:storage-diagnostics && npm run test:pdf-attach && npm run test:pdf-outline && npm run test:pdf-outline-real && npm run test:pdf-multi-range && npm run test:attachment-display && npm run test:document-model && npm run test:document-storage && npm run test:document-backup && npm run test:document-provenance && npm run test:document-ui && npm run test:document-reader && npm run test:document-lifecycle && npm run test:reader-context && npm run test:context-render && npm run test:draft-bridge && npm run test:pdf-runtime-assets && npm run test:native-toc && npm run test:chapter-builder && npm run test:large-context && npm run test:zoom && npm run test:rename",
+    "test:all": "npm run test:storage && npm run test:sse && npm run test:sse2 && npm run test:stream && npm run test:stream2 && npm run test:attachments && npm run test:attachments-atomic && npm run test:block && npm run test:table && npm run test:export && npm run test:backup-validation && npm run test:backup-source && npm run test:backup-security && npm run test:math && npm run test:math-export && npm run test:multimodal && npm run test:multimodal-context && npm run test:annotation-ops && npm run test:annotation-storage && npm run test:annotation-ownership && npm run test:stream-preflight && npm run test:boot && npm run test:session-lifecycle && npm run test:drafts && npm run test:draft-attachments && npm run test:draft-send && npm run test:draft-persistence && npm run test:storage-diagnostics && npm run test:pdf-attach && npm run test:pdf-outline && npm run test:pdf-outline-real && npm run test:pdf-multi-range && npm run test:attachment-display && npm run test:document-model && npm run test:document-storage && npm run test:document-backup && npm run test:document-provenance && npm run test:document-ui && npm run test:document-reader && npm run test:document-lifecycle && npm run test:reader-context && npm run test:context-render && npm run test:draft-bridge && npm run test:pdf-runtime-assets && npm run test:native-toc && npm run test:ai-toc && npm run test:chapter-builder && npm run test:large-context && npm run test:zoom && npm run test:rename",
     "test:attachments-atomic": "npx tsx scripts/test-attachments-atomic.ts",
     "test:stream-preflight": "npx tsx scripts/test-stream-preflight.ts",
     "test:boot": "npx tsx scripts/test-boot.ts",
@@ -63,7 +63,9 @@
     "test:pdf-codec": "node scripts/test-pdf-codec.mjs",
     "test:pdf-runtime-assets": "npx tsx scripts/test-pdf-runtime-assets.ts",
     "test:native-toc": "npx tsx scripts/test-native-toc.ts",
-    "test:e2e-native-toc": "node scripts/e2e-native-toc.mjs"
+    "test:ai-toc": "npx tsx scripts/test-ai-toc.ts",
+    "test:e2e-native-toc": "node scripts/e2e-native-toc.mjs",
+    "test:e2e-ai-toc": "node scripts/e2e-ai-toc.mjs"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",

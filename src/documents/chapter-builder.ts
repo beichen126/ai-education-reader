@@ -136,6 +136,15 @@ export function deriveChapterEndPages(items: ChapterDraftItem[], pageCount: numb
  * input (callers validate first; this is the safety backstop).
  */
 export function buildManualChapterTree(items: ChapterDraftItem[], pageCount: number): ChapterNode[] {
+  return buildChapterTreeFromDraft(items, pageCount, 'manual')
+}
+
+/**
+ * General core: build a persistent ChapterNode tree from a VALIDATED flat preorder
+ * draft, with an explicit source ('manual' or 'ai-toc'). Same validation / range
+ * derivation for every source — never fork a second builder. Throws on invalid input.
+ */
+export function buildChapterTreeFromDraft(items: ChapterDraftItem[], pageCount: number, source: 'manual' | 'ai-toc'): ChapterNode[] {
   const v = validateChapterDraft(items, pageCount)
   if (!v.ok) throw new Error('invalid chapter draft: ' + v.issues.map(i => i.message).join('；'))
   const ends = deriveChapterEndPages(items, pageCount)
@@ -151,7 +160,7 @@ export function buildManualChapterTree(items: ChapterDraftItem[], pageCount: num
       startPage: it.startPage,
       endPage: ends[i],
       selectable: true,
-      source: 'manual',
+      source,
       children: [],
     }
     while (stack.length > 0 && stack[stack.length - 1].level >= it.level) stack.pop()

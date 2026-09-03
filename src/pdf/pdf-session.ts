@@ -43,6 +43,20 @@ export async function readSessionOutline(session: PdfSession): Promise<PdfOutlin
   return readOutlineForDocument(session.documentProxy)
 }
 
+/**
+ * Read the PDF's page labels (if any) — physical page index ↔ printed label.
+ * Returns null when the PDF has none, so callers can fall back to calibration.
+ */
+export async function readSessionPageLabels(session: PdfSession): Promise<string[] | null> {
+  try {
+    const labels = await session.documentProxy.getPageLabels()
+    if (labels && labels.length > 0) return labels
+  } catch {
+    /* no labels / unsupported */
+  }
+  return null
+}
+
 /** Destroy the session and release its worker. IDEMPOTENT (see pdf-session-core). */
 export async function closePdfSession(session: PdfSession | null): Promise<void> {
   return closeSessionCore(session)

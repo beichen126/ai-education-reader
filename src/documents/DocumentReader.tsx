@@ -15,7 +15,7 @@ import { validatePdfRange, countPdfRangePages, needsPdfContextSoftConfirm, MAX_P
 import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, buildManualRangeSelection } from './reader-context'
 import { useDocumentUi, documentUiActions } from './document-ui-store'
 import { clampReaderPage, parsePageInput } from './reader-utils'
-import { openPdfSession, renderSessionPage, closePdfSession, readSessionOutline, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
+import { openPdfSession, renderSessionPage, closePdfSession, readSessionOutline, readSessionPageLabels, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
 import { PdfError } from '../pdf/pdf-service'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { createUrlOwner } from './url-owner'
@@ -23,6 +23,10 @@ import { ChapterBuilder, type ChapterBuilderSave } from './ChapterBuilder'
 import { chaptersToEditableDraft } from './chapter-builder'
 import { chapterNodesFromPdfOutline } from './chapter-model'
 import type { ChapterDraftItem } from './chapter-builder'
+import { TocPagePicker } from './TocPagePicker'
+import { extractAiToc } from './use-ai-toc-extraction'
+import { getSettingsSnapshot } from '../engine/settings-store'
+import type { MappedTocItem } from './toc-mapping'
 import type { LearningDocument, ChapterNode } from './document-types'
 import css from './document-reader.module.css'
 
@@ -83,6 +87,14 @@ export function DocumentReader() {
   const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false)
   const [restoreMsg, setRestoreMsg] = useState<string | null>(null)
   const restoreBusyRef = useRef(false)
+  // ---- AI TOC (Stage 9.4B): picker -> vision extraction -> review draft ----
+  const [tocPickerOpen, setTocPickerOpen] = useState(false)
+  const [aiTocExtracting, setAiTocExtracting] = useState(false)
+  const [aiTocMsg, setAiTocMsg] = useState<string | null>(null)
+  const [aiTocItems, setAiTocItems] = useState<MappedTocItem[] | null>(null)
+  const [aiTocLabels, setAiTocLabels] = useState<string[] | null>(null)
+  const [aiTocLabelsPlainNumeric, setAiTocLabelsPlainNumeric] = useState(false)
+  const aiTocGenRef = useRef(0)
 
   // ---- docId-BOUND progress persistence: each write carries the id it belongs to ----
   const persist = useCallback((targetDocId: string, p: number) => {
@@ -338,6 +350,32 @@ export function DocumentReader() {
     setBuilderSeed(false)
     setBuilderOpen(true)
   }, [doc])
+  // ---- AI TOC extraction runner (commit 1): picker -> vision -> mapped draft ----
+  const runAiToc = useCallback(async (selectedPages: number[]) => {
+    const session = sessionRef.current
+    if (!doc || !session) return
+    setTocPickerOpen(false)
+    setAiTocExtracting(true); setAiTocMsg(null)
+    const gen = ++aiTocGenRef.current
+    try {
+      const s = getSettingsSnapshot()
+      const res = await extractAiToc({
+        session, pageCount, selectedPages,
+        apiKey: s.apiKey, baseUrl: s.apiBaseUrl, model: s.model,
+        getPageLabels: async () => readSessionPageLabels(session),
+      })
+      if (gen !== aiTocGenRef.current) return
+      if (!res.ok) { setAiTocMsg((res as { error: string }).error); return }
+      setAiTocItems(res.items); setAiTocLabels(res.labels); setAiTocLabelsPlainNumeric(res.labelsPlainNumeric)
+      setAiTocMsg(null)
+      // Review workflow (commit 2) opens here; for now the draft is ready in state.
+    } catch {
+      if (gen === aiTocGenRef.current) setAiTocMsg('目录识别失败，请重试。')
+    } finally {
+      if (gen === aiTocGenRef.current) setAiTocExtracting(false)
+    }
+  }, [doc, pageCount])
+
   // Restore original native outline: re-read the PDF sourceBlob outline (never a
   // persisted snapshot) and replace the current chapters. All-or-nothing.
   const restoreNative = useCallback(async () => {
@@ -450,7 +488,14 @@ export function DocumentReader() {
                   )}
                 </div>
               )}
+              {doc && (
+                <div className={css.tocAiArea}>
+                  <button type="button" className={css.tocActionBtn} data-testid="reader-toc-ai" disabled={aiTocExtracting || tocPickerOpen} onClick={() => setTocPickerOpen(true)}>AI 识别目录</button>
+                </div>
+              )}
               {restoreMsg && <div className={css.tocRestoreMsg} data-testid="reader-toc-restore-msg">{restoreMsg}</div>}
+              {aiTocMsg && <div className={css.tocRestoreMsg} data-testid="reader-toc-ai-msg">{aiTocMsg}</div>}
+              {aiTocExtracting && <div className={css.tocRestoreMsg} data-testid="reader-toc-ai-loading">正在识别目录…</div>}
             </aside>
             <main className={css.stage}>
               {rendering && <div className={css.hint} data-testid="reader-loading">正在渲染第 {page} 页…</div>}
@@ -524,6 +569,14 @@ export function DocumentReader() {
           resetKey={page}
           onClose={() => { viewerOpenRef.current = false; setViewerUrl(null) }}
           labels={{ close: '关闭', dialog: 'PDF 页面查看' }}
+        />
+      )}
+      {tocPickerOpen && sessionRef.current && (
+        <TocPagePicker
+          session={sessionRef.current}
+          pageCount={pageCount}
+          onCancel={() => setTocPickerOpen(false)}
+          onStart={(selectedPages) => { setTocPickerOpen(false); void runAiToc(selectedPages) }}
         />
       )}
       {builderOpen && doc && (
