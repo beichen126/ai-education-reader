@@ -1,7 +1,8 @@
 // attachmentService — the single authority for attachment lifecycle. The UI never
 // touches IndexedDB, OPFS, Blob, objectURL, or base64 directly.
 import { newStableId, type Attachment, type PdfAttachmentSource, type StableId } from './types'
-import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, listAllAttachmentRows, type StoredAttachmentRow } from '../storage/storage'
+import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, listAllAttachmentRows, listConversations, type StoredAttachmentRow } from '../storage/storage'
+import { idbScan, idbGetAll, idbRunTxn } from '../storage/idb'
 import { persistBinary, readBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
 
 export type AttachmentErrorKind = 'unsupported-format' | 'read-failed' | 'missing-attachment' | 'image-too-large' | 'vision-unsupported'
@@ -156,3 +157,47 @@ export async function deleteAttachment(id: StableId): Promise<void> {
   if (row && row.binary && row.binary.storage === 'opfs') { try { await deleteBinary(row.binary) } catch { /* orphan */ } }
 }
 export function releaseAllPreviews(): void { for (const [id, e] of urlRegistry) { URL.revokeObjectURL(e.url); urlRegistry.delete(id) } }
+
+/**
+ * Conservative attachment graph-reachability cleanup. Live attachment references are
+ * those reachable from: conversation MESSAGES, or persisted DRAFTS. Attachment rows not
+ * reachable from either graph AND older than `graceMs` (24h default) are deleted with
+ * their binary. Never touches anything younger (in-flight/staged data), never enumerates
+ * another app/origin directory (deleteBinary only removes this app's own namespace).
+ * Best-effort: never throws; only reports the count of removed orphans.
+ */
+export async function cleanupOrphanAttachments(graceMs = 24 * 60 * 60 * 1000): Promise<{ removed: number }> {
+  try {
+    // Live set = all message images + all persisted draft imageIds.
+    const live = new Set<string>()
+    for (const conv of await listConversations()) {
+      for (const m of (conv.messages || [])) { for (const img of (m.images || [])) live.add(img) }
+    }
+    const draftRows = await idbGetAll('settings')
+    for (const row of draftRows) {
+      if (typeof row.key === 'string' && row.key.indexOf('draft:') === 0) {
+        const val = row.value
+        if (val && Array.isArray(val.imageIds)) for (const img of val.imageIds) live.add(img)
+      }
+    }
+    const cutoff = Date.now() - graceMs
+    let removed = 0
+    // idbScan walks the attachments store one row at a time; collect deletes, then batch.
+    const toDelete: string[] = []
+    await idbScan('attachments', (row: StoredAttachmentRow) => {
+      if (!row || live.has(row.id)) return
+      const created = row.meta && typeof row.meta.createdAt === 'number' ? row.meta.createdAt : 0
+      if (created >= cutoff) return // too new — likely in-flight/staged
+      toDelete.push(row.id)
+    })
+    for (const id of toDelete) {
+      try {
+        const rowr = await getAttachmentRow(id)
+        await deleteAttachment(id)
+        if (rowr && rowr.binary && rowr.binary.storage === 'opfs') { try { await deleteBinary(rowr.binary) } catch { /* orphan */ } }
+        removed++
+      } catch { /* best-effort, skip */ }
+    }
+    return { removed }
+  } catch { return { removed: 0 } }
+}

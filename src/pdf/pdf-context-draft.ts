@@ -4,6 +4,7 @@
 //   (addDraftImages failure -> rollback the just-created attachments, no orphans).
 import { getDraft, addDraftImages } from '../engine/draft-store'
 import { saveGeneratedImages, deleteAttachment, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
+import { getConversation } from '../storage/storage'
 import { newStableId } from '../engine/types'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult } from './pdf-types'
 
@@ -21,6 +22,11 @@ export async function addPdfContextToDraft(conversationId: string, payload: PdfA
     const newBytes = payload.pages.reduce((s, p) => s + p.blob.size, 0)
     if (wouldExceedInlineBudget(existingBytes, newBytes)) {
       return { ok: false, count: 0, error: '当前消息中的图片内容已经较多。加入这一 PDF 范围后可能超过接口请求大小限制。请删除部分图片或减少 PDF 页面后重试。' }
+    }
+    // Verify the target conversation still exists BEFORE committing metadata. Never allow
+    // getDraft on a deleted conversation to silently create a durable orphan attachment graph.
+    if (!(await getConversation(conversationId))) {
+      return { ok: false, count: 0, error: '目标会话已不存在，无法加入。' }
     }
     const groupId = newStableId()
     const inputs = payload.pages.map(p => ({
