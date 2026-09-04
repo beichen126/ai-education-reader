@@ -59,26 +59,32 @@ export function adapterFor(ref: ChatThreadRef): ChatThreadAdapter {
  * Coordinates with the existing sessions status so Main / Branch / Artifact can never
  * generate simultaneously. A new generation aborts + replaces the previous one.
  */
-type ActiveGeneration = { ref: ChatThreadRef; controller: AbortController }
+type ActiveGeneration = { key: string; controller: AbortController }
+/**
+ * ONE active model generation globally, keyed by a string identity so chat threads and
+ * artifacts share the same lock (Main / Branch / Artifact can never generate simultaneously).
+ */
 export const globalGenerationLock: {
   active: ActiveGeneration | null
-  tryAcquire(ref: ChatThreadRef, controller: AbortController): boolean
-  release(ref: ChatThreadRef): void
+  tryAcquire(key: string, controller: AbortController): boolean
+  release(key: string): void
   cancelAll(): void
   isBusy: boolean
 } = {
   active: null,
-  tryAcquire(ref: ChatThreadRef, controller: AbortController): boolean {
+  tryAcquire(key: string, controller: AbortController): boolean {
     const busy = getSessionsStatus() === 'sending' || getSessionsStatus() === 'streaming'
     if (busy) return false
-    if (this.active) { return this.active.ref === ref }
-    this.active = { ref, controller }
+    if (this.active) { return this.active.key === key }
+    this.active = { key, controller }
     return true
   },
-  release(ref: ChatThreadRef): void { if (this.active && this.active.ref === ref) this.active = null },
+  release(key: string): void { if (this.active && this.active.key === key) this.active = null },
   cancelAll(): void { if (this.active) { try { this.active.controller.abort() } catch { /* ignore */ } this.active = null } },
   get isBusy(): boolean { return !!this.active || getSessionsStatus() === 'sending' || getSessionsStatus() === 'streaming' },
 };
+/** Generation key helper: chat thread identity. */
+export function threadGenKey(ref: ChatThreadRef): string { return ref.type === 'root' ? 'chat:root:' + ref.conversationId : 'chat:branch:' + ref.conversationId + ':' + ref.branchId }
 
 /** Save a branch's assistant message. Never resurrects a deleted branch. */
 export async function appendBranchAssistantMessage(branchId: StableId, message: Message): Promise<boolean> {
