@@ -4,13 +4,14 @@ import { renderToString as katexRenderString } from 'katex'
 import { parseMarkdown } from './parse'
 import 'katex/dist/katex.min.css'
 import { blockIdOf, tableIdOf, mathIdOf, mathKindOf, startOf, endOf } from './block-layer'
+import { sanitizeMarkdownHref, isExternalHref } from './link-security'
 import type { Annotation } from '../annotations/annotation-types'
 import css from './markdown.module.css'
 import type { Root } from 'mdast'
 
 type Cur = { v: number }
 type RenderCtx = { messageId: string; annotations?: Annotation[]; onMathAction?: (mathId: string, kind: 'inline' | 'block') => void }
-function kathRender(tex: string, display: boolean): string { try { return katexRenderString(tex, { displayMode: display, throwOnError: false }) } catch { return tex } }
+function kathRender(tex: string, display: boolean): string { try { return katexRenderString(tex, { displayMode: display, throwOnError: false, trust: false }) } catch { return tex } }
 
 function isMathHl(annotations: Annotation[] | undefined, mathId: string): boolean { return !!(annotations && annotations.some((a: any) => a.target && a.target.type === 'math' && a.target.mathId === mathId)) }
 
@@ -26,7 +27,12 @@ function inline(node: any, cur: Cur, ctx: RenderCtx): ReactNode {
     }
     case 'strong': return <strong>{node.children ? node.children.map((c: any) => inline(c, cur, ctx)) : ''}</strong>
     case 'emphasis': return <em>{node.children ? node.children.map((c: any) => inline(c, cur, ctx)) : ''}</em>
-    case 'link': return <a href={node.url || '#'}>{node.children ? node.children.map((c: any) => inline(c, cur, ctx)) : ''}</a>
+    case 'link': {
+      const safe = sanitizeMarkdownHref(typeof node.url === 'string' ? node.url : '')
+      const children = node.children ? node.children.map((c: any) => inline(c, cur, ctx)) : ''
+      if (safe === null) return <span>{children}</span>
+      return <a href={safe} {...(isExternalHref(safe) ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>{children}</a>
+    }
     case 'inlineMath': {
       const st = cur.v; cur.v += 1
       const mathId = mathIdOf(ctx.messageId, 'inline', startOf(node), endOf(node))
