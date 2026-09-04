@@ -44,7 +44,7 @@ await idbClearAll()
 await createDocument({ id: 'doc1', fileName: '教材.pdf', mimeType: 'application/pdf', fileSize: 100, pageCount: 10, sourceBlob: new Blob([new Uint8Array(100).fill(7)], { type: 'application/pdf' }), importSource: { kind: 'pdf', originalFileName: '教材.pdf' } })
 await restoreBackup(parseAndValidate(v2backup())) // seed a second state? no — just parse+restore below
 const backup = await buildBackup()
-assert(backup.version === BACKUP_VERSION && BACKUP_VERSION === 2, 'exported backup version = 2')
+assert(backup.version === BACKUP_VERSION && BACKUP_VERSION === 3, 'exported backup version = 3')
 assert(backup.documents.length === 1, 'V2 export includes 1 document (got ' + backup.documents.length + ')')
 const bd = backup.documents[0]
 assert(bd.meta.id === 'doc1' && bd.meta.kind === 'pdf' && bd.meta.pageCount === 10, 'exported document metadata correct')
