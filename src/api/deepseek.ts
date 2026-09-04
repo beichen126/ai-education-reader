@@ -92,14 +92,54 @@ export async function testConnection(args: { apiKey: string; baseUrl: string }):
 }
 // ---- SSE streaming (browser-native fetch + ReadableStream; no third-party SSE lib) ----
 
-/** Incremental SSE parser that tolerates chunks cutting anywhere (mid UTF-8 / mid JSON / mid 'data:' / mid CRLF). */
+/**
+ * Incremental SSE parser that tolerates chunks cutting anywhere: mid UTF-8,
+ * mid JSON, mid 'data:', and mid CRLF. Framing state is preserved across chunks.
+ *
+ * Because a CRLF line ending may be split exactly between two network chunks
+ * (e.g. chunk A ends with '\r' and chunk B starts with '\n'), we never normalize
+ * a chunk in isolation. Instead we buffer raw text and hold a trailing lone '\r'
+ * until we can see whether the next chunk supplies the '\n' (a bare-CR ending is
+ * still recognized). This makes event boundaries correct regardless of framing.
+ */
 export class SSEParser {
   private buf = ''
+  private pendingCR = false
   feed(text: string): string[] {
-    this.buf += text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+    if (this.pendingCR) {
+      // A held trailing '\r' is a line ending. Normalize it to '\n' and keep the FULL
+      // incoming text: if that text starts with '\n' it is the second newline of a CRLF
+      // split across chunks (so the blank separator is preserved); otherwise the held CR
+      // was a bare-CR line ending and the text starts a new line.
+      this.buf += '\n' + text
+      this.pendingCR = false
+    } else {
+      this.buf += text
+    }
     return this.drain()
   }
+  private consumeNewlines(): void {
+    // Collapse '\n', '\r\n' and bare '\r' into a single '\n', keeping a trailing lone
+    // '\r' pending in case the next chunk supplies the '\n' (CRLF split across chunks).
+    let out = ''
+    let i = 0
+    const n = this.buf.length
+    while (i < n) {
+      const ch = this.buf[i]
+      if (ch === '\r') {
+        if (i + 1 >= n) { this.pendingCR = true; break }
+        out += '\n'
+        if (this.buf[i + 1] === '\n') i++
+        i++
+        continue
+      }
+      if (ch === '\n') { out += '\n'; i++; continue }
+      out += ch; i++
+    }
+    this.buf = out
+  }
   private drain(): string[] {
+    this.consumeNewlines()
     const events: string[] = []
     for (;;) {
       const sep = this.buf.indexOf('\n\n')
@@ -113,6 +153,7 @@ export class SSEParser {
   }
   /** Flush any remaining trailing event when the stream ends (no trailing blank line). */
   finish(): string[] {
+    if (this.pendingCR) { this.buf += '\n'; this.pendingCR = false }
     const events = this.drain()
     const trailing = this.buf.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trimStart()).join('\n')
     this.buf = ''
@@ -127,7 +168,7 @@ export interface StreamTextChatResult { content: string; finishReason?: string }
 /** Extract the content delta from one SSE event payload (DeepSeek / OpenAI shape). */
 function deltaOf(data: string): { delta: string; finishReason?: string } {
   let evt: any
-  try { evt = JSON.parse(data) } catch { return { delta: '' } }
+  try { evt = JSON.parse(data) } catch { throw new DeepSeekError('bad-json', 'stream chunk is not valid JSON') }
   const ch = evt && evt.choices && evt.choices[0] ? evt.choices[0] : undefined
   const d = ch && ch.delta && typeof ch.delta.content === 'string' ? ch.delta.content : ''
   const fr = ch && ch.finish_reason ? ch.finish_reason : undefined
@@ -189,8 +230,10 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
     }
   } catch (e) {
     if (signal && signal.aborted) throw new DeepSeekError('aborted', 'stream aborted')
+    if (e instanceof DeepSeekError) throw e
     throw new DeepSeekError('network-or-cors', 'stream failed')
   }
+  if (!content) throw new DeepSeekError('no-content', 'no assistant content in stream')
   return { content, finishReason }
 }
 // ---- multimodal helpers (used by the store's message conversion; UI never builds this) ----
