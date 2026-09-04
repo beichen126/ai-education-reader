@@ -32,7 +32,7 @@ export function BranchMenu({ conversationId, branchId, messageId, onBranch, onAr
     window.addEventListener('mousedown', onDown)
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mousedown', onDown) }
   }, [onClose])
-  return (<div ref={ref} className={css.menu} role="menu" style={{ position: 'absolute', zIndex: 30 }} aria-label="消息操作">
+  return (<div ref={ref} className={css.menu} role="menu" style={{ position: 'absolute', top: '100%', left: 0, right: 'auto', zIndex: 30 }} aria-label="消息操作">
     <button type="button" className={css.menuItem} role="menuitem" onClick={() => { onBranch(messageId); onClose() }}>从这里分支</button>
     <div className={css.sep} aria-hidden="true" style={{ borderTop: '1px solid var(--dsw-alias-border-l2)', margin: '0.25rem 0' }} />
     {ARTIFACT_ACTIONS.map((a) => (<button key={a.kind} type="button" className={css.menuItem} role="menuitem" onClick={() => { onArtifact(a.kind, messageId); onClose() }}>{a.label}</button>))}
