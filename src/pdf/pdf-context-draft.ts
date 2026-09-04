@@ -2,8 +2,8 @@
 // both the Composer PdfPanel and the Document Reader:
 //   budget guard -> ONE groupId -> saveGeneratedImages -> addDraftImages
 //   (addDraftImages failure -> rollback the just-created attachments, no orphans).
-import { getDraft, addDraftImages } from '../engine/draft-store'
-import { saveGeneratedImages, deleteAttachment, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
+import { getDraft, addDraftImages, updateDraftMemory } from '../engine/draft-store'
+import { saveGeneratedImagesAndDraft, saveGeneratedImages, deleteAttachment, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
 import { getConversation } from '../storage/storage'
 import { newStableId } from '../engine/types'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult } from './pdf-types'
@@ -41,14 +41,15 @@ export async function addPdfContextToDraft(conversationId: string, payload: PdfA
         selection: payload.selection,
       },
     }))
-    const atts = await saveGeneratedImages(inputs)
-    try {
-      (deps.addDraftImages ?? addDraftImages)(conversationId, atts.map(a => a.id))
-    } catch (e) {
-      // Roll back this batch so a failed attach step never leaves orphan blobs.
-      for (const a of atts) { try { await deleteAttachment(a.id) } catch { /* ignore */ } }
-      throw e
-    }
+    // ATOMIC ownership: stage OPFS binaries, then ONE IndexedDB txn commits the attachment
+    // metadata rows AND the draft:<conversationId> row together (P0-4). Staged OPFS binaries
+    // are cleaned on any failure. No intermediate durable state leaves attachment metadata
+    // committed without the draft referencing it (or vice versa).
+    const existing = getDraft(conversationId)
+    const atts = await saveGeneratedImagesAndDraft(inputs, { conversationId, text: existing.text, existingImageIds: existing.imageIds })
+    // The durable draft row was already committed in the same txn; update memory WITHOUT a
+    // second DB mutation (no duplicate persist).
+    updateDraftMemory(conversationId, { text: existing.text, imageIds: [...new Set([...existing.imageIds, ...atts.map(a => a.id)])] })
     return { ok: true, count: atts.length, error: '' }
   } catch (e) {
     return { ok: false, count: 0, error: '无法将 PDF 页面加入对话。' }

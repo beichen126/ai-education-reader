@@ -55,6 +55,12 @@ export function addDraftImages(id: string, ids: StableId[]): void {
   put(id, { text: cur.text, imageIds: [...new Set([...cur.imageIds, ...ids])] })
   void persistDraft(id)
 }
+/** Update the in-memory draft object without any database write. Used when the durable
+ *  draft row was already committed atomically (e.g. PDF Context commit) — must NOT issue a
+ *  second DB mutation. */
+export function updateDraftMemory(id: string, d: Draft): void {
+  put(id, d)
+}
 export function removeDraftImage(id: string, img: StableId): void {
   const cur = getDraft(id)
   put(id, { text: cur.text, imageIds: cur.imageIds.filter(x => x !== img) })

@@ -3,7 +3,7 @@ import type { Annotation } from '../annotations/annotation-types'
 import { ANNOTATION_VERSION } from '../annotations/annotation-types'
 import type { Attachment } from '../engine/types'
 import { persistBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
-import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupV1, type BackupV2 } from './backup-types'
+import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupV1, type BackupV2, type BackupV3, type BackupDraft, type BackupAppearance } from './backup-types'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -20,6 +20,7 @@ const VALID_ANCHOR_SCOPES = new Set(['block', 'table-cell'])
 const VALID_CHAPTER_SOURCES = new Set(['native', 'ai-toc', 'manual'])
 const VALID_IMPORT_KINDS = new Set(['pdf', 'ppt', 'pptx'])
 const VALID_DOC_CHAPTER_SOURCES = new Set(['none', 'native', 'ai-toc', 'manual', 'mixed'])
+const VALID_APPEARANCE = new Set(['system', 'light', 'dark'])
 
 function isBase64(data: unknown): boolean {
   if (!isStr(data) || data.length === 0 || data.length % 4 !== 0) return false
@@ -73,7 +74,8 @@ function validateDocuments(input: Record<string, any>): void {
 export function parseAndValidate(input: unknown): Backup {
   if (!isObj(input)) throw new BackupError('不是一个有效的备份对象')
   if (input.format !== BACKUP_FORMAT && input.format !== LEGACY_BACKUP_FORMAT) throw new BackupError('格式不匹配：不是本产品的备份文件（支持 ' + BACKUP_FORMAT + ' 与 ' + LEGACY_BACKUP_FORMAT + '）')
-  if (input.version !== 1 && input.version !== 2) throw new BackupError('版本不支持：当前仅支持 v1 / v2')
+  if (input.version !== 1 && input.version !== 2 && input.version !== 3) throw new BackupError('版本不支持：当前仅支持 v1 / v2 / v3')
+  const isV3 = input.version === 3
   if (!Array.isArray(input.conversations)) throw new BackupError('缺少 conversations 数组')
   if (!Array.isArray(input.annotations)) throw new BackupError('缺少 annotations 数组')
   if (!Array.isArray(input.attachments)) throw new BackupError('缺少 attachments 数组')
@@ -151,6 +153,26 @@ export function parseAndValidate(input: unknown): Backup {
       }
     }
   }
+  // V3: validate persisted Draft user data + appearance (referenced attachments must exist).
+  if (isV3) {
+    const app = (input as BackupV3).appearance
+    if (!VALID_APPEARANCE.has(app)) throw new BackupError('appearance 必须是 system / light / dark')
+    const drafts = (input as BackupV3).drafts
+    if (!Array.isArray(drafts)) throw new BackupError('缺少 drafts 数组')
+    const draftIds = new Set<string>()
+    for (const d of drafts) {
+      if (!isObj(d)) throw new BackupError('draft 对象非法')
+      if (!isNonEmptyStr(d.conversationId)) throw new BackupError('draft.conversationId 非法')
+      if (draftIds.has(d.conversationId)) throw new BackupError('draft conversationId 重复：' + d.conversationId.slice(0, 8))
+      draftIds.add(d.conversationId)
+      if (!convIds.has(d.conversationId)) throw new BackupError('draft 引用了不存在的会话：' + d.conversationId.slice(0, 8))
+      if (!isStr(d.text)) throw new BackupError('draft.text 必须是字符串')
+      if (!Array.isArray(d.imageIds) || !d.imageIds.every(isStr)) throw new BackupError('draft.imageIds 必须是字符串数组')
+      for (const img of d.imageIds) {
+        if (!attIds.has(img)) throw new BackupError('draft 引用了不存在的附件：' + String(img).slice(0, 8))
+      }
+    }
+  }
 
   validateDocuments(input)
   return input as Backup
@@ -195,6 +217,10 @@ export async function restoreBackup(backup: Backup): Promise<void> {
       { key: 'customSystemPrompt', value: backup.settings?.customSystemPrompt || '' },
       { key: 'customSystemPromptEnabled', value: backup.settings?.customSystemPromptEnabled ? 'true' : 'false' },
       { key: 'apiKey', value: '' },
+      // V3: restore the appearance + every persisted Draft row (unsent user data). The API
+      // Key is NEVER restored (always empty). Draft rows re-create the unsent composer state.
+      { key: 'appearance', value: (backup as BackupV3).appearance || 'system' },
+      ...((backup as BackupV3).drafts || []).map((d: BackupDraft) => ({ key: 'draft:' + d.conversationId, value: { version: 1, text: d.text, imageIds: d.imageIds } })),
     ];
     // D. Snapshot OLD opfs refs for post-success cleanup.
     const oldDocs = await oldDocumentRefs();

@@ -32,23 +32,27 @@ export function isSupportedImage(file: { type: string; size: number }): boolean 
 // goes inline in IndexedDB), so a transient OPFS failure never fails the upload and
 // there is never a mix of partial-OPFS + partial-IDB for a single batch. Only a
 // Quota / IndexedDB-write failure surfaces as an error (after cleaning staged OPFS).
+async function stageAttachmentRows(metas: Attachment[], blobs: Blob[]): Promise<StoredAttachmentRow[]> {
+  if (metas.length === 0) return []
+  for (const m of metas) {
+    if (!(m && typeof m.id === 'string')) throw new AttachmentError('read-failed', 'invalid attachment meta')
+  }
+  const written: StoredBinary[] = []
+  const needIdbFallback = await persistAllOpfs('attachments', metas, blobs, written)
+  let refs: StoredBinary[]
+  if (!needIdbFallback) refs = written
+  else {
+    for (const w of written) { try { await deleteBinary(w) } catch { /* orphan */ } }
+    refs = blobs.map(b => ({ storage: 'idb', blob: b, size: b.size, mimeType: b.type || 'application/octet-stream' }))
+  }
+  return metas.map((m, i) => ({ id: m.id, meta: m, binary: refs[i], recordVersion: 2 }))
+}
+
 async function writeBatch(namespace: 'attachments', metas: Attachment[], blobs: Blob[]): Promise<StoredAttachmentRow[]> {
   if (metas.length === 0) return []
-  const written: StoredBinary[] = []
-  const needIdbFallback = await persistAllOpfs(namespace, metas, blobs, written)
-  let refs: StoredBinary[]
-  if (!needIdbFallback) {
-    refs = written
-  } else {
-    // Clean up every staged OPFS file, then rebuild the ENTIRE batch as inline IDB refs.
-    for (const w of written) { try { await deleteBinary(w) } catch { /* orphan */ } }
-    refs = []
-    for (const b of blobs) refs.push({ storage: 'idb', blob: b, size: b.size, mimeType: b.type || 'application/octet-stream' })
-  }
-  const rows: StoredAttachmentRow[] = metas.map((m, i) => ({ id: m.id, meta: m, binary: refs[i], recordVersion: 2 }))
-  // ONE metadata transaction. A failure here is a genuine storage error (no partial).
+  const rows = await stageAttachmentRows(metas, blobs)
   try { await saveAttachmentRows(rows) }
-  catch (e) { for (const r of refs) { if (r.storage === 'opfs') { try { await deleteBinary(r) } catch { /* orphan */ } } } throw e }
+  catch (e) { for (const rrow of rows) { if (rrow.binary && rrow.binary.storage === 'opfs') { try { await deleteBinary(rrow.binary) } catch { /* orphan */ } } } throw e }
   return rows
 }
 
@@ -82,6 +86,54 @@ export async function saveFiles(files: File[]): Promise<Attachment[]> {
 }
 
 export type GeneratedImageInput = { blob: Blob; name: string; source?: PdfAttachmentSource }
+
+export type DraftOwnership = { conversationId: string; text: string; existingImageIds: string[] }
+
+/**
+ * Commit a set of generated attachment binaries PLUS their Draft ownership ATOMICALLY.
+ * Binary bytes are staged to OPFS first (never in the IDB txn), then ONE readwrite
+ * transaction across ['attachments','settings'] commits the attachment metadata rows AND
+ * the draft:<conversationId> row together (resolve on transaction.oncomplete). A failure
+ * commits NEITHER; staged OPFS binaries are deleted best-effort. This is the true
+ * write-first/stage/commit/cleanup shape for PDF Context / Document->Context / image uploads.
+ */
+export type DraftCommitDeps = { /** Test seam: force the metadata transaction to abort (inspect IDB immediately after). */
+  failTxn?: boolean }
+export async function saveGeneratedImagesAndDraft(images: GeneratedImageInput[], draft: DraftOwnership, deps: DraftCommitDeps = {}): Promise<Attachment[]> {
+  const now = Date.now()
+  const metas: Attachment[] = []
+  const blobs: Blob[] = []
+  for (const g of images) {
+    if (!(g.blob instanceof Blob) || g.blob.size <= 0) throw new AttachmentError('read-failed', 'empty blob')
+    if (!SUPPORTED_MIME.has(g.blob.type)) throw new AttachmentError('unsupported-format', 'unsupported image')
+    if (g.blob.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large')
+    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}) })
+    blobs.push(g.blob)
+  }
+  const rows = await stageAttachmentRows(metas, blobs)
+  try {
+    await idbRunTxn(['attachments', 'settings'], (txn) => {
+      // Test seam: abort the metadata transaction (used by failure-injection tests to prove
+      // neither attachment rows nor draft refs commit, and staged OPFS binaries are cleaned).
+      if (deps.failTxn) { txn.abort(); return }
+      const aos = txn.objectStore('attachments')
+      for (const row of rows) aos.put(row)
+      const sos = txn.objectStore('settings')
+      const newIds = rows.map(r => r.id)
+      const imageIds = [...new Set([...(draft.existingImageIds || []), ...newIds])]
+      if (draft.text !== '' || imageIds.length > 0) {
+        sos.put({ key: 'draft:' + draft.conversationId, value: { version: 1, text: draft.text, imageIds } })
+      } else {
+        sos.delete('draft:' + draft.conversationId)
+      }
+    })
+  } catch (e) {
+    // Best-effort cleanup of staged OPFS binaries after a failed metadata transaction.
+    for (const row of rows) { if (row.binary && row.binary.storage === 'opfs') { try { await deleteBinary(row.binary) } catch { /* orphan */ } } }
+    throw e
+  }
+  return rows.map(r => r.meta)
+}
 
 export async function saveGeneratedImages(images: GeneratedImageInput[]): Promise<Attachment[]> {
   if (!Array.isArray(images) || images.length === 0) throw new AttachmentError('read-failed', 'no generated images');
