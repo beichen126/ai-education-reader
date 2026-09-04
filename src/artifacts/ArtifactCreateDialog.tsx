@@ -9,6 +9,7 @@ type Props = {
   onSubmit: (input: { kind: ArtifactKind; prompt: string; presetId?: string }) => void
   onCancel: () => void
   busy?: boolean
+  initialKind?: ArtifactKind
 }
 
 /**
@@ -16,9 +17,11 @@ type Props = {
  * auto-preview. The custom kind requires a non-empty prompt. Default prompts come from
  * the registry (never hard-coded in JSX); the user may edit or fully replace them.
  */
-export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy }: Props) {
-  const [kind, setKind] = useState<ArtifactKind>('note')
-  const [prompt, setPrompt] = useState('')
+export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, initialKind }: Props) {
+  // Initialize the mode + prompt from the menu action's kind (e.g. 'quiz' via 生成题目),
+  // defaulting to 'note'. The prompt is user-editable from here.
+  const [kind, setKind] = useState<ArtifactKind>(initialKind ?? 'note')
+  const [prompt, setPrompt] = useState(TRANSFORMATION_PRESETS.find((p) => p.kind === (initialKind ?? 'note'))?.defaultPrompt ?? '')
   const [error, setError] = useState<string | undefined>(undefined)
   const preset = TRANSFORMATION_PRESETS.find((p) => p.kind === kind)
 

@@ -39,8 +39,11 @@ export async function seedAndBoot(page, { convs = [], settings = {} }) {
  * chat completions endpoint is intercepted. `deltas` is an array of strings.
  */
 const routeHits = { completions: 0 }
+const lastRequestBodies = []
 export function getRouteHits() { return { ...routeHits } }
-export function installMockModel(page, deltas, finishReason = 'stop') {
+export function getLastRequestBody() { return lastRequestBodies[lastRequestBodies.length - 1] || null }
+export function lastRequestBodiesSnapshot() { return lastRequestBodies.slice() }
+export async function installMockModel(page, deltas, finishReason = 'stop') {
   const events = deltas.map((d) => 'data: ' + JSON.stringify({ choices: [{ delta: { content: d }, finish_reason: null }] }) + '\n\n').join('')
   const done = 'data: [DONE]\n\n'
   const CORS = {
@@ -48,6 +51,9 @@ export function installMockModel(page, deltas, finishReason = 'stop') {
     'access-control-allow-methods': 'GET, POST, OPTIONS',
     'access-control-allow-headers': '*',
   }
+  const full = events + done
+  const nonStreamContent = JSON.stringify({ id: 'mock', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: deltas.join('') }, finish_reason: 'stop' }], usage: { total_tokens: 1 } })
+  try { await page.unroute('**/chat/completions') } catch {}
   page.route('**/chat/completions', (route) => {
     routeHits.completions++
     const method = route.request().method()
@@ -55,7 +61,13 @@ export function installMockModel(page, deltas, finishReason = 'stop') {
       route.fulfill({ status: 204, headers: CORS, body: '' })
       return
     }
-    route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', ...CORS }, body: events + done })
+    let body = ''
+    let req = null
+    try { req = route.request().postDataJSON(); lastRequestBodies.push(req) } catch {}
+    const streaming = req && (req.stream === true || req.stream === 'true')
+    if (streaming) { body = full; route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', ...CORS }, body }); return }
+    // Non-streaming (artifact generation): a plain chat completion JSON.
+    route.fulfill({ status: 200, headers: { 'content-type': 'application/json', ...CORS }, body: nonStreamContent })
   })
   // Also answer the API base's CORS preflight for /models (testConnection occasionally runs).
   page.route('**/models', (route) => {
