@@ -95,7 +95,7 @@ assert(docs[0].sourceStorage === 'opfs', 'A: original Document OPFS source ref u
 
 // ========== FLOW B: Composer unscoped -> library list -> choose document -> parent chapter ==========
 await closeLibrary()
-await page.locator('[data-testid="composer-attach-pdf"]').first().click()
+await page.locator('[data-testid="composer-attach"]').first().click()
 await page.locator('[data-testid="composer-from-library"]').click()
 await page.locator('[data-testid="doc-context-picker"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(await page.locator('[data-testid="doc-context-doclist"]').count() === 1, 'B: unscoped picker shows the document list')

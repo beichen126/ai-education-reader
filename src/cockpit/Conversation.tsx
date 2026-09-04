@@ -16,7 +16,7 @@ import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult, type RenderedPdfPage } from '../pdf/pdf-types'
 import { newStableId } from '../engine/types'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
-import { IconPhoto16, IconDocument16 } from './composer-icons'
+import { IconPhoto16 } from './composer-icons'
 import { setComposerTriggers, triggerComposerImages, triggerComposerPdf } from '../engine/composer-triggers'
 import { DocumentContextPicker } from '../documents/DocumentContextPicker'
 import { executeDocumentContext } from '../documents/document-context-service'
@@ -163,7 +163,7 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
   const [openId, setOpenId] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | undefined>(undefined)
   const [pdfPanel, setPdfPanel] = useState<{ open: boolean; file?: File }>({ open: false })
-  const [pdfMenuOpen, setPdfMenuOpen] = useState(false)
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false)
   const [libPickerOpen, setLibPickerOpen] = useState(false)
   const [libBusy, setLibBusy] = useState<{ done: number; total: number } | null>(null)
   const [libMsg, setLibMsg] = useState<string | null>(null)
@@ -171,6 +171,8 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
   const libCancelledRef = useRef(false)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const pdfInputRef = useRef<HTMLInputElement | null>(null)
+  const attachBtnRef = useRef<HTMLButtonElement | null>(null)
+  const attachMenuRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     setComposerTriggers({ openImages: () => imageInputRef.current?.click(), openPdf: () => pdfInputRef.current?.click() })
     return () => { setComposerTriggers(null); libCancelledRef.current = true; libGenRef.current++ }
@@ -210,11 +212,25 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
   useEffect(() => {
     if (prevSession.current !== sessionId) {
       setOpenId(null); setPhotoError(undefined)
+      setAttachMenuOpen(false)
       // Block 0.4: a conversation switch aborts any in-flight library Context operation.
       libCancelledRef.current = true; libGenRef.current++
       prevSession.current = sessionId
     }
   }, [sessionId])
+  // Close the unified attachment menu on Escape or a click outside (A2 popover interaction).
+  useEffect(() => {
+    if (!attachMenuOpen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setAttachMenuOpen(false); attachBtnRef.current?.focus() } }
+    const onDown = (e: MouseEvent) => {
+      const el = e.target as Node | null
+      const inside = (el && attachBtnRef.current && attachBtnRef.current.contains(el)) || (el && attachMenuRef.current && attachMenuRef.current.contains(el))
+      if (!inside) setAttachMenuOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('mousedown', onDown)
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mousedown', onDown) }
+  }, [attachMenuOpen])
   const text = draft.text
   const picIds = draft.imageIds
   const metas = useAttachmentMetas(picIds)
@@ -270,19 +286,21 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
         </div>
       )}
       <div className={css.composerBar}>
-        <label className={css.attachBtn} role="button" aria-label="添加图片" title="添加图片" data-testid="composer-attach-image">
-          <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
+        {/* ONE unified attachment trigger (A2). Clicking opens a compact menu dispatching to
+            the existing image / local-PDF / library actions. The hidden file inputs stay;
+            the trigger merely dispatches into them. No domain merge. */}
+        <button type="button" ref={attachBtnRef} className={css.attachBtn} role="button" aria-label="添加内容" title="添加内容" data-testid="composer-attach" aria-haspopup="menu" aria-expanded={attachMenuOpen} onClick={() => setAttachMenuOpen(v => !v)}>
           <IconPhoto16 />
-        </label>
-        <button type="button" className={css.attachBtn} role="button" aria-label="添加学习资料" title="添加学习资料" data-testid="composer-attach-pdf" onClick={() => setPdfMenuOpen(v => !v)}>
-          <IconDocument16 />
         </button>
-        {pdfMenuOpen && (
-          <div className={css.addFileMenu} data-testid="composer-add-file-menu">
-            <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setPdfMenuOpen(false); setLibPickerOpen(true) }}>📚 从文件资料库选择</button>
-            <button type="button" className={css.menuItem} data-testid="composer-from-device" onClick={() => { setPdfMenuOpen(false); pdfInputRef.current?.click() }}>📄 从设备打开 PDF</button>
+        {attachMenuOpen && (
+          <div className={css.addFileMenu} data-testid="composer-add-file-menu" ref={attachMenuRef}>
+            <div className={css.menuTitle}>添加内容</div>
+            <button type="button" className={css.menuItem} data-testid="composer-add-image" onClick={() => { setAttachMenuOpen(false); imageInputRef.current?.click() }}>🖼 图片</button>
+            <button type="button" className={css.menuItem} data-testid="composer-add-pdf" onClick={() => { setAttachMenuOpen(false); pdfInputRef.current?.click() }}>📄 打开本地 PDF</button>
+            <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}>📚 从文件资料库选择</button>
           </div>
         )}
+        <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
         <input ref={pdfInputRef} type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
         <textarea className={css.composerText} value={text} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
           onChange={e => setDraftText(key, e.target.value)}

@@ -36,8 +36,8 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   if (collapsed) {
     return (
       <div className={css.sideRail} style={{ width }}>
-        <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label="新建会话" title="新建会话" onClick={() => sessionsActions.newChat()}><IconNewChatOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-history" aria-label="历史会话" title="历史会话" onClick={openHistory}><IconClockOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label="新建会话" title="新建会话" onClick={() => sessionsActions.newChat()}><IconNewChatOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-images" aria-label="图片资料" title="图片资料" onClick={() => galleryActions.open(currentConv?.id, 0)}><IconPhoto16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-files" aria-label="本地文件" title="本地文件" onClick={() => documentUiActions.openLibrary()}><IconFolderOpenOutline16 /></button>
         <div className={css.railSpacer} />
