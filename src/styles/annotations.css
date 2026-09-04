@@ -4,6 +4,6 @@
    what actually paints them. Must stay in a globally-loaded stylesheet (NOT a
    CSS Module) so the ::highlight pseudo-element reaches the page. */
 ::highlight(study-highlight) {
-  background-color: #d9d9d9;
+  background-color: var(--dsw-specific-study-highlight, #d9d9d9);
   color: inherit;
 }

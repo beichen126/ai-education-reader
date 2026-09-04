@@ -18,12 +18,12 @@
 .tableScroll th, .tableScroll td { padding: 8px 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .tableScroll th { font-weight: 600; border-bottom: 1px solid var(--dsw-alias-border-l3); }
 .tableScroll { position: relative; }
-.studyTableHighlighted { background: #d9d9d9; }
-.studyTableHighlighted table { background: #d9d9d9; }
-.studyCellHighlighted { background: #d9d9d9; }
+.studyTableHighlighted { background: var(--dsw-specific-study-highlight, #d9d9d9); }
+.studyTableHighlighted table { background: var(--dsw-specific-study-highlight, #d9d9d9); }
+.studyCellHighlighted { background: var(--dsw-specific-study-highlight, #d9d9d9); }
 .tableAction { position: absolute; top: 4px; right: 4px; z-index: 2; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); width: 22px; height: 22px; line-height: 20px; text-align: center; border-radius: 6px; cursor: pointer; font-size: 14px; }
 .mathBlock { margin: 12px 0; display: flex; justify-content: center; overflow-x: auto; overflow-y: hidden; max-width: 100%; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
 .mathBlock .katex-display { margin: 0; }
 .mathInline { color: var(--dsw-alias-label-primary); }
-.studyMathHighlighted { background: #d9d9d9; }
-.studyMathHighlighted .katex, .studyMathHighlighted.katex { background-color: #d9d9d9; }
+.studyMathHighlighted { background: var(--dsw-specific-study-highlight, #d9d9d9); }
+.studyMathHighlighted .katex, .studyMathHighlighted.katex { background-color: var(--dsw-specific-study-highlight, #d9d9d9); }

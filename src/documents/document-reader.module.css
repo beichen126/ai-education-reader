@@ -1,4 +1,4 @@
-.overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 1500; display: flex; flex-direction: column; background: #fff; overflow: hidden; }
+.overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 1500; display: flex; flex-direction: column; background: var(--dsw-alias-bg-base); overflow: hidden; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .backBtn, .closeBtn { min-height: 36px; padding: 4px 12px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; border-radius: 8px; color: var(--dsw-alias-label-secondary); font-size: 13px; cursor: pointer; white-space: nowrap; }
 .closeBtn { color: var(--dsw-alias-label-primary); }
@@ -25,7 +25,7 @@
 .tocActionBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .tocAiArea { padding: 10px 8px 4px; border-top: 1px solid var(--dsw-alias-border-l2); }
 .tocRestoreMsg { padding: 8px; font-size: 12px; color: var(--dsw-alias-state-error-primary); }
-.restoreConfirm { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 30; width: min(420px, calc(100vw - 24px)); background: #fff; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.restoreConfirm { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 30; width: min(420px, calc(100vw - 24px)); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
 .restoreConfirmBox { display: flex; flex-direction: column; gap: 12px; }
 .restoreConfirmBtns { display: flex; justify-content: flex-end; gap: 8px; }
 .tocPrimary { min-height: 36px; padding: 6px 14px; border: none; border-radius: 8px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 13px; cursor: pointer; }
@@ -43,7 +43,7 @@
 .errorBox { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--dsw-alias-state-error-primary); font-size: 13px; }
 .ctxBtn { min-height: 36px; padding: 4px 14px; border: none; border-radius: 8px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 13px; cursor: pointer; white-space: nowrap; }
 .ctxBtn:disabled { opacity: 0.5; cursor: not-allowed; }
-.ctxMenu { position: absolute; top: 56px; right: 12px; z-index: 30; width: min(320px, calc(100vw - 24px)); background: #fff; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.ctxMenu { position: absolute; top: 56px; right: 12px; z-index: 30; width: min(320px, calc(100vw - 24px)); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 .ctxMenuTitle { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .menuItem { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 42px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; text-align: left; }
 .menuItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
@@ -55,7 +55,7 @@
 .ctxFormRow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .ctxFormRow label { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .ctxInput { width: 72px; min-height: 34px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 4px 6px; font-size: 13px; }
-.ctxConfirm { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 30; width: min(420px, calc(100vw - 24px)); background: #fff; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 16px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.ctxConfirm { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 30; width: min(420px, calc(100vw - 24px)); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 16px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .ctxConfirmBtns { display: flex; gap: 8px; justify-content: flex-end; }
 .ctxPrimary { min-height: 36px; padding: 6px 14px; border: none; border-radius: 8px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 13px; cursor: pointer; }
 .ctxSecondary { min-height: 36px; padding: 6px 14px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; border-radius: 8px; color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
@@ -69,7 +69,7 @@
 .pageInput { width: 72px; text-align: center; min-height: 38px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 4px 6px; font-size: 14px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
 .counterTotal { font-size: 13px; color: var(--dsw-alias-label-secondary); }
 @media (max-width: 1023px) {
-  .toc { position: fixed; left: 0; top: 57px; bottom: 58px; width: min(280px, 80vw); z-index: 20; background: #fff; border-right: 1px solid var(--dsw-alias-border-l2); transform: translateX(-100%); transition: transform 140ms ease-out; box-shadow: 0 4px 18px rgba(0,0,0,0.18); }
+  .toc { position: fixed; left: 0; top: 57px; bottom: 58px; width: min(280px, 80vw); z-index: 20; background: var(--dsw-alias-bg-base); border-right: 1px solid var(--dsw-alias-border-l2); transform: translateX(-100%); transition: transform 140ms ease-out; box-shadow: 0 4px 18px rgba(0,0,0,0.18); }
   .toc.tocOpen { transform: translateX(0); }
   .tocToggle { display: inline-block; }
 }

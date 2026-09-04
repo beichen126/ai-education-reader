@@ -215,6 +215,7 @@ body {
   --dsw-alias-markdown-inline-code: var(--dsw-static-neutral-bluish-100);
   --dsw-alias-markdown-placeholder: var(--dsw-static-neutral-bluish-60);
   --dsw-alias-markdown-tag: var(--dsw-static-neutral-bluish-75);
+  --dsw-specific-study-highlight: rgb(217, 217, 217);
   --dsw-alias-scrollbar-bg-l1: var(--dsw-static-neutral-200);
   --dsw-alias-scrollbar-bg-l2: var(--dsw-static-neutral-200);
   --dsw-alias-scrollbar-hover-l1: var(--dsw-static-neutral-300);
@@ -247,15 +248,15 @@ body {
 
 body[data-ds-dark-theme] {
   --dsw-alias-bg-base: var(--dsw-static-neutral-bluish-950);
-  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-875);
-  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-850);
-  --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-bg-layer-1: var(--dsw-static-neutral-bluish-900);
+  --dsw-alias-bg-layer-2: var(--dsw-static-neutral-bluish-875);
+  --dsw-alias-bg-layer-3: var(--dsw-static-neutral-bluish-850);
   --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.5);
   --dsw-alias-bg-mask-2: rgba(0, 0, 0, 0.2);
   --dsw-alias-bg-mask-3: rgba(0, 0, 0, 0.48);
   --dsw-alias-bg-mask-photo: rgba(0, 0, 0, 0.88);
   --dsw-alias-bg-mask-drop: rgba(39, 39, 48, 0.7);
-  --dsw-alias-bg-module-platform: var(--dsw-static-neutral-bluish-800);
+  --dsw-alias-bg-module-platform: var(--dsw-static-neutral-bluish-850);
   --dsw-alias-bg-multi-select: var(--dsw-static-neutral-850);
   --dsw-alias-bg-overlay: var(--dsw-static-neutral-bluish-700);
   --dsw-alias-bg-skeleton: rgba(255, 255, 255, 0.08);
@@ -268,8 +269,8 @@ body[data-ds-dark-theme] {
   --dsw-alias-border-l4: rgba(255, 255, 255, 0.2);
   --dsw-alias-brand-primary-invert: var(--dsw-static-neutral-bluish-50);
   --dsw-alias-brand-primary-new-colorprimary-new-color: var(--dsw-static-deepseek-450);
-  --dsw-alias-brand-primary: var(--dsw-static-neutral-bluish-50);
-  --dsw-alias-brand-text: var(--dsw-static-neutral-bluish-50);
+  --dsw-alias-brand-primary: var(--dsw-static-deepseek-600);
+  --dsw-alias-brand-text: var(--dsw-static-deepseek-400);
   --dsw-alias-button-contrast-fill: var(--dsw-static-neutral-bluish-50);
   --dsw-alias-button-elevated-fill: var(--dsw-static-neutral-bluish-750);
   --dsw-alias-button-floating-fill: var(--dsw-static-neutral-bluish-850);
@@ -279,9 +280,9 @@ body[data-ds-dark-theme] {
   --dsw-alias-button-ghost-active-hover: var(--dsw-static-neutral-bluish-700);
   --dsw-alias-button-info-fill: var(--dsw-static-deepseek-400);
   --dsw-alias-button-info-hover: var(--dsw-static-deepseek-500);
-  --dsw-alias-button-primary-dimmed: var(--dsw-static-neutral-bluish-750);
+  --dsw-alias-button-primary-dimmed: var(--dsw-static-deepseek-800);
   --dsw-alias-button-primary-fill: var(--dsw-alias-brand-primary);
-  --dsw-alias-button-primary-hover: var(--dsw-static-neutral-bluish-100);
+  --dsw-alias-button-primary-hover: var(--dsw-static-deepseek-500);
   --dsw-alias-button-tool-bar-fill-invisible: rgba(31, 31, 31, 0.36);
   --dsw-alias-button-tool-bar-fill: rgba(84, 85, 87, 0.5);
   --dsw-alias-button-tool-bar-hover: rgba(84, 85, 87, 0.6);
@@ -294,7 +295,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-label-dimmed: var(--dsw-static-neutral-bluish-750);
   --dsw-alias-label-primary-bluish: var(--dsw-static-neutral-bluish-50);
   --dsw-alias-label-primary-dimmed: var(--dsw-static-neutral-bluish-100);
-  --dsw-alias-label-primary-foreground: var(--dsw-static-neutral-bluish-1000);
+  --dsw-alias-label-primary-foreground: var(--dsw-static-neutral-bluish-00);
   --dsw-alias-label-primary-inverted: var(--dsw-static-neutral-bluish-800);
   --dsw-alias-label-primary: var(--dsw-static-neutral-bluish-50);
   --dsw-alias-label-secondary: var(--dsw-static-neutral-bluish-300);
@@ -307,6 +308,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-markdown-inline-code: var(--dsw-static-neutral-bluish-850);
   --dsw-alias-markdown-placeholder: var(--dsw-static-neutral-bluish-850);
   --dsw-alias-markdown-tag: var(--dsw-static-neutral-bluish-850);
+  --dsw-specific-study-highlight: rgb(66, 84, 106);
   --dsw-alias-scrollbar-bg-l1: var(--dsw-static-neutral-700);
   --dsw-alias-scrollbar-bg-l2: var(--dsw-static-neutral-600);
   --dsw-alias-scrollbar-hover-l1: var(--dsw-static-neutral-600);
