@@ -4,12 +4,16 @@
 // Deleting a Document NEVER touches Context attachments (no cascade ownership).
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatBytes } from '../storage/diagnostics'
-import { createDocument, deleteDocument, listDocumentSummaries, updateDocumentChapters, type DocumentSummary } from './document-service'
+import { createDocument, deleteDocument, listDocumentSummaries, updateDocumentChapters, getDocumentContextDescriptor, type DocumentSummary } from './document-service'
 import { documentUiActions, useDocumentUi } from './document-ui-store'
 import { chapterNodesFromPdfOutline } from './chapter-model'
 import { openPdfSession, readSessionOutline, closePdfSession, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
 import { PdfError } from '../pdf/pdf-service'
 import { newStableId } from '../engine/types'
+import { getSessionsCurrent } from '../engine/sessions-store'
+import { DocumentContextPicker } from './DocumentContextPicker'
+import { executeDocumentContext } from './document-context-service'
+import type { PdfSelection } from '../pdf/pdf-types'
 import css from './document-library.module.css'
 
 export function DocumentLibrary() {
@@ -18,6 +22,9 @@ export function DocumentLibrary() {
   const [error, setError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
   const fileRef = useRef<HTMLInputElement | null>(null)
+  const [ctxDocId, setCtxDocId] = useState<string | null>(null)
+  const [ctxBusy, setCtxBusy] = useState<{ done: number; total: number } | null>(null)
+  const [ctxMsg, setCtxMsg] = useState<string | null>(null)
   const open = ui.view === 'library'
 
   const refresh = useCallback(async () => {
@@ -55,6 +62,18 @@ export function DocumentLibrary() {
       if (session) { try { await closePdfSession(session) } catch { /* ignore */ } }
       setImporting(false)
     }
+  }
+
+  const addFromPicker = async (selection: PdfSelection) => {
+    if (!ctxDocId) return
+    const targetConversationId = getSessionsCurrent()
+    if (!targetConversationId) { setCtxMsg('当前没有可加入的对话，请先创建一个会话。'); setCtxDocId(null); return }
+    setCtxBusy({ done: 0, total: 1 }); setCtxMsg(null)
+    try {
+      const res = await executeDocumentContext({ targetConversationId, documentId: ctxDocId, fileName: (await getDocumentContextDescriptor(ctxDocId))?.fileName || 'document.pdf', pageCount: 0, selection, onProgress: (p) => setCtxBusy({ done: p.done, total: p.total }) })
+      setCtxMsg(res.ok ? '已加入当前对话 · ' + res.count + ' 页' : res.error)
+    } catch { setCtxMsg('无法生成上下文。') }
+    finally { setCtxBusy(null); setCtxDocId(null) }
   }
 
   const remove = async (d: DocumentSummary) => {
@@ -96,12 +115,22 @@ export function DocumentLibrary() {
               </button>
               <div className={css.cardActions}>
                 <button className={css.actionBtn} data-testid={'doc-read-' + d.id} onClick={() => documentUiActions.openReader(d.id)}>阅读</button>
+                <button className={css.actionBtn} data-testid={'doc-context-' + d.id} onClick={() => { setCtxMsg(null); setCtxDocId(d.id) }}>加入对话</button>
                 <button className={css.actionBtn + ' ' + css.danger} data-testid={'doc-delete-' + d.id} onClick={() => void remove(d)}>删除</button>
               </div>
             </div>
           ))}
         </div>
       )}
+      {ctxDocId && (
+        <DocumentContextPicker
+          documentId={ctxDocId}
+          onCancel={() => { setCtxDocId(null); setCtxMsg(null) }}
+          onAdd={(selection) => { void addFromPicker(selection) }}
+        />
+      )}
+      {ctxBusy && <div className={css.error} data-testid="library-ctx-progress">正在准备上下文 {ctxBusy.done} / {ctxBusy.total} 页</div>}
+      {ctxMsg && !ctxDocId && <div className={css.error} data-testid="library-ctx-msg">{ctxMsg}</div>}
     </div>
   )
 }

@@ -18,6 +18,10 @@ import { newStableId } from '../engine/types'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
 import { IconPhoto16, IconDocument16 } from './composer-icons'
 import { setComposerTriggers, triggerComposerImages, triggerComposerPdf } from '../engine/composer-triggers'
+import { DocumentContextPicker } from '../documents/DocumentContextPicker'
+import { executeDocumentContext } from '../documents/document-context-service'
+import { getSessionsCurrent } from '../engine/sessions-store'
+import type { PdfSelection } from '../pdf/pdf-types'
 import { buildAttachmentDisplayItems, type AttachmentDisplayItem } from '../attachments/attachment-display'
 import { PdfContextCard } from './PdfContextCard'
 import css from './cockpit.module.css'
@@ -159,6 +163,10 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
   const [openId, setOpenId] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | undefined>(undefined)
   const [pdfPanel, setPdfPanel] = useState<{ open: boolean; file?: File }>({ open: false })
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false)
+  const [libPickerOpen, setLibPickerOpen] = useState(false)
+  const [libBusy, setLibBusy] = useState<{ done: number; total: number } | null>(null)
+  const [libMsg, setLibMsg] = useState<string | null>(null)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const pdfInputRef = useRef<HTMLInputElement | null>(null)
   useEffect(() => {
@@ -171,6 +179,16 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
     if (!sessionId) return { ok: false, count: 0, error: '没有当前会话，无法加入。' }
     return addPdfContextToDraft(sessionId, payload)
   }
+  const addFromLibrary = async (selection: PdfSelection, docId: string, fileName: string) => {
+    if (!sessionId) { setLibMsg('当前没有可加入的对话，请先创建一个会话。'); setLibPickerOpen(false); return }
+    setLibBusy({ done: 0, total: 1 }); setLibMsg(null)
+    try {
+      const res = await executeDocumentContext({ targetConversationId: sessionId, documentId: docId, fileName, pageCount: 0, selection, onProgress: (p) => setLibBusy({ done: p.done, total: p.total }) })
+      setLibMsg(res.ok ? '已加入当前对话 · ' + res.count + ' 页' : res.error)
+    } catch { setLibMsg('无法生成上下文。') }
+    finally { setLibBusy(null); setLibPickerOpen(false) }
+  }
+
   // Reset ephemeral view state (lightbox / error banner) when the active conversation changes.
   const prevSession = useRef(sessionId)
   useEffect(() => { if (prevSession.current !== sessionId) { setOpenId(null); setPhotoError(undefined); prevSession.current = sessionId } }, [sessionId])
@@ -226,10 +244,16 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
           <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
           <IconPhoto16 />
         </label>
-        <label className={css.attachBtn} role="button" aria-label="添加 PDF" title="添加 PDF" data-testid="composer-attach-pdf">
-          <input ref={pdfInputRef} type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
+        <button type="button" className={css.attachBtn} role="button" aria-label="添加学习资料" title="添加学习资料" data-testid="composer-attach-pdf" onClick={() => setPdfMenuOpen(v => !v)}>
           <IconDocument16 />
-        </label>
+        </button>
+        {pdfMenuOpen && (
+          <div className={css.addFileMenu} data-testid="composer-add-file-menu">
+            <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setPdfMenuOpen(false); setLibPickerOpen(true) }}>📚 从文件资料库选择</button>
+            <button type="button" className={css.menuItem} data-testid="composer-from-device" onClick={() => { setPdfMenuOpen(false); pdfInputRef.current?.click() }}>📄 从设备打开 PDF</button>
+          </div>
+        )}
+        <input ref={pdfInputRef} type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
         <textarea className={css.composerText} value={text} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
           onChange={e => setDraftText(key, e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }} />
@@ -237,6 +261,9 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
       </div>
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}
       {pdfPanel.open && <PdfPanel initialFile={pdfPanel.file} onClose={() => setPdfPanel({ open: false })} onAddToDraft={addPdfToDraft} />}
+      {libPickerOpen && <DocumentContextPicker documentId={undefined} onCancel={() => { setLibPickerOpen(false); setLibMsg(null) }} onAdd={(selection, docId, fileName) => { void addFromLibrary(selection, docId, fileName) }} />}
+      {libBusy && <div className={css.ctxHint} data-testid="composer-ctx-progress">正在准备上下文 {libBusy.done} / {libBusy.total} 页</div>}
+      {libMsg && <div className={css.ctxHint} data-testid="composer-ctx-msg">{libMsg}</div>}
     </div>
   )
 }

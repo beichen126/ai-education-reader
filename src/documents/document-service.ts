@@ -117,6 +117,27 @@ export async function listDocumentRecords(): Promise<{ id: string; meta: Documen
   return out
 }
 
+/** Metadata descriptor for a single persisted Document WITHOUT reading the source Blob.
+ *  Used by the Document -> Context picker (never hydrates the OPFS PDF binary). */
+export type DocumentContextDescriptor = {
+  id: string
+  fileName: string
+  pageCount: number
+  chapters: ChapterNode[]
+  chapterSource: DocumentChapterSource
+  importSource?: { kind: 'pdf' | 'ppt' | 'pptx'; originalFileName: string }
+}
+
+export async function getDocumentContextDescriptor(id: string): Promise<DocumentContextDescriptor | null> {
+  const row = await idbGet('documents', id)
+  if (!row) return null
+  return {
+    id: row.id, fileName: row.fileName, pageCount: row.pageCount,
+    chapters: (row.chapters ?? []) as ChapterNode[], chapterSource: row.chapterSource ?? 'none',
+    ...(row.importSource ? { importSource: row.importSource } : {}),
+  }
+}
+
 export function toDocumentSummary(doc: LearningDocument): DocumentSummary {
   return { id: doc.id, fileName: doc.fileName, fileSize: doc.fileSize, pageCount: doc.pageCount, chapterSource: doc.chapterSource, chapterCount: countChapters(doc.chapters), lastReadPage: doc.lastReadPage, createdAt: doc.createdAt, updatedAt: doc.updatedAt, ...(doc.importSource ? { importSource: doc.importSource } : {}) };
 }

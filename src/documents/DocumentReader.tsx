@@ -13,6 +13,9 @@ import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { renderPdfContextRanges, PdfContextRenderError, type ContextRenderProgress } from '../pdf/pdf-context-render'
 import { validatePdfRange, countPdfRangePages, needsPdfContextSoftConfirm, MAX_PDF_CONTEXT_PAGES, type PdfRange, type PdfSelection } from '../pdf/pdf-types'
 import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, buildManualRangeSelection } from './reader-context'
+import { findCurrentChapterPath } from './document-context'
+import { DocumentContextPicker } from './DocumentContextPicker'
+import { executeDocumentContext } from './document-context-service'
 import { useDocumentUi, documentUiActions } from './document-ui-store'
 import { clampReaderPage, parsePageInput } from './reader-utils'
 import { openPdfSession, renderSessionPage, closePdfSession, readSessionOutline, readSessionPageLabels, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
@@ -73,6 +76,8 @@ export function DocumentReader() {
   const [manualEnd, setManualEnd] = useState('')
   const [manualError, setManualError] = useState<string | null>(null)
   const [ctxBusy, setCtxBusy] = useState(false)
+  const [ctxPickerOpen, setCtxPickerOpen] = useState(false)
+  const [ctxRunning, setCtxRunning] = useState<{ total: number; done: number } | null>(null)
   const [ctxProgress, setCtxProgress] = useState<ContextRenderProgress | null>(null)
   const [ctxMsg, setCtxMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [ctxPending, setCtxPending] = useState<ReaderContextRequest | null>(null)
@@ -326,6 +331,22 @@ export function DocumentReader() {
     setCtxPending(null)
     void executeContext(request)
   }
+  // Add a context from the shared picker using the Reader's OWN session (never closed).
+  const addFromPicker = useCallback(async (selection: PdfSelection) => {
+    if (!doc || !sessionRef.current || ctxBusy) return
+    const targetConversationId = conv?.id
+    if (!targetConversationId) { setCtxMsg({ text: '请先创建一个会话。', ok: false }); return }
+    const count = countPdfRangePages(selection.ranges)
+    if (count > MAX_PDF_CONTEXT_PAGES) { setCtxMsg({ text: '当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请选择较小的页码范围。', ok: false }); return }
+    setCtxBusy(true); setCtxRunning({ total: count, done: 0 }); setCtxMsg(null)
+    try {
+      const res = await executeDocumentContext({ targetConversationId, documentId: doc.id, fileName: doc.fileName, pageCount, selection, existingSession: sessionRef.current, onProgress: (p) => setCtxRunning({ total: p.total, done: p.done }) })
+      const label = selection.title ? '已加入「' + selection.title + '」· ' + res.count + ' 页' : '已加入当前对话 · ' + res.count + ' 页'
+      setCtxMsg(res.ok ? { text: label, ok: true } : { text: res.error, ok: false })
+    } catch { setCtxMsg({ text: '无法生成上下文。', ok: false }) }
+    finally { setCtxBusy(false); setCtxRunning(null) }
+  }, [doc, conv, ctxBusy, pageCount])
+
   const commitManualRange = () => {
     const v = validatePdfRange(manualStart, manualEnd, pageCount)
     if (v) { setManualError(v); return }
@@ -519,6 +540,7 @@ export function DocumentReader() {
 
   if (ui.view !== 'reader') return null
   const currentChapter = doc ? findCurrentChapter(doc.chapters, page) : null
+  const currentChapterPath = doc ? findCurrentChapterPath(doc.chapters, page) : []
   const toggleTocNode = (n: ChapterNode) => setTocState(prev => { const e = new Set(prev.expanded); if (e.has(n.id)) e.delete(n.id); else e.add(n.id); return { expanded: e } })
   const clickChapter = (n: ChapterNode) => {
     if (n.selectable && n.startPage != null) { go(n.startPage, pageCount); setTocOpen(false) }
@@ -604,11 +626,15 @@ export function DocumentReader() {
           <button type="button" className={css.menuItem} data-testid="reader-ctx-current-page" onClick={() => { const s = buildCurrentPageSelection(page); void requestContext(s, s.ranges) }}>
             当前页<span className={css.menuMeta}>第 {page} 页</span>
           </button>
-          <button type="button" className={css.menuItem} data-testid="reader-ctx-current-chapter" disabled={!currentChapter} onClick={() => { if (!currentChapter) return; const s = buildChapterSelection(currentChapter); void requestContext(s, s.ranges) }}>
-            当前章节{currentChapter && <span className={css.menuMeta}>{currentChapter.title} · PDF {currentChapter.startPage}–{currentChapter.endPage}</span>}
-          </button>
-          {doc && !currentChapter && <div className={css.ctxHint}>当前页不属于可识别章节</div>}
-          <button type="button" className={css.menuItem} data-testid="reader-ctx-manual" onClick={() => { setCtxMode('manual'); setManualError(null) }}>自选页码</button>
+          {currentChapterPath.length > 0 && <div className={css.ctxMenuTitle2}>所在章节</div>}
+          {[...currentChapterPath].reverse().map(n => (
+            <button key={n.id} type="button" className={css.menuItem} data-testid={'reader-ctx-ancestor-' + n.id} disabled={!n.selectable || n.startPage == null} onClick={() => { const s = buildChapterSelection(n); void requestContext(s, s.ranges) }}>
+              <span className={css.menuLevel}>L{n.level}</span>{n.title}<span className={css.menuMeta}>PDF {n.startPage}–{n.endPage}</span>
+            </button>
+          ))}
+          {doc && currentChapterPath.length === 0 && <div className={css.ctxHint}>当前页不属于可识别章节</div>}
+          <button type="button" className={css.menuItem} data-testid="reader-ctx-picker" onClick={() => { setCtxMenuOpen(false); setCtxPickerOpen(true) }}>选择其他章节 / 多章节…</button>
+          <button type="button" className={css.menuItem} data-testid="reader-ctx-manual" onClick={() => { setCtxMode('manual'); setManualError(null) }}>自定义页码…</button>
           {ctxMode === 'manual' && (
             <div className={css.ctxForm} data-testid="reader-ctx-manual-form">
               <div className={css.ctxFormRow}>
@@ -640,6 +666,16 @@ export function DocumentReader() {
           <span>{ctxMsg.text}</span>
           {ctxMsg.ok && <button className={css.ctxSecondary} data-testid="reader-ctx-back" onClick={() => { documentUiActions.close() }}>返回对话</button>}
         </div>
+      )}
+      {ctxPickerOpen && doc && (
+        <DocumentContextPicker
+          documentId={doc.id}
+          onCancel={() => setCtxPickerOpen(false)}
+          onAdd={(selection) => { setCtxPickerOpen(false); void addFromPicker(selection) }}
+        />
+      )}
+      {doc && ctxRunning && (
+        <div className={css.ctxProgress} data-testid="reader-ctx-progress">正在准备上下文 {ctxRunning.done} / {ctxRunning.total} 页</div>
       )}
       <div className={css.navBar}>
         <button className={css.navBtn} data-testid="reader-prev" disabled={page <= 1} onClick={() => go(page - 1, pageCount)}>上一页</button>
