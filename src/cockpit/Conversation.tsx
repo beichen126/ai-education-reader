@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
 import { uiActions, useUi } from '../engine/ui-store'
-import { saveFiles, saveGeneratedImages, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
-import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory } from '../engine/draft-store'
+import { saveImagesAndDraft, saveGeneratedImages, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
+import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { t } from '../engine/locale'
 import { MessageText, IconCloseOutline16, Button } from '../dsh/primitives'
@@ -223,9 +223,16 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
     for (const id of item.attachmentIds) { removeDraftImage(key, id); void deleteAttachment(id) }
   }
   const onFiles = async (files: FileList) => {
+    // ATOMIC ordinary-image upload (P0): stage OPFS binaries, then ONE IndexedDB txn commits
+    // the attachment metadata rows AND the draft:<conversationId> row together. On failure
+    // neither commits, staged OPFS binaries are cleaned, and no durability window exists where
+    // attachment metadata is durable but the Draft reference is missing.
     try {
-      const atts = await saveFiles([...files])
-      addDraftImages(key, atts.map(a => a.id))
+      const draftNow = getDraft(key)
+      const atts = await saveImagesAndDraft([...files], { conversationId: key, text: draftNow.text, existingImageIds: draftNow.imageIds })
+      // The durable draft row was already committed in the same txn; update memory WITHOUT a
+      // second DB mutation (no duplicate persist).
+      updateDraftMemory(key, { text: draftNow.text, imageIds: [...new Set([...draftNow.imageIds, ...atts.map(a => a.id)])] })
       setPhotoError(undefined)
     } catch (e: any) {
       setPhotoError(attachmentErrorLabel(e?.kind || 'read-failed'))
