@@ -84,7 +84,7 @@ export function SettingsDialog() {
 
   return (
     <Modal open onClose={uiActions.closeSettings} title="设置" closeLabel="关闭" className={css.settingsDialog} contentClassName={css.settingsScroll}>
-      <div className={css.settingsHint}>{APP_NAME} · v{APP_VERSION} · Alpha</div>
+      <div className={css.settingsHint}>{APP_NAME} · v{APP_VERSION}</div>
       <div className={css.byokBlock} data-testid="settings-byok">
         <div className={css.byokTitle}>BYOK（自备 API Key）</div>
         <div className={css.settingsHint}>本项目采用 BYOK：应用本身不提供模型额度。默认可使用 DeepSeek API，也可以填写兼容的 API Base URL 和模型。API Key 仅保存在当前浏览器本地。</div>

@@ -6,6 +6,20 @@ AI Education Reader 的用户可感知更新记录。
 
 ## [Unreleased]
 
+_(空 — 无未发布改动)_
+
+---
+
+## [v1.0.0-rc.1] - 2026-09-04 (release candidate — not a tagged release)
+
+### Added
+
+- 新增本地 Document Library + 完整 PDF Reader：导入的原始 PDF 作为一等学习对象保存，可反复被不同对话复用。
+- 新增 Document → Context 选择器：从文件资料库选择章节 / 不连续页码范围 / 整份文档加入任意对话；Reader 内可加入当前页、父级章节或任意祖先层级。
+- 新增 `--dsw-specific-study-highlight` 语义 token：学习标注在深色模式下为低眩光、不近白、不损正文对比。
+- 支持导出带章节书签的新 PDF（原有 Planned 项已完成）；支持导出会话为 Markdown + 图片 ZIP（自包含）。
+- 支持系统 / 浅色 / 深色三档外观（设计 token 层统一换肤，深色低眩光）。
+
 ### Fixed
 
 - 修复 AI 目录真实模型请求仍使用旧 JSON 数组协议、可能导致识别失败的问题。
@@ -58,7 +72,6 @@ AI Education Reader 的用户可感知更新记录。
 
 ### Planned
 
-- 支持导出带章节书签的新 PDF。
 - PPT / PPTX 作为导入格式：浏览器本地转换为 PDF 后复用完整 PDF 阅读链路，不建设第二套 PPT Reader。
 
 ---

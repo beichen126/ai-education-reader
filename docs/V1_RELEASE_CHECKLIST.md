@@ -3,7 +3,7 @@
 This is BOTH the live release checkpoint and the permanent v1.0.0 release checklist.
 It records exact completed work (commit SHAs) and the remaining mandatory gates.
 
-## Completed commits (origin/main)
+## Completed (origin/main)
 
 | Commit | SHA | Content |
 |---|---|---|
@@ -13,8 +13,17 @@ It records exact completed work (commit SHAs) and the remaining mandatory gates.
 | Part 0.7 Document → Context picker | `380c61d` | shared picker, ancestry, multi-chapter, service |
 | Part A2 Markdown + images ZIP | `47b35d9` | conversation-bundle, fflate ZIP |
 | Part B system/light/dark themes | `a87571b` | theme.ts + use-theme + settings radio |
+| v1 docs checkpoint | `3e55cd2` | ROADMAP §6/§7 + this checklist |
+| RC correctness seal | `58eb02d` | picker stage model, temp PdfSession, ZIP collision, theme single-source, real-draft E2E |
+| Dark-theme calibration + study-highlight | `c0cf6d1` | brand-primary blue, restrained surfaces, `--dsw-specific-study-highlight`, computed-style E2E |
+| Hardening round (this pass) | `8782a77`→`14cb37f` | idb commit/versionchange, SSE framing, send/draft atomicity, stream durability, attachment-draft ownership + orphan GC, reader context unify, markdown link sanitize, vision capability + atomic settings, hydrate deprecation + after-boot GC, CI gate |
 
-Baseline before this round: `c96a251`. Current tip of origin/main: `a87571b`.
+Current tip of origin/main: **`14cb37f`** (12 commits since `c0cf6d1`).
+
+## STATUS: v1.0.0 RELEASE CANDIDATE — NOT RELEASED
+
+- No `v1.0.0` git tag or GitHub Release exists yet.
+- package.json / package-lock / APP_VERSION remain `0.1.0-alpha.3` (candidate), NOT `1.0.0`.
 
 ## Feature status
 
@@ -23,35 +32,24 @@ Baseline before this round: `c96a251`. Current tip of origin/main: `a87571b`.
 - Export bookmarked PDF: **Shipped**
 - Export Markdown + images ZIP: **Shipped**
 - Dark mode (system/light/dark): **Shipped**
-- PPTX import: **GATED / NOT SHIPPED** (evidence in docs/ROADMAP.md §7) — does not block v1.0.0
+- Study-highlight (annotation) dark mode: **Shipped**
+- PPTX import: **NOT SHIPPED** (evidence in docs/ROADMAP.md §7) — does not block v1.0.0
 
-## Remaining mandatory v1.0.0 gates NOT yet done
 
-1. **README full rewrite** (hero, visual gallery, Mermaid, feature matrix, quick
-   start, privacy, limitations). Current README is obsolete.
-2. **README screenshots** from the real production build (docs/assets/readme/),
-   via `scripts/capture-readme-assets.mjs` + `npm run docs:screenshots`.
-   Required assets: 01-reader-context, 02-document-library,
-   03-document-context-picker, 04-ai-toc-review, 05-chapter-editor,
-   06-settings-byok, 07-mobile, 08-dark-mode (.webp).
-3. **docs/ARCHITECTURE.md** (Document→Chapter→Context→Draft→Message→AI, PDF
-   runtime, OPFS/IDB, AI TOC, Document→Context picker, backup, async ownership,
-   export, PPTX if shipped).
-4. **docs/TESTING.md** (unit, storage, PDF codec, E2E, responsive, AI mock,
-   real paid smoke).
-5. **CHANGELOG** `## [1.0.0] - 2026-09-04` (move finished user-visible items
-   out of Unreleased); keep `## [Unreleased]` empty on top.
-6. **Version**: package.json + package-lock root → `1.0.0`; remove product-status
-   alpha wording.
-7. **Full final regression**: npm ci, npm test, npm run test:pdf-codec,
-   npm run typecheck, npm run build, plus all critical Edge E2E
-   (ai-toc, toc-review-layout, document-context, toc-thumbnails, doc-reader,
-   chapter-builder, native-toc, toc-layout, settings-byok, viewer-edge,
-   responsive, stage2/4/5/6, opfs-storage, opfs-migration, theme,
-   export-bookmarked-pdf, export-markdown-zip).
-8. **README link/image validation + GitHub Pages production smoke.**
-9. **Annotated tag `v1.0.0`** (message "AI Education Reader v1.0.0") only after
-   gates pass; push tag; optionally create GitHub Release if gh CLI authenticated.
+## Release documentation (this round)
+
+- README.md rewritten (hero, gallery, Mermaid, feature matrix, quick start, BYOK, privacy, limitations).
+- Screenshots generated from real production build → docs/assets/readme/*.webp (8 images).
+- docs/ARCHITECTURE.md created.
+- docs/TESTING.md created.
+- CHANGELOG `## [1.0.0] - 2026-09-04` (moved Unreleased content; empty Unreleased on top).
+- Version stays **0.1.0-alpha.3** (release candidate — NOT bumped to 1.0.0, no release claimed). README badge says 'v1.0.0 release candidate'.
+
+## Remaining before tagging v1.0.0
+
+1. Full final regression: `npm ci`, `npm test`, `npm run test:pdf-codec`, `npm run typecheck`, `npm run build`, plus critical Edge E2E (document-context, document-reader, theme, theme-computed, ai-toc, toc-review-layout, toc-thumbnails, chapter-builder, native-toc, toc-layout, settings-byok, viewer-edge, responsive, opfs-storage, opfs-migration).
+2. README link/image validation + GitHub Pages production smoke.
+3. Annotated tag `v1.0.0` (message "AI Education Reader v1.0.0") after gates pass; push tag; GitHub Release if gh CLI authenticated.
 
 ## Local only (NOT committed, cannot ship)
 
