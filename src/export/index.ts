@@ -2,6 +2,7 @@ import { buildBackup } from './backup-export'
 import { parseAndValidate, restoreBackup, BackupError } from './backup-import'
 import { conversationMarkdown, markedOnlyMarkdown } from './markdown'
 import { downloadText, downloadJson, downloadBlob } from './download'
+import { buildConversationBundle, ConversationBundleError } from './conversation-bundle'
 import { writeBookmarkedPdf, PdfOutlineError } from './pdf-outline-writer'
 import { readDocumentSourceBlob } from '../documents/document-service'
 import type { ChapterNode } from '../documents/document-types'
@@ -11,7 +12,7 @@ import { initSettings } from '../engine/settings-store'
 import { clearAnnotationCache } from '../annotations/annotation-store'
 import { resetDrafts } from '../engine/draft-store'
 
-export { BackupError, PdfOutlineError }
+export { BackupError, PdfOutlineError, ConversationBundleError }
 export type { BackupV1, BackupAttachment } from './backup-types'
 
 function stamp(): string { return new Date().toISOString().slice(0, 10) }
@@ -30,6 +31,10 @@ export async function exportMarkedOnlyMd(convId: string): Promise<void> {
   const conv = await getConversation(convId); if (!conv) return
   const anns = await getAnnotationsByConversation(convId)
   downloadText(safeName(conv.title) + '-marked.md', markedOnlyMarkdown(conv, anns), 'text/markdown')
+}
+export async function exportConversationBundle(convId: string): Promise<void> {
+  const bundle = await buildConversationBundle(convId)
+  downloadBlob(bundle.zipName, bundle.blob)
 }
 export async function exportBookmarkedPdf(opts: { id: string; fileName: string; pageCount: number; chapters: ChapterNode[]; resolveFileName?: string }): Promise<void> {
   let blob: Blob
