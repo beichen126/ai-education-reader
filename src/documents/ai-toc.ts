@@ -223,21 +223,25 @@ export function boundaryDedupeKey(r: { title: string; pageLabel: string; tocPage
 }
 
 /**
- * Strict adjacent-window boundary dedupe (Stage 9.4C.1). Only removes a row that
- * is an EXACT duplicate (same normalized title + pageLabel + physical tocPage) of
- * the immediately preceding row AND sits at a window boundary. NEVER fuzzy-merges
- * (第一章 研究对象 vs 第一章 研究方法 must never merge). Pure.
+ * Strict longest-suffix-overlap boundary dedupe (Stage 9.4D.2). Finds the LARGEST k
+ * such that suffix(prev, k) EXACTLY equals prefix(cur, k) using the canonical identity
+ * (normalized title + pageLabel + physical tocPage), then drops those k rows from the
+ * head of cur. This handles a window that re-extends the previous window's tail
+ * (prev=[X,A,B], cur=[A,B,C] -> [C]) while NEVER fuzzy-merging similar titles
+ * (第一章 研究对象 vs 第一章 研究方法 must never merge) and NEVER deduping two
+ * identical rows inside the same window (prev empty -> [A,A] preserved). Pure.
  */
 export function dedupeWindowBoundary(prev: TocTranscriptionRow[], cur: TocTranscriptionRow[]): TocTranscriptionRow[] {
-  let prevSeq = prev
-  let drop = 0
-  while (drop < cur.length && prevSeq.length > 0) {
-    const p = prevSeq[prevSeq.length - 1]
-    const c = cur[drop]
-    if (boundaryDedupeKey(p) === boundaryDedupeKey(c)) { prevSeq = prevSeq.slice(0, -1); drop++ }
-    else break
+  const maxK = Math.min(prev.length, cur.length)
+  let k = 0
+  for (let cand = maxK; cand >= 1; cand--) {
+    const suf = prev.slice(prev.length - cand)
+    const pre = cur.slice(0, cand)
+    let eq = true
+    for (let j = 0; j < cand; j++) { if (boundaryDedupeKey(suf[j]) !== boundaryDedupeKey(pre[j])) { eq = false; break } }
+    if (eq) { k = cand; break }
   }
-  return drop > 0 ? cur.slice(drop) : cur
+  return k > 0 ? cur.slice(k) : cur
 }
 
 /** Deduplicate consecutive copy runs, then RE-INDEX to a stable contiguous r0001….

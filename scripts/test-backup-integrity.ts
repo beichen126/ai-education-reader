@@ -78,6 +78,34 @@ function uninstallMock() { (globalThis as any).__dshOpfsMock = undefined; readCo
   uninstallMock();
 }
 
+// --- FINDING 0.2: message references a completely MISSING attachment id -> BackupError ---
+{
+  installMock();
+  await idbClearAll();
+  const cid = newStableId();
+  await saveConversation({ id: cid, title: 't', createdAt: 1, updatedAt: 1, messages: [{ id: newStableId(), role: 'user', content: 'hi', images: ['missing-id-not-in-store'], createdAt: 1, updatedAt: 1 }] } as any);
+  let threw = false;
+  try { await buildBackup() } catch (e) { threw = e instanceof BackupError }
+  assert(threw, 'message.images=[missing-id] with NO attachment row -> BackupError (never silently skipped)');
+  uninstallMock();
+}
+
+// --- FINDING 0.2: attachment row exists but meta is missing -> BackupError ---
+{
+  installMock();
+  await idbClearAll();
+  const att = await saveFiles([new File([new Uint8Array([1,2,3,4])], 'i.png', { type: 'image/png' })]);
+  const cid = newStableId();
+  await saveConversation({ id: cid, title: 't', createdAt: 1, updatedAt: 1, messages: [{ id: newStableId(), role: 'user', content: 'hi', images: [att[0].id], createdAt: 1, updatedAt: 1 }] } as any);
+  // Strip the meta from the stored attachment row.
+  const row = await idbGet('attachments', att[0].id);
+  await idbPut('attachments', { id: row.id, binary: row.binary, blob: row.blob, recordVersion: row.recordVersion ?? 2 });
+  let threw = false;
+  try { await buildBackup() } catch (e) { threw = e instanceof BackupError }
+  assert(threw, 'attachment row with no meta -> BackupError (never silently skipped)');
+  uninstallMock();
+}
+
 // --- backup output is self-importable (roundtrip on a clean DB) ---
 {
   installMock();

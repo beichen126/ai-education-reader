@@ -28,16 +28,18 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   const [thumbs, setThumbs] = useState<Record<number, string>>({})
   const urlOwnerRef = useRef<string[]>([])
   const genRef = useRef(0)
+  const renderedRef = useRef<Set<number>>(new Set())
   const pendingRef = useRef<Set<number>>(new Set())
   const inFlightRef = useRef(0)
   const queueRef = useRef<number[]>([]);
+  const enqueueRef = useRef<(n: number) => void>(() => {});
   const observerRef = useRef<IntersectionObserver | null>(null);
   const thumbRefs = useRef<Record<number, HTMLElement | null>>({})
 
   const revoke = (url: string) => { try { URL.revokeObjectURL(url) } catch {} };
 
   // Revoke all thumbnails + invalidate the queue on unmount.
-  useEffect(() => () => { genRef.current++; observerRef.current?.disconnect(); for (const u of urlOwnerRef.current) revoke(u); urlOwnerRef.current = []; pendingRef.current.clear(); queueRef.current = [] }, [])
+  useEffect(() => () => { genRef.current++; observerRef.current?.disconnect(); for (const u of urlOwnerRef.current) revoke(u); urlOwnerRef.current = []; pendingRef.current.clear(); queueRef.current = []; renderedRef.current.clear() }, [])
 
   // A bounded render worker: pulls the next queued page and renders ONE thumbnail.
   const pump = useRef<() => void>(() => {});
@@ -53,7 +55,13 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
         const r = await renderSessionThumbnail(session, next, THUMB_EDGE);
         if (gen !== genRef.current) { revoke(URL.createObjectURL(r.blob)); return }
         const url = URL.createObjectURL(r.blob);
+        if (renderedRef.current.has(next)) { revoke(url); return }
+        renderedRef.current.add(next);
         urlOwnerRef.current.push(url);
+        // Render-count instrumentation (finding 9.4D.2-0.1) so an e2e can prove a revisited
+        // page is rendered EXACTLY once. Harmless in production (no allocation churn).
+        const g = (globalThis as any).__dshThumbRenderCounts || ((globalThis as any).__dshThumbRenderCounts = {});
+        g[next] = (g[next] || 0) + 1;
         setThumbs(prev => (prev[next] ? prev : { ...prev, [next]: url }));
       } catch { /* leave blank */ }
       finally { inFlightRef.current--; pendingRef.current.delete(next); pump.current() }
@@ -61,19 +69,22 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   };
 
   // Lazily enqueue a page once it enters the viewport (with a small preload margin).
+  // Uses ONLY live refs — never a closed-over render value.
   const enqueue = (n: number) => {
-    if (thumbs[n] || pendingRef.current.has(n)) return
+    if (renderedRef.current.has(n)) return
+    if (pendingRef.current.has(n)) return
     queueRef.current.push(n);
     pendingRef.current.add(n);
     pump.current();
   };
+  enqueueRef.current = enqueue;
 
   // Set up an IntersectionObserver over the visible thumb slots.
   useEffect(() => {
     const gen = genRef.current
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
-        if (e.isIntersecting) { const n = Number((e.target as HTMLElement).dataset.page); if (n) enqueue(n) }
+        if (e.isIntersecting) { const n = Number((e.target as HTMLElement).dataset.page); if (n) enqueueRef.current(n) }
       }
     }, { rootMargin: '120px' });
     observerRef.current = io;

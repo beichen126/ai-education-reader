@@ -25,3 +25,25 @@ export function markChangedRowsUnchecked(state: ReviewState, before: (number | n
 export function verifiedCount(state: ReviewState): number { return Object.values(state).filter(v => v === 'verified').length }
 export function issueCount(state: ReviewState): number { return Object.values(state).filter(v => v === 'issue').length }
 export function uncheckedCount(state: ReviewState): number { return Object.values(state).filter(v => v === 'unchecked').length }
+
+// Finding 9.4D.2-0.3: the save preflight state machine. A single pure decision so the
+// dual-confirm flow (unchecked first, then issue) is unit-testable without rendering React.
+export type SaveStage =
+  | { kind: 'invalid'; invalidCount: number }
+  | { kind: 'confirm-unchecked'; count: number }
+  | { kind: 'confirm-issue'; count: number }
+  | { kind: 'save' }
+
+export function resolveSaveStage(opts: {
+  invalid: boolean
+  invalidCount: number
+  uncheckedCount: number
+  issueCount: number
+  uncheckedAck: boolean
+  issueAck: boolean
+}): SaveStage {
+  if (opts.invalid) return { kind: 'invalid', invalidCount: opts.invalidCount }
+  if (opts.uncheckedCount > 0 && !opts.uncheckedAck) return { kind: 'confirm-unchecked', count: opts.uncheckedCount }
+  if (opts.issueCount > 0 && !opts.issueAck) return { kind: 'confirm-issue', count: opts.issueCount }
+  return { kind: 'save' }
+}

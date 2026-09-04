@@ -4,7 +4,7 @@ import type { Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupDocument, type BackupV2 } from './backup-types'
 import { readBinary } from '../storage/binary-store'
-import { BackupError } from './backup-import'
+import { BackupError, parseAndValidate } from './backup-import'
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer()
@@ -39,10 +39,10 @@ export async function buildBackup(): Promise<BackupV2> {
       for (const imgId of m.images) {
         if (seen.has(imgId)) continue; seen.add(imgId)
         const row = await getAttachmentRow(imgId)
-        if (row && row.meta) {
-          const blob = await attachmentBlobOf(imgId, row.meta.mimeType)
-          attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, data: await blobToBase64(blob) })
-        }
+        if (!row) throw new BackupError('本地文件数据不完整，无法生成完整备份：附件 ' + imgId.slice(0, 8) + ' 不存在')
+        if (!row.meta) throw new BackupError('本地文件数据不完整，无法生成完整备份：附件 ' + imgId.slice(0, 8) + ' 元数据缺失')
+        const blob = await attachmentBlobOf(imgId, row.meta.mimeType)
+        attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, data: await blobToBase64(blob) })
       }
     }
   }
@@ -65,7 +65,12 @@ export async function buildBackup(): Promise<BackupV2> {
     catch { throw new BackupError('本地文件数据不完整，无法生成完整备份：文档 ' + rec.id.slice(0, 8) + ' 数据缺失') }
     documents.push({ id: rec.id, meta: rec.meta as BackupDocument['meta'], mimeType: blob.type || rec.meta.mimeType || 'application/pdf', data: await blobToBase64(blob) })
   }
-  return { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents }
+  const backup: BackupV2 = { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents }
+  // Final self-validation (finding 9.4D.2-0.2): the assembled object MUST pass the SAME
+  // pure reference-integrity validator used for import (no JSON round-trip). A "complete"
+  // backup that references a missing attachment/document is rejected here, not shipped.
+  parseAndValidate(backup)
+  return backup
 }
 
 // Read exactly ONE document's source Blob (imported here to avoid a hard circular import

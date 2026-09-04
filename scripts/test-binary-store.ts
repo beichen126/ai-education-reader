@@ -6,7 +6,7 @@
 import 'fake-indexeddb/auto'
 import {
   buildBinaryPath, persistBinary, readBinary, deleteBinary, binaryExists, isOpfsAvailable,
-  clearOpfsAppRoot, cleanupUnreferencedOpfs, isStoragePersistent, appRootName,
+  clearOpfsAppRoot, cleanupUnreferencedOpfs, isStoragePersistent, appRootName, runClearAppRoot,
   type OpfsFileSystem, type StoredBinary,
 } from '../src/storage/binary-store.ts'
 
@@ -157,6 +157,39 @@ function mockKey(s: string) { return 'ai-education-reader-v1/objects/' + s }
   assert(r2.completed === true, 'retry after unblock completes');
   assert(mock.app.size === 0, 'all app files removed on retry');
   uninstallMock();
+}
+
+// --- FINDING 0.5: listAppFiles failure -> structured failure (never completed:true) ---
+{
+  let listCalls = 0
+  const res = await runClearAppRoot({
+    tryRemoveRoot: async () => { throw new Error('recursive remove blocked') },
+    listFiles: async () => { listCalls++; throw new Error('enumeration failed') },
+    removeFile: async () => {},
+  });
+  assert(res.completed === false, 'list failure -> completed:false');
+  assert(res.failedPaths.length === 1 && res.failedPaths[0] === '<app-root-enumeration-failed>', 'structured enumeration-fail marker surfaced');
+  assert(listCalls === 1, 'listFiles attempted once');
+}
+// --- FINDING 0.5: list+per-file delete both succeed after recursive remove fails ---
+{
+  const removed: string[] = []
+  const res = await runClearAppRoot({
+    tryRemoveRoot: async () => { throw new Error('recursive remove blocked') },
+    listFiles: async () => [{ path: 'a' }, { path: 'b' }],
+    removeFile: async (p) => { removed.push(p) },
+  });
+  assert(res.completed === true && res.failedPaths.length === 0, 'per-file clear completes');
+  assert(removed.join(',') === 'a,b', 'both files removed');
+}
+// --- FINDING 0.5: recursive remove NotFoundError => already gone, complete ---
+{
+  const res = await runClearAppRoot({
+    tryRemoveRoot: async () => { const e: any = new Error('gone'); e.name = 'NotFoundError'; throw e },
+    listFiles: async () => { throw new Error('should not be reached') },
+    removeFile: async () => {},
+  });
+  assert(res.completed === true && res.failedPaths.length === 0, 'NotFoundError on root -> complete');
 }
 
 // --- FINDING 12: isStoragePersistent returns undefined when API unavailable ---

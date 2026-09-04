@@ -123,6 +123,26 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   const d = dedupeWindowBoundary(prev as any, cur as any);
   assert(d.length === 1 && d[0].title === '第一章 自然地理学', 'similar-but-different title NOT boundary-deduped');
 }
+// --- FINDING 0.4: longest-suffix-overlap boundary dedupe (multi-row overlap) ---
+{
+  // prev=[X,A,B], cur=[A,B,C] -> longest k=2 overlap -> [C]
+  const prev = [ { id:'r1', title:'X', pageLabel:'0', tocPage:7, sourceImageIndex:1, rowOrder:0 }, { id:'r2', title:'A', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:1 }, { id:'r3', title:'B', pageLabel:'2', tocPage:7, sourceImageIndex:1, rowOrder:2 } ];
+  const cur = [ { id:'x1', title:'A', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:0 }, { id:'x2', title:'B', pageLabel:'2', tocPage:7, sourceImageIndex:1, rowOrder:1 }, { id:'x3', title:'C', pageLabel:'3', tocPage:7, sourceImageIndex:1, rowOrder:2 } ];
+  const d = dedupeWindowBoundary(prev as any, cur as any);
+  assert(d.length === 1 && d[0].title === 'C', 'overlap [A,B] removed, only C returned (got ' + d.length + ' rows)');
+  const prev2 = [ { id:'r1', title:'X', pageLabel:'0', tocPage:7, sourceImageIndex:1, rowOrder:0 }, { id:'r2', title:'A', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:1 }, { id:'r3', title:'B', pageLabel:'2', tocPage:7, sourceImageIndex:1, rowOrder:2 } ];
+  const cur2 = [ { id:'x1', title:'B', pageLabel:'2', tocPage:7, sourceImageIndex:1, rowOrder:0 }, { id:'x2', title:'C', pageLabel:'3', tocPage:7, sourceImageIndex:1, rowOrder:1 } ];
+  const d2 = dedupeWindowBoundary(prev2 as any, cur2 as any);
+  assert(d2.length === 1 && d2[0].title === 'C', 'partial overlap [B] removed, only C returned (got ' + d2.length + ' rows)');
+  // prev=[X,A,B], cur=[A,C] -> k=0 (no full suffix/prefix match) -> unchanged
+  const prev3 = [ { id:'r1', title:'X', pageLabel:'0', tocPage:7, sourceImageIndex:1, rowOrder:0 }, { id:'r2', title:'A', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:1 }, { id:'r3', title:'B', pageLabel:'2', tocPage:7, sourceImageIndex:1, rowOrder:2 } ];
+  const cur3 = [ { id:'x1', title:'A', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:0 }, { id:'x2', title:'C', pageLabel:'3', tocPage:7, sourceImageIndex:1, rowOrder:1 } ];
+  const d3 = dedupeWindowBoundary(prev3 as any, cur3 as any);
+  assert(d3.length === 2 && d3[0].title === 'A', 'non-contiguous [A,C] NOT deduped (got ' + d3.length + ' rows)');
+  // same-window identical [A,A] preserved when prev empty
+  const d4 = dedupeWindowBoundary([], [ { id:'x1', title:'A', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:0 }, { id:'x2', title:'A', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:1 } ] as any);
+  assert(d4.length === 2, 'same-window [A,A] preserved (got ' + d4.length + ' rows)');
+}
 
 // --- exact label mapping ---
 {

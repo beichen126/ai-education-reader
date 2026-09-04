@@ -138,21 +138,46 @@ const realOpfs: OpfsFileSystem = {
   },
   async clearAppRoot(): Promise<{ completed: boolean; failedPaths: string[] }> {
     const root = await getDirectory()
-    const failedPaths: string[] = []
-    // Try a recursive remove of the whole app root first.
-    try {
-      await root.removeEntry(OPFS_APP_ROOT, { recursive: true })
-      return { completed: true, failedPaths: [] };
-    } catch (e) {
-      if (e && typeof e === 'object' && ((e as { name?: string }).name === 'NotFoundError')) return { completed: true, failedPaths: [] }
-      // Otherwise walk the app files and delete each; report failures instead of swallowing.
-      const files = await realOpfs.listAppFiles().catch(() => []);
-      for (const f of files) {
-        try { await realOpfs.delete(f.path) } catch { failedPaths.push(f.path) }
-      }
-      return { completed: failedPaths.length === 0, failedPaths };
-    }
+    return runClearAppRoot({
+      tryRemoveRoot: async () => { await root.removeEntry(OPFS_APP_ROOT, { recursive: true }); },
+      listFiles: () => realOpfs.listAppFiles(),
+      removeFile: (p) => realOpfs.delete(p),
+    })
   },
+}
+
+export type ClearAppRootResult = { completed: boolean; failedPaths: string[] }
+export type ClearAppRootEnv = {
+  /** Recursive remove of the app root; throws NotFoundError when it is absent. */
+  tryRemoveRoot(): Promise<void>
+  /** Enumerate files under the app root (may reject). */
+  listFiles(): Promise<{ path: string }[]>
+  /** Remove one app file. */
+  removeFile(path: string): Promise<void>
+}
+
+/**
+ * Testable clear-app-root core (finding 9.4D.2-0.5). A recursive remove of the whole app
+ * root is attempted first; a NotFoundError means it was already gone (complete). Otherwise
+ * each app file is removed and failures are reported. A listFiles failure is ITSELF a
+ * structured failure (completed:false, '<app-root-enumeration-failed>') — never silently
+ * treated as an empty list that yields completed:true. Node-testable without real OPFS.
+ */
+export async function runClearAppRoot(env: ClearAppRootEnv): Promise<ClearAppRootResult> {
+  const failedPaths: string[] = []
+  try {
+    await env.tryRemoveRoot()
+    return { completed: true, failedPaths: [] }
+  } catch (e) {
+    if (e && typeof e === 'object' && ((e as { name?: string }).name === 'NotFoundError')) return { completed: true, failedPaths: [] }
+    let files: { path: string }[]
+    try { files = await env.listFiles() }
+    catch { return { completed: false, failedPaths: ['<app-root-enumeration-failed>'] } }
+    for (const f of files) {
+      try { await env.removeFile(f.path) } catch { failedPaths.push(f.path) }
+    }
+    return { completed: failedPaths.length === 0, failedPaths }
+  }
 }
 
 let driver: OpfsFileSystem | null = null

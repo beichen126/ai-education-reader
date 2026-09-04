@@ -2,10 +2,10 @@
 // draft next to the PDF reader so the user can verify each item, adjust title/level/page,
 // apply a global page-offset, and then save to 'ai-toc'. AI is never the authority: save
 // only happens after the user explicitly confirms, and only when the draft is valid.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { validateChapterDraft, buildChapterTreeFromDraft, type ChapterDraftItem } from './chapter-builder'
 import { applyGlobalOffset, setManualPageOverride, validateMappedTocReview, type MappedTocItem } from './toc-mapping'
-import { emptyReviewState, markRowUnchecked, markChangedRowsUnchecked, verifiedCount as countVerified, type ReviewState, type ReviewStateValue } from './toc-review-state'
+import { emptyReviewState, markRowUnchecked, markChangedRowsUnchecked, verifiedCount as countVerified, resolveSaveStage, type ReviewState, type ReviewStateValue } from './toc-review-state'
 import type { ChapterNode, DocumentChapterSource } from './document-types'
 import css from './toc-review.module.css'
 
@@ -32,6 +32,11 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
   const [offset, setOffset] = useState<string>('0')
   const [confirmUnchecked, setConfirmUnchecked] = useState(false)
   const [confirmIssue, setConfirmIssue] = useState(false)
+  // Finding 9.4D.2-0.3: a save request walks a preflight state machine. These ack flags
+  // record that the user has ALREADY confirmed a given blocker for the current save attempt,
+  // so when BOTH unchecked and issue conditions exist the UI confirms each in turn.
+  const uncheckedAckRef = useRef(false)
+  const issueAckRef = useRef(false)
   const [levelRaw, setLevelRaw] = useState<Record<number, string>>({})
 
   // Rebuild rows when a new mapped draft arrives.
@@ -121,14 +126,30 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
     if (Number.isInteger(n) && n >= 1) { setRows(r => r.map((it, j) => (j === i ? { ...it, level: n } : it))) }
   }
 
-  const save = async () => {
+  // Finding 9.4D.2-0.3: save preflight state machine. Top-level entry resets the ack flags,
+  // then walks the machine: invalid -> block; unchecked (not yet acked) -> confirm; issue (not
+  // yet acked) -> confirm; otherwise doSave. Both conditions present -> the user confirms each
+  // in turn (unchecked first, then issue) before the final save runs.
+  const requestSave = () => {
     if (saving) return
-    if (invalid) { setSaveError('还有 ' + invalidCount + ' 项需要修正后才能保存。'); return }
-    const unchecked = rows.filter((_, i) => state[i] === 'unchecked').length
-    if (unchecked > 0) { setConfirmUnchecked(true); return }
-    const issueCount = rows.filter((_, i) => state[i] === 'issue').length
-    if (issueCount > 0) { setConfirmIssue(true); return }
-    await doSave()
+    uncheckedAckRef.current = false
+    issueAckRef.current = false
+    advanceSave()
+  }
+  const advanceSave = () => {
+    if (saving) return
+    const stage = resolveSaveStage({
+      invalid,
+      invalidCount,
+      uncheckedCount: rows.filter((_, i) => state[i] === 'unchecked').length,
+      issueCount: rows.filter((_, i) => state[i] === 'issue').length,
+      uncheckedAck: uncheckedAckRef.current,
+      issueAck: issueAckRef.current,
+    })
+    if (stage.kind === 'invalid') { setSaveError('还有 ' + stage.invalidCount + ' 项需要修正后才能保存。'); return }
+    if (stage.kind === 'confirm-unchecked') { setConfirmUnchecked(true); return }
+    if (stage.kind === 'confirm-issue') { setConfirmIssue(true); return }
+    void doSave()
   }
   const doSave = async () => {
     setSaving(true); setSaveError(null)
@@ -157,7 +178,7 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
           <div className={css.headerBtns}>
             <button type="button" className={css.btn} data-testid="toc-review-edit-all" onClick={() => onEditAll(rows)}>编辑全部目录</button>
             <button type="button" className={css.btn} data-testid="toc-review-close" onClick={onClose}>取消</button>
-            <button type="button" className={css.btnPrimary} data-testid="toc-review-save" disabled={saving || invalid} onClick={save}>{saving ? '保存中…' : '保存目录'}</button>
+            <button type="button" className={css.btnPrimary} data-testid="toc-review-save" disabled={saving || invalid} onClick={requestSave}>{saving ? '保存中…' : '保存目录'}</button>
           </div>
         </div>
         {saveError && <div className={css.err} data-testid="toc-review-error">{saveError}</div>}
@@ -201,7 +222,7 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
               <div>还有 {rows.filter((_, i) => state[i] === 'unchecked').length} 项未检查，仍然保存目录？</div>
               <div className={css.confirmBtns}>
                 <button type="button" className={css.btn} data-testid="toc-review-unchecked-no" onClick={() => setConfirmUnchecked(false)}>继续检查</button>
-                <button type="button" className={css.btnPrimary} data-testid="toc-review-unchecked-yes" onClick={() => { setConfirmUnchecked(false); void doSave() }}>仍然保存</button>
+                <button type="button" className={css.btnPrimary} data-testid="toc-review-unchecked-yes" onClick={() => { setConfirmUnchecked(false); uncheckedAckRef.current = true; advanceSave() }}>仍然保存</button>
               </div>
             </div>
           </div>
@@ -212,7 +233,7 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
               <div>还有 {rows.filter((_, i) => state[i] === 'issue').length} 项标记为待修改，仍然保存？</div>
               <div className={css.confirmBtns}>
                 <button type="button" className={css.btn} data-testid="toc-review-issue-no" onClick={() => setConfirmIssue(false)}>返回修改</button>
-                <button type="button" className={css.btnPrimary} data-testid="toc-review-issue-yes" onClick={() => { setConfirmIssue(false); void doSave() }}>仍然保存</button>
+                <button type="button" className={css.btnPrimary} data-testid="toc-review-issue-yes" onClick={() => { setConfirmIssue(false); issueAckRef.current = true; advanceSave() }}>仍然保存</button>
               </div>
             </div>
           </div>
