@@ -12,7 +12,7 @@
 [隐私说明](#privacy--local-first) · 
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v1.0.0%20release%20candidate-yellow?style=flat-square)
+![status](https://img.shields.io/badge/status-v1.0.0-green?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
 ![BYOK](https://img.shields.io/badge/BYOK-self--hosted-green?style=flat-square)
@@ -102,7 +102,7 @@ RAG 适合"不知道内容在哪"的开放式问答；而学习阅读，你一�
 <img src="docs/assets/readme/01-reader-context.webp" alt="Reader 就近加入章节" width="100%" />
 
 
-## 功能现状（v1.0.0 · release candidate）
+## 功能现状（v1.0.0 · 正式发布）
 
 ### SHIPPED ✅
 
