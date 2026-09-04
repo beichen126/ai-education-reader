@@ -39,3 +39,26 @@ hard-coding black CSS per component.
 Continue the real fixture corpus under test/fixtures/pdf-compat. If a stable class of
 PDFs fails on a complete PDF.js runtime while PDFium/MuPDF succeeds, evaluate a
 secondary renderer backend then.
+
+## 6. v1.0.0 shipped status
+
+The following v1.0.0 items are SHIPPED and implemented (see CHANGELOG):
+
+- Document Library → Context picker (reusable, three entry points; parent /
+  multi-chapter / manual range / whole-document; metadata-only loading).
+- Reader "加入对话" current-chapter ancestry + 选择其他章节 / 多章节.
+- Export: Document → bookmarked PDF; Conversation → Markdown + images ZIP.
+- Dark mode (system / light / dark, design tokens, persisted).
+
+## 7. PPTX import — GATED / NOT SHIPPED (planned)
+
+Evaluated browser-local PPTX → canonical PDF conversion. The browser OOXML →
+PDF renderer ecosystem is fragmented (pptx-preview / pptx-kit-preview /
+reamkit) with no battle-tested renderer that reliably preserves Chinese
+text, images, basic shapes, tables (and charts) into a canonical PDF while
+meeting the "static snapshot good enough to learn from" fidelity bar. The
+alternate routes (LibreOffice server, WASM office suite, cloud conversion)
+are explicitly out of scope / forbidden. Rather than ship a hard-coded
+half OOXML renderer or a misleading .pptx file input, PPTX import stays
+Planned. The material library continues to accept PDF only. This does NOT
+block v1.0.0.
