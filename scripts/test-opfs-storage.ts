@@ -116,7 +116,7 @@ await idbClearAll();
   const did = newStableId();
   await createDocument({ id: did, fileName: 'backup.pdf', mimeType: 'application/pdf', fileSize: 2000, pageCount: 20, sourceBlob: pdfBlob(2000) });
   const backup = await buildBackup();
-  assert(backup.version === 3 && backup.documents.length === 1, 'backup V3 has 1 document');
+  assert(backup.version === 4 && backup.documents.length === 1, 'backup V4 has 1 document');
   assert(backup.documents[0].data.length > 0, 'document data is base64');
   // clear then restore (staged: new OPFS objects, not overwriting)
   await idbClearAll();

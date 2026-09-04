@@ -3,7 +3,10 @@ import type { Annotation } from '../annotations/annotation-types'
 import { ANNOTATION_VERSION } from '../annotations/annotation-types'
 import type { Attachment } from '../engine/types'
 import { persistBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
-import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupV1, type BackupV2, type BackupV3, type BackupDraft, type BackupAppearance } from './backup-types'
+import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupV1, type BackupV2, type BackupV3, type BackupV4, type BackupDraft, type BackupBranchDraft, type BackupActiveBranch, type BackupAppearance } from './backup-types'
+import { validateBranchGraph } from '../branches/branch-path'
+import { validateArtifact, validateQuizDocument } from '../artifacts/artifact-validation'
+import type { ConversationBranch } from '../branches/branch-types'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -74,8 +77,9 @@ function validateDocuments(input: Record<string, any>): void {
 export function parseAndValidate(input: unknown): Backup {
   if (!isObj(input)) throw new BackupError('不是一个有效的备份对象')
   if (input.format !== BACKUP_FORMAT && input.format !== LEGACY_BACKUP_FORMAT) throw new BackupError('格式不匹配：不是本产品的备份文件（支持 ' + BACKUP_FORMAT + ' 与 ' + LEGACY_BACKUP_FORMAT + '）')
-  if (input.version !== 1 && input.version !== 2 && input.version !== 3) throw new BackupError('版本不支持：当前仅支持 v1 / v2 / v3')
+  if (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4) throw new BackupError('版本不支持：当前仅支持 v1 / v2 / v3 / v4')
   const isV3 = input.version === 3
+  const isV4 = input.version === 4
   if (!Array.isArray(input.conversations)) throw new BackupError('缺少 conversations 数组')
   if (!Array.isArray(input.annotations)) throw new BackupError('缺少 annotations 数组')
   if (!Array.isArray(input.attachments)) throw new BackupError('缺少 attachments 数组')
@@ -153,8 +157,8 @@ export function parseAndValidate(input: unknown): Backup {
       }
     }
   }
-  // V3: validate persisted Draft user data + appearance (referenced attachments must exist).
-  if (isV3) {
+  // V3/V4: validate persisted Draft user data + appearance (referenced attachments must exist).
+  if (isV3 || isV4) {
     const app = (input as BackupV3).appearance
     if (!VALID_APPEARANCE.has(app)) throw new BackupError('appearance 必须是 system / light / dark')
     const drafts = (input as BackupV3).drafts
@@ -174,8 +178,83 @@ export function parseAndValidate(input: unknown): Backup {
     }
   }
 
+  if (isV4) validateV4BranchesAndArtifacts(input as BackupV4, input.conversations, input.attachments)
   validateDocuments(input)
   return input as Backup
+}
+
+
+function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], attachments: any[]): void {
+  if (!Array.isArray(input.branches)) throw new BackupError('缺少 branches 数组')
+  if (!Array.isArray(input.branchDrafts)) throw new BackupError('缺少 branchDrafts 数组')
+  if (!Array.isArray(input.artifacts)) throw new BackupError('缺少 artifacts 数组')
+  if (!Array.isArray(input.activeBranches)) throw new BackupError('缺少 activeBranches 数组')
+  const attIds = new Set<string>(); for (const at of attachments) attIds.add(at.id)
+  const convById = new Map<string, any>(); for (const c of conversations) convById.set(c.id, c)
+
+  const branchIds = new Set<string>()
+  const branchesByConv = new Map<string, ConversationBranch[]>()
+  for (const b of input.branches) {
+    if (!isObj(b) || !isNonEmptyStr(b.id)) throw new BackupError('branch 缺少合法的 id')
+    if (branchIds.has(b.id)) throw new BackupError('branch id 重复：' + String(b.id).slice(0, 8))
+    branchIds.add(b.id)
+    if (!isNonEmptyStr(b.conversationId)) throw new BackupError('branch.conversationId 非法')
+    if (!convById.has(b.conversationId)) throw new BackupError('branch 引用了不存在的会话：' + String(b.conversationId).slice(0, 8))
+    if (!isStr(b.title)) throw new BackupError('branch.title 非法')
+    if (!isNum(b.createdAt) || !isNum(b.updatedAt)) throw new BackupError('branch 时间戳非法')
+    if (!isNonEmptyStr(b.forkMessageId)) throw new BackupError('branch.forkMessageId 非法')
+    if (b.parentBranchId !== undefined && !isNonEmptyStr(b.parentBranchId)) throw new BackupError('branch.parentBranchId 非法')
+    if (!Array.isArray(b.messages)) throw new BackupError('branch.messages 必须是数组')
+    const locals = new Set<string>()
+    for (const m of b.messages) {
+      if (!isObj(m) || !isNonEmptyStr(m.id)) throw new BackupError('branch message 缺少合法的 id')
+      if (!VALID_ROLES.has(m.role)) throw new BackupError('branch message.role 非法')
+      if (!isStr(m.content)) throw new BackupError('branch message.content 非法')
+      if (!Array.isArray(m.images) || !m.images.every(isStr)) throw new BackupError('branch message.images 非法')
+      if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('branch message 时间戳非法')
+      if (locals.has(m.id)) throw new BackupError('branch message.id 重复')
+      locals.add(m.id)
+      for (const img of m.images) if (!attIds.has(img)) throw new BackupError('branch message 引用了不存在的附件：' + String(img).slice(0, 8))
+    }
+    const arr = branchesByConv.get(b.conversationId) ?? []
+    arr.push(b as ConversationBranch)
+    branchesByConv.set(b.conversationId, arr)
+  }
+
+  // Never restore a corrupt branch graph: validate integrity per conversation.
+  for (const [convId, convBranches] of branchesByConv) {
+    const conv = convById.get(convId)
+    const diags = validateBranchGraph(conv, convBranches)
+    if (diags.length > 0) throw new BackupError('分支图不完整：' + diags[0].code + '（分支 ' + String(convBranches[0]?.id ?? '').slice(0, 8) + '）')
+  }
+
+  const draftBranchIds = new Set<string>()
+  for (const d of input.branchDrafts) {
+    if (!isObj(d) || !isNonEmptyStr(d.branchId)) throw new BackupError('branchDraft.branchId 非法')
+    if (!branchIds.has(d.branchId)) throw new BackupError('branchDraft 引用了不存在的分支')
+    if (draftBranchIds.has(d.branchId)) throw new BackupError('branchDraft branchId 重复')
+    draftBranchIds.add(d.branchId)
+    if (!isStr(d.text)) throw new BackupError('branchDraft.text 必须是字符串')
+    if (!Array.isArray(d.imageIds) || !d.imageIds.every(isStr)) throw new BackupError('branchDraft.imageIds 非法')
+    for (const img of d.imageIds) if (!attIds.has(img)) throw new BackupError('branchDraft 引用了不存在的附件：' + String(img).slice(0, 8))
+  }
+
+  // Artifacts are self-contained via their frozen snapshot; they may reference a deleted source.
+  const artifactIds = new Set<string>()
+  for (const a of input.artifacts) {
+    if (!isObj(a) || !isNonEmptyStr(a.id)) throw new BackupError('artifact 缺少合法的 id')
+    if (artifactIds.has(a.id)) throw new BackupError('artifact id 重复')
+    artifactIds.add(a.id)
+    const va = validateArtifact(a)
+    if (!va) throw new BackupError('artifact 形状不合法')
+    if (va.kind === 'quiz') { try { validateQuizDocument(va.quiz) } catch { throw new BackupError('artifact quiz 结构不合法') } }
+  }
+
+  for (const ab of input.activeBranches) {
+    if (!isObj(ab) || !isNonEmptyStr(ab.conversationId) || !isNonEmptyStr(ab.branchId)) throw new BackupError('activeBranch 非法')
+    const convBranches = branchesByConv.get(ab.conversationId)
+    if (!convBranches || !convBranches.some((b) => b.id === ab.branchId)) throw new BackupError('activeBranch 引用了不存在的分支')
+  }
 }
 
 function base64ToBlob(data: string, mime: string): Blob {
@@ -221,13 +300,15 @@ export async function restoreBackup(backup: Backup): Promise<void> {
       // Key is NEVER restored (always empty). Draft rows re-create the unsent composer state.
       { key: 'appearance', value: (backup as BackupV3).appearance || 'system' },
       ...((backup as BackupV3).drafts || []).map((d: BackupDraft) => ({ key: 'draft:' + d.conversationId, value: { version: 1, text: d.text, imageIds: d.imageIds } })),
+      ...((backup as BackupV4).branchDrafts || []).map((d: BackupBranchDraft) => ({ key: 'draft-branch:' + d.branchId, value: { version: 1, text: d.text, imageIds: d.imageIds } })),
+      ...((backup as BackupV4).activeBranches || []).map((ab: BackupActiveBranch) => ({ key: 'activeBranch:' + ab.conversationId, value: ab.branchId })),
     ];
     // D. Snapshot OLD opfs refs for post-success cleanup.
     const oldDocs = await oldDocumentRefs();
     const oldAtts = await oldAttachmentRefs();
     oldRefs.push(...oldDocs, ...oldAtts);
     // E. One atomic IDB replacement.
-    await idbReplaceAll({ settings, conversations: backup.conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows });
+    await idbReplaceAll({ settings, conversations: backup.conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows, conversationBranches: (backup as BackupV4).branches || [], artifacts: (backup as BackupV4).artifacts || [] });
   } catch (e) {
     // Rollback: delete every staged OPFS file. Old IDB is untouched.
     for (const s of staged) { if (s.path) { try { await deleteBinary(s.ref) } catch { /* orphan */ } } }

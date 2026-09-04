@@ -37,7 +37,7 @@ assert(seededDraft.imageIds.length === 3, 'seeded draft has 3 image ids (got ' +
 
 // --- build the complete backup (V3) ---
 const backup = await buildBackup()
-assert(backup.version === 3, 'backup version is 3 (got ' + backup.version + ')')
+assert(backup.version === 4, 'backup version is 4 (got ' + backup.version + ')')
 const v3 = backup as any
 assert(Array.isArray(v3.drafts), 'backup has drafts array')
 const aDraft = v3.drafts.find((d: any) => d.conversationId === A)

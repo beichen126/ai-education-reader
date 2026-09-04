@@ -44,7 +44,7 @@ await idbClearAll()
 await createDocument({ id: 'doc1', fileName: '教材.pdf', mimeType: 'application/pdf', fileSize: 100, pageCount: 10, sourceBlob: new Blob([new Uint8Array(100).fill(7)], { type: 'application/pdf' }), importSource: { kind: 'pdf', originalFileName: '教材.pdf' } })
 await restoreBackup(parseAndValidate(v2backup())) // seed a second state? no — just parse+restore below
 const backup = await buildBackup()
-assert(backup.version === BACKUP_VERSION && BACKUP_VERSION === 3, 'exported backup version = 3')
+assert(backup.version === BACKUP_VERSION && BACKUP_VERSION === 4, 'exported backup version = 4')
 assert(backup.documents.length === 1, 'V2 export includes 1 document (got ' + backup.documents.length + ')')
 const bd = backup.documents[0]
 assert(bd.meta.id === 'doc1' && bd.meta.kind === 'pdf' && bd.meta.pageCount === 10, 'exported document metadata correct')
@@ -99,7 +99,7 @@ await idbClearAll()
 const v1 = parseAndValidate(v1backup())
 await restoreBackup(v1)
 assert((await listDocuments()).length === 0, 'V1 restore -> documents=[]')
-const conv = await new Promise<any>((res, rej) => { const r = indexedDB.open('ai-education-reader', 4); r.onsuccess = () => { const rr = r.result.transaction('conversations', 'readonly').objectStore('conversations').get('c1'); rr.onsuccess = () => res(rr.result); rr.onerror = () => rej(rr.error) }; r.onerror = () => rej(r.error) })
+const conv = await new Promise<any>((res, rej) => { const r = indexedDB.open('ai-education-reader', 5); r.onsuccess = () => { const rr = r.result.transaction('conversations', 'readonly').objectStore('conversations').get('c1'); rr.onsuccess = () => res(rr.result); rr.onerror = () => rej(rr.error) }; r.onerror = () => rej(r.error) })
 assert(!!conv && conv.messages[0].content === 'hi', 'V1 restore keeps conversation/message')
 
 // --- validation: malformed documents rejected ---
@@ -110,7 +110,7 @@ assert(!!conv && conv.messages[0].content === 'hi', 'V1 restore keeps conversati
 { const b = v2backup(); b.documents[0].meta.chapters[0].endPage = 0; mustReject(b, 'chapter page < 1') }
 { const b = v2backup(); b.documents[0].meta.kind = 'slides'; mustReject(b, 'document kind != pdf') }
 { const b = v2backup(); b.documents[1] = { ...b.documents[0] }; mustReject(b, 'duplicate document id') }
-{ const b = v2backup(); b.version = 3; mustReject(b, 'unsupported version 3') }
+{ const b = v2backup(); b.version = 5; mustReject(b, 'unsupported version 5') }
 { const b = v1backup(); b.version = 2; delete b.documents; mustReject(b, 'v2 without documents array') }
 { const b = v2backup(); b.documents[0].meta.lastReadPage = -1; mustReject(b, 'negative lastReadPage') }
 { const b = v2backup(); b.documents[0].meta.lastReadPage = 1.5; mustReject(b, 'fractional lastReadPage') }
