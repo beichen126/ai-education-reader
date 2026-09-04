@@ -26,6 +26,7 @@ import type { ChapterDraftItem } from './chapter-builder'
 import { TocPagePicker } from './TocPagePicker'
 import { TocReview, type TocReviewSave } from './TocReview'
 import { extractAiToc, type AiTocProgress } from './use-ai-toc-extraction'
+import { exportBookmarkedPdf, PdfOutlineError } from '../export/index'
 import { AiTocProgressDialog } from './AiTocProgressDialog'
 import { getSettingsSnapshot } from '../engine/settings-store'
 import type { MappedTocItem } from './toc-mapping'
@@ -102,6 +103,8 @@ export function DocumentReader() {
   const [aiTocDialogHidden, setAiTocDialogHidden] = useState(false)
   const [aiTocError, setAiTocError] = useState<string | null>(null)
   const [tocReviewOpen, setTocReviewOpen] = useState(false)
+  const [exportBusy, setExportBusy] = useState(false)
+  const [exportMsg, setExportMsg] = useState<string | null>(null)
   const tocReviewOpenRef = useRef(false); tocReviewOpenRef.current = tocReviewOpen
   const aiTocGenRef = useRef(0)
   const aiTocAbortRef = useRef<AbortController | null>(null)
@@ -423,6 +426,18 @@ export function DocumentReader() {
   const hideAiTocDialog = () => { setAiTocDialogHidden(true); setAiTocError(null) }
   const retryAiToc = () => { const p = lastAiTocPagesRef.current; if (p.length) void runAiToc(p) }
 
+    // Export the CURRENT chapter tree as a real bookmark outline in a NEW PDF.
+  const exportBookmarked = async () => {
+    if (!doc) return
+    setExportBusy(true); setExportMsg(null)
+    try {
+      await exportBookmarkedPdf({ id: doc.id, fileName: doc.fileName, pageCount: doc.pageCount, chapters: doc.chapters })
+      setExportMsg('已导出带目录 PDF')
+    } catch (e) {
+      setExportMsg(e instanceof PdfOutlineError ? e.message : '导出失败，请重试。')
+    } finally { setExportBusy(false) }
+  }
+
     // 编辑全部目录: hand the reviewed rows to the existing ChapterBuilder (no second editor).
   const editAiTocAll = useCallback((rows: MappedTocItem[]) => {
     const items: ChapterDraftItem[] = rows
@@ -561,8 +576,10 @@ export function DocumentReader() {
               {doc && (
                 <div className={css.tocAiArea}>
                   <button type="button" className={css.tocActionBtn} data-testid="reader-toc-ai" disabled={aiTocExtracting || tocPickerOpen} onClick={() => setTocPickerOpen(true)}>AI 识别目录</button>
+                  <button type="button" className={css.tocActionBtn} data-testid="reader-export-pdf" disabled={exportBusy || doc.chapters.length === 0} onClick={() => void exportBookmarked()}>{exportBusy ? '导出中…' : '导出带目录 PDF'}</button>
                 </div>
               )}
+              {exportMsg && <div className={css.tocRestoreMsg} data-testid="reader-export-msg">{exportMsg}</div>}
               {restoreMsg && <div className={css.tocRestoreMsg} data-testid="reader-toc-restore-msg">{restoreMsg}</div>}
               {aiTocMsg && <div className={css.tocRestoreMsg} data-testid="reader-toc-ai-msg">{aiTocMsg}</div>}
               {aiTocExtracting && aiTocDialogHidden && (

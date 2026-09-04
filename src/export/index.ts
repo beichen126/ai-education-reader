@@ -1,14 +1,17 @@
 import { buildBackup } from './backup-export'
 import { parseAndValidate, restoreBackup, BackupError } from './backup-import'
 import { conversationMarkdown, markedOnlyMarkdown } from './markdown'
-import { downloadText, downloadJson } from './download'
+import { downloadText, downloadJson, downloadBlob } from './download'
+import { writeBookmarkedPdf, PdfOutlineError } from './pdf-outline-writer'
+import { readDocumentSourceBlob } from '../documents/document-service'
+import type { ChapterNode } from '../documents/document-types'
 import { getConversation, getAnnotationsByConversation } from '../storage/storage'
 import { initStore } from '../engine/sessions-store'
 import { initSettings } from '../engine/settings-store'
 import { clearAnnotationCache } from '../annotations/annotation-store'
 import { resetDrafts } from '../engine/draft-store'
 
-export { BackupError }
+export { BackupError, PdfOutlineError }
 export type { BackupV1, BackupAttachment } from './backup-types'
 
 function stamp(): string { return new Date().toISOString().slice(0, 10) }
@@ -28,6 +31,14 @@ export async function exportMarkedOnlyMd(convId: string): Promise<void> {
   const anns = await getAnnotationsByConversation(convId)
   downloadText(safeName(conv.title) + '-marked.md', markedOnlyMarkdown(conv, anns), 'text/markdown')
 }
+export async function exportBookmarkedPdf(opts: { id: string; fileName: string; pageCount: number; chapters: ChapterNode[]; resolveFileName?: string }): Promise<void> {
+  let blob: Blob
+  try { blob = await readDocumentSourceBlob(opts.id) } catch { throw new PdfOutlineError('本地文件数据已丢失，无法导出。') }
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const out = await writeBookmarkedPdf({ sourceBytes: bytes, chapters: opts.chapters, pageCount: opts.pageCount })
+  downloadBlob(opts.resolveFileName || (safeName(opts.fileName).replace(/\.pdf$/i, '') + '-带目录.pdf'), new Blob([out as unknown as BlobPart], { type: 'application/pdf' }))
+}
+
 export async function importBackupText(text: string): Promise<void> {
   let json: unknown
   try { json = JSON.parse(text) } catch { throw new BackupError('JSON 解析失败') }

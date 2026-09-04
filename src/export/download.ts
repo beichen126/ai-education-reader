@@ -11,3 +11,6 @@ export function downloadText(filename: string, text: string, mime: string): void
 export function downloadJson(filename: string, obj: unknown): void {
   download(filename, new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json;charset=utf-8' }))
 }
+export function downloadBlob(filename: string, blob: Blob): void {
+  download(filename, blob)
+}

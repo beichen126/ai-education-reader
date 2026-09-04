@@ -71,6 +71,7 @@
     "test:opfs-storage": "npx tsx scripts/test-opfs-storage.ts",
     "test:document-migration": "npx tsx scripts/test-document-migration.ts",
     "test:backup-integrity": "npx tsx scripts/test-backup-integrity.ts",
+    "test:pdf-outline-writer": "npx tsx scripts/test-pdf-outline-writer.ts",
     "test:toc-review": "npx tsx scripts/test-toc-review.ts",
     "test:e2e-native-toc": "node scripts/e2e-native-toc.mjs",
     "test:e2e-ai-toc": "node scripts/e2e-ai-toc.mjs",
@@ -93,6 +94,7 @@
     "micromark-util-character": "^2.1.1",
     "micromark-util-symbol": "^2.0.1",
     "micromark-util-types": "^2.0.2",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.3.289",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
