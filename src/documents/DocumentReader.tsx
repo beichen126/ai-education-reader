@@ -25,7 +25,8 @@ import { chapterNodesFromPdfOutline } from './chapter-model'
 import type { ChapterDraftItem } from './chapter-builder'
 import { TocPagePicker } from './TocPagePicker'
 import { TocReview, type TocReviewSave } from './TocReview'
-import { extractAiToc } from './use-ai-toc-extraction'
+import { extractAiToc, type AiTocProgress } from './use-ai-toc-extraction'
+import { AiTocProgressDialog } from './AiTocProgressDialog'
 import { getSettingsSnapshot } from '../engine/settings-store'
 import type { MappedTocItem } from './toc-mapping'
 import type { LearningDocument, ChapterNode } from './document-types'
@@ -96,10 +97,15 @@ export function DocumentReader() {
   const [aiTocItems, setAiTocItems] = useState<MappedTocItem[] | null>(null)
   const [aiTocLabels, setAiTocLabels] = useState<string[] | null>(null)
   const [aiTocLabelsPlainNumeric, setAiTocLabelsPlainNumeric] = useState(false)
+  // Finding 9.4D.2-0.6: AI TOC progress dialog state (real phase progress, hide/cancel/error/retry).
+  const [aiTocProgress, setAiTocProgress] = useState<AiTocProgress | null>(null)
+  const [aiTocDialogHidden, setAiTocDialogHidden] = useState(false)
+  const [aiTocError, setAiTocError] = useState<string | null>(null)
   const [tocReviewOpen, setTocReviewOpen] = useState(false)
   const tocReviewOpenRef = useRef(false); tocReviewOpenRef.current = tocReviewOpen
   const aiTocGenRef = useRef(0)
   const aiTocAbortRef = useRef<AbortController | null>(null)
+  const lastAiTocPagesRef = useRef<number[]>([])
 
   // ---- docId-BOUND progress persistence: each write carries the id it belongs to ----
   const persist = useCallback((targetDocId: string, p: number) => {
@@ -135,6 +141,7 @@ export function DocumentReader() {
       aiTocGenRef.current++
       setTocPickerOpen(false); setAiTocExtracting(false); setAiTocMsg(null)
       setAiTocItems(null); setAiTocLabels(null); setAiTocLabelsPlainNumeric(false); setTocReviewOpen(false)
+      setAiTocProgress(null); setAiTocDialogHidden(false); setAiTocError(null); lastAiTocPagesRef.current = []
       return
     }
     // Ownership contract: the effect remembers the documentId IT was created for.
@@ -155,6 +162,7 @@ export function DocumentReader() {
       aiTocGenRef.current++
       setTocPickerOpen(false); setAiTocExtracting(false); setAiTocMsg(null)
       setAiTocItems(null); setAiTocLabels(null); setAiTocLabelsPlainNumeric(false); setTocReviewOpen(false)
+      setAiTocProgress(null); setAiTocDialogHidden(false); setAiTocError(null); lastAiTocPagesRef.current = []
       try {
         const d = await getDocument(docId)
         if (cancelled) return
@@ -379,6 +387,8 @@ export function DocumentReader() {
     aiTocAbortRef.current = controller
     setTocPickerOpen(false)
     setAiTocExtracting(true); setAiTocMsg(null)
+    setAiTocProgress(null); setAiTocDialogHidden(false); setAiTocError(null)
+    lastAiTocPagesRef.current = selectedPages
     const gen = ++aiTocGenRef.current
     const ownedDocId = doc.id
     try {
@@ -388,20 +398,32 @@ export function DocumentReader() {
         apiKey: s.apiKey, baseUrl: s.apiBaseUrl, model: s.model,
         getPageLabels: async () => readSessionPageLabels(session),
         signal: controller.signal,
+        onProgress: (p) => { if (gen === aiTocGenRef.current) setAiTocProgress(p) },
       })
       if (gen !== aiTocGenRef.current || docIdRef.current !== ownedDocId) return
-      if (!res.ok) { setAiTocMsg((res as { error: string }).error); return }
+      if (!res.ok) { setAiTocError((res as { error: string }).error); return }
       setAiTocItems(res.items); setAiTocLabels(res.labels); setAiTocLabelsPlainNumeric(res.labelsPlainNumeric)
-      setAiTocMsg(null)
+      setAiTocMsg(null); setAiTocError(null)
       setTocReviewOpen(true)
     } catch {
-      if (gen === aiTocGenRef.current) setAiTocMsg('目录识别失败，请重试。')
+      if (gen === aiTocGenRef.current) setAiTocError('目录识别失败，请重试。')
     } finally {
       if (gen === aiTocGenRef.current) setAiTocExtracting(false)
     }
   }, [doc, pageCount])
 
-  // 编辑全部目录: hand the reviewed rows to the existing ChapterBuilder (no second editor).
+  // Progress dialog lifecycle (Finding 9.4D.2-0.6): hide keeps the operation running and
+  // shows a Reader activity chip; cancel aborts (no review, no persistence, no object URL).
+  const cancelAiToc = () => {
+    aiTocAbortRef.current?.abort()
+    setAiTocDialogHidden(false)
+    setAiTocError('已取消目录识别')
+    setAiTocExtracting(false)
+  }
+  const hideAiTocDialog = () => { setAiTocDialogHidden(true); setAiTocError(null) }
+  const retryAiToc = () => { const p = lastAiTocPagesRef.current; if (p.length) void runAiToc(p) }
+
+    // 编辑全部目录: hand the reviewed rows to the existing ChapterBuilder (no second editor).
   const editAiTocAll = useCallback((rows: MappedTocItem[]) => {
     const items: ChapterDraftItem[] = rows
       .filter(r => r.startPage != null)
@@ -543,7 +565,9 @@ export function DocumentReader() {
               )}
               {restoreMsg && <div className={css.tocRestoreMsg} data-testid="reader-toc-restore-msg">{restoreMsg}</div>}
               {aiTocMsg && <div className={css.tocRestoreMsg} data-testid="reader-toc-ai-msg">{aiTocMsg}</div>}
-              {aiTocExtracting && <div className={css.tocRestoreMsg} data-testid="reader-toc-ai-loading">正在识别目录…</div>}
+              {aiTocExtracting && aiTocDialogHidden && (
+                <button type="button" className={css.tocActionBtn} data-testid="reader-toc-ai-activity" onClick={() => setAiTocDialogHidden(false)}>⏳ 目录识别中…（点击查看进度）</button>
+              )}
             </aside>
             <main className={css.stage}>
               {rendering && <div className={css.hint} data-testid="reader-loading">正在渲染第 {page} 页…</div>}
@@ -637,6 +661,16 @@ export function DocumentReader() {
           pageCount={pageCount}
           onCancel={() => setTocPickerOpen(false)}
           onStart={(selectedPages) => { setTocPickerOpen(false); void runAiToc(selectedPages) }}
+        />
+      )}
+      {(aiTocError || (aiTocExtracting && !aiTocDialogHidden)) && (
+        <AiTocProgressDialog
+          progress={aiTocProgress}
+          selectedCount={lastAiTocPagesRef.current.length}
+          error={aiTocError}
+          onClose={hideAiTocDialog}
+          onCancel={cancelAiToc}
+          onRetry={aiTocError ? retryAiToc : undefined}
         />
       )}
       {builderOpen && doc && (

@@ -77,7 +77,8 @@
     "test:e2e-settings-byok": "node scripts/e2e-settings-byok.mjs",
     "test:e2e-opfs-storage": "node scripts/e2e-opfs-storage.mjs",
     "test:e2e-opfs-migration": "node scripts/e2e-opfs-migration.mjs",
-    "test:e2e-toc-thumbnails": "node scripts/e2e-toc-thumbnails.mjs"
+    "test:e2e-toc-thumbnails": "node scripts/e2e-toc-thumbnails.mjs",
+    "test:e2e-toc-review-layout": "node scripts/e2e-toc-review-layout.mjs"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",

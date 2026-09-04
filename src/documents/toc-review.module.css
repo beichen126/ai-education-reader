@@ -1,32 +1,35 @@
 .overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 2000; display: flex; align-items: stretch; }
-.panel { flex: none; width: min(480px, 100vw); max-height: 100vh; display: flex; flex-direction: column; background: #fff; border-right: 1px solid var(--dsw-alias-border-l2); box-shadow: 0 0 40px rgba(0,0,0,0.18); }
-.header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.panel { flex: none; width: min(720px, calc(100vw - 24px)); max-height: 100vh; display: flex; flex-direction: column; background: var(--dsw-alias-bg-layer-1); border-right: 1px solid var(--dsw-alias-border-l2); box-shadow: 0 0 40px rgba(0,0,0,0.18); }
+.header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .title { font-size: 15px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .sub { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .headerBtns { display: flex; gap: 8px; }
-.btn { min-height: 36px; padding: 6px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
+.btn { min-height: 36px; padding: 6px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
 .btnPrimary { min-height: 36px; padding: 6px 14px; border: none; border-radius: 8px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 13px; cursor: pointer; }
 .btnPrimary:disabled { opacity: 0.5; cursor: not-allowed; }
-.err { padding: 8px 16px; font-size: 12px; color: var(--dsw-alias-state-error-primary); }
-.warn { padding: 8px 16px; font-size: 12px; color: var(--dsw-alias-state-warning-primary, #b7791f); }
-.body { flex: 1; min-height: 0; display: flex; }
-.list { flex: 1; min-width: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.err { flex: none; padding: 8px 16px; font-size: 12px; color: var(--dsw-alias-state-error-primary); }
+.warn { flex: none; padding: 8px 16px; font-size: 12px; color: var(--dsw-alias-state-warning-primary, #b7791f); }
+.reviewBody { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 1fr) minmax(240px, 280px); }
+.list { min-width: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
 .item { padding: 6px 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; cursor: pointer; }
 .item.active { border-color: var(--dsw-alias-button-primary-fill); box-shadow: 0 0 0 1px var(--dsw-alias-button-primary-fill); }
-.itemTitle { display: flex; align-items: center; gap: 6px; }
-.itemMark { font-size: 13px; }
-.itemText { flex: 1; min-width: 0; font-size: 13px; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
+.itemTitle { display: flex; align-items: baseline; gap: 6px; }
+.itemMark { font-size: 13px; flex: none; }
+.itemText { flex: 1; min-width: 0; font-size: 13px; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; line-height: 1.4; }
 .itemMeta { font-size: 11px; color: var(--dsw-alias-label-tertiary); padding-left: 20px; }
-.itemBtns { display: flex; gap: 6px; padding-left: 20px; margin-top: 4px; }
+.itemBtns { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 20px; margin-top: 4px; }
 .mini { min-height: 26px; padding: 2px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-secondary); font-size: 12px; cursor: pointer; }
 .empty { padding: 16px; font-size: 13px; color: var(--dsw-alias-label-tertiary); }
-.adjust { flex: none; width: 220px; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-left: 1px solid var(--dsw-alias-border-l2); overflow-y: auto; }
+.adjust { min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-left: 1px solid var(--dsw-alias-border-l2); overflow-y: auto; }
 .adjustTitle { font-size: 12px; font-weight: 600; color: var(--dsw-alias-label-secondary); }
+.adjustCurrent { font-size: 12px; color: var(--dsw-alias-label-primary); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
-.input { flex: 1; min-width: 0; min-height: 30px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 3px 6px; font-size: 12px; }
+.input { flex: 1; min-width: 0; min-height: 30px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 3px 6px; font-size: 12px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
 .offset { border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .nav { flex: none; display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--dsw-alias-border-l2); }
-@media (max-width: 640px) { .panel { width: 100vw; } .adjust { width: 150px; } }
 .confirmWrap { position: absolute; left: 0; top: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: rgba(12,14,18,0.4); padding: 16px; }
-.confirmBox { width: min(360px, 100%); background: #fff; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.24); padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
+.confirmBox { width: min(360px, 100%); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.24); padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
 .confirmBtns { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 800px) { .panel { width: min(680px, calc(100vw - 24px)); } }
+@media (max-width: 680px) { .reviewBody { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; } .adjust { border-left: none; border-top: 1px solid var(--dsw-alias-border-l2); } }
+@media (max-width: 640px) { .panel { width: 100vw; max-height: 100dvh; } }

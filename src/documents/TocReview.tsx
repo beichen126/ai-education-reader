@@ -42,6 +42,18 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
   // Rebuild rows when a new mapped draft arrives.
   useEffect(() => { setRows(items); setState(() => { const s: ReviewState = {}; items.forEach((_, i) => s[i] = 'unchecked'); return s }); setIdx(0); setLevelRaw({}) }, [items])
 
+  // Finding 9.4D.2-0.6.24: on first open, auto-select the first resolved item and jump the
+  // Reader to its physical page so the user immediately sees "left: chapter | right: PDF".
+  // If the first item is unresolved, stay on the current Reader page (never guess).
+  const mountJumpDoneRef = useRef(false)
+  useEffect(() => {
+    if (mountJumpDoneRef.current) return
+    mountJumpDoneRef.current = true
+    if (items.length === 0) return
+    const firstResolved = items.findIndex(it => it.startPage != null)
+    if (firstResolved >= 0) { const p = items[firstResolved].startPage as number; setIdx(firstResolved); onJump(p) }
+  }, [items, onJump])
+
   // --- Review correctness (Stage 9.4C.1): single source validator (no duplicated
   // hasUnresolved/toDraft/validation). Unresolved is NEVER coerced to 1; a blocking
   // row count is distinct rows, not issue count. ---
@@ -184,7 +196,7 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
         {saveError && <div className={css.err} data-testid="toc-review-error">{saveError}</div>}
         {invalid && <div className={css.err} data-testid="toc-review-invalid">还有 {invalidCount} 项需要修正后才能保存。</div>}
         {unresolvedCount > 0 && <div className={css.warn} data-testid="toc-review-unresolved">有 {unresolvedCount} 项页码待确认。</div>}
-        <div className={css.body}>
+        <div className={css.reviewBody}>
           <div className={css.list} data-testid="toc-review-list">
             {rows.map((it, i) => (
               <div key={i} className={css.item + (i === idx ? ' ' + css.active : '')} data-testid={'toc-review-item-' + i} data-sp={it.startPage ?? ''} data-state={state[i] || 'unchecked'} onClick={() => jump(i)}>
@@ -199,7 +211,8 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
             {rows.length === 0 && <div className={css.empty} data-testid="toc-review-empty">没有识别到条目。</div>}
           </div>
           <div className={css.adjust} data-testid="toc-review-adjust">
-            <div className={css.adjustTitle}>快速调整当前项（{rows[idx]?.title || '—'}）</div>
+            <div className={css.adjustTitle}>快速调整当前项</div>
+            <div className={css.adjustCurrent} data-testid="toc-review-current-title">{rows[idx]?.title || '—'}</div>
             <label className={css.field}>标题 <input className={css.input} data-testid="toc-review-title" value={rows[idx]?.title || ''} onChange={e => editRow(idx, { title: e.target.value })} /></label>
             <label className={css.field}>层级 <input className={css.input} data-testid="toc-review-level" value={levelRaw[idx] ?? String(rows[idx]?.level ?? '')} inputMode="numeric" onChange={e => onLevelInput(idx, e.target.value)} /></label>
             <label className={css.field}>PDF页 <input className={css.input} data-testid="toc-review-page" value={rows[idx]?.startPage ?? ''} placeholder="待确认" onChange={e => onPageInput(idx, e.target.value)} /></label>
@@ -211,10 +224,10 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
               </div>
             )}
           </div>
-          <div className={css.nav}>
-            <button type="button" className={css.btn} data-testid="toc-review-prev" onClick={() => idx > 0 && jump(idx - 1)}>上一项</button>
-            <button type="button" className={css.btn} data-testid="toc-review-next" onClick={continueReview}>继续检查</button>
-          </div>
+        </div>
+        <div className={css.nav}>
+          <button type="button" className={css.btn} data-testid="toc-review-prev" onClick={() => idx > 0 && jump(idx - 1)}>上一项</button>
+          <button type="button" className={css.btn} data-testid="toc-review-next" onClick={continueReview}>继续检查</button>
         </div>
         {confirmUnchecked && (
           <div className={css.confirmWrap} data-testid="toc-review-unchecked-confirm">
