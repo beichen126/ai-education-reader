@@ -144,6 +144,18 @@ export async function idbUpdate(store: string, key: any, updater: (current: any)
     txn.onabort = () => fail(new Error('transaction aborted'))
   })
 }
+/**
+ * Run a multi-store readwrite transaction atomically. `fn(txn)` issues all requests;
+ * the returned promise resolves only when the transaction COMMITS and rejects on
+ * error/abort. Lets callers compose atomic operations across stores (e.g. put a
+ * conversation + put lastConversationId + delete a draft in ONE durable commit). */
+export async function idbRunTxn(storeNames: string[], fn: (txn: IDBTransaction) => void): Promise<void> {
+  const db = await openDb()
+  const txn = db.transaction(storeNames, 'readwrite')
+  fn(txn)
+  await txnDone(txn)
+}
+
 /** Clear EVERY store in one readwrite transaction (destructive: used by clear local data). */
 export async function idbClearAll(): Promise<void> {
   const db = await openDb()

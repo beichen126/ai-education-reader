@@ -4,7 +4,7 @@ import { useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
 import { uiActions, useUi } from '../engine/ui-store'
 import { saveFiles, saveGeneratedImages, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
-import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraft } from '../engine/draft-store'
+import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory } from '../engine/draft-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { t } from '../engine/locale'
 import { MessageText, IconCloseOutline16, Button } from '../dsh/primitives'
@@ -247,7 +247,7 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
     const ok = await sessionsActions.sendUserMessage(sessionId, text.trim(), picIds)
     // Only clear the draft once the user message is ACCEPTED & persisted; the image ids
     // then belong to the message (ownership transfer), so we must NOT delete them here.
-    if (ok) { void clearDraft(sessionId); setPhotoError(undefined); setOpenId(null) }
+    if (ok) { clearDraftMemory(sessionId); setPhotoError(undefined); setOpenId(null) }
   }
   return (
     <div className={css.composer}>

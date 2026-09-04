@@ -11,6 +11,8 @@ import { existsAttachment } from './attachment-service'
  */
 export type Draft = { text: string; imageIds: StableId[] }
 const KEY = 'draft:'
+/** The persisted settings key for a conversation's draft (used by atomic send accept). */
+export function draftSettingKey(conversationId: string): string { return KEY + conversationId }
 const VERSION = 1
 const TEXT_DEBOUNCE_MS = 500
 
@@ -70,6 +72,13 @@ export async function deleteDraft(id: string): Promise<void> {
   cancelTextTimer(id)
   if (drafts.delete(id)) emit()
   try { await deleteSetting(KEY + id) } catch (e) { console.error('[draft] delete failed', id, e) }
+}
+/** Clear ONLY the in-memory draft state (no database mutation). Used after the durable
+ *  send-accept transaction already deleted the draft row atomically — clearing memory
+ *  here must not issue an extra (duplicate) write. */
+export function clearDraftMemory(id: string): void {
+  cancelTextTimer(id)
+  put(id, { text: '', imageIds: [] })
 }
 
 /** Test/utility hook: flush a conversation's pending debounced text persist now. */

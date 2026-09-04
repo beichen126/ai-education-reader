@@ -1,4 +1,4 @@
-import { idbGet, idbGetAll, idbGetAllKeys, idbPut, idbDelete, idbGetAllByIndex, idbDeleteByIndex, idbBatchPut, idbBatchDelete, idbClearAll } from './idb'
+import { idbGet, idbGetAll, idbGetAllKeys, idbPut, idbDelete, idbGetAllByIndex, idbDeleteByIndex, idbBatchPut, idbBatchDelete, idbClearAll, idbRunTxn } from './idb'
 import type { Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import type { StoredBinary } from './binary-store'
@@ -30,6 +30,28 @@ export async function getConversation(id: string): Promise<any> { return idbGet(
 export async function listConversations(): Promise<any[]> { const all = await idbGetAll('conversations'); return all.sort((a, b) => b.updatedAt - a.updatedAt) }
 export async function saveConversation(conv: any): Promise<void> { await idbPut('conversations', conv) }
 export async function deleteConversation(id: string): Promise<void> { await idbDelete('conversations', id) }
+
+/** The durable settings key holding the last-active conversation id. */
+export const LAST_CONVERSATION_ID_KEY = 'lastConversationId'
+
+/**
+ * Atomically ACCEPT a user message into a conversation: in ONE IndexedDB
+ * readwrite transaction spanning the conversations + settings stores we:
+ *   1. put the updated Conversation (with the new user message);
+ *   2. put lastConversationId;
+ *   3. delete the draft:<conversationId> setting row (the accepted content must no
+ *      longer be considered unsent).
+ * The promise resolves ONLY when the transaction commits, so there is never a
+ * durable state where only some of these three acceptance operations landed.
+ * On failure nothing commits and the caller keeps its Draft intact.
+ */
+export async function commitAcceptedUserMessage(conv: any, lastConversationId: string, draftKey: string | null): Promise<void> {
+  await idbRunTxn(['conversations', 'settings'], (txn) => {
+    txn.objectStore('conversations').put(conv)
+    txn.objectStore('settings').put({ key: LAST_CONVERSATION_ID_KEY, value: lastConversationId })
+    if (draftKey) txn.objectStore('settings').delete(draftKey)
+  })
+}
 
 // Legacy-inline seeding helpers (used by tests to set up legacy rows, and available for
 // callers that explicitly want an inline IndexedDB Blob). The attachment-service ALWAYS

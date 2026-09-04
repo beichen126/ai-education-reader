@@ -1,12 +1,12 @@
 import { useSyncExternalStore } from 'react'
 import { type Conversation, type Message, type Attachment, type StableId, newStableId, NEW_TITLE } from './types'
 import { sanitizeTitle } from './session-title'
-import { getSetting, setSetting, saveConversation, deleteConversation, listConversations } from '../storage/storage'
+import { getSetting, setSetting, saveConversation, deleteConversation, listConversations, commitAcceptedUserMessage } from '../storage/storage'
 import { getSettingsSnapshot } from './settings-store'
 import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, isVisionModel, exceedsVisionImageCount } from '../api/deepseek'
 import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
 import { deleteConvAnnotations } from '../annotations/annotation-service'
-import { getDraft, deleteDraft, initDrafts } from './draft-store'
+import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
 
 export type { Conversation as ChatSession, Message as ChatMsg, Attachment as ChatImage }
 export const uid = (_p?: string) => newStableId()
@@ -46,6 +46,8 @@ function upsertState(conv: Conversation, extra?: Partial<SessionsState>) {
 }
 const LAST_CONV = 'lastConversationId'
 let abortControllerRef: AbortController | null = null
+/** Id of a conversation whose user-message acceptance transaction is in flight. */
+const acceptingRef = { current: null as string | null }
 
 
 export const sessionsActions = {
@@ -69,17 +71,36 @@ export const sessionsActions = {
    */
   async sendUserMessage(id: string, content: string, imageIds: StableId[] = []): Promise<boolean> {
     if (state.status === 'sending' || state.status === 'streaming') return false
+    // Double-submit guard while the acceptance transaction is in progress.
+    if (acceptingRef.current === id) return false
     const conv = state.byId[id]; if (!conv) return false
     if (!content.trim() && imageIds.length === 0) return false
     const now = Date.now()
     const m: Message = { id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now }
     const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
     const afterUser: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
+    // Optimistically show 'sending' and block concurrent sends; revert on failure.
     upsertState(afterUser, { status: 'sending', sendError: undefined })
-    await saveConversation(afterUser); await setSetting(LAST_CONV, id)
-    // Accepted: the user message + its image ids are now persisted in the conversation.
-    // Run the reply stream in the BACKGROUND so the caller can clear its draft and
-    // transfer attachment ownership immediately, without blocking on the network.
+    acceptingRef.current = id
+    try {
+      // ONE durable transaction: put conversation + put lastConversationId + delete the
+      // draft row. The user message is ACCEPTED only if this transaction commits. On
+      // failure nothing commits, the Draft stays intact and no reply stream starts.
+      const draftKey = draftSettingKey(id)
+      await commitAcceptedUserMessage(afterUser, id, draftKey)
+    } catch (e) {
+      // Revert the optimistic memory state; Draft memory + durable Draft remain intact.
+      upsertState(conv, { status: state.status === 'error' ? 'error' : 'idle', sendError: '消息发送失败，请重试。' })
+      acceptingRef.current = null
+      return false
+    }
+    acceptingRef.current = null
+    // Accepted: the user message + its image ids are now durably in the conversation AND
+    // the draft row was deleted in the same commit. Clear Draft MEMORY without issuing
+    // another required database mutation (no duplicate write).
+    clearDraftMemory(id)
+    // Run the reply stream in the BACKGROUND so the caller can transfer attachment
+    // ownership immediately, without blocking on the network.
     void runReplyStream(id, afterUser)
     return true
   },
