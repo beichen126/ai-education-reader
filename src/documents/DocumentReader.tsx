@@ -7,7 +7,7 @@
 // effect only keeps pagehide/visibility flush.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getDocument, updateLastReadPage, updateDocumentChapters, DocumentBinaryMissingError } from './document-service'
-import { useSessions } from '../engine/sessions-store'
+import { useSessions, getSessionsCurrent } from '../engine/sessions-store'
 import { formatBytes } from '../storage/diagnostics'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { renderPdfContextRanges, PdfContextRenderError, type ContextRenderProgress } from '../pdf/pdf-context-render'
@@ -302,21 +302,28 @@ export function DocumentReader() {
     const gen = ++ctxGenRef.current
     setCtxBusy(true); setCtxMsg(null); setCtxProgress({ done: 0, total: request.count, bytes: 0 })
     setCtxPending(null)
+    // UNIFIED execution: Reader page/chapter/manual selection converges on the SAME
+    // service as the shared picker (executeDocumentContext). The Reader passes its own
+    // PdfSession as existingSession (never closed by the service). Staleness is tested
+    // against the CURRENT active conversation (getSessionsCurrent), NOT a stale closure:
+    // if the user switches conversation, the old operation cancels early and NEVER writes
+    // into A or B (0.4 / 0.5).
+    const ownedDocId = request.documentId
+    const ownedConvId = request.targetConversationId
+    const isCancelled = () => gen !== ctxGenRef.current
+    const isStale = () => gen !== ctxGenRef.current || getSessionsCurrent() !== ownedConvId || docIdRef.current !== ownedDocId
     try {
-      const { pages } = await renderPdfContextRanges({
-        ranges: request.ranges, pageCount: request.pageCount,
-        renderPage: (n) => renderSessionPage(request.session, n),
+      const res = await executeDocumentContext({
+        targetConversationId: request.targetConversationId,
+        documentId: request.documentId, fileName: request.fileName, pageCount: request.pageCount,
+        selection: request.selection, existingSession: request.session,
+        isCancelled, isStale,
         onProgress: (p) => { if (gen === ctxGenRef.current) setCtxProgress(p) },
-        isCancelled: () => gen !== ctxGenRef.current,
       })
-      if (gen !== ctxGenRef.current) return // cancelled during render -> silent
-      // Commit boundary: once all pages rendered, let the atomic attach complete
-      // even if the user left meanwhile (no partial attachments); only the UI
-      // message is suppressed after a cancel.
-      const res = await addPdfContextToDraft(request.targetConversationId, { documentId: request.documentId, fileName: request.fileName, selection: request.selection, pages })
-      if (gen !== ctxGenRef.current) return
+      if (gen !== ctxGenRef.current) return // cancelled / stale during render -> silent
       const label = request.selection.title ? '已加入「' + request.selection.title + '」· ' + res.count + ' 页' : '已加入当前对话 · ' + res.count + ' 页'
-      setCtxMsg(res.ok ? { text: label, ok: true } : { text: res.error, ok: false })
+      if (!res.ok && res.error) setCtxMsg({ text: res.error, ok: false })
+      else if (res.ok) setCtxMsg({ text: label, ok: true })
     } catch (e) {
       if (gen !== ctxGenRef.current) return
       setCtxMsg({ text: e instanceof PdfContextRenderError ? e.message : '无法生成上下文。', ok: false })
@@ -345,7 +352,7 @@ export function DocumentReader() {
     const gen = ++ctxGenRef.current
     setCtxBusy(true); setCtxRunning({ total: count, done: 0 }); setCtxMsg(null)
     const isCancelled = () => gen !== ctxGenRef.current
-    const isStale = () => gen !== ctxGenRef.current || (docIdRef.current !== ownedDocId) || (conv?.id !== ownedConvId)
+    const isStale = () => gen !== ctxGenRef.current || (docIdRef.current !== ownedDocId) || (getSessionsCurrent() !== ownedConvId)
     try {
       const res = await executeDocumentContext({ targetConversationId, documentId: doc.id, fileName: doc.fileName, pageCount, selection, existingSession: sessionRef.current, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxRunning({ total: p.total, done: p.done }) } })
       if (gen !== ctxGenRef.current) return
