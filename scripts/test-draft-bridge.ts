@@ -4,6 +4,7 @@ import { addPdfContextToDraft } from '../src/pdf/pdf-context-draft.ts'
 import { getDraft, addDraftImages, resetDrafts } from '../src/engine/draft-store.ts'
 import { getAttachment, saveGeneratedImages, deleteAttachment } from '../src/engine/attachment-service.ts'
 import { idbGetAll, idbClearAll } from '../src/storage/idb.ts'
+import { saveConversation } from '../src/storage/storage.ts'
 import { newStableId, type Attachment } from '../src/engine/types.ts'
 import { buildAttachmentDisplayItems } from '../src/attachments/attachment-display.ts'
 
@@ -13,6 +14,8 @@ const jpg = (n: number, bytes = 100) => ({ pageNumber: n, blob: new Blob([new Ui
 
 await idbClearAll(); resetDrafts()
 const convId = newStableId()
+// The target conversation must exist in IndexedDB (P0-4: add-to-missing-conversation fails).
+await saveConversation({ id: convId, title: 'c', createdAt: 1, updatedAt: 1, messages: [] })
 const DOC = 'doc-b2'
 const payload = {
   documentId: DOC,
