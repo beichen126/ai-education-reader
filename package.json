@@ -79,7 +79,7 @@
     "test:e2e-branching": "node scripts/e2e-branching.mjs",
     "test:e2e-branching-graph": "node scripts/e2e-branching-graph.mjs",
     "test:e2e-artifacts": "node scripts/e2e-artifacts.mjs",
-    "test:e2e-post-v1": "node scripts/e2e-branching.mjs && node scripts/e2e-branching-graph.mjs && node scripts/e2e-artifacts.mjs",
+    "test:e2e-post-v1": "node scripts/e2e-branching.mjs && node scripts/e2e-branching-graph.mjs && node scripts/e2e-artifacts.mjs && node scripts/e2e-branch-stream.mjs && node scripts/e2e-backup.mjs",
     "test:native-toc": "npx tsx scripts/test-native-toc.ts",
     "test:ai-toc": "npx tsx scripts/test-ai-toc.ts",
     "test:same-page": "npx tsx scripts/test-same-page.ts",
