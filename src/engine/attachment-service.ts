@@ -3,6 +3,7 @@
 import { newStableId, type Attachment, type PdfAttachmentSource, type StableId } from './types'
 import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, listAllAttachmentRows, listConversations, type StoredAttachmentRow } from '../storage/storage'
 import { idbScan, idbGetAll, idbRunTxn } from '../storage/idb'
+import { allBranches } from '../branches/branch-store'
 import { persistBinary, readBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
 
 export type AttachmentErrorKind = 'unsupported-format' | 'read-failed' | 'missing-attachment' | 'image-too-large' | 'vision-unsupported'
@@ -220,14 +221,18 @@ export function releaseAllPreviews(): void { for (const [id, e] of urlRegistry) 
  */
 export async function cleanupOrphanAttachments(graceMs = 24 * 60 * 60 * 1000): Promise<{ removed: number }> {
   try {
-    // Live set = all message images + all persisted draft imageIds.
+    // Live set = ROOT message images + ROOT drafts + BRANCH message images + BRANCH drafts.
     const live = new Set<string>()
     for (const conv of await listConversations()) {
       for (const m of (conv.messages || [])) { for (const img of (m.images || [])) live.add(img) }
     }
+    // Branch-local messages own attachments too (image / PDF Context / Document Context).
+    for (const b of await allBranches()) {
+      for (const m of (b.messages || [])) { for (const img of (m.images || [])) live.add(img) }
+    }
     const draftRows = await idbGetAll('settings')
     for (const row of draftRows) {
-      if (typeof row.key === 'string' && row.key.indexOf('draft:') === 0) {
+      if (typeof row.key === 'string' && (row.key.indexOf('draft:') === 0 || row.key.indexOf('draft-branch:') === 0)) {
         const val = row.value
         if (val && Array.isArray(val.imageIds)) for (const img of val.imageIds) live.add(img)
       }
