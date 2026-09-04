@@ -49,6 +49,13 @@ let abortControllerRef: AbortController | null = null
 /** Id of a conversation whose user-message acceptance transaction is in flight. */
 const acceptingRef = { current: null as string | null }
 
+/** An explicitly-tracked active reply generation. Prevents the accidental mixture of
+ *  'a naked global AbortController' + a stale snapshot. One generation globally.
+ *  `controller` is the AbortController; a deletion/switch aborts it; a NEW generation
+ *  replaces it (aborting the previous). */
+type ActiveGeneration = { conversationId: string; assistantId: string; controller: AbortController }
+let activeGeneration: ActiveGeneration | null = null
+
 
 export const sessionsActions = {
   async newChat(): Promise<string> {
@@ -120,6 +127,9 @@ export const sessionsActions = {
     upsertState(updated); await saveConversation(updated)
   },
   async remove(id: string) {
+    // If a reply stream is actively generating for THIS conversation, abort it. It must
+    // never resurrect a deleted conversation or recreate deleted attachments/messages.
+    if (activeGeneration && activeGeneration.conversationId === id) { activeGeneration.controller.abort(); activeGeneration = null; abortControllerRef = null }
     const conv = state.byId[id]
     const next = toState(state.list.filter(c => c.id !== id), state.current === id ? undefined : state.current)
     setState(next)
@@ -142,6 +152,12 @@ export const sessionsActions = {
   },
 }
 
+/** Fire-and-forget durable save (never throws; a failed checkpoint must not corrupt the
+ *  in-memory stream). Used for periodic partial-content checkpoints during streaming. */
+async function persistConversation(conv: Conversation): Promise<void> {
+  try { await saveConversation(conv) } catch (e) { console.error('[stream] checkpoint persist failed', conv.id, e) }
+}
+
 /** Fire-and-forget reply stream: runs AFTER the user message is accepted & persisted. */
 async function runReplyStream(id: string, afterUser: Conversation): Promise<void> {
   const settings = getSettingsSnapshot()
@@ -150,8 +166,13 @@ async function runReplyStream(id: string, afterUser: Conversation): Promise<void
   const assistantId = newStableId()
   const controller = new AbortController()
   let received = ''
-  let lastCommit = 0
-  const commit = () => {
+  let lastRender = 0
+  let lastDurable = 0
+  const DURABLE_CHECKPOINT_MS = 1500
+
+  // Update React memory (UI render throttle ~200ms). Never reconstruct the assistant
+  // message from a stale snapshot: merge into the CURRENT conversation from store state.
+  const commit = (flushDurable: boolean) => {
     const cur = state.byId[id]; if (!cur) return
     const last = cur.messages[cur.messages.length - 1]
     if (!last || last.id !== assistantId) return
@@ -159,8 +180,14 @@ async function runReplyStream(id: string, afterUser: Conversation): Promise<void
     const updatedMsg: Message = { ...last, content: received, updatedAt: Date.now() }
     const updated: Conversation = { ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] }
     upsertState(updated, { status: 'streaming', sendError: undefined })
+    // Durable checkpoint (conservative throttle): persist partial assistant content so a
+    // tab/process crash mid-answer doesn't lose most of the generated text. Never once per
+    // token; never a blocking await inside the hot render path (fire-and-forget).
+    if (flushDurable && Date.now() - lastDurable >= DURABLE_CHECKPOINT_MS) { lastDurable = Date.now(); void persistConversation(updated) }
   }
-  const onDelta = (d: string) => { received += d; const t = Date.now(); if (t - lastCommit >= streamRenderIntervalMs) { lastCommit = t; commit() } }
+
+  const onDelta = (d: string) => { received += d; const t = Date.now(); if (t - lastRender >= streamRenderIntervalMs) { lastRender = t; commit(false) } }
+
   try {
     // --- LOCAL PREFLIGHT (no network, and NO assistant placeholder yet) ---
     // A preflight failure must not leave a ghost empty assistant message behind.
@@ -200,28 +227,37 @@ async function runReplyStream(id: string, afterUser: Conversation): Promise<void
     }
 
     // --- only NOW create the assistant placeholder (ONE stable id for the whole stream) ---
+    // Re-read the CURRENT conversation from store state and merge the placeholder into it,
+    // NEVER reconstruct from the stale afterUser snapshot (which could clobber a concurrent
+    // title rename or any message change made between send-accept and here).
     const placeholder: Message = { id: assistantId, role: 'assistant', content: '', images: [], createdAt: now, updatedAt: now }
-    const withPlaceholder: Conversation = { ...afterUser, updatedAt: now, messages: [...afterUser.messages, placeholder] }
+    const currentBase = state.byId[id] || afterUser
+    const withPlaceholder: Conversation = { ...currentBase, updatedAt: now, messages: [...currentBase.messages, placeholder] }
     upsertState(withPlaceholder, { status: 'streaming', sendError: undefined })
     abortControllerRef = controller
+    activeGeneration = { conversationId: id, assistantId, controller }
 
     const r = await streamTextChat({ apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages, signal: controller.signal, onDelta })
     received = r.content
-    commit()
+    // Final flush (no more tokens): persist the latest meaningful assistant state.
+    commit(true)
     const finalConv = state.byId[id]
     if (finalConv) await saveConversation(finalConv)
     setState({ ...state, status: 'idle', sendError: undefined })
+    activeGeneration = null
     abortControllerRef = null
   } catch (e) {
-    commit()
+    // Flush the latest partial assistant state (durable) on error OR user abort.
+    commit(true)
     const cur = state.byId[id]
     if (cur) await saveConversation(cur)
     // Attachment errors keep their own semantics — a missing/corrupt image should
     // read as an attachment problem, never as a network/CORS failure.
-    if (e instanceof AttachmentError) { setState({ ...state, status: 'error', sendError: attachmentErrorLabel(e.kind) }); abortControllerRef = null; return }
+    if (e instanceof AttachmentError) { setState({ ...state, status: 'error', sendError: attachmentErrorLabel(e.kind) }); activeGeneration = null; abortControllerRef = null; return }
     const err = e instanceof DeepSeekError ? e : new DeepSeekError('network-or-cors', String(e))
     if (err.kind === 'aborted') { setState({ ...state, status: 'idle', sendError: undefined }) }
     else { const label = errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : ''); setState({ ...state, status: 'error', sendError: label }) }
+    activeGeneration = null
     abortControllerRef = null
   }
 }
