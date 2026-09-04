@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { saveImagesAndDraft } from '../src/engine/attachment-service.ts'
 import { addPdfContextToDraft } from '../src/pdf/pdf-context-draft.ts'
-import { saveConversation } from '../src/storage/storage.ts'
+import { saveConversation, getConversation } from '../src/storage/storage.ts'
 import { attachmentExists } from '../src/storage/storage.ts'
 import { idbScan, idbGet, idbClearAll } from '../src/storage/idb.ts'
 import { newStableId } from '../src/engine/types.ts'
@@ -83,6 +83,29 @@ await idbClearAll(); resetDrafts()
   const dr = await idbGet('settings', draftSettingKey(cid))
   assert(dr && dr.value.imageIds.length === 2, 'E: PDF Context draft row references the 2 pages')
   assert((await attachCount()) === 2, 'E: PDF Context attachment rows committed')
+}
+
+
+// --- F: id identity invariant: returned Attachment.id === StoredAttachmentRow.id === meta.id === Draft ref id === Message image ref id ---
+await idbClearAll(); resetDrafts()
+{
+  const cid = newStableId()
+  await saveConversation({ id: cid, title: 'c', createdAt: 1, updatedAt: 1, messages: [] })
+  const atts = await saveImagesAndDraft([png(6), png(7)], { conversationId: cid, text: '', existingImageIds: [] })
+  assert(atts.length === 2, 'F: two attachments returned')
+  // No path may generate a second, independent id for a logical attachment.
+  const r0 = await idbGet('attachments', atts[0].id)
+  const r1 = await idbGet('attachments', atts[1].id)
+  assert(r0 && r0.id === atts[0].id && r0.meta.id === atts[0].id, 'F: stored row.id === meta.id === returned id (image 0)')
+  assert(r1 && r1.id === atts[1].id && r1.meta.id === atts[1].id, 'F: stored row.id === meta.id === returned id (image 1)')
+  assert(r0 && r1 && r0.id !== r1.id, 'F: the two images carry two DISTINCT ids')
+  // The persisted draft references exactly the returned ids.
+  const dr = await idbGet('settings', draftSettingKey(cid))
+  assert(dr && dr.value.imageIds.includes(atts[0].id) && dr.value.imageIds.includes(atts[1].id), 'F: draft refs use the SAME returned ids')
+  // A message built from the returned ids persists them verbatim (message image reference id).
+  await saveConversation({ id: cid, title: 'c', createdAt: 1, updatedAt: 1, messages: [{ id: newStableId(), role: 'user', content: 'x', images: atts.map(a => a.id), createdAt: 1, updatedAt: 1 }] })
+  const conv = await getConversation(cid)
+  assert(conv && conv.messages[0].images.includes(atts[0].id) && conv.messages[0].images.includes(atts[1].id), 'F: message image reference uses the SAME ids')
 }
 
 console.log('RESULT pass=' + pass + ' fail=' + fail)
