@@ -11,8 +11,18 @@ import { existsAttachment } from './attachment-service'
  */
 export type Draft = { text: string; imageIds: StableId[] }
 const KEY = 'draft:'
+const BRANCH_PREFIX = 'B:'
 /** The persisted settings key for a conversation's draft (used by atomic send accept). */
 export function draftSettingKey(conversationId: string): string { return KEY + conversationId }
+/** In-memory draft-map key for a branch thread (keeps root + branch drafts isolated). */
+export function branchThreadKey(branchId: StableId): string { return BRANCH_PREFIX + branchId }
+/** The persisted settings key for a branch's draft (isolated namespace, never collides with root). */
+export function branchDraftSettingKey(branchId: StableId): string { return 'draft-branch:' + branchId }
+/** Map a draft thread key to its persisted settings key. Root keeps the v1 'draft:<id>' shape. */
+function storageKeyFor(threadId: string): string {
+  if (threadId.startsWith(BRANCH_PREFIX)) return 'draft-branch:' + threadId.slice(BRANCH_PREFIX.length)
+  return KEY + threadId
+}
 const VERSION = 1
 const TEXT_DEBOUNCE_MS = 500
 
@@ -36,10 +46,10 @@ async function persistDraft(id: string): Promise<void> {
   const d = drafts.get(id)
   // An empty draft leaves no storage row -> no stale empty entries.
   if (!d || (d.text === '' && d.imageIds.length === 0)) {
-    try { await deleteSetting(KEY + id) } catch { /* already gone */ }
+    try { await deleteSetting(storageKeyFor(id)) } catch { /* already gone */ }
     return
   }
-  try { await setSetting(KEY + id, { version: VERSION, text: d.text, imageIds: d.imageIds }) }
+  try { await setSetting(storageKeyFor(id), { version: VERSION, text: d.text, imageIds: d.imageIds }) }
   catch (e) { console.error('[draft] persist failed', id, e) }
 }
 
@@ -72,12 +82,12 @@ export function removeDraftImage(id: string, img: StableId): void {
 export async function clearDraft(id: string): Promise<void> {
   cancelTextTimer(id)
   put(id, { text: '', imageIds: [] })
-  try { await deleteSetting(KEY + id) } catch (e) { console.error('[draft] clear delete failed', id, e) }
+  try { await deleteSetting(storageKeyFor(id)) } catch (e) { console.error('[draft] clear delete failed', id, e) }
 }
 export async function deleteDraft(id: string): Promise<void> {
   cancelTextTimer(id)
   if (drafts.delete(id)) emit()
-  try { await deleteSetting(KEY + id) } catch (e) { console.error('[draft] delete failed', id, e) }
+  try { await deleteSetting(storageKeyFor(id)) } catch (e) { console.error('[draft] delete failed', id, e) }
 }
 /** Clear ONLY the in-memory draft state (no database mutation). Used after the durable
  *  send-accept transaction already deleted the draft row atomically — clearing memory
@@ -114,29 +124,51 @@ export function resetDrafts(): void {
  * dropped and their persisted record deleted. Never throws — a bad draft must not
  * take down the whole app.
  */
+/** Restore one persisted draft row into memory, pruning attachments that no longer exist. */
+async function restoreDraft(threadId: string, storageKey: string): Promise<void> {
+  let raw: any
+  try { raw = await getSetting(storageKey) } catch (e) { console.error('[draft] read failed', threadId, e); return }
+  if (raw === undefined) return
+  const d = parseDraft(raw)
+  if (!d) { try { await deleteSetting(storageKey) } catch { /* ignore */ } return }
+  const pruned: StableId[] = []
+  let changed = false
+  for (const img of d.imageIds) {
+    let ok = false
+    try { ok = await existsAttachment(img) } catch { ok = false }
+    if (ok) pruned.push(img); else changed = true
+  }
+  drafts.set(threadId, { text: d.text, imageIds: pruned })
+  if (changed) try { await setSetting(storageKey, { version: VERSION, text: d.text, imageIds: pruned }) } catch { /* ignore */ }
+}
+
 export async function initDrafts(conversationIds: string[]): Promise<void> {
   try {
-    for (const id of conversationIds) {
-      let raw: any
-      try { raw = await getSetting(KEY + id) } catch (e) { console.error('[draft] read failed', id, e); continue }
-      if (raw === undefined) continue
-      const d = parseDraft(raw)
-      if (!d) { try { await deleteSetting(KEY + id) } catch { /* ignore */ } continue }
-      const pruned: StableId[] = []
-      let changed = false
-      for (const img of d.imageIds) {
-        let ok = false
-        try { ok = await existsAttachment(img) } catch { ok = false }
-        if (ok) pruned.push(img); else changed = true
-      }
-      drafts.set(id, { text: d.text, imageIds: pruned })
-      if (changed) try { await setSetting(KEY + id, { version: VERSION, text: d.text, imageIds: pruned }) } catch { /* ignore */ }
-    }
+    for (const id of conversationIds) await restoreDraft(id, draftSettingKey(id))
   } catch (e) {
     console.error('[draft] initDrafts failed', e)
   }
   emit()
 }
+
+/** Restore every BRANCH draft (keyed draft-branch:<branchId>) at boot. */
+export async function initBranchDrafts(branchIds: StableId[]): Promise<void> {
+  try {
+    for (const id of branchIds) await restoreDraft(branchThreadKey(id), branchDraftSettingKey(id))
+  } catch (e) {
+    console.error('[draft] initBranchDrafts failed', e)
+  }
+  emit()
+}
+
+// ---- Branch draft accessors (isolated namespace, distinct map keys from root drafts) ----
+export function getBranchDraft(branchId: StableId): Draft { return getDraft(branchThreadKey(branchId)) }
+export function setBranchDraftText(branchId: StableId, text: string): void { setDraftText(branchThreadKey(branchId), text) }
+export function addBranchDraftImages(branchId: StableId, ids: StableId[]): void { addDraftImages(branchThreadKey(branchId), ids) }
+export function removeBranchDraftImage(branchId: StableId, img: StableId): void { removeDraftImage(branchThreadKey(branchId), img) }
+export function clearBranchDraftMemory(branchId: StableId): void { clearDraftMemory(branchThreadKey(branchId)) }
+export async function deleteBranchDraft(branchId: StableId): Promise<void> { await deleteDraft(branchThreadKey(branchId)) }
+export async function flushBranchDraft(branchId: StableId): Promise<void> { await flushDraft(branchThreadKey(branchId)) }
 
 export function useDraft(id: string): Draft { return useSyncExternalStore(subscribe, () => getDraft(id)) }
 

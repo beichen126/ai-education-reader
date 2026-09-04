@@ -1,6 +1,6 @@
 const DB_NAME = 'ai-education-reader'
-const DB_VERSION = 4
-const STORES = ['settings', 'conversations', 'attachments', 'annotations', 'documents'] as const
+const DB_VERSION = 5
+const STORES = ['settings', 'conversations', 'attachments', 'annotations', 'documents', 'conversationBranches', 'artifacts'] as const
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -30,6 +30,18 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('documents')) db.createObjectStore('documents', { keyPath: 'id' })
       const docs = req.transaction!.objectStore('documents')
       if (!docs.indexNames.contains('by_updatedAt')) docs.createIndex('by_updatedAt', 'updatedAt')
+      // Branch + Artifact stores (post-v1 feature line). Store creation is guarded so an
+      // upgrade from a DB that already has them (e.g. after a re-run) is a no-op.
+      if (!db.objectStoreNames.contains('conversationBranches')) db.createObjectStore('conversationBranches', { keyPath: 'id' })
+      const cb = req.transaction!.objectStore('conversationBranches')
+      if (!cb.indexNames.contains('by_conversation')) cb.createIndex('by_conversation', 'conversationId')
+      if (!cb.indexNames.contains('by_parent')) cb.createIndex('by_parent', 'parentBranchId')
+      if (!cb.indexNames.contains('by_updatedAt')) cb.createIndex('by_updatedAt', 'updatedAt')
+      if (!db.objectStoreNames.contains('artifacts')) db.createObjectStore('artifacts', { keyPath: 'id' })
+      const art = req.transaction!.objectStore('artifacts')
+      if (!art.indexNames.contains('by_kind')) art.createIndex('by_kind', 'kind')
+      if (!art.indexNames.contains('by_updatedAt')) art.createIndex('by_updatedAt', 'updatedAt')
+      if (!art.indexNames.contains('by_source_conversation')) art.createIndex('by_source_conversation', 'source.conversationId')
     }
     req.onsuccess = () => {
       const db = req.result
@@ -165,10 +177,10 @@ export async function idbClearAll(): Promise<void> {
 }
 
 export async function closeDb(): Promise<void> { if (dbPromise) { const db = await dbPromise; try { db.close() } catch { /* ignore */ } dbPromise = null } }
-export async function idbReplaceAll(records: { settings: any[]; conversations: any[]; attachments: any[]; annotations: any[]; documents?: any[] }): Promise<void> {
+export async function idbReplaceAll(records: { settings: any[]; conversations: any[]; attachments: any[]; annotations: any[]; documents?: any[]; conversationBranches?: any[]; artifacts?: any[] }): Promise<void> {
   const db = await openDb()
-  const txn = db.transaction(['settings', 'conversations', 'attachments', 'annotations', 'documents'], 'readwrite')
-  const stores = ['settings', 'conversations', 'attachments', 'annotations', 'documents'] as const
+  const txn = db.transaction(['settings', 'conversations', 'attachments', 'annotations', 'documents', 'conversationBranches', 'artifacts'], 'readwrite')
+  const stores = ['settings', 'conversations', 'attachments', 'annotations', 'documents', 'conversationBranches', 'artifacts'] as const
   for (const s of stores) txn.objectStore(s).clear()
   const put = (store: string, vals: any[]) => { const os = txn.objectStore(store); for (const v of vals) os.put(v) }
   put('settings', records.settings)
@@ -176,5 +188,7 @@ export async function idbReplaceAll(records: { settings: any[]; conversations: a
   put('attachments', records.attachments)
   put('annotations', records.annotations)
   if (records.documents) put('documents', records.documents)
+  if (records.conversationBranches) put('conversationBranches', records.conversationBranches)
+  if (records.artifacts) put('artifacts', records.artifacts)
   await txnDone(txn)
 }
