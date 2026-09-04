@@ -1,7 +1,7 @@
 // attachmentService — the single authority for attachment lifecycle. The UI never
 // touches IndexedDB, OPFS, Blob, objectURL, or base64 directly.
 import { newStableId, type Attachment, type PdfAttachmentSource, type StableId } from './types'
-import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, listAllAttachmentRows, listConversations, type StoredAttachmentRow } from '../storage/storage'
+import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, listAllAttachmentRows, listConversations, getConversation, type StoredAttachmentRow } from '../storage/storage'
 import { idbScan, idbGetAll, idbRunTxn } from '../storage/idb'
 import { allBranches } from '../branches/branch-store'
 import { BRANCH_DRAFT_PREFIX } from '../branches/branch-types'
@@ -102,6 +102,11 @@ export type DraftOwnership = { conversationId: string; text: string; existingIma
 export type DraftCommitDeps = { /** Test seam: force the metadata transaction to abort (inspect IDB immediately after). */
   failTxn?: boolean }
 export async function saveGeneratedImagesAndDraft(images: GeneratedImageInput[], draft: DraftOwnership, deps: DraftCommitDeps = {}): Promise<Attachment[]> {
+  // Verify the target conversation still exists BEFORE staging/committing. Never allow
+  // getDraft on a deleted conversation to create a durable orphan attachment graph.
+  if (!(await getConversation(draft.conversationId))) {
+    throw new AttachmentError('read-failed', '目标会话已不存在，无法加入。')
+  }
   const now = Date.now()
   const metas: Attachment[] = []
   const blobs: Blob[] = []
@@ -178,6 +183,21 @@ export async function saveGeneratedImagesAndBranchDraft(images: GeneratedImageIn
     throw e
   }
   return rows.map(r => r.meta)
+}
+
+/**
+ * Atomic ordinary-image upload into a Draft. Converts File[] to GeneratedImageInput, applies
+ * the SAME validation as saveFiles (unsupported format / too large), then commits the
+ * attachment metadata rows AND the draft:<conversationId> row in ONE IndexedDB transaction
+ * (via saveGeneratedImagesAndDraft). On failure neither commits and staged OPFS binaries are
+ * cleaned. This is the ordinary-image equivalent of the PDF Context atomic path (P0). */
+export async function saveImagesAndDraft(files: File[], draft: DraftOwnership, deps: DraftCommitDeps = {}): Promise<Attachment[]> {
+  const inputs: GeneratedImageInput[] = files.map((f) => {
+    if (!isSupportedImage(f)) throw new AttachmentError('unsupported-format', 'unsupported image')
+    if (f.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large')
+    return { blob: f, name: f.name }
+  })
+  return saveGeneratedImagesAndDraft(inputs, draft, deps)
 }
 
 export async function saveGeneratedImages(images: GeneratedImageInput[]): Promise<Attachment[]> {

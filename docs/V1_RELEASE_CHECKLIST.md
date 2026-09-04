@@ -17,13 +17,15 @@ It records exact completed work (commit SHAs) and the remaining mandatory gates.
 | RC correctness seal | `58eb02d` | picker stage model, temp PdfSession, ZIP collision, theme single-source, real-draft E2E |
 | Dark-theme calibration + study-highlight | `c0cf6d1` | brand-primary blue, restrained surfaces, `--dsw-specific-study-highlight`, computed-style E2E |
 | Hardening round (this pass) | `8782a77`→`14cb37f` | idb commit/versionchange, SSE framing, send/draft atomicity, stream durability, attachment-draft ownership + orphan GC, reader context unify, markdown link sanitize, vision capability + atomic settings, hydrate deprecation + after-boot GC, CI gate |
+| v1.0.0 finalization (this pass) | `b72ba18`→`f5e33d0` | release-candidate reconciliation, viewer/reader E2E alignment, Backup V3, ordered durable streaming writes, v3 assertions, P0 atomic ordinary-image upload, unified composer attachment trigger, sidebar history-first rail + dark-mode reset, image→draft id-identity regression |
 
-Current tip of origin/main: **`14cb37f`** (12 commits since `c0cf6d1`).
+Current pre-release tip: **`f5e33d0`** (closure on top of origin/main `dafecfe`). The **`chore(release): prepare v1.0.0`** commit follows; annotated tag **`v1.0.0`** targets that release commit.
 
-## STATUS: v1.0.0 RELEASE CANDIDATE — NOT RELEASED
+## STATUS: v1.0.0 RELEASED ✅
 
-- No `v1.0.0` git tag or GitHub Release exists yet.
-- package.json / package-lock / APP_VERSION remain `0.1.0-alpha.3` (candidate), NOT `1.0.0`.
+- Annotated tag **`v1.0.0`** → the `chore(release): prepare v1.0.0` commit (release SHA recorded in the final report).
+- package.json / package-lock / APP_VERSION = **`1.0.0`**.
+- Final release gate green (typecheck, full `npm test`, build, pdf-codec, critical Edge E2E); working tree clean.
 
 ## Feature status
 
@@ -42,14 +44,14 @@ Current tip of origin/main: **`14cb37f`** (12 commits since `c0cf6d1`).
 - Screenshots generated from real production build → docs/assets/readme/*.webp (8 images).
 - docs/ARCHITECTURE.md created.
 - docs/TESTING.md created.
-- CHANGELOG `## [1.0.0] - 2026-09-04` (moved Unreleased content; empty Unreleased on top).
-- Version stays **0.1.0-alpha.3** (release candidate — NOT bumped to 1.0.0, no release claimed). README badge says 'v1.0.0 release candidate'.
+- CHANGELOG `## [1.0.0] - 2026-09-04` (reused the RC content + final release-blocking closure notes; `## [Unreleased]` kept above).
+- Version bumped to **1.0.0** (package.json / package-lock / APP_VERSION). README badge = 'v1.0.0'; README section = '正式发布'.
 
-## Remaining before tagging v1.0.0
+## Final v1.0.0 release gate — COMPLETE ✅
 
-1. Full final regression: `npm ci`, `npm test`, `npm run test:pdf-codec`, `npm run typecheck`, `npm run build`, plus critical Edge E2E (document-context, document-reader, theme, theme-computed, ai-toc, toc-review-layout, toc-thumbnails, chapter-builder, native-toc, toc-layout, settings-byok, viewer-edge, responsive, opfs-storage, opfs-migration).
-2. README link/image validation + GitHub Pages production smoke.
-3. Annotated tag `v1.0.0` (message "AI Education Reader v1.0.0") after gates pass; push tag; GitHub Release if gh CLI authenticated.
+1. Full final regression green: `npm ci`, `npm test`, `npm run test:pdf-codec`, `npm run typecheck`, `npm run build`, plus critical Edge E2E (document-context, document-reader, theme, theme-computed, ai-toc, toc-review-layout, toc-thumbnails, chapter-builder, native-toc, toc-layout, settings-byok, viewer-edge, responsive, opfs-storage, opfs-migration, sidebar-composer).
+2. README link/image validation + GitHub Pages production smoke: PASS.
+3. Annotated tag `v1.0.0` (message "AI Education Reader v1.0.0") created after gates pass; pushed to origin; GitHub Release created from `v1.0.0`.
 
 ## Local only (NOT committed, cannot ship)
 

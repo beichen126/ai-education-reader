@@ -12,7 +12,7 @@ import { clearAllLocalData } from '../storage/storage'
 import { releaseAllPreviews } from '../engine/attachment-service'
 import css from './cockpit.module.css'
 
-export const APP_VERSION = '0.1.0-alpha.3'
+export const APP_VERSION = '1.0.0'
 export const APP_NAME = 'AI Education Reader'
 
 function ShowHideLabel(props: { visible: boolean; onToggle: () => void; onClear: () => void }) {
