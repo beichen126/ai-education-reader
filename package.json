@@ -76,6 +76,7 @@
     "test:e2e-chapter-builder": "node scripts/e2e-chapter-builder.mjs",
     "test:pdf-codec": "node scripts/test-pdf-codec.mjs",
     "test:pdf-runtime-assets": "npx tsx scripts/test-pdf-runtime-assets.ts",
+    "test:e2e-branching": "node scripts/e2e-branching.mjs",
     "test:native-toc": "npx tsx scripts/test-native-toc.ts",
     "test:ai-toc": "npx tsx scripts/test-ai-toc.ts",
     "test:same-page": "npx tsx scripts/test-same-page.ts",
