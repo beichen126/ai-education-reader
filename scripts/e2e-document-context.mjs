@@ -21,12 +21,12 @@ const openLibrary = async () => { if (await page.locator('[data-testid="document
 const closeLibrary = async () => { const b = page.locator('[data-testid="library-close"]'); if (await b.count()) { await b.click(); await page.waitForTimeout(300) } }
 
 const readDocs = () => page.evaluate(async () => {
-  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 4); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
+  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 5); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   const rows = await new Promise((res, rej) => { const r = db.transaction('documents', 'readonly').objectStore('documents').getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   return rows.map(row => ({ id: row.id, fileName: row.fileName, pageCount: row.pageCount, chapters: row.chapters || [], source: row.source || null, sourceStorage: row.source ? row.source.storage : null }))
 })
 const readPdfPageAtts = () => page.evaluate(async () => {
-  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 4); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
+  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 5); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   const rows = await new Promise((res, rej) => { const r = db.transaction('attachments', 'readonly').objectStore('attachments').getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   return rows.filter(r => r.meta && r.meta.source && r.meta.source.type === 'pdf-page').map(r => ({ id: r.id, source: r.meta.source }))
 })

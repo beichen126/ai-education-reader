@@ -246,7 +246,7 @@ assert(await page.locator('[data-testid="document-reader"]').count() === 0, 'M: 
 await page.locator('[data-testid="pdf-group-card"]').nth(2).waitFor({ state: 'visible', timeout: 20000 })
 assert(await page.locator('[data-testid="pdf-group-card"]').count() === 3, 'M: composer shows 3 distinct context groups')
 const ctxMeta = await page.evaluate(async () => {
-  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 4); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
+  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 5); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   const g = (s, k) => new Promise((res, rej) => { const r = db.transaction(s, 'readonly').objectStore(s).get(k); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   const last = await g('settings', 'lastConversationId')
   const conv = await g('conversations', last.value)
@@ -311,7 +311,7 @@ await page.locator('[data-testid="document-library"] input[type="file"]').setInp
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
 const groupsBefore = await page.evaluate(async () => {
-  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 4); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
+  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 5); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   const g = (s, k) => new Promise((res, rej) => { const r = db.transaction(s, 'readonly').objectStore(s).get(k); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   const last = await g('settings', 'lastConversationId')
   const d = await g('settings', 'draft:' + last.value)
@@ -345,7 +345,7 @@ await page.waitForTimeout(600)
 assert(await page.locator('[data-testid="reader-ctx-confirm"]').count() === 0, 'N: cancel closes confirm')
 assert(await page.locator('[data-testid="reader-ctx-progress"]').count() === 0, 'N: cancel -> no render started')
 const groupsAfter = await page.evaluate(async () => {
-  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 4); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
+  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 5); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   const g = (s, k) => new Promise((res, rej) => { const r = db.transaction(s, 'readonly').objectStore(s).get(k); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   const last = await g('settings', 'lastConversationId')
   const d = await g('settings', 'draft:' + last.value)

@@ -26,7 +26,7 @@ assert((await page.locator('[data-testid="reader-title"]').textContent()).includ
 
 // --- B. the persisted document row carries an OPFS source ref (no inline sourceBlob) ---
 const rowInfo = await page.evaluate(async () => {
-  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 4); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
+  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 5); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   const rows = await new Promise((res, rej) => { const r = db.transaction('documents', 'readonly').objectStore('documents').getAll(); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
   const row = rows[0];
   const opfsApi = !!(navigator.storage && navigator.storage.getDirectory);

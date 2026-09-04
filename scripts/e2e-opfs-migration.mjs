@@ -21,7 +21,7 @@ const openLibrary = async () => { if (await page.locator('[data-testid="document
 
 // --- A. seed legacy IDB rows (no OPFS refs) ---
 await page.evaluate(async (pdfB64) => {
-  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 4); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) });
+  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 5); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) });
   const put = (s, v) => new Promise((res, rej) => { const t = db.transaction(s, 'readwrite'); t.objectStore(s).put(v); t.oncomplete = res; t.onerror = () => rej(t.error) });
   const pdfBytes = Uint8Array.from(atob(pdfB64), c => c.charCodeAt(0));
   await put('documents', { id: 'legacy-doc-1', kind: 'pdf', fileName: 'legacy.pdf', mimeType: 'application/pdf', fileSize: pdfBytes.length, pageCount: pdfBytes.length ? 6 : 4, chapters: [], chapterSource: 'none', lastReadPage: 0, createdAt: Date.now(), updatedAt: Date.now(), sourceBlob: new Blob([pdfBytes], { type: 'application/pdf' }) });
@@ -33,7 +33,7 @@ assert(true, 'A: legacy rows seeded');
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForTimeout(1500)
 const after = await page.evaluate(async () => {
-  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 4); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) });
+  const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 5); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) });
   const g = (s, k) => new Promise((res, rej) => { const r = db.transaction(s, 'readonly').objectStore(s).get(k); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) });
   const doc = await g('documents', 'legacy-doc-1');
   const att = await g('attachments', 'legacy-att-1');
