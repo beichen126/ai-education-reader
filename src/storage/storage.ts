@@ -53,6 +53,24 @@ export async function commitAcceptedUserMessage(conv: any, lastConversationId: s
   })
 }
 
+/**
+ * Atomically persist ALL settings keys in ONE readwrite transaction (P1). A partial
+ * failure can no longer leave a mixed configuration after reload (e.g. apiKey committed
+ * but model not). Values commit first, then the caller publishes them as saved state.
+ */
+export async function saveSettingsAtomic(values: { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string }): Promise<void> {
+  await idbRunTxn(['settings'], (txn) => {
+    const os = txn.objectStore('settings')
+    os.put({ key: 'apiBaseUrl', value: values.apiBaseUrl })
+    os.put({ key: 'apiKey', value: values.apiKey })
+    os.put({ key: 'model', value: values.model })
+    os.put({ key: 'customSystemPrompt', value: values.customSystemPrompt })
+    os.put({ key: 'customSystemPromptEnabled', value: values.customSystemPromptEnabled })
+    os.put({ key: 'appearance', value: values.appearance })
+    os.put({ key: 'visionCapability', value: values.visionCapability })
+  })
+}
+
 // Legacy-inline seeding helpers (used by tests to set up legacy rows, and available for
 // callers that explicitly want an inline IndexedDB Blob). The attachment-service ALWAYS
 // writes an OPFS-first StoredBinary ref via saveAttachmentRows — it never uses these.

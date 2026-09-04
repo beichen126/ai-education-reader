@@ -85,6 +85,10 @@ export async function testConnection(args: { apiKey: string; baseUrl: string }):
     else if (res.status === 402) kind = 'billing'
     else if (res.status === 429) kind = 'rate-limited'
     else if (res.status >= 500) kind = 'server'
+    // 404/405 on GET /models is NOT proof /chat/completions is unusable; report the distinction.
+    if (res.status === 404 || res.status === 405) {
+      return { ok: false, label: '服务可访问，但未实现 GET /models 接口。这可能不影响 /chat/completions 调用；请直接发送一条消息以确认模型可用。', status: res.status }
+    }
     return { ok: false, label: errorKindLabel(kind) + '（HTTP ' + res.status + '）', status: res.status }
   } catch {
     return { ok: false, label: errorKindLabel('network-or-cors'), status: undefined }
@@ -237,7 +241,17 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
   return { content, finishReason }
 }
 // ---- multimodal helpers (used by the store's message conversion; UI never builds this) ----
-export function isVisionModel(model: string): boolean { return /vision/i.test(model) }
+export type VisionCapability = 'auto' | 'supports-image' | 'text-only'
+/**
+ * Whether a model can accept images. With an explicit visionCapability setting the user
+ * can override inference: supports-image always enables, text-only always disables, and
+ * auto falls back to the model-name heuristics (a name containing 'vision'). Do not infer
+ * ONLY from the model name when the user has set an explicit capability. */
+export function isVisionModel(model: string, capability?: VisionCapability): boolean {
+  if (capability === 'supports-image') return true
+  if (capability === 'text-only') return false
+  return /vision/i.test(model)
+}
 export async function buildApiMessages(msgs: import('../engine/types').Message[], toDataUrl: (id: string) => Promise<string>): Promise<ApiChatMessage[]> {
   const out: ApiChatMessage[] = []
   for (const m of msgs) {

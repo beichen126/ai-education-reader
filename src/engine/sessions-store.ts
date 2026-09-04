@@ -196,7 +196,7 @@ async function runReplyStream(id: string, afterUser: Conversation): Promise<void
     // re-encodes the whole historical image set on every request.
     const contextMessages = buildContextMessages(afterUser.messages)
     const hasImages = contextMessages.some(x => x.images.length > 0)
-    if (hasImages && !isVisionModel(settings.model)) { setState({ ...state, status: 'error', sendError: attachmentErrorLabel('vision-unsupported') }); return }
+    if (hasImages && !isVisionModel(settings.model, settings.visionCapability)) { setState({ ...state, status: 'error', sendError: attachmentErrorLabel('vision-unsupported') }); return }
     // Inline-base64 payload guard: refuse to base64-encode + POST a request whose
     // retained raw image bytes would blow past the request-size budget. Uses only
     // recorded blob sizes (attachment meta.size) — no encoding, no network.

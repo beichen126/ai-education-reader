@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useSettings, saveSettings, DEFAULT_SETTINGS } from '../engine/settings-store'
-import { testConnection } from '../api/deepseek'
+import { testConnection, type VisionCapability } from '../api/deepseek'
 import { uiActions } from '../engine/ui-store'
 import { useSessions } from '../engine/sessions-store'
 import { exportBackupJson, exportConversationMd, exportMarkedOnlyMd, exportConversationBundle, importBackupText, BackupError } from '../export'
@@ -31,6 +31,7 @@ export function SettingsDialog() {
   const [key, setKey] = useState(s.apiKey)
   const [showKey, setShowKey] = useState(false)
   const [model, setModel] = useState(s.model || DEFAULT_SETTINGS.model)
+  const [visionCapability, setVisionCapability] = useState<VisionCapability>(s.visionCapability || 'auto')
   const [test, setTest] = useState<string | null>(null)
   const [testOk, setTestOk] = useState<boolean | null>(null)
   const [saved, setSaved] = useState(false)
@@ -50,7 +51,7 @@ export function SettingsDialog() {
   }, [])
   useEffect(() => { void loadStorage() }, [loadStorage])
 
-  const onSave = async () => { await saveSettings({ apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), customSystemPrompt: prompt, customSystemPromptEnabled: promptOn, appearance: s.appearance }); setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  const onSave = async () => { await saveSettings({ apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), customSystemPrompt: prompt, customSystemPromptEnabled: promptOn, appearance: s.appearance, visionCapability }); setSaved(true); setTimeout(() => setSaved(false), 1500) }
   const onTest = async () => {
     setTest('正在测试…'); setTestOk(null)
     const r = await testConnection({ apiKey: key.trim(), baseUrl: base.trim() })
@@ -99,6 +100,15 @@ export function SettingsDialog() {
         </span>
       </div>
       <div className={css.field}><label>Model</label><Input className={css.fieldInput} value={model} onChange={e => setModel(e.target.value)} placeholder="deepseek-v4-flash-vision-exp" /></div>
+      <div className={css.field}>
+        <label>模型图片能力（Vision）</label>
+        <div className={css.appearanceRow} data-testid="settings-vision">
+          <button type="button" className={css.appearanceOpt} data-testid="vision-auto" aria-pressed={visionCapability === 'auto'} onClick={() => setVisionCapability('auto')}>自动</button>
+          <button type="button" className={css.appearanceOpt} data-testid="vision-supports" aria-pressed={visionCapability === 'supports-image'} onClick={() => setVisionCapability('supports-image')}>支持图片</button>
+          <button type="button" className={css.appearanceOpt} data-testid="vision-textonly" aria-pressed={visionCapability === 'text-only'} onClick={() => setVisionCapability('text-only')}>仅文本</button>
+        </div>
+        <div className={css.settingsHint}>「自动」按模型名推断；「支持图片」对名称不含 vision 但支持图片的模型开启图片；「仅文本」禁止发送图片，避免误发。该设置会随备份一起导出。</div>
+      </div>
       <div className={css.settingsHint}>API Key 保存在当前浏览器本地（IndexedDB），不进源码、不走 Git。发送消息时，所选文本与图片会直接发送到你配置的 API 服务（默认 https://api.deepseek.com）。本项目自身没有中转服务器。</div>
       <div className={css.promptSection}>
         <div className={css.promptRow}><label className={css.promptLabel}>固定提示词</label><input type="checkbox" checked={promptOn} onChange={e => setPromptOn(e.target.checked)} /></div>
