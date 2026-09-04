@@ -4,6 +4,7 @@ import { testConnection } from '../api/deepseek'
 import { uiActions } from '../engine/ui-store'
 import { useSessions } from '../engine/sessions-store'
 import { exportBackupJson, exportConversationMd, exportMarkedOnlyMd, exportConversationBundle, importBackupText, BackupError } from '../export'
+import { getAppearanceMode, setAppearanceMode, type AppearanceMode } from '../theme/theme'
 import { Modal, Button, Input } from '../dsh/primitives'
 import { getStorageDiagnostics, formatBytes, type StorageDiagnostics } from '../storage/diagnostics'
 import { clearAllLocalData } from '../storage/storage'
@@ -122,6 +123,14 @@ export function SettingsDialog() {
         </div>
         <div className={css.settingsHint}>完整备份不含 API Key。导入将替换当前本地会话、图片和标注。</div>
         {msg && <div className={css.testResult} data-ok="false">{msg}</div>}
+      </div>
+      <div className={css.exportSection}>
+        <div className={css.exportTitle}>外观</div>
+        <div className={css.appearanceRow} data-testid="settings-appearance">
+          <button type="button" className={css.appearanceOpt} data-testid="appearance-system" onClick={() => void setAppearanceMode('system')}>跟随系统</button>
+          <button type="button" className={css.appearanceOpt} data-testid="appearance-light" onClick={() => void setAppearanceMode('light')}>浅色</button>
+          <button type="button" className={css.appearanceOpt} data-testid="appearance-dark" onClick={() => void setAppearanceMode('dark')}>深色</button>
+        </div>
       </div>
       <div className={css.storageSection}>
         <div className={css.exportTitle}>本地存储</div>

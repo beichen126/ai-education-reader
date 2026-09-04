@@ -8,6 +8,7 @@ import { initSettings } from './engine/settings-store'
 import { migrateLegacyBinaryStorage } from './storage/migration'
 import { requestStoragePersist } from './storage/binary-store'
 import { useUi } from './engine/ui-store'
+import { useTheme } from './theme/use-theme'
 import { layoutStore, useLayoutStore } from './engine/layout-store'
 import { SessionProvider } from './engine/session-context'
 import { t } from './engine/locale'
@@ -27,6 +28,7 @@ function renderSlot(key: string, owner?: any): ReactNode {
 type BootState = 'loading' | 'ready' | 'error'
 
 export function App() {
+  useTheme()
   const persistRequestedRef = useRef(false)
   const settingsOpen = useUi(s => s.settingsOpen)
   const [boot, setBoot] = useState<BootState>('loading')
