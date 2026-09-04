@@ -15,7 +15,7 @@ const conv = { id: 'main', title: '分支主对话', createdAt: Date.now(), upda
   msg('U1', 'user', '问题一'), msg('A1', 'assistant', '答案一'), msg('U2', 'user', '问题二'), msg('A2', 'assistant', '答案二'),
 ] }
 await seedAndBoot(page, { convs: [conv], settings: { apiKey: 'sk-test', model: 'deepseek-chat', apiBaseUrl: 'https://api.deepseek.com', lastConversationId: 'main' } })
-installMockModel(page, ['这是', '分支', '回答'])
+await installMockModel(page, ['这是', '分支', '回答'])
 
 // Two assistant messages (A1, A2) each expose a ⋯ trigger.
 const triggers = await page.locator('button[aria-label="消息操作"]').count()
@@ -52,6 +52,11 @@ assert(!mainBody.includes('这是分支回答'), 'Main does NOT contain the bran
 
 // Switch back to the branch -> branch continuation preserved.
 await page.locator('button[aria-label="切换到主线"]').first().click()
+await page.waitForTimeout(400)
+await page.locator('text=切换').first().click()
+await page.locator('[role="menuitem"]:has-text("分支 1")').first().click()
+await page.waitForTimeout(500)
+assert((await page.textContent('body')).includes('这是分支回答'), 'branch continuation preserved after returning to the branch')
 
 await browser.close()
 const pageErrors = errors.length ? errors.join(' | ') : '(none)'
