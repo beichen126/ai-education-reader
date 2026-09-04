@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
 import { uiActions, useUi } from '../engine/ui-store'
-import { saveImagesAndDraft, saveGeneratedImages, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
+import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { t } from '../engine/locale'
@@ -24,6 +24,21 @@ import { getSessionsCurrent } from '../engine/sessions-store'
 import type { PdfSelection } from '../pdf/pdf-types'
 import { buildAttachmentDisplayItems, type AttachmentDisplayItem } from '../attachments/attachment-display'
 import { PdfContextCard } from './PdfContextCard'
+import { BranchBar } from '../branches/BranchBar'
+import { BranchMenu } from '../branches/BranchMenu'
+import { ArtifactCreateDialog } from '../artifacts/ArtifactCreateDialog'
+import { ArtifactLibrary } from '../artifacts/ArtifactLibrary'
+import { ArtifactEditor } from '../artifacts/ArtifactEditor'
+import { QuizViewer } from '../artifacts/QuizViewer'
+import { createArtifactDraft, markArtifactReady, markArtifactError } from '../artifacts/artifact-service'
+import { getArtifact, listArtifacts } from '../artifacts/artifact-store'
+import { generateArtifact } from '../artifacts/artifact-generation'
+import { runBranchReply } from '../engine/branch-thread'
+import { branchThreadKey, getBranchDraft, setBranchDraftText, addBranchDraftImages, removeBranchDraftImage, clearBranchDraftMemory } from '../engine/draft-store'
+import { useBranchChat } from './use-branch-chat'
+import { sendTextChat } from '../api/deepseek'
+import type { ArtifactKind, StudyArtifact, QuizDocument } from '../artifacts/artifact-types'
+import type { Message as TMessage } from '../engine/types'
 import css from './cockpit.module.css'
 
 export function Conversation() {
@@ -34,7 +49,8 @@ export function Conversation() {
   const listRef = useRef<HTMLDivElement | null>(null)
   const atBottomRef = useRef(true)
   const onScroll = () => { const el = listRef.current; if (!el) return; atBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 60 }
-  const messages = session?.messages ?? []
+  const branchChat = useBranchChat(session)
+  const messages = branchChat.effectiveMessages
   const imageOffsetByMsg: Record<string, number> = {}
   { let off = 0; for (const m of messages) { if (m.role === 'user') { imageOffsetByMsg[m.id] = off; off += m.images.length } } }
   const lastMsg = messages[messages.length - 1]
@@ -49,6 +65,22 @@ export function Conversation() {
   const busy = status === 'sending' || status === 'streaming'
   const lastMsg0 = lastMsg
   const activeStreamingId = busy && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
+  const [menuMsgId, setMenuMsgId] = useState<string | null>(null)
+  const [creating, setCreating] = useState<{ kind: ArtifactKind; messageId: string } | null>(null)
+  const [artView, setArtView] = useState<'library' | null>(null)
+  const [openArtifact, setOpenArtifact] = useState<StudyArtifact | null>(null)
+  const [libArtifacts, setLibArtifacts] = useState<StudyArtifact[]>([])
+  const hasBranches = branchChat.branches.length > 0
+  const activeThread = session ? (branchChat.activeBranchId ? { type: 'branch' as const, conversationId: session.id, branchId: branchChat.activeBranchId } : { type: 'root' as const, conversationId: session.id }) : undefined
+  async function onCreateArtifact(input: { kind: ArtifactKind; prompt: string; presetId?: string }) {
+    if (!session || !creating) return
+    const a = await createArtifactDraft({ kind: input.kind, conversationId: session.id, branchId: branchChat.activeBranchId, throughMessageId: creating.messageId, prompt: input.prompt, presetId: input.presetId })
+    try {
+      const out = await generateArtifact(a.id, { call: artifactModelCall })
+      setCreating(null); setOpenArtifact(out); void branchChat.refresh()
+    } catch { setCreating(null) }
+  }
+  function openLibrary() { void listArtifacts().then(setLibArtifacts); setArtView('library') }
   return (
     <div className={css.conversation}>
       {!hasKey && (
@@ -65,11 +97,12 @@ export function Conversation() {
         </div>
       )}
       {sendError && !busy && <div className={css.errorBanner}>{sendError}</div>}
+      {hasBranches && (<BranchBar conversationId={session?.id} activeBranchId={branchChat.activeBranchId} onSwitch={(id) => { void branchChat.switchBranch(id); setMenuMsgId(null) }} onChanged={() => void branchChat.refresh()} />)}
       {/* Composer sits inside the scroll body, position:sticky bottom:0 (as in DSH), so the
           mobile browser's native focus scroll lifts it above the on-screen keyboard. */}
       <div className={css.messages} ref={listRef} onScroll={onScroll}>
         <div className={css.messagesInner}>
-          {!session || session.messages.length === 0 ? (
+          {!session || messages.length === 0 ? (
             <div className={css.emptyHero}>
               <div className={css.emptyTitle}>AI 学习阅读器</div>
               <div className={css.emptyHint}>还没有学习内容。上传一张图片，或者打开一份 PDF 开始。</div>
@@ -80,15 +113,19 @@ export function Conversation() {
               </div>
               {!hasKey && <div className={css.emptyHint}>开始前，需要配置你自己的 DeepSeek API Key。</div>}
             </div>
-          ) : messages.map(m => <MessageRow key={m.id} m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} />)}
+          ) : messages.map(m => <MessageRow key={m.id} m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => setCreating({ kind, messageId: mid })} />)}
         </div>
-        <Composer sessionId={session?.id} busy={busy} />
+        <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" onClick={openLibrary}>学习成果</Button></div>
+        <Composer sessionId={session?.id} busy={busy} thread={activeThread} />
       </div>
+      {creating && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', padding: '1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}><ArtifactCreateDialog sourceLabel={creatingSourceLabel(session, branchChat.activeBranchId, creating.messageId)} onSubmit={(i) => void onCreateArtifact(i)} onCancel={() => setCreating(null)} /></div></div>)}
+      {artView === 'library' && <ArtifactLibraryOverlay artifacts={libArtifacts} onOpen={(a) => { setOpenArtifact(a); setArtView(null) }} onClose={() => setArtView(null)} />}
+      {openArtifact && <ArtifactViewerOverlay artifact={openArtifact} onOpen={setOpenArtifact} onClose={() => setOpenArtifact(null)} onChanged={() => void branchChat.refresh()} />}
     </div>
   )
 }
 
-function MessageRow({ m, streamingId, convId, imgOffset }: { m: any; streamingId?: string; convId?: string; imgOffset: number }) {
+function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu, onBranch, onArtifact }: { m: any; streamingId?: string; convId?: string; imgOffset: number; menuOpen?: boolean; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: ArtifactKind, messageId: string) => void }) {
   if (m.role === 'user') {
     return (
       <div className={css.msg + ' ' + css.msgUser}>
@@ -98,6 +135,7 @@ function MessageRow({ m, streamingId, convId, imgOffset }: { m: any; streamingId
     )
   }
   const isStreaming = m.id === streamingId
+  const stable = !isStreaming && m.content
   return (
     <div className={css.msg + ' ' + css.msgAssistant}>
       {isStreaming ? (
@@ -106,6 +144,12 @@ function MessageRow({ m, streamingId, convId, imgOffset }: { m: any; streamingId
         <div className={css.assistantBody}><AnnotatedMarkdown content={m.content} messageId={m.id} conversationId={convId || ''} /></div>
       ) : (
         <div className={css.assistantBody} data-empty></div>
+      )}
+      {stable && onToggleMenu && onBranch && onArtifact && (
+        <div style={{ position: 'relative' }}>
+          <button type="button" aria-label="消息操作" title="从这里分支 / 学习成果" onClick={() => onToggleMenu(!menuOpen)} style={{ appearance: 'none', border: 0, background: 'transparent', color: 'var(--dsw-alias-label-tertiary)', cursor: 'pointer', fontSize: '0.8rem', padding: '0.1rem 0.375rem', borderRadius: '0.375rem' }}>⋯</button>
+          {menuOpen && <BranchMenu conversationId={convId || ''} branchId={undefined} messageId={m.id} onBranch={onBranch} onArtifact={onArtifact} onClose={() => onToggleMenu(false)} />}
+        </div>
       )}
     </div>
   )
@@ -156,9 +200,10 @@ function PendingThumb({ id, onRemove, onOpen }: { id: string; onRemove: () => vo
   )
 }
 
-function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: boolean }) {
-  // Draft is keyed by conversation, so switching A<->B shows each one's own text/images.
-  const key = sessionId ?? '__none__'
+function Composer({ sessionId, busy, thread }: { sessionId: string | undefined; busy: boolean; thread?: { type: 'root' | 'branch'; conversationId: string; branchId?: string } }) {
+  // Draft is keyed by thread (root conversation or branch), so switching A<->B shows each one's own text/images.
+  const isBranch = thread?.type === 'branch'
+  const key = isBranch ? branchThreadKey(thread!.branchId!) : (sessionId ?? '__none__')
   const draft = useDraft(key)
   const [openId, setOpenId] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | undefined>(undefined)
@@ -245,7 +290,12 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
     // attachment metadata is durable but the Draft reference is missing.
     try {
       const draftNow = getDraft(key)
-      const atts = await saveImagesAndDraft([...files], { conversationId: key, text: draftNow.text, existingImageIds: draftNow.imageIds })
+      let atts
+      if (isBranch && thread) {
+        atts = await saveGeneratedImagesAndBranchDraft([...files].map((f) => ({ blob: f, name: f.name })), { branchId: thread.branchId!, text: draftNow.text, existingImageIds: draftNow.imageIds })
+      } else {
+        atts = await saveImagesAndDraft([...files], { conversationId: key, text: draftNow.text, existingImageIds: draftNow.imageIds })
+      }
       // The durable draft row was already committed in the same txn; update memory WITHOUT a
       // second DB mutation (no duplicate persist).
       updateDraftMemory(key, { text: draftNow.text, imageIds: [...new Set([...draftNow.imageIds, ...atts.map(a => a.id)])] })
@@ -265,12 +315,19 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
   }
   const onBlurReset = () => { document.documentElement.style.setProperty('--dsw-keyboard-inset', '0px') }
   const send = async () => {
-    if (!sessionId || busy) return
+    if (busy) return
+    if (isBranch && thread) {
+      if (!text.trim() && picIds.length === 0) return
+      const ok = await runBranchReply(thread.conversationId, thread.branchId!, text.trim(), picIds)
+      if (ok) { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null) }
+      return
+    }
+    if (!sessionId) return
     if (!text.trim() && picIds.length === 0) return
     const ok = await sessionsActions.sendUserMessage(sessionId, text.trim(), picIds)
     // Only clear the draft once the user message is ACCEPTED & persisted; the image ids
     // then belong to the message (ownership transfer), so we must NOT delete them here.
-    if (ok) { clearDraftMemory(sessionId); setPhotoError(undefined); setOpenId(null) }
+    if (ok) { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null) }
   }
   return (
     <div className={css.composer}>
@@ -319,4 +376,20 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
       {libMsg && <div className={css.ctxHint} data-testid="composer-ctx-msg">{libMsg}</div>}
     </div>
   )
+}
+
+// --- post-v1 branch/artifact UI helpers (kept additive, not part of v1 rendering path) ---
+async function artifactModelCall(args: { apiKey: string; baseUrl: string; model: string; messages: import('../api/deepseek').ApiChatMessage[]; signal: AbortSignal }): Promise<string> {
+  return (await sendTextChat({ apiKey: args.apiKey, baseUrl: args.baseUrl, model: args.model, messages: args.messages as any, signal: args.signal })).content
+}
+function creatingSourceLabel(session: { id: string } | undefined, branchId: string | undefined, messageId: string): string {
+  const base = session ? (branchId ? '当前分支 · ' : '当前会话 · ') : '会话'
+  return base + '截止「' + messageId.slice(0, 8) + '」'
+}
+function ArtifactLibraryOverlay({ artifacts, onOpen, onClose }: { artifacts: StudyArtifact[]; onOpen: (a: StudyArtifact) => void; onClose: () => void }) {
+  return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', width: 'min(46rem, 94vw)', maxHeight: '86vh', overflow: 'auto' }}><ArtifactLibrary onOpen={onOpen} /></div></div>)
+}
+function ArtifactViewerOverlay({ artifact, onOpen, onClose, onChanged }: { artifact: StudyArtifact; onOpen: (a: StudyArtifact) => void; onClose: () => void; onChanged: () => void }) {
+  const isQuiz = artifact.kind === 'quiz' && !!artifact.quiz
+  return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', width: 'min(54rem, 94vw)', height: '86vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>{isQuiz ? <QuizViewer quiz={artifact.quiz!} /> : <ArtifactEditor artifact={artifact} onOpenArtifact={onOpen} onClose={onClose} onChanged={onChanged} />}</div></div>)
 }
