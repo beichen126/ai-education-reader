@@ -84,3 +84,40 @@ export async function createBranchFromMessage(page, index = 0) {
   await page.locator('text=从这里分支').click()
   await page.waitForTimeout(500)
 }
+/* Async/staggered SSE mock for branch stream stop/delete tests.
+ * steps: [{ text, delayMs }] — each delta is sent after its delay (from previous). 'finish' is sent
+ * after the last delta + finishDelay. Returns a { stop } handle that can force-finalize or leave open.
+ * Uses a Node ReadableStream so the browser reads chunks over time (progressive streaming). */
+export async function installAsyncMockModel(page, steps) {
+  const seq = steps.map(s => s.text).join('')
+  const seqJson = JSON.stringify({ id: 'mock', object: 'chat.completion', choices: [{ index: 0, message: { role: 'assistant', content: seq }, finish_reason: 'stop' }], usage: { total_tokens: 1 } })
+  try { await page.unroute('**/chat/completions') } catch {}
+  const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': '*' }
+  const makeStream = () => {
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream({
+      start(controller) {
+        let i = 0
+        const push = () => {
+          if (i < steps.length) {
+            const s = steps[i]
+            const delay = i === 0 ? (s.delayMs || 0) : (steps[i - 1].delayMs || 0)
+            setTimeout(() => { try { controller.enqueue(encoder.encode('data: ' + JSON.stringify({ choices: [{ delta: { content: s.text }, finish_reason: null }] }) + '\n\n')) ; i++ ; push() } catch {} }, Math.max(0, s.delayMs || 0))
+          } else {
+            setTimeout(() => { try { controller.enqueue(encoder.encode('data: [DONE]\n\n')); controller.close() } catch {} }, Math.max(0, steps[steps.length - 1].delayMs || 0))
+          }
+        }
+        push()
+      },
+    })
+    return stream
+  }
+  page.route('**/chat/completions', (route) => {
+    const method = route.request().method()
+    if (method === 'OPTIONS') { route.fulfill({ status: 204, headers: CORS, body: '' }); return }
+    let req = null; try { req = route.request().postDataJSON() } catch {}
+    const streaming = req && (req.stream === true || req.stream === 'true')
+    if (streaming) { route.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', ...CORS }, body: makeStream() }); return }
+    route.fulfill({ status: 200, headers: { 'content-type': 'application/json', ...CORS }, body: seqJson })
+  })
+}
