@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0-alpha.3",
   "type": "module",
+  "engines": { "node": ">=20.0.0 <26" },
   "description": "AI Education Reader (AI 学习阅读器): 面向教材、讲义、论文和学习资料的 AI 学习阅读器。本地优先、BYOK、浏览器内处理 PDF。",
   "scripts": {
     "dev": "vite",
