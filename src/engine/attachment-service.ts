@@ -4,6 +4,7 @@ import { newStableId, type Attachment, type PdfAttachmentSource, type StableId }
 import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, listAllAttachmentRows, listConversations, type StoredAttachmentRow } from '../storage/storage'
 import { idbScan, idbGetAll, idbRunTxn } from '../storage/idb'
 import { allBranches } from '../branches/branch-store'
+import { BRANCH_DRAFT_PREFIX } from '../branches/branch-types'
 import { persistBinary, readBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
 
 export type AttachmentErrorKind = 'unsupported-format' | 'read-failed' | 'missing-attachment' | 'image-too-large' | 'vision-unsupported'
@@ -130,6 +131,49 @@ export async function saveGeneratedImagesAndDraft(images: GeneratedImageInput[],
     })
   } catch (e) {
     // Best-effort cleanup of staged OPFS binaries after a failed metadata transaction.
+    for (const row of rows) { if (row.binary && row.binary.storage === 'opfs') { try { await deleteBinary(row.binary) } catch { /* orphan */ } } }
+    throw e
+  }
+  return rows.map(r => r.meta)
+}
+
+export type BranchDraftOwnership = { branchId: string; text: string; existingImageIds: string[] }
+
+/**
+ * Branch variant of the atomic attachment-ownership commit. Binary bytes are staged to
+ * OPFS first; then ONE readwrite transaction across ['attachments','settings'] commits the
+ * attachment metadata rows AND the 'draft-branch:<branchId>' draft row together. A failure
+ * commits NEITHER; staged binaries are cleaned. Never fire-and-forget the draft after
+ * saving attachments (the v1 atomicity rule applies to branches equally).
+ */
+export async function saveGeneratedImagesAndBranchDraft(images: GeneratedImageInput[], draft: BranchDraftOwnership, deps: DraftCommitDeps = {}): Promise<Attachment[]> {
+  const now = Date.now()
+  const metas: Attachment[] = []
+  const blobs: Blob[] = []
+  for (const g of images) {
+    if (!(g.blob instanceof Blob) || g.blob.size <= 0) throw new AttachmentError('read-failed', 'empty blob')
+    if (!SUPPORTED_MIME.has(g.blob.type)) throw new AttachmentError('unsupported-format', 'unsupported image')
+    if (g.blob.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large')
+    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}) })
+    blobs.push(g.blob)
+  }
+  const rows = await stageAttachmentRows(metas, blobs)
+  try {
+    await idbRunTxn(['attachments', 'settings'], (txn) => {
+      if (deps.failTxn) { txn.abort(); return }
+      const aos = txn.objectStore('attachments')
+      for (const row of rows) aos.put(row)
+      const sos = txn.objectStore('settings')
+      const newIds = rows.map(r => r.id)
+      const imageIds = [...new Set([...(draft.existingImageIds || []), ...newIds])]
+      const key = BRANCH_DRAFT_PREFIX + draft.branchId
+      if (draft.text !== '' || imageIds.length > 0) {
+        sos.put({ key, value: { version: 1, text: draft.text, imageIds } })
+      } else {
+        sos.delete(key)
+      }
+    })
+  } catch (e) {
     for (const row of rows) { if (row.binary && row.binary.storage === 'opfs') { try { await deleteBinary(row.binary) } catch { /* orphan */ } } }
     throw e
   }
