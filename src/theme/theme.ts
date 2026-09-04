@@ -1,12 +1,9 @@
-
 // Appearance / theme applier (Stage 9.5, Part B). mode = 'system' | 'light' | 'dark'.
 // The design token layer already keys off body[data-ds-dark-theme]; this module resolves
 // the effective theme (system via matchMedia) and writes BOTH documentElement.dataset.theme
 // (per spec) and the existing body attr so components using --dsw-alias-* flip automatically.
-import { getSetting, setSetting } from '../storage/storage'
 
 export type AppearanceMode = 'system' | 'light' | 'dark'
-const APPEARANCE_KEY = 'appearance'
 export const DEFAULT_APPEARANCE: AppearanceMode = 'system'
 
 /** Resolve the EFFECTIVE theme ('light' | 'dark') for a given mode + system preference. */
@@ -28,12 +25,9 @@ export function applyTheme(effective: 'light' | 'dark'): void {
   else document.body.removeAttribute('data-ds-dark-theme')
 }
 
-export async function getAppearanceMode(): Promise<AppearanceMode> {
-  const v = await getSetting(APPEARANCE_KEY)
-  return (v === 'light' || v === 'dark') ? v : 'system'
-}
-export async function setAppearanceMode(mode: AppearanceMode): Promise<void> {
-  await setSetting(APPEARANCE_KEY, mode)
-  const dark = systemPrefersDark()
-  applyTheme(resolveAppearance(mode, dark))
+// Block 0.8 first-paint: a single LOCALSTORAGE hint (theme mode ONLY — no API key, model,
+// chat, or other settings ever go to localStorage) lets the inline <body> script apply the
+// stored theme synchronously BEFORE React mounts, avoiding an obvious white flash.
+export function writeAppearanceHint(mode: AppearanceMode): void {
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem('dsh-appearance-mode', mode) } catch { /* ignore */ }
 }

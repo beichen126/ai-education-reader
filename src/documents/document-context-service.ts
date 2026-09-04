@@ -21,20 +21,39 @@ export type DocumentContextExecuteOptions = {
   existingSession?: PdfSession
   onProgress?: (p: ContextRenderProgress) => void
   isCancelled?: () => boolean
+  /** Optional generation token: when it no longer matches the caller's current
+   *  generation, the operation aborts (blocker 0.4 — conversation-switch ownership). */
+  isStale?: () => boolean
 }
 
 export type DocumentContextExecuteResult = { ok: boolean; count: number; error: string }
 
 /** Execute one Document -> Context snapshot. All-or-nothing: a failure or cancellation
- *  leaves no Draft group and no orphan attachments. */
+ *  leaves no Draft group and no orphan attachments.
+ *
+ *  Session ownership contract (blocker 0.2):
+ *    - caller-owned existingSession (Reader): the service NEVER reads the source Blob
+ *      and NEVER closes it.
+ *    - otherwise the service OPENS its own temp session from the source Blob, uses it,
+ *      and ALWAYS closes it in `finally`. */
 export async function executeDocumentContext(opts: DocumentContextExecuteOptions): Promise<DocumentContextExecuteResult> {
+  let session = opts.existingSession
+  let ownsSession = false
   let tempSession: PdfSession | null = null
+  let pageCount = opts.pageCount
   try {
-    let blob: Blob
-    try { blob = await readDocumentSourceBlob(opts.documentId) }
-    catch { return { ok: false, count: 0, error: '这份本地文件已不存在，请重新选择。' } }
-    let session = opts.existingSession
-    const pageCount = session ? opts.pageCount : (await (async () => { const opened = await openPdfSession(blob); tempSession = opened.session; return opened })()).doc.pageCount
+    if (!session) {
+      // Service-owned path (Library / Composer): read the source Blob and OPEN a session.
+      let blob: Blob
+      try { blob = await readDocumentSourceBlob(opts.documentId) }
+      catch { return { ok: false, count: 0, error: '这份本地文件已不存在，请重新选择。' } }
+      if (opts.isStale && opts.isStale()) return { ok: false, count: 0, error: '' }
+      const opened = await openPdfSession(blob)
+      session = opened.session
+      tempSession = session
+      ownsSession = true
+      pageCount = opened.doc.pageCount
+    }
     const ranges = opts.selection.ranges
     const res = await renderPdfContextRanges({
       ranges, pageCount,
@@ -42,15 +61,22 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
       onProgress: opts.onProgress,
       isCancelled: opts.isCancelled,
     })
+    // Ownership gate: after a possibly-long render, NEVER write into a target that is
+    // no longer the caller's active conversation (blocker 0.4).
+    if (opts.isStale && opts.isStale()) return { ok: false, count: 0, error: '' }
     const draft: PdfAddResult = await addPdfContextToDraft(opts.targetConversationId, {
       documentId: opts.documentId, fileName: opts.fileName, selection: opts.selection, pages: res.pages,
     })
     return { ok: draft.ok, count: draft.count, error: draft.error }
   } catch (e) {
     if (e && typeof e === 'object' && (e as { name?: string }).name === 'DocumentBinaryMissingError') return { ok: false, count: 0, error: '这份本地文件已不存在，请重新选择。' }
-    if (e instanceof PdfContextRenderError) return { ok: false, count: 0, error: e.message }
+    if (e instanceof PdfContextRenderError) {
+      // A cancellation / stale guard is a SILENT stop (the caller shows its own state).
+      if (e.kind === 'cancelled') return { ok: false, count: 0, error: '' }
+      return { ok: false, count: 0, error: e.message }
+    }
     return { ok: false, count: 0, error: '无法生成上下文。' }
   } finally {
-    if (tempSession) { try { await closePdfSession(tempSession) } catch { /* ignore */ } }
+    if (ownsSession && tempSession) { try { await closePdfSession(tempSession) } catch { /* ignore */ } }
   }
 }

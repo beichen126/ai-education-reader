@@ -167,11 +167,13 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
   const [libPickerOpen, setLibPickerOpen] = useState(false)
   const [libBusy, setLibBusy] = useState<{ done: number; total: number } | null>(null)
   const [libMsg, setLibMsg] = useState<string | null>(null)
+  const libGenRef = useRef(0)
+  const libCancelledRef = useRef(false)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const pdfInputRef = useRef<HTMLInputElement | null>(null)
   useEffect(() => {
     setComposerTriggers({ openImages: () => imageInputRef.current?.click(), openPdf: () => pdfInputRef.current?.click() })
-    return () => setComposerTriggers(null)
+    return () => { setComposerTriggers(null); libCancelledRef.current = true; libGenRef.current++ }
   }, [])
   const addPdfToDraft = async (payload: PdfAddPayload): Promise<PdfAddResult> => {
     // Shared implementation (also used by the Document Reader): budget guard -> one
@@ -179,19 +181,40 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
     if (!sessionId) return { ok: false, count: 0, error: '没有当前会话，无法加入。' }
     return addPdfContextToDraft(sessionId, payload)
   }
+  // Block 0.4: operation ownership + cancellation. Snapshot the operation identity at
+  // start; a stale / cancelled op NEVER writes into a conversation that is no longer the
+  // active one, and leaves no partial Draft group. Switching conversation aborts the old run.
   const addFromLibrary = async (selection: PdfSelection, docId: string, fileName: string) => {
     if (!sessionId) { setLibMsg('当前没有可加入的对话，请先创建一个会话。'); setLibPickerOpen(false); return }
+    const gen = ++libGenRef.current
+    libCancelledRef.current = false
+    const targetConversationId = sessionId
+    // Close the picker; the progress overlay (with cancel) takes over.
+    setLibPickerOpen(false)
     setLibBusy({ done: 0, total: 1 }); setLibMsg(null)
+    const isCancelled = () => libCancelledRef.current || gen !== libGenRef.current
+    const isStale = () => gen !== libGenRef.current || sessionId !== targetConversationId
     try {
-      const res = await executeDocumentContext({ targetConversationId: sessionId, documentId: docId, fileName, pageCount: 0, selection, onProgress: (p) => setLibBusy({ done: p.done, total: p.total }) })
-      setLibMsg(res.ok ? '已加入当前对话 · ' + res.count + ' 页' : res.error)
-    } catch { setLibMsg('无法生成上下文。') }
-    finally { setLibBusy(null); setLibPickerOpen(false) }
+      if (isCancelled()) return
+      const res = await executeDocumentContext({ targetConversationId, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === libGenRef.current) setLibBusy({ done: p.done, total: p.total }) } })
+      if (gen !== libGenRef.current) return
+      if (!res.ok && res.error) setLibMsg(res.error)
+      else if (res.ok) setLibMsg('已加入当前对话 · ' + res.count + ' 页')
+    } catch { if (gen === libGenRef.current) setLibMsg('无法生成上下文。') }
+    finally { if (gen === libGenRef.current) setLibBusy(null) }
   }
+  const cancelLib = () => { libCancelledRef.current = true; libGenRef.current++ }
 
   // Reset ephemeral view state (lightbox / error banner) when the active conversation changes.
   const prevSession = useRef(sessionId)
-  useEffect(() => { if (prevSession.current !== sessionId) { setOpenId(null); setPhotoError(undefined); prevSession.current = sessionId } }, [sessionId])
+  useEffect(() => {
+    if (prevSession.current !== sessionId) {
+      setOpenId(null); setPhotoError(undefined)
+      // Block 0.4: a conversation switch aborts any in-flight library Context operation.
+      libCancelledRef.current = true; libGenRef.current++
+      prevSession.current = sessionId
+    }
+  }, [sessionId])
   const text = draft.text
   const picIds = draft.imageIds
   const metas = useAttachmentMetas(picIds)
@@ -262,7 +285,12 @@ function Composer({ sessionId, busy }: { sessionId: string | undefined; busy: bo
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}
       {pdfPanel.open && <PdfPanel initialFile={pdfPanel.file} onClose={() => setPdfPanel({ open: false })} onAddToDraft={addPdfToDraft} />}
       {libPickerOpen && <DocumentContextPicker documentId={undefined} onCancel={() => { setLibPickerOpen(false); setLibMsg(null) }} onAdd={(selection, docId, fileName) => { void addFromLibrary(selection, docId, fileName) }} />}
-      {libBusy && <div className={css.ctxHint} data-testid="composer-ctx-progress">正在准备上下文 {libBusy.done} / {libBusy.total} 页</div>}
+      {libBusy && (
+        <div className={css.ctxHint} data-testid="composer-ctx-progress">
+          <span>正在准备 AI Context {libBusy.done} / {libBusy.total} 页</span>
+          <button type="button" className={css.ctxCancel} data-testid="composer-ctx-cancel" onClick={cancelLib}>取消</button>
+        </div>
+      )}
       {libMsg && <div className={css.ctxHint} data-testid="composer-ctx-msg">{libMsg}</div>}
     </div>
   )

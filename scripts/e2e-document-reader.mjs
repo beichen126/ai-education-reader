@@ -216,7 +216,7 @@ await page.locator('[data-testid="reader-page-input"]').fill('2')
 await page.locator('[data-testid="reader-page-input"]').press('Enter')
 await page.waitForTimeout(400)
 await page.locator('[data-testid="reader-ctx-toggle"]').click()
-await page.locator('[data-testid="reader-ctx-current-chapter"]').click()
+await page.locator('[data-testid^="reader-ctx-ancestor-"]').first().click()
 await page.getByText(/已加入「1.1 History」· 1 页/).waitFor({ state: 'visible', timeout: 30000 })
 // manual range 3-5
 await page.locator('[data-testid="reader-ctx-toggle"]').click()

@@ -25,6 +25,9 @@ export function DocumentLibrary() {
   const [ctxDocId, setCtxDocId] = useState<string | null>(null)
   const [ctxBusy, setCtxBusy] = useState<{ done: number; total: number } | null>(null)
   const [ctxMsg, setCtxMsg] = useState<string | null>(null)
+  const ctxGenRef = useRef(0)
+  const ctxCancelledRef = useRef(false)
+  const ctxOpRef = useRef<{ targetConversationId: string; documentId: string } | null>(null)
   const open = ui.view === 'library'
 
   const refresh = useCallback(async () => {
@@ -64,17 +67,37 @@ export function DocumentLibrary() {
     }
   }
 
+  // Block 0.4: real operation ownership + cancellation. Snapshot the operation identity
+  // (gen, targetConversationId, documentId) at start; a stale / cancelled op NEVER writes
+  // into a conversation that is no longer the active one, and leaves no partial Draft group.
   const addFromPicker = async (selection: PdfSelection) => {
     if (!ctxDocId) return
     const targetConversationId = getSessionsCurrent()
     if (!targetConversationId) { setCtxMsg('当前没有可加入的对话，请先创建一个会话。'); setCtxDocId(null); return }
+    const gen = ++ctxGenRef.current
+    ctxCancelledRef.current = false
+    const docId = ctxDocId
+    ctxOpRef.current = { targetConversationId, documentId: docId }
+    // Snapshot the descriptor ONCE (metadata only — the binary is never hydrated here).
+    let fileName = 'document.pdf'
+    try { fileName = (await getDocumentContextDescriptor(docId))?.fileName || 'document.pdf' } catch { /* fallback */ }
+    // Close the picker; the progress overlay (with cancel) takes over.
+    setCtxDocId(null)
     setCtxBusy({ done: 0, total: 1 }); setCtxMsg(null)
+    const isCancelled = () => ctxCancelledRef.current || gen !== ctxGenRef.current
+    const isStale = () => gen !== ctxGenRef.current || getSessionsCurrent() !== targetConversationId
     try {
-      const res = await executeDocumentContext({ targetConversationId, documentId: ctxDocId, fileName: (await getDocumentContextDescriptor(ctxDocId))?.fileName || 'document.pdf', pageCount: 0, selection, onProgress: (p) => setCtxBusy({ done: p.done, total: p.total }) })
-      setCtxMsg(res.ok ? '已加入当前对话 · ' + res.count + ' 页' : res.error)
-    } catch { setCtxMsg('无法生成上下文。') }
-    finally { setCtxBusy(null); setCtxDocId(null) }
+      if (isCancelled()) return
+      const res = await executeDocumentContext({ targetConversationId, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxBusy({ done: p.done, total: p.total }) } })
+      if (gen !== ctxGenRef.current) return
+      if (!res.ok && res.error) setCtxMsg(res.error)
+      else if (res.ok) setCtxMsg('已加入当前对话 · ' + res.count + ' 页')
+    } catch { if (gen === ctxGenRef.current) setCtxMsg('无法生成上下文。') }
+    finally {
+      if (gen === ctxGenRef.current) { setCtxBusy(null); setCtxDocId(null); ctxOpRef.current = null }
+    }
   }
+  const cancelCtx = () => { ctxCancelledRef.current = true; ctxGenRef.current++ }
 
   const remove = async (d: DocumentSummary) => {
     const ok = window.confirm('删除《' + d.fileName + '》？\n\n删除会移除保存在当前浏览器中的原始 PDF 和阅读进度。聊天中已经生成并保存的 PDF 页面 Context 不会因此删除。\n\n取消 / 删除')
@@ -129,7 +152,12 @@ export function DocumentLibrary() {
           onAdd={(selection) => { void addFromPicker(selection) }}
         />
       )}
-      {ctxBusy && <div className={css.error} data-testid="library-ctx-progress">正在准备上下文 {ctxBusy.done} / {ctxBusy.total} 页</div>}
+      {ctxBusy && (
+        <div className={css.error} data-testid="library-ctx-progress">
+          <span>正在准备 AI Context {ctxBusy.done} / {ctxBusy.total} 页</span>
+          <button type="button" className={css.ctxCancel} data-testid="library-ctx-cancel" onClick={cancelCtx}>取消</button>
+        </div>
+      )}
       {ctxMsg && !ctxDocId && <div className={css.error} data-testid="library-ctx-msg">{ctxMsg}</div>}
     </div>
   )

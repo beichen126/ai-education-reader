@@ -163,3 +163,7 @@
 .ctxHint { font-size: 12px; color: var(--dsw-alias-label-tertiary); padding: 6px 0; }
 .appearanceRow { display: flex; gap: 8px; }
 .appearanceOpt { min-height: 32px; padding: 4px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
+.appearanceOpt[aria-pressed="true"] { border-color: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-button-primary-fill); font-weight: 600; background: color-mix(in srgb, var(--dsw-alias-button-primary-fill) 10%, transparent); }
+.appearanceOpt[data-selected="true"] { border-color: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-button-primary-fill); font-weight: 600; }
+.ctxCancel { margin-left: 8px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-primary); border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.ctxCancel:hover { background: var(--dsw-alias-interactive-bg-hover); }

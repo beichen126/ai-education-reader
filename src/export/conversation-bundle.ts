@@ -24,17 +24,26 @@ export function sanitizeAttachmentName(name: string): string {
   return safeStem + '.' + ext
 }
 
-/** Dedupe filename collisions deterministically: figure.png -> figure.png, figure-2.png. */
+/** Dedupe filename collisions deterministically AND globally collision-safe (blocker 0.5).
+ *  Uses an occupied-name Set so an EXPLICIT input name can never collide with an
+ *  auto-generated suffix: every result name is unique, i.e. new Set(result).size === result.length.
+ *  Deterministic reservation: the first input claims `figure.png`; the second identical becomes
+ *  `figure-2.png`; an explicit `figure-2.png` later claims `figure-2-2.png` if `figure-2.png` is taken. */
 export function dedupeNames(names: string[]): string[] {
-  const seen = new Map<string, number>()
+  const occupied = new Set<string>()
   return names.map(raw => {
     const base = sanitizeAttachmentName(raw)
     const dot = base.lastIndexOf('.')
     const stem = dot > 0 ? base.slice(0, dot) : base
     const ext = dot > 0 ? base.slice(dot) : ''
-    const n = (seen.get(base) || 0) + 1
-    seen.set(base, n)
-    return n === 1 ? base : stem + '-' + n + ext
+    let candidate = base
+    let n = 2
+    while (occupied.has(candidate)) {
+      candidate = stem + '-' + n + ext
+      n++
+    }
+    occupied.add(candidate)
+    return candidate
   })
 }
 

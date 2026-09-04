@@ -50,15 +50,16 @@ The following v1.0.0 items are SHIPPED and implemented (see CHANGELOG):
 - Export: Document → bookmarked PDF; Conversation → Markdown + images ZIP.
 - Dark mode (system / light / dark, design tokens, persisted).
 
-## 7. PPTX import — GATED / NOT SHIPPED (planned)
+## 7. PPTX import — NOT SHIPPED (planned)
 
-Evaluated browser-local PPTX → canonical PDF conversion. The browser OOXML →
-PDF renderer ecosystem is fragmented (pptx-preview / pptx-kit-preview /
-reamkit) with no battle-tested renderer that reliably preserves Chinese
-text, images, basic shapes, tables (and charts) into a canonical PDF while
-meeting the "static snapshot good enough to learn from" fidelity bar. The
-alternate routes (LibreOffice server, WASM office suite, cloud conversion)
-are explicitly out of scope / forbidden. Rather than ship a hard-coded
-half OOXML renderer or a misleading .pptx file input, PPTX import stays
-Planned. The material library continues to accept PDF only. This does NOT
-block v1.0.0.
+PPTX import is NOT shipped: v1.0.0 did not validate a browser-local
+PPTX → canonical-PDF renderer against the project's fidelity gate, so the
+feature is not enabled. The material library accepts PDF only.
+
+Background: the browser OOXML → PDF renderer ecosystem is fragmented
+(pptx-preview / pptx-kit-preview / reamkit), and the alternate routes
+(LibreOffice server, WASM office suite, cloud conversion) are explicitly out
+of scope / forbidden. No comparative fixture gate was committed this release.
+The canonical-PDF philosophy (import → convert locally → reuse Document /
+Chapter / Reader / Context, with no separate PPT reader) remains the future
+plan. This does NOT block v1.0.0.

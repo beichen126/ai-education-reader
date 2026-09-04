@@ -6,6 +6,10 @@
 .primaryBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 .closeBtn { min-height: 36px; padding: 6px 12px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--dsw-alias-label-secondary); }
 .error { margin: 8px 16px 0; padding: 8px 12px; border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-state-error-primary); font-size: 12px; }
+.error { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.error > span:first-child { min-width: 0; }
+.ctxCancel { flex: none; border: 1px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-primary); border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
+.ctxCancel:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--dsw-alias-label-secondary); font-size: 14px; }
 .emptyHint { color: var(--dsw-alias-label-tertiary); font-size: 13px; }
 .list { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }

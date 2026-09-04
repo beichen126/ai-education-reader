@@ -145,7 +145,7 @@ assert(tocAfterRetry.join('|').includes('Chapter A EDITED'), 'F: retry save upda
 await jumpTo(6)
 await page.locator('[data-testid="reader-ctx-toggle"]').click()
 await page.locator('[data-testid="reader-ctx-menu"]').waitFor({ state: 'visible', timeout: 10000 })
-const chapBtn = page.locator('[data-testid="reader-ctx-current-chapter"]')
+const chapBtn = page.locator('[data-testid^="reader-ctx-ancestor-"]').first()
 assert(!(await chapBtn.isDisabled()), 'G: 当前章节 enabled at page 6')
 const chapMeta = (await chapBtn.textContent()) || ''
 // Same-page ambiguity (Stage 9.4B.1 A4): page 6 falls within multiple same-page chapters

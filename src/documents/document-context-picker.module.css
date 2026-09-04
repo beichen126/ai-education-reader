@@ -18,7 +18,9 @@
 .tab { min-height: 32px; padding: 4px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px 8px 0 0; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-secondary); font-size: 13px; cursor: pointer; }
 .tabOn { border-bottom: 2px solid var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary); font-weight: 600; }
 .body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 16px; display: flex; flex-direction: column; gap: 8px; }
-.whole { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dsw-alias-label-primary); }
+.whole { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--dsw-alias-label-primary); padding: 6px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); cursor: pointer; text-align: left; width: 100%; }
+  .wholeOn { border-color: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary); font-weight: 600; background: color-mix(in srgb, var(--dsw-alias-button-primary-fill) 12%, transparent); }
+  .whole:disabled { opacity: 0.6; cursor: not-allowed; }
 .tree { display: flex; flex-direction: column; gap: 2px; }
 .treeRow { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 8px; min-width: 0; font-size: 13px; color: var(--dsw-alias-label-primary); }
 .treeTitle { flex: 1; min-width: 0; color: var(--dsw-alias-label-primary); line-height: 1.4; overflow-wrap: anywhere; }

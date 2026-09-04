@@ -1,4 +1,5 @@
 
+
 import { useEffect, useMemo, useState } from 'react'
 import { listDocumentSummaries, getDocumentContextDescriptor, type DocumentContextDescriptor, type DocumentSummary } from './document-service'
 import { buildChapterNodesSelection, selectableChapterRange } from './document-context'
@@ -12,7 +13,14 @@ type Props = {
   onAdd: (selection: PdfSelection, documentId: string, fileName: string) => void
 }
 
+// One consistent mental model: 选择范围 -> 查看汇总 -> 加入当前对话.
+// Stage model (blocker 0.1): unscoped picker shows the document list first; a scoped picker
+// (Library / Reader) goes straight to the context stage and never offers a misleading back.
+// Back semantics (0.10): only the unscoped picker has a document-list back; a scoped picker
+// has no back that would clear the document and leave an empty panel.
 export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
+  const scoped = !!documentId
+  const [stage, setStage] = useState<'document' | 'context'>(scoped ? 'context' : 'document')
   const [doc, setDoc] = useState<DocumentContextDescriptor | null>(null)
   const [docs, setDocs] = useState<DocumentSummary[] | null>(null)
   const [search, setSearch] = useState('')
@@ -21,18 +29,34 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
   const [manualStart, setManualStart] = useState('')
   const [manualEnd, setManualEnd] = useState('')
   const [manualError, setManualError] = useState<string | null>(null)
+  const [wholeChecked, setWholeChecked] = useState(false)
+  const [manualSel, setManualSel] = useState<PdfSelection | null>(null)
   const [blockMsg, setBlockMsg] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<PdfSelection | null>(null)
 
-  // Stage 1: pick a document from the library if none pre-scoped.
-  const needDocPick = !documentId
-  useEffect(() => { if (needDocPick) { void listDocumentSummaries().then(setDocs).catch(() => setDocs([])) } }, [needDocPick])
-  useEffect(() => { if (documentId) { void getDocumentContextDescriptor(documentId).then(d => { setDoc(d); if (!d) setBlockMsg('这份文档不存在或已被删除。') }) } }, [documentId])
+  // Load the document list only for the unscoped (document) stage.
+  useEffect(() => { if (stage === 'document' && !scoped) { void listDocumentSummaries().then(setDocs).catch(() => setDocs([])) } }, [stage, scoped])
+  // Load the descriptor when scoped (already have a doc id) OR after a doc is picked.
+  useEffect(() => {
+    const id = scoped ? documentId : (doc ? doc.id : null)
+    if (!id) return
+    void getDocumentContextDescriptor(id).then(d => { setDoc(d); if (!d) setBlockMsg('这份文档不存在或已被删除。') })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoped, documentId, stage])
 
   const selectDoc = async (id: string) => {
     const d = await getDocumentContextDescriptor(id)
     if (!d) { setBlockMsg('这份文档不存在或已被删除。'); return }
     setDoc(d); setBlockMsg(null)
+    // Unscoped: transition to the context stage (blocker 0.1).
+    setStage('context')
+  }
+
+  // Back from context stage -> document list (unscoped only).
+  const backToDocs = () => {
+    setDoc(null); setChecked(new Set()); setWholeChecked(false); setManualSel(null)
+    setTab('toc'); setManualStart(''); setManualEnd(''); setManualError(null)
+    setStage('document')
   }
 
   const filtered = useMemo(() => {
@@ -41,7 +65,11 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
     return q ? docs.filter(d => d.fileName.toLowerCase().includes(q)) : docs
   }, [docs, search])
 
-  const toggle = (id: string) => setChecked(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const toggle = (id: string) => {
+    // Selecting a TOC chapter switches the scope to TOC (clears whole / manual).
+    setWholeChecked(false); setManualSel(null)
+    setChecked(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  }
 
   // Selected chapter nodes (in TOC order) from the checked set.
   const selectedNodes = useMemo(() => {
@@ -52,41 +80,54 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
     return out
   }, [doc, checked])
 
-  const selection: PdfSelection = useMemo(() => selectedNodes.length ? buildChapterNodesSelection(selectedNodes) : { kind: 'manual', ranges: [] }, [selectedNodes])
+  // ONE reviewed selection. Scope precedence: whole > manual > toc > none.
+  const selection: PdfSelection = useMemo(() => {
+    if (wholeChecked && doc) return { kind: 'manual', title: doc.fileName, ranges: [{ startPage: 1, endPage: doc.pageCount }] }
+    if (manualSel) return manualSel
+    if (selectedNodes.length) return buildChapterNodesSelection(selectedNodes)
+    return { kind: 'manual', ranges: [] }
+  }, [wholeChecked, manualSel, selectedNodes, doc])
+
   const selectionCount = countPdfRangePages(selection.ranges)
   const wholeCount = doc ? countPdfRangePages([{ startPage: 1, endPage: doc.pageCount }]) : 0
   const wholeBlocked = doc ? exceedsPdfContextHardLimit(doc.pageCount) : false
+  const hasScope = wholeChecked || selectedNodes.length > 0 || !!manualSel
 
-  const addSelection = (sel: PdfSelection) => {
-    const count = countPdfRangePages(sel.ranges)
-    if (exceedsPdfContextHardLimit(count)) { setBlockMsg('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页，请缩小章节或页码范围。'); return }
-    if (needsPdfContextSoftConfirm(count)) { setConfirming(sel); return }
-    finishAdd(sel)
+  const addWhole = () => {
+    if (!doc || wholeBlocked) return
+    setWholeChecked(true); setChecked(new Set()); setManualSel(null); setTab('toc')
   }
-  const addWhole = () => { if (!doc || wholeBlocked) return; addSelection({ kind: 'manual', title: doc.fileName, ranges: [{ startPage: 1, endPage: doc.pageCount }] }) }
-  const addSelected = () => { if (selection.ranges.length === 0) { setBlockMsg('请先选择要加入的章节。'); return } addSelection(selection) }
-  const finishAdd = (sel: PdfSelection) => { if (doc) onAdd(sel, doc.id, doc.fileName) }
   const addManual = () => {
-    const v = validatePdfRange(manualStart, manualEnd, doc ? doc.pageCount : 0)
+    if (!doc) return
+    const v = validatePdfRange(manualStart, manualEnd, doc.pageCount)
     if (v) { setManualError(v); return }
     setManualError(null)
     const s = Number(manualStart.trim()), e = Number(manualEnd.trim())
-    addSelection({ kind: 'manual', title: pdfRangesText([{ startPage: s, endPage: e }]), ranges: [{ startPage: s, endPage: e }] })
+    setWholeChecked(false); setChecked(new Set())
+    setManualSel({ kind: 'manual', title: pdfRangesText([{ startPage: s, endPage: e }]), ranges: [{ startPage: s, endPage: e }] })
   }
+
+  const commit = () => {
+    if (!hasScope) { setBlockMsg('请先选择要加入的章节或页码范围。'); return }
+    const count = countPdfRangePages(selection.ranges)
+    if (exceedsPdfContextHardLimit(count)) { setBlockMsg('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页，请缩小章节或页码范围。'); return }
+    if (needsPdfContextSoftConfirm(count)) { setConfirming(selection); return }
+    finishAdd(selection)
+  }
+  const finishAdd = (sel: PdfSelection) => { if (doc) onAdd(sel, doc.id, doc.fileName) }
 
   return (
     <div className={css.overlay} data-testid="doc-context-picker">
       <div className={css.panel}>
         <div className={css.header}>
-          {needDocPick ? (
-            <span className={css.title}>从文件资料库加入对话</span>
-          ) : (
-            <button type="button" className={css.back} data-testid="doc-context-back" onClick={() => { setDoc(null); setChecked(new Set()) }}>←</button>
+          {stage === 'context' && !scoped && (
+            <button type="button" className={css.back} data-testid="doc-context-back" onClick={backToDocs}>←</button>
           )}
-          <span className={css.subTitle}>{needDocPick ? '' : (doc ? doc.fileName + ' · ' + doc.pageCount + ' 页' : '')}</span>
+          <span className={css.title}>{stage === 'document' ? '从文件资料库加入对话' : (doc ? doc.fileName : '')}</span>
+          <span className={css.subTitle}>{stage === 'context' && doc ? doc.pageCount + ' 页' : ''}</span>
           <button type="button" className={css.btn} data-testid="doc-context-cancel" onClick={onCancel}>取消</button>
         </div>
-        {needDocPick ? (
+        {stage === 'document' ? (
           <div className={css.docPick}>
             <input className={css.search} data-testid="doc-context-search" placeholder="搜索文件" value={search} onChange={e => setSearch(e.target.value)} />
             <div className={css.docList} data-testid="doc-context-doclist">
@@ -102,16 +143,15 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
         ) : doc ? (
           <>
             <div className={css.tabs}>
-              <button type="button" className={css.tab + (tab === 'toc' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-toc" onClick={() => setTab('toc')}>目录</button>
-              <button type="button" className={css.tab + (tab === 'manual' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-manual" onClick={() => setTab('manual')}>页码</button>
+              <button type="button" className={css.tab + (tab === 'toc' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-toc" onClick={() => { setTab('toc'); setWholeChecked(false); setManualSel(null) }}>目录</button>
+              <button type="button" className={css.tab + (tab === 'manual' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-manual" onClick={() => { setTab('manual'); setWholeChecked(false) }}>页码</button>
             </div>
             {tab === 'toc' ? (
               <div className={css.body} data-testid="doc-context-tree">
-                <label className={css.whole} data-testid="doc-context-whole">
-                  <input type="checkbox" checked={!wholeBlocked && wholeCount > 0 && selectedNodes.length === 0 && countPdfRangePages(selection.ranges) === wholeCount} onChange={addWhole} disabled={wholeBlocked} />
+                <button type="button" className={css.whole + (wholeChecked ? ' ' + css.wholeOn : '')} data-testid="doc-context-whole" disabled={wholeBlocked} onClick={addWhole}>
                   <span>整份文档 · {doc.pageCount} 页</span>
-                  {wholeBlocked && <span className={css.limitHint}>当前一次最多处理 120 页，请选择章节或页码范围。</span>}
-                </label>
+                </button>
+                {wholeBlocked && <div className={css.limitHint}>当前一次最多处理 120 页，请选择章节或页码范围。</div>}
                 {doc.chapters.length === 0 ? (
                   <div className={css.empty}>这份文档还没有目录。可使用「页码」或「整份文档」（&le;120 页）。</div>
                 ) : (
@@ -128,15 +168,15 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
             )}
             <div className={css.footer}>
               <div className={css.summary} data-testid="doc-context-summary">
-                {selectedNodes.length > 0 ? (
-                  <>已选择：{selectedNodes.map(n => n.title).filter(Boolean).join('、')}<br />{pdfRangesText(selection.ranges)} · 共 {selectionCount} 页</>
+                {hasScope ? (
+                  <>{selection.title ? '已选择：' + selection.title : '已选择：' + (wholeChecked ? '整份文档' : pdfRangesText(selection.ranges))}<br />{pdfRangesText(selection.ranges)} · 共 {selectionCount} 页</>
                 ) : (
                   <>已选择：未选择章节</>
                 )}
               </div>
               <div className={css.footerBtns}>
                 <button type="button" className={css.btn} data-testid="doc-context-cancel2" onClick={onCancel}>取消</button>
-                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" onClick={addSelected}>加入当前对话</button>
+                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" onClick={commit}>加入当前对话</button>
               </div>
             </div>
           </>

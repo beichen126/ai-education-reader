@@ -17,12 +17,25 @@ assert(sanitizeAttachmentName('../../etc/passwd.png') === 'etcpasswd.png', 'sani
 assert(sanitizeAttachmentName('图 1.png') === '图_1.png', 'sanitize keeps Chinese + replaces spaces (got ' + sanitizeAttachmentName('图 1.png') + ')')
 assert(sanitizeAttachmentName('image') === 'image.png', 'sanitize adds default ext')
 
-// --- dedupe collisions ---
+// --- dedupe collisions: GLOBALLY unique names (blocker 0.5) ---
+const uniqueInvariant = (cases: string[][]) => {
+  for (const names of cases) {
+    const out = dedupeNames(names)
+    assert(new Set(out).size === out.length, 'globally unique for [' + names.join(', ') + '] -> [' + out.join(', ') + ']')
+  }
+}
+// figure.png (twice) then an EXPLICIT figure-2.png: the explicit name must never be overwritten.
 const dn = dedupeNames(['figure.png', 'figure.png', 'figure-2.png'])
-// figure.png and figure-2.png are DISTINCT names; the two identical figure.png -> figure, figure-2
-assert(dn.join(',') === 'figure.png,figure-2.png,figure-2.png', 'identical + distinct name dedupe (got ' + dn.join(',') + ')')
+assert(dn.join(',') === 'figure.png,figure-2.png,figure-2-2.png', 'identical + explicit figure-2.png -> figure, figure-2, figure-2-2 (got ' + dn.join(',') + ')')
 const dn2 = dedupeNames(['figure.png', 'figure.png', 'figure.png'])
 assert(dn2.join(',') === 'figure.png,figure-2.png,figure-3.png', 'three identical -> figure, -2, -3 (got ' + dn2.join(',') + ')')
+// Adversarial cases from the RC spec; each result MUST be globally unique.
+uniqueInvariant([
+  ['a.png', 'a.png', 'a-2.png'],
+  ['a.png', 'a-2.png', 'a.png'],
+  ['中文图.png', '中文图-2.png', '中文图.png'],
+  ['figure.png', 'figure.png', 'figure-2.png'],
+])
 
 // clear indexdb (no OPFS mock -> IDB fallback for attachment blobs)
 await idbClearAll()

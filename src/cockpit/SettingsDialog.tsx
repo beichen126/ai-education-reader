@@ -4,7 +4,8 @@ import { testConnection } from '../api/deepseek'
 import { uiActions } from '../engine/ui-store'
 import { useSessions } from '../engine/sessions-store'
 import { exportBackupJson, exportConversationMd, exportMarkedOnlyMd, exportConversationBundle, importBackupText, BackupError } from '../export'
-import { getAppearanceMode, setAppearanceMode, type AppearanceMode } from '../theme/theme'
+import { type AppearanceMode } from '../theme/theme'
+import { setAppearance } from '../engine/settings-store'
 import { Modal, Button, Input } from '../dsh/primitives'
 import { getStorageDiagnostics, formatBytes, type StorageDiagnostics } from '../storage/diagnostics'
 import { clearAllLocalData } from '../storage/storage'
@@ -49,7 +50,7 @@ export function SettingsDialog() {
   }, [])
   useEffect(() => { void loadStorage() }, [loadStorage])
 
-  const onSave = async () => { await saveSettings({ apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), customSystemPrompt: prompt, customSystemPromptEnabled: promptOn }); setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  const onSave = async () => { await saveSettings({ apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), customSystemPrompt: prompt, customSystemPromptEnabled: promptOn, appearance: s.appearance }); setSaved(true); setTimeout(() => setSaved(false), 1500) }
   const onTest = async () => {
     setTest('正在测试…'); setTestOk(null)
     const r = await testConnection({ apiKey: key.trim(), baseUrl: base.trim() })
@@ -127,9 +128,9 @@ export function SettingsDialog() {
       <div className={css.exportSection}>
         <div className={css.exportTitle}>外观</div>
         <div className={css.appearanceRow} data-testid="settings-appearance">
-          <button type="button" className={css.appearanceOpt} data-testid="appearance-system" onClick={() => void setAppearanceMode('system')}>跟随系统</button>
-          <button type="button" className={css.appearanceOpt} data-testid="appearance-light" onClick={() => void setAppearanceMode('light')}>浅色</button>
-          <button type="button" className={css.appearanceOpt} data-testid="appearance-dark" onClick={() => void setAppearanceMode('dark')}>深色</button>
+          <button type="button" className={css.appearanceOpt} data-testid="appearance-system" aria-pressed={s.appearance === 'system'} data-selected={s.appearance === 'system'} onClick={() => void setAppearance('system')}>跟随系统</button>
+          <button type="button" className={css.appearanceOpt} data-testid="appearance-light" aria-pressed={s.appearance === 'light'} data-selected={s.appearance === 'light'} onClick={() => void setAppearance('light')}>浅色</button>
+          <button type="button" className={css.appearanceOpt} data-testid="appearance-dark" aria-pressed={s.appearance === 'dark'} data-selected={s.appearance === 'dark'} onClick={() => void setAppearance('dark')}>深色</button>
         </div>
       </div>
       <div className={css.storageSection}>

@@ -332,19 +332,27 @@ export function DocumentReader() {
     void executeContext(request)
   }
   // Add a context from the shared picker using the Reader's OWN session (never closed).
+  // Block 0.4: the Reader's generation token cancels any in-flight picker op when the
+  // doc or conversation changes; a stale op NEVER writes into a different conversation.
   const addFromPicker = useCallback(async (selection: PdfSelection) => {
     if (!doc || !sessionRef.current || ctxBusy) return
     const targetConversationId = conv?.id
     if (!targetConversationId) { setCtxMsg({ text: '请先创建一个会话。', ok: false }); return }
     const count = countPdfRangePages(selection.ranges)
     if (count > MAX_PDF_CONTEXT_PAGES) { setCtxMsg({ text: '当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请选择较小的页码范围。', ok: false }); return }
+    const ownedDocId = doc.id
+    const ownedConvId = targetConversationId
+    const gen = ++ctxGenRef.current
     setCtxBusy(true); setCtxRunning({ total: count, done: 0 }); setCtxMsg(null)
+    const isCancelled = () => gen !== ctxGenRef.current
+    const isStale = () => gen !== ctxGenRef.current || (docIdRef.current !== ownedDocId) || (conv?.id !== ownedConvId)
     try {
-      const res = await executeDocumentContext({ targetConversationId, documentId: doc.id, fileName: doc.fileName, pageCount, selection, existingSession: sessionRef.current, onProgress: (p) => setCtxRunning({ total: p.total, done: p.done }) })
+      const res = await executeDocumentContext({ targetConversationId, documentId: doc.id, fileName: doc.fileName, pageCount, selection, existingSession: sessionRef.current, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxRunning({ total: p.total, done: p.done }) } })
+      if (gen !== ctxGenRef.current) return
       const label = selection.title ? '已加入「' + selection.title + '」· ' + res.count + ' 页' : '已加入当前对话 · ' + res.count + ' 页'
       setCtxMsg(res.ok ? { text: label, ok: true } : { text: res.error, ok: false })
-    } catch { setCtxMsg({ text: '无法生成上下文。', ok: false }) }
-    finally { setCtxBusy(false); setCtxRunning(null) }
+    } catch { if (gen === ctxGenRef.current) setCtxMsg({ text: '无法生成上下文。', ok: false }) }
+    finally { if (gen === ctxGenRef.current) { setCtxBusy(false); setCtxRunning(null) } }
   }, [doc, conv, ctxBusy, pageCount])
 
   const commitManualRange = () => {

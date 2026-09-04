@@ -8,6 +8,24 @@
     <title>AI 学习阅读器</title>
   </head>
   <body>
+    <script>
+      // Block 0.8: synchronous first-paint theme hint. Reads ONLY the localStorage appearance
+      // mode (never an API key / model / chat / settings) and applies the theme BEFORE React
+      // mounts, so a stored dark mode does not flash white. Falls back to system.
+      (function () {
+        try {
+          var mode = localStorage.getItem('dsh-appearance-mode');
+          if (mode !== 'light' && mode !== 'dark') mode = 'system';
+          var dark = mode === 'dark' || (mode === 'system' && window.matchMedia &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var eff = dark ? 'dark' : 'light';
+          document.documentElement.dataset.theme = eff;
+          if (dark) document.body.setAttribute('data-ds-dark-theme', '');
+          else document.body.removeAttribute('data-ds-dark-theme');
+          document.documentElement.style.backgroundColor = eff === 'dark' ? '#0f1115' : '#ffffff';
+        } catch (e) { /* ignore */ }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
