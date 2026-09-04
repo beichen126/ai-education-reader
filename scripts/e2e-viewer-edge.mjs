@@ -245,7 +245,7 @@ async function drag(p, dx, dy) {
   assert(draftBack2, 'C: keyboard-opened draft: focus restored to the draft thumb')
 
   // ============ D. PDF page viewer (Case H) + focus ============
-  await page.locator('[data-testid="composer-attach-pdf"] input[type="file"]').setInputFiles(PDF)
+  await page.locator('input[type="file"][accept*=".pdf"]').first().setInputFiles(PDF)
   await page.locator('[data-testid="pdf-mode-chapter"]').waitFor({ state: 'visible', timeout: 25000 })
   await page.locator('[data-testid="pdf-mode-manual"]').click()
   await page.locator('[data-testid="pdf-start"]').waitFor({ state: 'visible', timeout: 25000 })

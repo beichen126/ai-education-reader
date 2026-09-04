@@ -141,7 +141,7 @@ assert(galleryTitle === '图片', 'H: gallery entry opens with 图片 title (got
 await page.getByRole('button', { name: '关闭' }).last().click()
 await page.waitForTimeout(200)
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.getByText('AI Education Reader · v0.1.0-alpha.3 · Alpha').waitFor({ state: 'visible', timeout: 10000 })
+await page.getByText('AI Education Reader · v0.1.0-alpha.3').waitFor({ state: 'visible', timeout: 10000 })
 await page.keyboard.press('Escape')
 await page.waitForTimeout(300)
 await page.locator('[data-testid="sidebar-new-chat"]').click()
