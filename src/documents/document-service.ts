@@ -75,6 +75,10 @@ export async function readDocumentSourceBlob(id: string): Promise<Blob> {
   throw new DocumentBinaryMissingError(id);
 }
 
+/** TEST-ONLY / internal: hydrates EVERY document's full source Blob into memory. The
+ *  runtime UI MUST use listDocumentSummaries() (metadata-only) instead. Do not call this
+ *  from product code — a large library would load an entire PDF corpus into memory.
+ *  Marked so a future UI refactor can't accidentally hydrate everything. */
 export async function listDocuments(): Promise<LearningDocument[]> {
   const all = await idbGetAll('documents');
   const out: LearningDocument[] = [];
