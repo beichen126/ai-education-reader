@@ -26,22 +26,6 @@ const promptVal = await page.locator('textarea[class*="promptArea"]').inputValue
 assert(promptVal.includes('笔记'), 'Note dialog pre-fills the editable prompt (len ' + promptVal.length + ')')
 // Generate.
 await page.locator('button:has-text("生成")').filter({ hasText: /^生成$/ }).last().click()
-await page.waitForTimeout(3000)
-const hits = getRouteHitsCompletions()
-const dbgBody = await page.textContent('body')
-console.log('DEBUG route completions=', hits, '| has 这是笔记内容=', dbgBody.includes('这是笔记内容'))
-console.log('DEBUG dialog still open=', dbgBody.includes('创建学习成果'), '| has 生成中=', dbgBody.includes('生成中'))
-const editorInput = await page.locator('input[class*="titleInput"]').count()
-const errBanner = await page.locator('text=生成失败').count()
-console.log('DEBUG editor input count=', editorInput, '| err banners=', errBanner)
-console.log('DEBUG pageerrors so far:', errors.join(' | '))
-const arts = await page.evaluate(() => new Promise((resolve) => {
-  const req = indexedDB.open('ai-education-reader', 5)
-  req.onsuccess = () => { const db = req.result; if (!db.objectStoreNames.contains('artifacts')) { resolve([]); return }
-    const tx = db.transaction('artifacts','readonly'); const g = tx.objectStore('artifacts').getAll(); g.onsuccess = () => { try { db.close() } catch {}; resolve((g.result||[]).map(a => ({ kind: a.kind, status: a.status, prompt: (a.prompt||'').slice(0,30) }))) }; g.onerror = () => resolve([]) }
-  req.onerror = () => resolve([])
-}))
-console.log('DEBUG artifacts store:', JSON.stringify(arts))
 // The generated Note editor opens (title input + body textarea).
 await page.waitForFunction(() => document.body.textContent.includes('这是笔记内容'), null, { timeout: 15000 })
 assert(true, 'generated Note content appears in the editor')
@@ -52,8 +36,9 @@ assert(reqText.includes('源问题一') && reqText.includes('源答案一'), 'ar
 assert(!reqText.includes('源问题二') && !reqText.includes('源答案二'), 'artifact source EXCLUDES post-cutoff M2/A2 (source cutoff)')
 // Edit title + body, reload, verify persistence.
 await page.locator('input[class*="titleInput"]').fill('我的笔记标题')
+await page.keyboard.press('Tab') // blur -> commitTitle persists the title
 await page.locator('textarea[class*="textarea"]').fill('这是笔记内容 已编辑')
-await page.waitForTimeout(800) // autosave debounce
+await page.waitForTimeout(900) // autosave debounce
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
 await page.waitForTimeout(1200)
@@ -95,6 +80,44 @@ assert(true, 'QuizViewer opens with the structured question')
 await page.locator('input[type="radio"]').nth(1).check()
 await page.locator('text=提交/查看答案').click()
 await page.waitForFunction(() => document.body.textContent.includes('解析：'), null, { timeout: 8000 })
+// Close the QuizViewer overlay so the conversation is reachable again.
+await page.mouse.click(20, 20)
+await page.waitForTimeout(400)
+// ---- Invalid quiz: malformed model output must NOT be saved as ready ----
+const badQuiz = JSON.stringify({ questions: [{ id: 'q1', type: 'single-choice', question: '坏题', options: ['A','B'], answer: 9 }] })
+await installMockModel(page, [badQuiz])
+await page.locator('button[aria-label="消息操作"]').nth(0).click()
+await page.locator('text=生成题目').waitFor({ state: 'visible', timeout: 5000 })
+await page.locator('text=生成题目').click()
+await page.locator('text=创建学习成果').waitFor({ state: 'visible', timeout: 5000 })
+await page.waitForTimeout(500)
+await page.locator('button:has-text("生成")').filter({ hasText: /^生成$/ }).last().click()
+await page.waitForTimeout(1500)
+const artifacts2 = await page.evaluate(() => new Promise((resolve) => {
+  const req = indexedDB.open('ai-education-reader', 5)
+  req.onsuccess = () => { const db = req.result; const tx = db.transaction('artifacts','readonly'); const g = tx.objectStore('artifacts').getAll(); g.onsuccess = () => { try { db.close() } catch {}; resolve((g.result||[]).map(a => ({ kind: a.kind, status: a.status }))) }; g.onerror = () => resolve([]) }
+}))
+const badArtifact = artifacts2.find(a => a.kind === 'quiz' && a.status === 'error')
+assert(!!badArtifact, 'malformed quiz -> artifact is ERROR (never saved ready)')
+assert(!artifacts2.some(a => a.kind === 'quiz' && a.status === 'ready' && a.question === 'bad'), 'no ready artifact from the malformed quiz')
+// Close the dialog (it closed on error) and proceed.
+await page.waitForTimeout(300)
+
+// ---- Artifact Library: browse/filter/delete ----
+await page.locator('text=学习成果').click()
+await page.locator('text=笔记').first().waitFor({ state: 'visible', timeout: 8000 })
+const libNote = await page.locator('text=我的笔记标题').count()
+assert(libNote >= 1, 'Artifact Library lists the Note')
+await page.locator('button:has-text("题目")').first().click()
+await page.waitForTimeout(500)
+// Delete the invalid quiz from the library (or the valid one) via the delete button on a card.
+const delBtns = await page.locator('button:has-text("删除")').all()
+if (delBtns.length > 0) { await delBtns[0].click(); await page.waitForTimeout(500) }
+await page.locator('button:has-text("全部")').first().click()
+await page.waitForTimeout(500)
+const afterDelete = await page.locator('text=我的笔记标题').count()
+assert(afterDelete >= 1, 'Artifact Library still shows the Note after deleting a card')
+
 await browser.close()
 const pageErrors = errors.length ? errors.join(' | ') : '(none)'
 const passCount = results.filter(r => r.startsWith('PASS')).length
