@@ -3,7 +3,7 @@
 import { newStableId, type Attachment, type PdfAttachmentSource, type StableId } from './types'
 import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, listAllAttachmentRows, listConversations, getConversation, type StoredAttachmentRow } from '../storage/storage'
 import { idbScan, idbGetAll, idbRunTxn } from '../storage/idb'
-import { allBranches } from '../branches/branch-store'
+import { allBranches, getBranch } from '../branches/branch-store'
 import { BRANCH_DRAFT_PREFIX } from '../branches/branch-types'
 import { persistBinary, readBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
 
@@ -152,6 +152,8 @@ export type BranchDraftOwnership = { branchId: string; text: string; existingIma
  * saving attachments (the v1 atomicity rule applies to branches equally).
  */
 export async function saveGeneratedImagesAndBranchDraft(images: GeneratedImageInput[], draft: BranchDraftOwnership, deps: DraftCommitDeps = {}): Promise<Attachment[]> {
+  // Deletion protection: never commit an attachment/draft ownership graph for a deleted branch.
+  if (!(await getBranch(draft.branchId))) throw new AttachmentError('missing-attachment', '分支不存在或已删除，无法保存附件')
   const now = Date.now()
   const metas: Attachment[] = []
   const blobs: Blob[] = []

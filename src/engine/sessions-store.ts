@@ -7,6 +7,7 @@ import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildC
 import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
 import { deleteConvAnnotations } from '../annotations/annotation-service'
 import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
+import { runThreadReply, type ReplyThread } from './stream-reply'
 
 export type { Conversation as ChatSession, Message as ChatMsg, Attachment as ChatImage }
 export const uid = (_p?: string) => newStableId()
@@ -181,114 +182,58 @@ export async function persistConversation(conv: Conversation): Promise<void> {
 }
 
 /** Fire-and-forget reply stream: runs AFTER the user message is accepted & persisted. */
+/**
+ * Root conversation target for the shared streaming engine. The engine is thread-agnostic;
+ * this target binds it to the existing root Conversation (v1 behavior preserved). */
+class RootReplyThread implements ReplyThread {
+  readonly genKey: string
+  private assistantId: StableId = ''
+  constructor(private id: string) { this.genKey = 'chat:root:' + id }
+  getContextMessages(): Message[] { return state.byId[this.id]?.messages ?? [] }
+  createAssistantPlaceholder(assistantId: StableId, now: number): void {
+    this.assistantId = assistantId
+    const cur = state.byId[this.id]; if (!cur) return
+    const placeholder: Message = { id: assistantId, role: 'assistant', content: '', images: [], createdAt: now, updatedAt: now }
+    upsertState({ ...cur, updatedAt: now, messages: [...cur.messages, placeholder] }, { status: 'streaming', sendError: undefined })
+  }
+  updateAssistantContent(content: string): void {
+    const cur = state.byId[this.id]; if (!cur) return
+    const last = cur.messages[cur.messages.length - 1]
+    if (!last || last.id !== this.assistantId) return
+    if (last.content === content) return
+    const updatedMsg: Message = { ...last, content, updatedAt: Date.now() }
+    upsertState({ ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] }, { status: 'streaming', sendError: undefined })
+  }
+  persistCheckpoint(content: string): void {
+    const cur = state.byId[this.id]; if (!cur) return
+    const last = cur.messages[cur.messages.length - 1]
+    if (!last || last.id !== this.assistantId || last.content === content) return
+    const updatedMsg: Message = { ...last, content, updatedAt: Date.now() }
+    const updated: Conversation = { ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] }
+    void persistConversation(updated)
+  }
+  async persistFinal(): Promise<void> { const cur = state.byId[this.id]; if (cur) await persistConversation(cur) }
+  async drainWrites(): Promise<void> { await drainWrites(this.id) }
+  exists(): boolean { return !!state.byId[this.id] }
+  setStreaming(): void { setState({ ...state, status: 'streaming', sendError: undefined }) }
+  setIdle(): void { setState({ ...state, status: 'idle', sendError: undefined }) }
+  setError(message: string): void { setState({ ...state, status: 'error', sendError: message }) }
+}
+
+/** Fire-and-forget reply stream: runs AFTER the user message is accepted & persisted. */
 async function runReplyStream(id: string, afterUser: Conversation): Promise<void> {
   const settings = getSettingsSnapshot()
   if (!settings.apiKey) { setState({ ...state, status: 'error', sendError: errorKindLabel('no-api-key') }); return }
-  const now = Date.now()
-  const assistantId = newStableId()
   const controller = new AbortController()
-  let received = ''
-  let lastRender = 0
-  let lastDurable = 0
-  const DURABLE_CHECKPOINT_MS = 1500
-
-  // Update React memory (UI render throttle ~200ms). Never reconstruct the assistant
-  // message from a stale snapshot: merge into the CURRENT conversation from store state.
-  const commit = (flushDurable: boolean) => {
-    const cur = state.byId[id]; if (!cur) return
-    const last = cur.messages[cur.messages.length - 1]
-    if (!last || last.id !== assistantId) return
-    if (last.content === received) return
-    const updatedMsg: Message = { ...last, content: received, updatedAt: Date.now() }
-    const updated: Conversation = { ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] }
-    upsertState(updated, { status: 'streaming', sendError: undefined })
-    // Durable checkpoint (conservative throttle): persist partial assistant content so a
-    // tab/process crash mid-answer doesn't lose most of the generated text. Never once per
-    // token; never a blocking await inside the hot render path (fire-and-forget).
-    if (flushDurable && Date.now() - lastDurable >= DURABLE_CHECKPOINT_MS) { lastDurable = Date.now(); void persistConversation(updated) }
-  }
-
-  const onDelta = (d: string) => { received += d; const t = Date.now(); if (t - lastRender >= streamRenderIntervalMs) { lastRender = t; commit(false) } }
-
-  try {
-    // --- LOCAL PREFLIGHT (no network, and NO assistant placeholder yet) ---
-    // A preflight failure must not leave a ghost empty assistant message behind.
-    // Image-context policy (§17): text history is always retained, but only the most
-    // recent N image-bearing turns keep their images, so a growing conversation never
-    // re-encodes the whole historical image set on every request.
-    const contextMessages = buildContextMessages(afterUser.messages)
-    const hasImages = contextMessages.some(x => x.images.length > 0)
-    if (hasImages && !isVisionModel(settings.model, settings.visionCapability)) { setState({ ...state, status: 'error', sendError: attachmentErrorLabel('vision-unsupported') }); return }
-    // Inline-base64 payload guard: refuse to base64-encode + POST a request whose
-    // retained raw image bytes would blow past the request-size budget. Uses only
-    // recorded blob sizes (attachment meta.size) — no encoding, no network.
-    const retainedImageIds = contextMessages.flatMap(x => x.images)
-    if (retainedImageIds.length > 0) {
-      const totalImageBytes = await sumAttachmentBytes(retainedImageIds)
-      if (isInlineImageOverBudget(totalImageBytes)) {
-        setState({ ...state, status: 'error', sendError: '当前消息包含的图片数据过多，可能超过模型接口的请求大小限制。请减少本次选择的 PDF 页数或图片数量。' })
-        return
-      }
-      // DeepSeek vision API image-count limit (600) — based on the FINAL retained set,
-      // not the current PDF alone, since history images also occupy slots.
-      const retainedImages = contextMessages.reduce((sum, mm) => sum + mm.images.length, 0)
-      if (exceedsVisionImageCount(retainedImages)) {
-        setState({ ...state, status: 'error', sendError: '当前对话需要发送的图片数量过多。请减少本次 PDF 页面或图片后重试。' })
-        return
-      }
-    }
-    const apiMessages = await buildApiMessages(contextMessages, toDataUrl)
-    const reqMessages = buildRequestMessages(apiMessages, settings)
-    // Invariant (§16): the outgoing request must encode exactly the images the context
-    // policy retained. If not, block the fetch and tell the user — never silently drop.
-    const expectedImages = contextMessages.reduce((sum, mm) => sum + mm.images.length, 0)
-    const encodedImages = countImageParts(reqMessages)
-    if (encodedImages !== expectedImages) {
-      setState({ ...state, status: 'error', sendError: '图片准备失败：已选择 ' + expectedImages + ' 张，实际仅准备成功 ' + encodedImages + ' 张。请检查附件后重试。' })
-      return
-    }
-
-    // --- only NOW create the assistant placeholder (ONE stable id for the whole stream) ---
-    // Re-read the CURRENT conversation from store state and merge the placeholder into it,
-    // NEVER reconstruct from the stale afterUser snapshot (which could clobber a concurrent
-    // title rename or any message change made between send-accept and here).
-    const placeholder: Message = { id: assistantId, role: 'assistant', content: '', images: [], createdAt: now, updatedAt: now }
-    const currentBase = state.byId[id] || afterUser
-    const withPlaceholder: Conversation = { ...currentBase, updatedAt: now, messages: [...currentBase.messages, placeholder] }
-    upsertState(withPlaceholder, { status: 'streaming', sendError: undefined })
-    abortControllerRef = controller
-    activeGeneration = { conversationId: id, assistantId, controller }
-
-    const r = await streamTextChat({ apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages, signal: controller.signal, onDelta })
-    received = r.content
-    // Final flush (no more tokens): persist the latest meaningful assistant state.
-    commit(true)
-    const finalConv = state.byId[id]
-    if (finalConv) await persistConversation(finalConv)
-    // Wait for any still-queued checkpoint to settle so it can never land AFTER (and
-    // overwrite) this final durable state. Only then clear ownership (P0-2).
-    await drainWrites(id)
-    setState({ ...state, status: 'idle', sendError: undefined })
-    activeGeneration = null
-    abortControllerRef = null
-  } catch (e) {
-    // Flush the latest partial assistant state (durable) on error OR user abort, through
-    // the serialized queue, then drain so a late checkpoint cannot overwrite it (P0-2).
-    commit(true)
-    const cur = state.byId[id]
-    if (cur) await persistConversation(cur)
-    await drainWrites(id)
-    // Attachment errors keep their own semantics — a missing/corrupt image should
-    // read as an attachment problem, never as a network/CORS failure.
-    if (e instanceof AttachmentError) { setState({ ...state, status: 'error', sendError: attachmentErrorLabel(e.kind) }); activeGeneration = null; abortControllerRef = null; return }
-    const err = e instanceof DeepSeekError ? e : new DeepSeekError('network-or-cors', String(e))
-    if (err.kind === 'aborted') { setState({ ...state, status: 'idle', sendError: undefined }) }
-    else { const label = errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : ''); setState({ ...state, status: 'error', sendError: label }) }
-    activeGeneration = null
-    abortControllerRef = null
-  }
+  const thread = new RootReplyThread(id)
+  await runThreadReply(thread, settings, controller, (c, assistantId) => {
+    abortControllerRef = c
+    activeGeneration = { conversationId: id, assistantId, controller: c }
+  })
+  // The engine already flushed + drained + set status; clear ownership deterministically.
+  activeGeneration = null
+  abortControllerRef = null
 }
-
 export async function initStore(): Promise<void> {
   const convs = await listConversations()
   if (convs.length === 0) {
