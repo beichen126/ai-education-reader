@@ -1,0 +1,71 @@
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  font-size: 0.8125rem;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.label { font-weight: 600; color: var(--dsw-alias-label-primary); white-space: nowrap; }
+.crumb { display: inline-flex; align-items: center; gap: 0.25rem; min-width: 0; }
+.sep { color: var(--dsw-alias-label-tertiary); padding: 0 0.125rem; }
+.path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.switcher { margin-left: auto; display: flex; align-items: center; gap: 0.375rem; }
+.branchItem {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.5rem;
+}
+.branchItem:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.branchItem.active { background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-label-primary); font-weight: 600; }
+
+.editInput {
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 0.375rem;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  padding: 0.25rem 0.5rem;
+  max-width: 10rem;
+}
+
+.menuItem {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0.375rem 0.5rem;
+  border-radius: 0.375rem;
+  width: 100%;
+}
+.menuItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.menuItem.danger { color: var(--dsw-alias-state-error-primary); }
+.menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 0.25rem;
+  background: var(--dsw-alias-bg-layer-2);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 0.5rem;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  padding: 0.25rem;
+  min-width: 12rem;
+  z-index: 20;
+}
+@media (max-width: 640px) {
+  .bar { flex-wrap: wrap; }
+  .switcher { margin-left: 0; width: 100%; }
+}
