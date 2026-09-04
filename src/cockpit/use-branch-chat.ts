@@ -40,6 +40,9 @@ export function useBranchChat(conversation: Conversation | undefined): {
   const branchFrom = useCallback(async (messageId: StableId) => {
     if (!conversation) return undefined
     const b = await createBranchFromMessage(conversation.id, messageId)
+    // Spec: creating a branch switches the active view to it (its inherited history stays visible,
+    // the composer starts empty, the original path is unchanged).
+    setActiveBranchId(b.id)
     await refresh()
     return b
   }, [conversation?.id, refresh])

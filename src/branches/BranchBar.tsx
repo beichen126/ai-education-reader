@@ -59,7 +59,7 @@ export function BranchBar({ conversationId, activeBranchId, onSwitch, onChanged 
     <span className={css.label}>当前路线：</span>
     <span className={css.crumb}>
       <button type="button" className={css.branchItem + (activeBranchId ? '' : ' ' + css.active)} onClick={() => go(undefined)} aria-label="切换到主线">主线</button>
-      {activeBranchId && lineage ? lineage.slice(1).map((id, i) => {
+      {activeBranchId && lineage ? lineage.map((id, i) => {
         const b = branches.find((x) => x.id === id)
         return (<span key={id} className={css.path}><span className={css.sep}>›</span><button type="button" className={css.branchItem + (id === activeBranchId ? ' ' + css.active : '')} onClick={() => go(id)}>{b ? b.title : ('分支 ' + (i + 2))}</button></span>)
       }) : null}
