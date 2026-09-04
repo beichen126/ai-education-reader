@@ -56,6 +56,22 @@ const acceptingRef = { current: null as string | null }
 type ActiveGeneration = { conversationId: string; assistantId: string; controller: AbortController }
 let activeGeneration: ActiveGeneration | null = null
 
+/** Per-conversation serialized durable-write queue. Every persistence of a conversation's
+ *  streaming assistant content is chained AFTER the previous durable write, so a stale
+ *  partial checkpoint can NEVER overwrite a newer durable revision (P0-2 monotonic writes).
+ *  The map entry is cleared once the chain drains. */
+const writeChains = new Map<string, Promise<void>>()
+/** Exported for deterministic regression tests (P0-2 ordering). */
+export function enqueueWrite(convId: string, write: () => Promise<void>): Promise<void> {
+  const prev = writeChains.get(convId) || Promise.resolve()
+  const next = prev.then(() => write()).catch((e) => { console.error('[stream] durable write failed', convId, e) })
+  writeChains.set(convId, next)
+  return next
+}
+/** Resolve when all queued durable writes for a conversation have settled (used to await the
+ *  full queue before returning/clearing ownership on completion/abort/error). */
+function drainWrites(convId: string): Promise<void> { return writeChains.get(convId) || Promise.resolve() }
+
 
 export const sessionsActions = {
   async newChat(): Promise<string> {
@@ -130,6 +146,9 @@ export const sessionsActions = {
     // If a reply stream is actively generating for THIS conversation, abort it. It must
     // never resurrect a deleted conversation or recreate deleted attachments/messages.
     if (activeGeneration && activeGeneration.conversationId === id) { activeGeneration.controller.abort(); activeGeneration = null; abortControllerRef = null }
+    // Invalidate any pending durable write for this conversation so a late checkpoint cannot
+    // recreate the deleted row (P0-2).
+    writeChains.delete(id)
     const conv = state.byId[id]
     const next = toState(state.list.filter(c => c.id !== id), state.current === id ? undefined : state.current)
     setState(next)
@@ -152,10 +171,13 @@ export const sessionsActions = {
   },
 }
 
-/** Fire-and-forget durable save (never throws; a failed checkpoint must not corrupt the
- *  in-memory stream). Used for periodic partial-content checkpoints during streaming. */
-async function persistConversation(conv: Conversation): Promise<void> {
-  try { await saveConversation(conv) } catch (e) { console.error('[stream] checkpoint persist failed', conv.id, e) }
+/** Durable save routed through the per-conversation serialized write queue (P0-2). Each
+ *  checkpoint/final write is chained AFTER the previous durable write so a stale partial can
+ *  never overwrite a newer revision. Never throws (a failed write must not corrupt the
+ *  in-memory stream); the chain keeps the next queued write alive regardless. */
+export async function persistConversation(conv: Conversation): Promise<void> {
+  // Guard: never resurrect a conversation that was deleted while a write was queued.
+  return enqueueWrite(conv.id, async () => { if (state.byId[conv.id]) await saveConversation(conv) })
 }
 
 /** Fire-and-forget reply stream: runs AFTER the user message is accepted & persisted. */
@@ -242,15 +264,20 @@ async function runReplyStream(id: string, afterUser: Conversation): Promise<void
     // Final flush (no more tokens): persist the latest meaningful assistant state.
     commit(true)
     const finalConv = state.byId[id]
-    if (finalConv) await saveConversation(finalConv)
+    if (finalConv) await persistConversation(finalConv)
+    // Wait for any still-queued checkpoint to settle so it can never land AFTER (and
+    // overwrite) this final durable state. Only then clear ownership (P0-2).
+    await drainWrites(id)
     setState({ ...state, status: 'idle', sendError: undefined })
     activeGeneration = null
     abortControllerRef = null
   } catch (e) {
-    // Flush the latest partial assistant state (durable) on error OR user abort.
+    // Flush the latest partial assistant state (durable) on error OR user abort, through
+    // the serialized queue, then drain so a late checkpoint cannot overwrite it (P0-2).
     commit(true)
     const cur = state.byId[id]
-    if (cur) await saveConversation(cur)
+    if (cur) await persistConversation(cur)
+    await drainWrites(id)
     // Attachment errors keep their own semantics — a missing/corrupt image should
     // read as an attachment problem, never as a network/CORS failure.
     if (e instanceof AttachmentError) { setState({ ...state, status: 'error', sendError: attachmentErrorLabel(e.kind) }); activeGeneration = null; abortControllerRef = null; return }
