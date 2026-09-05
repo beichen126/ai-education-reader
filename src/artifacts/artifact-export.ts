@@ -77,10 +77,11 @@ export function quizArtifactToMarkdown(artifact: StudyArtifact): string {
   return lines.join('\n')
 }
 
-/** Export a Note / document artifact as <title>.md from its CURRENT edited content (A9). */
-export function exportNoteMarkdown(artifact: StudyArtifact): void {
+/** Export a Note / document artifact as <title>.md from the CURRENT edited content (A9).
+ *  Pass `content` when the editor holds an in-progress edit that may not be autosaved yet. */
+export function exportNoteMarkdown(artifact: StudyArtifact, content?: string): void {
   const stem = sanitizeExportStem(artifact.title)
-  downloadText(stem + '.md', artifact.content ?? '', 'text/markdown')
+  downloadText(stem + '.md', content ?? artifact.content ?? '', 'text/markdown')
 }
 
 /** Export a Quiz artifact as a human-readable <title>.md (A9). */

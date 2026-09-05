@@ -60,7 +60,7 @@ export function ArtifactEditor({ artifact, onOpenArtifact, onClose, onChanged, s
   async function commitTitle() { if (title.trim() && title.trim() !== artifact.title) { await updateArtifactTitle(artifact.id, title); onChanged() } }
   async function doCopy() { cp.onCopy() }
   async function doDelete() { if (!globalThis.confirm('删除该学习成果？')) return; await removeArtifact(artifact.id); onChanged(); onClose() }
-  function doExport() { exportNoteMarkdown(artifact) }
+  function doExport() { exportNoteMarkdown(artifact, body) }
   async function doRegenerate() {
     if (!globalThis.confirm('重新生成将创建一个新版本，当前编辑不会丢失。继续？')) return
     setBusy(true); setGenError(undefined)
