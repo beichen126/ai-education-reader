@@ -5,7 +5,7 @@
 import { chromium } from 'playwright-core'
 
 export async function launchBrowser() {
-  const channel = process.env.PLAYWRIGHT_CHANNEL
+  const channel = process.env.PLAYWRIGHT_CHANNEL || (process.platform === 'win32' ? 'msedge' : 'chromium')
   // 'chromium' (or unset on non-Windows) means the bundled browser -> no channel.
   if (channel && channel !== 'chromium') return chromium.launch({ channel, headless: true })
   return chromium.launch({ headless: true })
