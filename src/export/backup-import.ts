@@ -92,6 +92,8 @@ export function parseAndValidate(input: unknown): Backup {
   const settings = isObj(input.settings) ? input.settings : {}
   if (settings.apiBaseUrl !== undefined && !isStr(settings.apiBaseUrl)) throw new BackupError('settings.apiBaseUrl 必须是字符串')
   if (settings.model !== undefined && !isStr(settings.model)) throw new BackupError('settings.model 必须是字符串')
+  // v1.2.0: visionCapability must be one of the known values, else the backup is invalid.
+  if ((settings as any).visionCapability !== undefined && (settings as any).visionCapability !== 'auto' && (settings as any).visionCapability !== 'supports-image' && (settings as any).visionCapability !== 'text-only') throw new BackupError('settings.visionCapability 非法')
 
   const convIds = new Set<string>()
   const attIds = new Set<string>()
@@ -324,6 +326,8 @@ export async function restoreBackup(backup: Backup): Promise<void> {
       // v1.1.3: restore saved reusable custom actions (settings KV). Missing field in an old
       // backup -> empty (no custom actions), never an error.
       { key: 'customArtifactActions', value: (backup.settings as { customArtifactActions?: unknown } | undefined)?.customArtifactActions || [] },
+      // v1.2.0: restore the vision capability (old backups lack it -> default 'auto').
+      { key: 'visionCapability', value: (backup.settings as { visionCapability?: unknown } | undefined)?.visionCapability || 'auto' },
       // V3: restore the appearance + every persisted Draft row (unsent user data). The API
       // Key is NEVER restored (always empty). Draft rows re-create the unsent composer state.
       { key: 'appearance', value: (backup as BackupV3).appearance || 'system' },

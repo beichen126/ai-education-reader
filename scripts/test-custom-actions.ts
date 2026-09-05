@@ -5,6 +5,8 @@ import { getArtifact, saveArtifact } from '../src/artifacts/artifact-store.ts'
 import { TRANSFORMATION_PRESETS } from '../src/artifacts/artifact-prompts.ts'
 import { buildBackup } from '../src/export/backup-export.ts'
 import { parseAndValidate } from '../src/export/backup-import.ts'
+import { importBackupText } from '../src/export/index.ts'
+import { getSetting, setSetting } from '../src/storage/storage.ts'
 import { newStableId } from '../src/engine/types.ts'
 
 let pass = 0, fail = 0
@@ -98,6 +100,32 @@ assert(threw, 'updateCustomAction with blank name throws (domain invariant)')
 let threwP = false
 try { await updateCustomAction(invariantProbe.id, { prompt: '' }) } catch { threwP = true }
 assert(threwP, 'updateCustomAction with blank prompt throws (domain invariant)')
+
+// ---- 9. v1.2.0: visionCapability backup/restore contract ----
+await setSetting('visionCapability', 'supports-image')
+const vb = await buildBackup()
+const vc = (vb.settings as { visionCapability?: string }).visionCapability
+assert(vc === 'supports-image', 'backup export carries visionCapability (got ' + vc + ')')
+let vOk = true
+try { parseAndValidate(vb as any) } catch (e) { vOk = false }
+assert(vOk, 'backup with visionCapability validates (backward-compatible)')
+// an OLD backup that lacks visionCapability imports to the default auto
+const oldVb = { ...vb, settings: { ...(vb.settings as object) } } as any
+delete oldVb.settings.visionCapability
+await importBackupText(JSON.stringify(oldVb))
+assert((await getSetting('visionCapability')) === 'auto', 'old backup (no visionCapability) -> import defaults to auto')
+// an illegal visionCapability is rejected by the validator
+const badVb = { ...vb, settings: { ...(vb.settings as object), visionCapability: 'bogus' } } as any
+let vThrew = false
+try { parseAndValidate(badVb) } catch { vThrew = true }
+assert(vThrew, 'illegal visionCapability -> BackupError')
+// full round-trip: supports-image survives export -> import -> settings
+await importBackupText(JSON.stringify(vb))
+assert((await getSetting('visionCapability')) === 'supports-image', 'supports-image round-trips through backup/import')
+// text-only round-trip
+await setSetting('visionCapability', 'text-only')
+await importBackupText(JSON.stringify(await buildBackup()))
+assert((await getSetting('visionCapability')) === 'text-only', 'text-only round-trips through backup/import')
 
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)

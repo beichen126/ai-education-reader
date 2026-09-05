@@ -86,8 +86,8 @@ export async function buildBackup(): Promise<BackupV4> {
     const blob = await attachmentBlobOf(imgId, row.meta.mimeType)
     attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, data: await blobToBase64(blob) })
   }
-  const [apiBaseUrl, model, customSystemPrompt, customSystemPromptEnabled, appearance] = await Promise.all([
-    getSetting('apiBaseUrl'), getSetting('model'), getSetting('customSystemPrompt'), getSetting('customSystemPromptEnabled'), getSetting('appearance'),
+  const [apiBaseUrl, model, customSystemPrompt, customSystemPromptEnabled, appearance, visionCapability] = await Promise.all([
+    getSetting('apiBaseUrl'), getSetting('model'), getSetting('customSystemPrompt'), getSetting('customSystemPromptEnabled'), getSetting('appearance'), getSetting('visionCapability'),
   ])
   const settings = {
     apiBaseUrl: (typeof apiBaseUrl === 'string' ? apiBaseUrl : 'https://api.deepseek.com'),
@@ -95,6 +95,7 @@ export async function buildBackup(): Promise<BackupV4> {
     customSystemPrompt: (typeof customSystemPrompt === 'string' ? customSystemPrompt : ''),
     customSystemPromptEnabled: customSystemPromptEnabled === 'true',
     customArtifactActions: await listCustomActions(),
+    visionCapability: (visionCapability === 'supports-image' || visionCapability === 'text-only') ? visionCapability : 'auto',
   }
   const appearanceOut: 'system' | 'light' | 'dark' = (appearance === 'light' || appearance === 'dark') ? appearance : 'system'
   // Local Document Library: iterate ONE record at a time (metadata, one binary read, base64,
