@@ -63,6 +63,7 @@
     "test:document-ui": "npx tsx scripts/test-document-ui.ts",
     "test:document-reader": "npx tsx scripts/test-document-reader.ts",
     "test:reader-render": "npx tsx scripts/test-reader-render.ts",
+    "test:reader-zoom-ownership": "npx tsx scripts/test-reader-zoom-ownership.ts",
     "test:document-lifecycle": "npx tsx scripts/test-document-lifecycle.ts",
     "test:document-library": "npx tsx scripts/test-document-library.ts",
     "test:reader-context": "npx tsx scripts/test-reader-context.ts",

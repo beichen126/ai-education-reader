@@ -22,6 +22,7 @@ export type ReaderDisplayApi = {
 }
 
 const STAGE_PADDING = 24 // 12px each side of the reader stage
+export { isZoomStale, type ZoomRequestContext } from './zoom-ownership'
 
 export function useReaderDisplay(session: PdfSession | null, page: number, pageCount: number): ReaderDisplayApi {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)

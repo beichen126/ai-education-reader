@@ -19,7 +19,7 @@ import { executeDocumentContext } from './document-context-service'
 import { useDocumentUi, documentUiActions } from './document-ui-store'
 import { clampReaderPage, parsePageInput } from './reader-utils'
 import { openPdfSession, closePdfSession, readSessionOutline, readSessionPageLabels, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
-import { useReaderDisplay } from './use-reader-display'
+import { useReaderDisplay, isZoomStale } from './use-reader-display'
 import { PdfError } from '../pdf/pdf-service'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { createUrlOwner } from './url-owner'
@@ -67,6 +67,11 @@ export function DocumentReader() {
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
   const viewerOpenRef = useRef(false)
   const genRef = useRef(0)
+  // Zoom ownership token (Agent G, G1): a full-res zoom Blob render is bound to the navigation
+  // context captured when requested (doc + page + session). Any page turn / doc switch / reader
+  // close / a newer zoom invalidates it, so a stale render can never open for a page the user
+  // already left, and its object URL is released immediately instead of leaking.
+  const zoomGenRef = useRef(0)
   const pageRef = useRef(1); pageRef.current = page
   const docIdRef = useRef<string | null>(null); docIdRef.current = docId
   const skipFirstProgressRef = useRef(true)
@@ -221,6 +226,12 @@ export function DocumentReader() {
       setViewerUrl(null); viewerOpenRef.current = false
     }
   }, [docId, persist])
+
+  // ---- Invalidate any PENDING zoom render on navigation (Agent G, G2): every page turn / doc
+  //      switch (and reader close) bumps the zoom generation, so a zoom that is still rendering
+  //      never installs a Blob for a page the user already left. Installed zoom URLs are
+  //      separately revoked in the docId effect cleanup / reader-close branch above. ----
+  useEffect(() => { zoomGenRef.current++ }, [page, docId])
 
   // ---- Reader正文 display render: now handled by useReaderDisplay (viewport-aware
   //      scale, real RenderTask cancel, bounded cache, neighbor prefetch). No JPEG Blob. ----
@@ -546,13 +557,21 @@ export function DocumentReader() {
   const openZoom = () => {
     if (viewerOpenRef.current || zoomBusy) return
     setZoomBusy(true)
+    // G1: bind this zoom request to the navigation context it was requested from.
+    const zoomGen = ++zoomGenRef.current
+    const ownedDocId = docIdRef.current
+    const ownedPage = pageRef.current
+    const ownedSession = sessionRef.current
     void display.requestZoomUrl()
       .then(url => {
-        if (url) {
-          urlOwnerRef.current.replace(url)
-          viewerOpenRef.current = true
-          setViewerUrl(urlOwnerRef.current.current)
-        }
+        if (!url) return
+        // G2/G3: a stale zoom (page turned / doc switched / reader closed / a newer zoom) must
+        // never open, and its Blob URL must be released NOW — never handed to urlOwner to forget.
+        const currentCtx = { gen: zoomGenRef.current, docId: docIdRef.current, page: pageRef.current, session: sessionRef.current }
+        if (isZoomStale({ gen: zoomGen, docId: ownedDocId, page: ownedPage, session: ownedSession }, currentCtx)) { URL.revokeObjectURL(url); return }
+        urlOwnerRef.current.replace(url)
+        viewerOpenRef.current = true
+        setViewerUrl(urlOwnerRef.current.current)
       })
       .catch(() => { setPageError('第 ' + page + ' 页渲染失败。') })
       .finally(() => setZoomBusy(false))
