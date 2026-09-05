@@ -12,7 +12,7 @@
 [隐私说明](#privacy--local-first) · 
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v1.1.0-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v1.2.0-green?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
 ![BYOK](https://img.shields.io/badge/BYOK-self--hosted-green?style=flat-square)
@@ -102,7 +102,7 @@ RAG 适合"不知道内容在哪"的开放式问答；而学习阅读，你一�
 <img src="docs/assets/readme/01-reader-context.webp" alt="Reader 就近加入章节" width="100%" />
 
 
-## 功能现状（v1.1.0 · 正式发布）
+## 功能现状（v1.2.0 · 正式发布）
 
 ### SHIPPED ✅
 
@@ -111,13 +111,15 @@ RAG 适合"不知道内容在哪"的开放式问答；而学习阅读，你一�
 | Image Vision Chat | 上传教材页 / 习题 / 板书图片，直接提问 |
 | PDF Reader | 浏览器内渲染整份 PDF，目录 + 页码导航，自动恢复阅读位置 |
 | Document Library | 本地保存导入的原始 PDF，作为独立学习对象 |
+| 添加资料（Composer / 空状态） | 统一入口：打开本地图片 / 打开本地 PDF / 从资料库添加；空状态「添加资料 / 打开资料库」 |
 | 已有 Document → Context | 从资料库选章节加入任意对话 |
 | 父级章节 Context | 读到任意层级，可加入其父级章节、不用手动算页码 |
 | 多章节 Context | 一次选多个（不连续）章节，规范化为一个 Context |
 | 原生 TOC | 读取 PDF 自带书签目录 |
 | 手动 TOC | 无书签时手动创建 / 编辑章节树 |
-| AI TOC | 视觉模型识别目录页 → 全局结构 → 人工检查后保存 |
-| AI TOC 人工检查 | 逐项跳转、调整层级、待确认页码、统一偏移重算 |
+| AI TOC | 目录页视觉转录 → 全局结构识别 → printed page label（AI 忠实转录、原样保留）→ 保存为可编辑章节目录 |
+| AI TOC 页码映射 | PDF 原生 PageLabels 精确映射（原样优先，其次安全数字规范化）；无 PageLabels 时用单个锚点做 physical-page 校准批量映射 |
+| AI TOC 人工检查 | 逐项跳转、调整层级/标题/页码、单一锚点校准、批量映射其余 numeric 项；非数字/不确定页码不猜测 |
 | OPFS | 大二进制（PDF/图片）优先存 OPFS，自动回退 IndexedDB |
 | 备份 / 恢复 | 完整备份 JSON；不含 API Key |
 | 导出带书签 PDF | 把当前章节树导出为新的带 Outline 的 PDF |
@@ -127,7 +129,8 @@ RAG 适合"不知道内容在哪"的开放式问答；而学习阅读，你一�
 | 会话分支 Conversation Branching | 从任意历史回答继续另一条学习路线，支持嵌套分支与规范归属分叉 |
 | 分支独立草稿 | 主线 / 各分支各自独立的未发送文本、图片与 PDF Context |
 | 统一生成与停止生成 | 主线与分支共用同一全局生成状态，支持统一的「停止生成」 |
-| 学习成果 Study Artifacts | 从当前学习上下文生成 笔记 / 总结 / 学习指南 / 测验 / 自定义学习成果 |
+| 学习成果 Study Artifacts | 从当前学习上下文生成 笔记 / 题目 / 自定义学习成果；总结、学习指南作为自定义中的内置常用操作 |
+| 可复用自定义操作 | 保存 / 复用 / 编辑 / 删除自定义「操作 + 提示词」，刷新与备份恢复后仍在 |
 | 可编辑笔记 | AI 输出进入独立可编辑学习文档（Markdown + 预览 + 自动保存） |
 | 结构化测验 | 结构化题目 / 答案 / 解释 / 来源，提交揭晓 |
 | 学习成果库 Artifact Library | 浏览 / 筛选 / 打开 / 删除学习成果 |
@@ -185,7 +188,7 @@ API Key 只保存在当前浏览器本地，不进入源码、不走 Git。
 - **Document Library**：把原始 PDF 作为一等对象保存，与会话无关。
 - **OPFS / IndexedDB 拆分**：二进制走 OPFS-first，元数据走 IndexedDB。
 - **Document → Context picker**：共享的章节选择器，多入口复用。
-- **AI TOC**：所选目录页 → 视觉转录 → 全局结构 → 映射 → 人工检查 → ChapterNode。
+- **AI TOC**：所选目录页 → 视觉转录（忠实抄录、保留原始 printed page label）→ 全局结构 → printed label 规范化 → PDF PageLabels 精确映射 / 无 PageLabels 时单锚点校准 → 人工逐项检查 → 保存为可编辑 ChapterNode。
 - **异步所有权**：PdfSession、AbortController / generation token，保证取消与切换安全。
 
 
