@@ -38,5 +38,4 @@
 .sourceLine { font-size: 0.8125rem; color: var(--dsw-alias-label-secondary); }
 .error { color: var(--dsw-alias-state-error-primary); font-size: 0.8125rem; }
 .saved { color: var(--dsw-alias-state-success-primary); font-size: 0.75rem; }
-@media (max-width: 760px) { .preview { display: none; } }
 @media (min-width: 761px) and (max-width: 1080px) { .editorBody { grid-template-columns: 1fr; } }
