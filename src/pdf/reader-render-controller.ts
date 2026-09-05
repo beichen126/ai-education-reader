@@ -102,7 +102,18 @@ export class ReaderRenderController {
     this.cache = new BoundedPageCache<CachedSurface>(options.cacheCapacity ?? 5, (_v, _k) => this.onEvict(_v))
   }
 
-  setGeometry(geometry: DisplayGeometry | null): void { this.geometry = geometry }
+  setGeometry(geometry: DisplayGeometry | null): void {
+    const prev = this.geometry
+    this.geometry = geometry
+    // The reader viewport changed (window resize / TOC open-close). Cached surfaces were
+    // rasterized for the PREVIOUS box, so a cache-hit here would show a stale-resolution
+    // page. Drop the cache so the current page + neighbors re-rasterize for the new box
+    // (C4 "用户 resize 后合理重新渲染"). Neighbor prefetch is re-armed by requestForeground.
+    if (prev && geometry && (prev.box.width !== geometry.box.width || prev.box.height !== geometry.box.height || prev.dpr !== geometry.dpr)) {
+      const keys = this.cache.keys()
+      for (const k of keys) this.cache.delete(k)?.dispose()
+    }
+  }
   setPageCount(n: number): void { this.pageCount = n }
   getCurrentPage(): number { return this.fgPage }
   hasCached(pageNumber: number): boolean { return this.cache.has(String(pageNumber)) }

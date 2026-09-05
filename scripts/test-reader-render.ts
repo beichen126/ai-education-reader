@@ -131,6 +131,19 @@ function makeFakeBackend(delayMs = 8) {
   await waitUntil(() => fg[fg.length - 1]?.page === 7)
   assert(fg[fg.length - 1].page === 7, 'controller usable after cancelAll (no zombie)')
 
+  // 5. resize re-rasterizes: changing the display box must NOT serve the stale-resolution
+  //    cache. Same-geometry cache-hit keeps working; a geometry change drops it and re-renders.
+  ctrl.requestForeground(10)
+  await waitUntil(() => ctrl.hasCached(10))
+  const r10a = renders.get(10) ?? 0
+  ctrl.requestForeground(10)
+  await waitUntil(() => fg[fg.length - 1]?.page === 10 && fg[fg.length - 1].fromCache)
+  assert((renders.get(10) ?? 0) === r10a, 'same geometry cache-hit does not re-render (resize no-op)')
+  ctrl.setGeometry({ box: { width: 400, height: 500 }, dpr: 2 }) // viewport changed
+  ctrl.requestForeground(10)
+  await waitUntil(() => (renders.get(10) ?? 0) > r10a)
+  assert((renders.get(10) ?? 0) > r10a, 'resize drops stale cache and re-rasterizes current page')
+
   console.log('\nRESULT pass=' + pass + ' fail=' + fail)
   process.exit(fail === 0 ? 0 : 1)
 })()
