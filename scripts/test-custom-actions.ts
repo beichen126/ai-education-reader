@@ -3,6 +3,8 @@ import 'fake-indexeddb/auto'
 import { listCustomActions, createCustomAction, updateCustomAction, deleteCustomAction } from '../src/artifacts/custom-action-store.ts'
 import { getArtifact, saveArtifact } from '../src/artifacts/artifact-store.ts'
 import { TRANSFORMATION_PRESETS } from '../src/artifacts/artifact-prompts.ts'
+import { buildBackup } from '../src/export/backup-export.ts'
+import { parseAndValidate } from '../src/export/backup-import.ts'
 import { newStableId } from '../src/engine/types.ts'
 
 let pass = 0, fail = 0
@@ -48,6 +50,19 @@ assert(kept && kept.prompt === artifactPrompt, 'deleting a custom action does NO
 // ---- 6. builtin summary / study-guide presets remain available (never deleted) ----
 assert(TRANSFORMATION_PRESETS.some((p) => p.id === 'summary'), 'builtin summary preset still available')
 assert(TRANSFORMATION_PRESETS.some((p) => p.id === 'study-guide'), 'builtin study-guide preset still available')
+
+// ---- 7. backup round-trip: custom actions are carried in the settings portion ----
+// Re-create two actions (the earlier ones were deleted) then export + validate.
+await createCustomAction({ name: '解释得更简单', prompt: '请用适合初学者的方式解释。' })
+await createCustomAction({ name: '提取名词解释', prompt: '请提取值得记忆的名词。' })
+const backup = await buildBackup()
+const ca = (backup.settings as { customArtifactActions?: { name: string; prompt: string }[] }).customArtifactActions || []
+assert(ca.length === 2, 'backup export carries the saved custom actions (got ' + ca.length + ')')
+assert(ca.some((a) => a.name === '解释得更简单') && ca.some((a) => a.name === '提取名词解释'), 'backup carries the right names + prompts')
+// The backup must still validate (backward-compatible extra field).
+let validated = true
+try { parseAndValidate(backup as any) } catch { validated = false }
+assert(validated, 'backup with customArtifactActions still validates (backward-compatible)')
 
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)
