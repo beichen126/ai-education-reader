@@ -32,7 +32,9 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
   const [actions, setActions] = useState<CustomArtifactAction[]>([])
   const [selectedKey, setSelectedKey] = useState<string>('custom')            // builtin id / action id / 'custom'(blank)
   const [name, setName] = useState('')
-  const [prompt, setPrompt] = useState('')
+  // Initialize the editable prompt from the selected mode's default preset (note/quiz/custom),
+  // so note/quiz open pre-filled exactly as before; custom lets the user pick a saved op.
+  const [prompt, setPrompt] = useState(TRANSFORMATION_PRESETS.find((p) => p.kind === initKind)?.defaultPrompt ?? '')
   const [error, setError] = useState<string | undefined>(undefined)
   const [saved, setSaved] = useState(false)
 
@@ -120,7 +122,7 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
       <div className={css.fieldLabel}>模式</div>
       <div className={css.kindRow} role="radiogroup" aria-label="模式">
         {TRANSFORMATION_PRESETS.filter((p) => MODE_KINDS.includes(p.kind)).map((p) => (
-          <button key={p.kind} type="button" disabled={busy} className={css.filterBtn + (kind === p.kind ? ' ' + css.active : '')} role="radio" aria-checked={kind === p.kind} onClick={() => selectKind(p.kind)}>{p.label}</button>
+          <button key={p.kind} type="button" data-testid={'artifact-kind-' + p.kind} disabled={busy} className={css.filterBtn + (kind === p.kind ? ' ' + css.active : '')} role="radio" aria-checked={kind === p.kind} onClick={() => selectKind(p.kind)}>{p.label}</button>
         ))}
       </div>
       {kind !== 'custom' && preset && <div className={css.cardMeta} style={{ marginTop: '0.375rem' }}>{preset.description}</div>}
@@ -157,7 +159,7 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
         </>
       )}
       <Button variant="ghost" onClick={onCancel} disabled={busy}>取消</Button>
-      <Button variant="primary" onClick={submit} disabled={busy}>{busy ? '生成中…' : '生成'}</Button>
+      <Button variant="primary" data-testid="artifact-generate" onClick={submit} disabled={busy}>{busy ? '生成中…' : '生成'}</Button>
     </div>
   </div>)
 }
