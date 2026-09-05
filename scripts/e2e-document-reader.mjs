@@ -9,6 +9,9 @@
 // close -> reopen (progress restored) -> reload (still restored) -> page zoom
 // (zoom viewer + transient HUD) -> responsive (mobile toc drawer) -> delete.
 import { launchBrowser } from './e2e-browser.mjs'
+import { readFileSync } from 'node:fs'
+// Single version source of truth: read from package.json so the assertion never hardcodes it.
+const APP_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF = 'test/fixtures/outline-sample.pdf'
 const results = []
@@ -157,7 +160,7 @@ assert(galleryTitle === '图片', 'H: gallery entry opens with 图片 title (got
 await page.getByRole('button', { name: '关闭' }).last().click()
 await page.waitForTimeout(200)
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.getByText('AI Education Reader · v1.1.0').waitFor({ state: 'visible', timeout: 10000 })
+await page.getByText('AI Education Reader · v' + APP_VERSION).waitFor({ state: 'visible', timeout: 10000 })
 await page.keyboard.press('Escape')
 await page.waitForTimeout(300)
 await page.locator('[data-testid="sidebar-new-chat"]').click()
