@@ -2,9 +2,9 @@ import type { Attachment, Conversation } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import type { LearningDocument } from '../documents/document-types'
 import type { ConversationBranch } from '../branches/branch-types'
-import type { StudyArtifact } from '../artifacts/artifact-types'
+import type { CustomArtifactAction, StudyArtifact } from '../artifacts/artifact-types'
 
-export type BackupSettings = { apiBaseUrl: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean }
+export type BackupSettings = { apiBaseUrl: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; customArtifactActions?: CustomArtifactAction[] }
 /** Persisted composer-draft user data (unsent text + images). Must survive a complete backup. */
 export type BackupDraft = { conversationId: string; text: string; imageIds: string[] }
 export type BackupAppearance = 'system' | 'light' | 'dark'

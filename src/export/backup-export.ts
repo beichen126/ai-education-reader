@@ -8,6 +8,7 @@ import { readBinary } from '../storage/binary-store'
 import { BackupError, parseAndValidate } from './backup-import'
 import { allBranches, getActiveBranch } from '../branches/branch-store'
 import { listArtifacts } from '../artifacts/artifact-store'
+import { listCustomActions } from '../artifacts/custom-action-store'
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer()
@@ -93,6 +94,7 @@ export async function buildBackup(): Promise<BackupV4> {
     model: (typeof model === 'string' ? model : 'deepseek-chat'),
     customSystemPrompt: (typeof customSystemPrompt === 'string' ? customSystemPrompt : ''),
     customSystemPromptEnabled: customSystemPromptEnabled === 'true',
+    customArtifactActions: await listCustomActions(),
   }
   const appearanceOut: 'system' | 'light' | 'dark' = (appearance === 'light' || appearance === 'dark') ? appearance : 'system'
   // Local Document Library: iterate ONE record at a time (metadata, one binary read, base64,

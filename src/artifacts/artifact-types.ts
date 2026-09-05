@@ -118,3 +118,15 @@ export type TransformationPreset = {
   description: string
   defaultPrompt: string
 }
+
+/** A user-saved, reusable "自定义操作": name + prompt, persisted across reloads, and
+ *  included in backup/restore. An Artifact records the ACTUAL prompt used at generation
+ *  time, so deleting an action never damages a historical Artifact that used it. */
+export type CustomArtifactAction = {
+  /** Stable id — never the name (names need not be unique). */
+  id: string
+  name: string
+  prompt: string
+  createdAt: number
+  updatedAt: number
+}

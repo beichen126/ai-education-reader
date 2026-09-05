@@ -5,14 +5,19 @@ import { filterLiveArtifactSources } from './artifact-service'
 import type { ArtifactKind, StudyArtifact } from './artifact-types'
 import css from './artifact.module.css'
 
-const FILTERS: { key: 'all' | ArtifactKind; label: string }[] = [
+// v1.1.3 IA: top-level filters are 全部 / 笔记 / 题目 / 自定义. The legacy kinds 'summary'
+// and 'study-guide' are NOT separate top-level columns — they are folded under '自定义'
+// so historical artifacts never disappear. 'note'/'quiz' stay top-level (core learning + a
+// structured schema); the merge is UI-only, the data kinds remain unchanged.
+type LibraryFilter = 'all' | 'note' | 'quiz' | 'custom'
+const FILTERS: { key: LibraryFilter; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'note', label: '笔记' },
   { key: 'quiz', label: '题目' },
-  { key: 'summary', label: '总结' },
-  { key: 'study-guide', label: '学习指南' },
   { key: 'custom', label: '自定义' },
 ]
+/** A legacy kind that lives under the '自定义' umbrella (not its own column). */
+const CUSTOM_COLLAPSE: ArtifactKind[] = ['custom', 'summary', 'study-guide']
 
 const KIND_LABEL: Record<ArtifactKind, string> = { note: '笔记', quiz: '题目', summary: '总结', 'study-guide': '学习指南', custom: '自定义' }
 
@@ -24,7 +29,7 @@ type Props = { onOpen: (artifact: StudyArtifact) => void }
  */
 export function ArtifactLibrary({ onOpen }: Props) {
   const [arts, setArts] = useState<StudyArtifact[]>([])
-  const [filter, setFilter] = useState<'all' | ArtifactKind>('all')
+  const [filter, setFilter] = useState<LibraryFilter>('all')
   const [loaded, setLoaded] = useState(false)
   // A11: the frozen source.snapshot.sourceDeleted flag is never trusted; evaluate the
   // live source conversation/branch on open and display the dynamic result.
@@ -37,7 +42,7 @@ export function ArtifactLibrary({ onOpen }: Props) {
     setDeletedIds(del)
     setLoaded(true)
   }
-  const shown = filter === 'all' ? arts : arts.filter((a) => a.kind === filter)
+  const shown = filter === 'all' ? arts : arts.filter((a) => filter === 'custom' ? CUSTOM_COLLAPSE.includes(a.kind) : a.kind === filter)
 
   async function remove(id: string) {
     if (!globalThis.confirm('删除该学习成果？')) return

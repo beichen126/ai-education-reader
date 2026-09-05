@@ -321,6 +321,9 @@ export async function restoreBackup(backup: Backup): Promise<void> {
       { key: 'customSystemPrompt', value: backup.settings?.customSystemPrompt || '' },
       { key: 'customSystemPromptEnabled', value: backup.settings?.customSystemPromptEnabled ? 'true' : 'false' },
       { key: 'apiKey', value: '' },
+      // v1.1.3: restore saved reusable custom actions (settings KV). Missing field in an old
+      // backup -> empty (no custom actions), never an error.
+      { key: 'customArtifactActions', value: (backup.settings as { customArtifactActions?: unknown } | undefined)?.customArtifactActions || [] },
       // V3: restore the appearance + every persisted Draft row (unsent user data). The API
       // Key is NEVER restored (always empty). Draft rows re-create the unsent composer state.
       { key: 'appearance', value: (backup as BackupV3).appearance || 'system' },

@@ -36,6 +36,10 @@
 .promptArea { width: 100%; min-height: 8rem; resize: vertical; border: 1px solid var(--dsw-alias-border-l2); border-radius: 0.5rem; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; padding: 0.625rem; }
 .dialogFoot { display: flex; justify-content: flex-end; gap: 0.5rem; }
 .sourceLine { font-size: 0.8125rem; color: var(--dsw-alias-label-secondary); }
+.customArea { display: flex; flex-direction: column; gap: 0.5rem; min-width: 0; }
+.opList { display: flex; gap: 0.375rem; flex-wrap: wrap; }
+.actionName { width: 100%; min-height: 34px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 0.5rem; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); padding: 6px 10px; font-size: 0.875rem; font-family: inherit; }
+.actionName:focus { outline: none; border-color: var(--dsw-alias-brand-primary); }
 .error { color: var(--dsw-alias-state-error-primary); font-size: 0.8125rem; }
 .saved { color: var(--dsw-alias-state-success-primary); font-size: 0.75rem; }
 @media (min-width: 761px) and (max-width: 1080px) { .editorBody { grid-template-columns: 1fr; } }
