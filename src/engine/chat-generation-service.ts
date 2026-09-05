@@ -5,6 +5,8 @@ import { getBranch, listBranchesByConversation, saveBranch } from '../branches/b
 import { acceptBranchUserMessage } from '../branches/branch-service'
 import { getConversation } from '../storage/storage'
 import { getSessionsStatus } from './sessions-store'
+import { generationRegistry, genRootKey, genBranchKey } from './generation-registry'
+export { genRootKey, genBranchKey } from './generation-registry'
 
 /**
  * Minimal contract a generation engine needs to target ANY durable chat thread.
@@ -59,29 +61,23 @@ export function adapterFor(ref: ChatThreadRef): ChatThreadAdapter {
  * Coordinates with the existing sessions status so Main / Branch / Artifact can never
  * generate simultaneously. A new generation aborts + replaces the previous one.
  */
-type ActiveGeneration = { key: string; controller: AbortController }
 /**
  * ONE active model generation globally, keyed by a string identity so chat threads and
- * artifacts share the same lock (Main / Branch / Artifact can never generate simultaneously).
+ * artifacts share the same registry (Main / Branch / Artifact can never generate
+ * simultaneously). This is a thin compatibility alias over the generation registry.
  */
 export const globalGenerationLock: {
-  active: ActiveGeneration | null
+  get active(): { key: string; controller: AbortController; status: import('./generation-registry').GenerationStatus } | null
   tryAcquire(key: string, controller: AbortController): boolean
   release(key: string): void
   cancelAll(): void
   isBusy: boolean
 } = {
-  active: null,
-  tryAcquire(key: string, controller: AbortController): boolean {
-    const busy = getSessionsStatus() === 'sending' || getSessionsStatus() === 'streaming'
-    if (busy) return false
-    if (this.active) { return this.active.key === key }
-    this.active = { key, controller }
-    return true
-  },
-  release(key: string): void { if (this.active && this.active.key === key) this.active = null },
-  cancelAll(): void { if (this.active) { try { this.active.controller.abort() } catch { /* ignore */ } this.active = null } },
-  get isBusy(): boolean { return !!this.active || getSessionsStatus() === 'sending' || getSessionsStatus() === 'streaming' },
+  get active() { return generationRegistry.current() },
+  tryAcquire(key: string, controller: AbortController): boolean { return generationRegistry.begin(key, controller, 'streaming') },
+  release(key: string): void { generationRegistry.end(key) },
+  cancelAll(): void { generationRegistry.cancel() },
+  get isBusy(): boolean { return generationRegistry.isBusy() || getSessionsStatus() === 'sending' || getSessionsStatus() === 'streaming' },
 };
 /** Generation key helper: chat thread identity. */
 export function threadGenKey(ref: ChatThreadRef): string { return ref.type === 'root' ? 'chat:root:' + ref.conversationId : 'chat:branch:' + ref.conversationId + ':' + ref.branchId }

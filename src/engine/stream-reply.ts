@@ -2,6 +2,7 @@ import { newStableId, type Message, type StableId } from './types'
 import type { Settings } from './settings-store'
 import { buildContextMessages, buildApiMessages, buildRequestMessages, streamTextChat, countImageParts, isVisionModel, exceedsVisionImageCount, DeepSeekError, errorKindLabel } from '../api/deepseek'
 import { toDataUrl, AttachmentError, attachmentErrorLabel, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
+import { generationRegistry } from './generation-registry'
 
 /**
  * Thread-agnostic streaming reply engine. ONE generation pipeline is shared by the ROOT
@@ -64,6 +65,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
 
     thread.createAssistantPlaceholder(assistantId, Date.now())
     thread.setStreaming()
+    generationRegistry.begin(thread.genKey, controller, 'streaming')
     if (onStreamStart) onStreamStart(controller, assistantId)
     const r = await streamTextChat({ apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages, signal: controller.signal, onDelta })
     received = r.content
@@ -71,12 +73,14 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     if (!(await thread.exists())) throw new DeepSeekError('aborted', '目标已删除')
     await thread.persistFinal()
     await thread.drainWrites()
+    generationRegistry.end(thread.genKey)
     thread.setIdle()
     return { content: received, aborted: false }
   } catch (e) {
     update(received, true)
     await thread.persistFinal()
     await thread.drainWrites()
+    generationRegistry.end(thread.genKey)
     if (e instanceof AttachmentError) { thread.setError(attachmentErrorLabel(e.kind)); return { content: received, aborted: false } }
     const err = e instanceof DeepSeekError ? e : new DeepSeekError('network-or-cors', String(e))
     if (err.kind === 'aborted') { thread.setIdle(); return { content: received, aborted: true } }
@@ -85,4 +89,3 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     return { content: received, aborted: false }
   }
 }
-

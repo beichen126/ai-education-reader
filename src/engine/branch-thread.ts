@@ -1,7 +1,7 @@
 import { newStableId, type Message, type StableId } from './types'
 import { getSettingsSnapshot } from './settings-store'
 import { runThreadReply, type ReplyThread } from './stream-reply'
-import { globalGenerationLock, threadGenKey } from './chat-generation-service'
+import { generationRegistry, genBranchKey } from './generation-registry'
 import { getConversation } from '../storage/storage'
 import { getBranch, saveBranch, listBranchesByConversation } from '../branches/branch-store'
 import { acceptBranchUserMessage } from '../branches/branch-service'
@@ -27,7 +27,7 @@ function drainBranchWrites(branchId: StableId): Promise<void> { return branchWri
 export class BranchReplyThread implements ReplyThread {
   readonly genKey: string
   private assistantId: StableId = ''
-  constructor(readonly conversationId: StableId, readonly branchId: StableId) { this.genKey = threadGenKey({ type: 'branch', conversationId, branchId }) }
+  constructor(readonly conversationId: StableId, readonly branchId: StableId) { this.genKey = genBranchKey(conversationId, branchId) }
   async getContextMessages(): Promise<Message[]> {
     const conv = await getConversation(this.conversationId)
     const branches = await listBranchesByConversation(this.conversationId)
@@ -81,18 +81,17 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
   if (!branch) return false
   const settings = getSettingsSnapshot()
   if (!settings.apiKey) return false
-  if (globalGenerationLock.isBusy) return false
+  if (generationRegistry.isBusy()) return false
   const msg: Message = { id: newStableId(), role: 'user', content, images: imageIds, createdAt: Date.now(), updatedAt: Date.now() }
-  if (!(await acceptBranchUserMessage(branchId, msg))) return false
-  const thread = new BranchReplyThread(conversationId, branchId)
   const controller = new AbortController()
-  const lockKey = threadGenKey({ type: 'branch', conversationId, branchId })
-  if (!globalGenerationLock.tryAcquire(lockKey, controller)) return false
+  const key = genBranchKey(conversationId, branchId)
+  if (!generationRegistry.begin(key, controller, 'sending')) return false
   try {
+    if (!(await acceptBranchUserMessage(branchId, msg))) return false
+    const thread = new BranchReplyThread(conversationId, branchId)
     await runThreadReply(thread, settings, controller)
     return true
   } finally {
-    globalGenerationLock.release(lockKey)
+    generationRegistry.end(key)
   }
 }
-

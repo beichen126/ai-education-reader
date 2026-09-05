@@ -8,6 +8,7 @@ import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError, sum
 import { deleteConvAnnotations } from '../annotations/annotation-service'
 import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
 import { runThreadReply, type ReplyThread } from './stream-reply'
+import { generationRegistry, genRootKey } from './generation-registry'
 
 export type { Conversation as ChatSession, Message as ChatMsg, Attachment as ChatImage }
 export const uid = (_p?: string) => newStableId()
@@ -28,6 +29,11 @@ let state: SessionsState = { list: [], byId: {}, current: undefined, ready: fals
 const subs = new Set<() => void>()
 function setState(next: SessionsState) { state = next; subs.forEach(f => f()) }
 const subscribe = (fn: () => void) => { subs.add(fn); return () => { subs.delete(fn) } }
+// The generation registry is the single source of the global busy/stream status. A subscription
+// keeps the sessions store's `state.status` in sync so the top status bar + 停止生成 button
+// reflect BOTH root and branch generations. Error/idle transitions set by the stream handlers
+// run AFTER this (registry.end -> idle, then setError -> error), so error state is preserved.
+generationRegistry.subscribe(() => { setState({ ...state, status: generationRegistry.getStatus() }) })
 const getSnapshot = () => state
 export function useSessions<T>(sel: (s: SessionsState) => T): T { return useSyncExternalStore(subscribe, () => sel(state)) }
 export function getSessionsStatus(): RequestStatus { return state.status }
@@ -86,7 +92,7 @@ export const sessionsActions = {
     setState(toState(state.list, id, state.ready, state.status, state.sendError))
     await setSetting(LAST_CONV, id)
   },
-  stopGenerating() { if (abortControllerRef) abortControllerRef.abort() },
+  stopGenerating() { generationRegistry.cancel() },
   /**
    * Send a user message. Returns true when the user message (+ its image ids) has
    * been ACCEPTED and persisted into the conversation; false when the send was
@@ -147,6 +153,7 @@ export const sessionsActions = {
     // If a reply stream is actively generating for THIS conversation, abort it. It must
     // never resurrect a deleted conversation or recreate deleted attachments/messages.
     if (activeGeneration && activeGeneration.conversationId === id) { activeGeneration.controller.abort(); activeGeneration = null; abortControllerRef = null }
+    generationRegistry.cancelForConversation(id)
     // Invalidate any pending durable write for this conversation so a late checkpoint cannot
     // recreate the deleted row (P0-2).
     writeChains.delete(id)
@@ -188,7 +195,7 @@ export async function persistConversation(conv: Conversation): Promise<void> {
 class RootReplyThread implements ReplyThread {
   readonly genKey: string
   private assistantId: StableId = ''
-  constructor(private id: string) { this.genKey = 'chat:root:' + id }
+  constructor(private id: string) { this.genKey = genRootKey(id) }
   getContextMessages(): Message[] { return state.byId[this.id]?.messages ?? [] }
   createAssistantPlaceholder(assistantId: StableId, now: number): void {
     this.assistantId = assistantId
