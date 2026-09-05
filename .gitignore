@@ -22,6 +22,7 @@ npm-debug.log*
 *.png.screenshot
 scripts/shot*.png
 test/.playwright/
+test/fixtures/tmp-*.pdf
 test-results/
 playwright-report/
 

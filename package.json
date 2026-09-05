@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -115,7 +115,8 @@
     "test:e2e-branch-stop": "node scripts/e2e-branch-stop.mjs",
     "test:e2e-root-stop": "node scripts/e2e-root-stop.mjs",
     "test:e2e-backup": "node scripts/e2e-backup.mjs",
-    "test:e2e-post-v1": "node scripts/e2e-branching.mjs && node scripts/e2e-branching-graph.mjs && node scripts/e2e-artifacts.mjs && node scripts/e2e-branch-stream.mjs && node scripts/e2e-branch-stop.mjs && node scripts/e2e-root-stop.mjs && node scripts/e2e-backup.mjs"
+    "test:e2e-post-v1": "node scripts/e2e-branching.mjs && node scripts/e2e-branching-graph.mjs && node scripts/e2e-artifacts.mjs && node scripts/e2e-branch-stream.mjs && node scripts/e2e-branch-stop.mjs && node scripts/e2e-root-stop.mjs && node scripts/e2e-backup.mjs",
+    "test:release": "node scripts/test-release.mjs"
   },
   "dependencies": {
     "@types/mdast": "^4.0.4",
