@@ -18,7 +18,8 @@ import { DocumentContextPicker } from './DocumentContextPicker'
 import { executeDocumentContext } from './document-context-service'
 import { useDocumentUi, documentUiActions } from './document-ui-store'
 import { clampReaderPage, parsePageInput } from './reader-utils'
-import { openPdfSession, renderSessionPage, closePdfSession, readSessionOutline, readSessionPageLabels, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
+import { openPdfSession, closePdfSession, readSessionOutline, readSessionPageLabels, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
+import { useReaderDisplay } from './use-reader-display'
 import { PdfError } from '../pdf/pdf-service'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { createUrlOwner } from './url-owner'
@@ -53,12 +54,14 @@ export function DocumentReader() {
   const sessionRef = useRef<PdfSession | null>(null)
   const [page, setPage] = useState(1)
   const [pageCount, setPageCount] = useState(0)
-  const [pageUrl, setPageUrl] = useState<string | null>(null)
-  const [renderSize, setRenderSize] = useState<{ w: number; h: number } | null>(null)
   const urlOwnerRef = useRef(createUrlOwner())
-  const [rendering, setRendering] = useState(false)
   const [pageInput, setPageInput] = useState('')
   const [pageError, setPageError] = useState<string | null>(null)
+  const [zoomBusy, setZoomBusy] = useState(false)
+  // ---- Reader正文 display path (Agent C): direct visible canvas, no JPEG Blob on the
+  //      main reading pipeline. The hook owns viewport-aware scaling, caching, prefetch,
+  //      real RenderTask cancellation, and the on-demand zoom Blob. ----
+  const display = useReaderDisplay(sessionRef.current, page, pageCount)
   const [tocState, setTocState] = useState<TocTreeState>({ expanded: new Set() })
   const [tocOpen, setTocOpen] = useState(false)
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
@@ -138,10 +141,10 @@ export function DocumentReader() {
       setBuilderOpen(false)
       sessionRef.current = null
       urlOwnerRef.current.revokeAll()
-      setPageUrl(null); setRenderSize(null)
       setViewerUrl(null); viewerOpenRef.current = false
+      setZoomBusy(false)
       setDoc(null); setPageCount(0); setPage(1); setPageInput('')
-      setPageError(null); setRendering(false); setLoadError(null)
+      setPageError(null); setLoadError(null)
       setTocState({ expanded: new Set() }); setTocOpen(false)
       setNativeDraft(null); setBuilderHint(null); setHasNativeOutline(false); setNativeOutlineStatus('unknown')
       setRestoreConfirmOpen(false); setRestoreMsg(null)
@@ -163,8 +166,9 @@ export function DocumentReader() {
       setPageCount(0); setPage(1); setPageInput(''); setPageError(null)
       setTocState({ expanded: new Set() }); setTocOpen(false)
       setViewerUrl(null); viewerOpenRef.current = false
+      setZoomBusy(false)
       setBuilderOpen(false)
-      urlOwnerRef.current.revokeAll(); setPageUrl(null)
+      urlOwnerRef.current.revokeAll()
       sessionRef.current = null
       aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
       aiTocGenRef.current++
@@ -218,24 +222,8 @@ export function DocumentReader() {
     }
   }, [docId, persist])
 
-  // ---- render current page (generation token discards stale results) ----
-  useEffect(() => {
-    if (!sessionRef.current || !doc || pageCount <= 0) return
-    const session = sessionRef.current
-    const gen = ++genRef.current
-    setRendering(true); setPageError(null)
-    void renderSessionPage(session, page).then(r => {
-      if (gen !== genRef.current) return // stale (page switch / document switch / leave)
-      urlOwnerRef.current.replace(URL.createObjectURL(r.blob))
-      setPageUrl(urlOwnerRef.current.current)
-      setRenderSize({ w: r.width, h: r.height })
-      setRendering(false)
-    }).catch(() => {
-      if (gen !== genRef.current) return
-      setRendering(false)
-      setPageError('第 ' + page + ' 页渲染失败。')
-    })
-  }, [page, pageCount, doc])
+  // ---- Reader正文 display render: now handled by useReaderDisplay (viewport-aware
+  //      scale, real RenderTask cancel, bounded cache, neighbor prefetch). No JPEG Blob. ----
 
   // ---- debounced progress persistence (1000ms), id bound at schedule time ----
   useEffect(() => {
@@ -553,6 +541,23 @@ export function DocumentReader() {
     setPage(r.page); setPageInput(String(r.page))
   }
 
+  // ---- Zoom: the main reading path is a visible canvas (C1/C2). Clicking it requests a
+  //      one-off full-resolution Blob for the zoom viewer — never part of the display path. ----
+  const openZoom = () => {
+    if (viewerOpenRef.current || zoomBusy) return
+    setZoomBusy(true)
+    void display.requestZoomUrl()
+      .then(url => {
+        if (url) {
+          urlOwnerRef.current.replace(url)
+          viewerOpenRef.current = true
+          setViewerUrl(urlOwnerRef.current.current)
+        }
+      })
+      .catch(() => { setPageError('第 ' + page + ' 页渲染失败。') })
+      .finally(() => setZoomBusy(false))
+  }
+
   if (ui.view !== 'reader') return null
   const currentChapter = doc ? findCurrentChapter(doc.chapters, page) : null
   const currentChapterPath = doc ? findCurrentChapterPath(doc.chapters, page) : []
@@ -623,12 +628,12 @@ export function DocumentReader() {
                 <button type="button" className={css.tocActionBtn} data-testid="reader-toc-ai-activity" onClick={() => setAiTocDialogHidden(false)}>⏳ 目录识别中…（点击查看进度）</button>
               )}
             </aside>
-            <main className={css.stage}>
-              {rendering && <div className={css.hint} data-testid="reader-loading">正在渲染第 {page} 页…</div>}
-              {pageError && <div className={css.errorBox} data-testid="reader-page-error">{pageError}</div>}
-              {pageUrl && (
-                <button className={css.pageBtn} data-testid="reader-page" onClick={() => { viewerOpenRef.current = true; setViewerUrl(pageUrl) }}>
-                  <img className={css.pageImg} data-testid="reader-page-img" src={pageUrl} alt={'第 ' + page + ' 页'} data-render-width={renderSize ? String(renderSize.w) : undefined} data-render-height={renderSize ? String(renderSize.h) : undefined} />
+            <main className={css.stage} ref={display.stageRef}>
+              {display.rendering && <div className={css.hint} data-testid="reader-loading">正在渲染第 {page} 页…</div>}
+              {(display.pageError || pageError) && <div className={css.errorBox} data-testid="reader-page-error">{display.pageError || pageError}</div>}
+              {display.surface && (
+                <button className={css.pageBtn} data-testid="reader-page" disabled={zoomBusy} onClick={openZoom}>
+                  <canvas ref={display.canvasRef} className={css.pageCanvas} data-testid="reader-page-img" data-render-width={String(display.surface.width)} data-render-height={String(display.surface.height)} width={display.surface.width} height={display.surface.height} />
                 </button>
               )}
             </main>
@@ -707,7 +712,7 @@ export function DocumentReader() {
           src={viewerUrl}
           alt=""
           resetKey={page}
-          onClose={() => { viewerOpenRef.current = false; setViewerUrl(null) }}
+          onClose={() => { viewerOpenRef.current = false; setViewerUrl(null); urlOwnerRef.current.revokeAll() }}
           labels={{ close: '关闭', dialog: 'PDF 页面查看' }}
         />
       )}

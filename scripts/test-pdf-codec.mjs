@@ -33,14 +33,16 @@ const openLibrary = async () => {
   await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
 }
 const sample = () => page.evaluate(async () => {
-  const img = document.querySelector('[data-testid="reader-page-img"]')
-  if (!img) return { err: 'no img' }
+  // The Reader正文 is now a visible <canvas> (Agent C) — drawImage works on it and the
+  // bitmap dimensions come from its width/height attributes (a canvas has no naturalWidth).
+  const el = document.querySelector('[data-testid="reader-page-img"]')
+  if (!el) return { err: 'no img' }
   const c = document.createElement('canvas'); c.width = 80; c.height = 80
-  const g = c.getContext('2d'); g.drawImage(img, 0, 0, 80, 80)
+  const g = c.getContext('2d'); g.drawImage(el, 0, 0, 80, 80)
   const d = g.getImageData(0, 0, 80, 80).data
   let non = 0
   for (let i = 0; i < d.length; i += 4) if (d[i] < 245 || d[i + 1] < 245 || d[i + 2] < 245) non++
-  return { w: img.naturalWidth, h: img.naturalHeight, nonWhite: non / (80 * 80) }
+  return { w: el.width, h: el.height, nonWhite: non / (80 * 80) }
 })
 
 // render one page of a fixture and return the non-white ratio
