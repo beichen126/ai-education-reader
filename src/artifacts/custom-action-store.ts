@@ -34,14 +34,14 @@ export async function createCustomAction(input: { name: string; prompt: string }
 export async function updateCustomAction(id: string, patch: { name?: string; prompt?: string }): Promise<CustomArtifactAction | null> {
   const list = await listCustomActions()
   const idx = list.findIndex((a) => a.id === id)
+  // Domain invariant: a missing id is an explicit, handleable result (never silently no-op).
   if (idx < 0) return null
   const cur = list[idx]
-  const next: CustomArtifactAction = {
-    ...cur,
-    name: (patch.name ?? cur.name).trim(),
-    prompt: (patch.prompt ?? cur.prompt).trim(),
-    updatedAt: Date.now(),
-  }
+  const name = (patch.name ?? cur.name).trim()
+  const prompt = (patch.prompt ?? cur.prompt).trim()
+  // Domain invariant: name / prompt must be non-empty after trim (the UI is NOT the only guard).
+  if (name === '' || prompt === '') throw new Error('操作名称与提示词都不能为空')
+  const next: CustomArtifactAction = { ...cur, name, prompt, updatedAt: Date.now() }
   const copy = list.slice()
   copy[idx] = next
   await setSetting(KEY, copy)

@@ -64,5 +64,40 @@ let validated = true
 try { parseAndValidate(backup as any) } catch { validated = false }
 assert(validated, 'backup with customArtifactActions still validates (backward-compatible)')
 
+// ---- 8. v1.2.0: builtin preset must be SAVED AS a new action, never updated in place ----
+// A builtin preset id ('summary'/'study-guide') is NOT a saved action: updateCustomAction on it
+// must return null (explicit handleable result), never silently mutate or create anything.
+assert(await updateCustomAction('summary', { name: '新总结', prompt: 'p' }) === null, 'updateCustomAction("summary") -> null (builtin is not a saved action)')
+assert(await updateCustomAction('study-guide', { name: '新指南', prompt: 'p' }) === null, 'updateCustomAction("study-guide") -> null')
+assert(!(await listCustomActions()).some((a) => a.id === 'summary' || a.id === 'study-guide'), 'builtin ids never become saved actions')
+// "另存为自定义操作" from a builtin -> createCustomAction (a NEW distinct action).
+const savedSummary = await createCustomAction({ name: '总结（我的）', prompt: '请把内容总结成要点。' })
+assert(savedSummary.id && savedSummary.name === '总结（我的）', 'builtin 总结 另存为 -> a new saved action is created')
+const afterSaveAs = await listCustomActions()
+assert(afterSaveAs.some((a) => a.name === '总结（我的）'), '另存为 action appears in listCustomActions')
+assert(afterSaveAs.some((a) => a.id === 'summary') === false, 'no fake summary-named action row created')
+// reload persistence of the 另存为 action
+assert((await listCustomActions()).some((a) => a.name === '总结（我的）'), '另存为 action survives reload')
+// editing the SAVED-as action updates it correctly
+const upd = await updateCustomAction(savedSummary.id, { name: '我的总结', prompt: '请总结为 100 字。' })
+assert(upd && upd.name === '我的总结' && upd.prompt === '请总结为 100 字。', 'updating the saved-as action works')
+assert((await listCustomActions()).find((a) => a.id === savedSummary.id)?.prompt === '请总结为 100 字。', 'updated value survives reload')
+// delete removes it; a historical artifact that used its prompt is unaffected.
+const sumArtPrompt = '请总结为 100 字。'
+const sumArtId = newStableId()
+await saveArtifact({ id: sumArtId, kind: 'summary', title: '总结产物', prompt: sumArtPrompt, source: { conversationId: 'c1', throughMessageId: 'm1', snapshot: { conversationId: 'c1', throughMessageId: 'm1', createdAt: 1, messages: [{ role: 'user', text: 'x', imageIds: [] }], provenance: [], sourceLabel: 'c1', sourceDeleted: false } }, createdAt: 1, updatedAt: 1, status: 'ready', content: 'done' })
+await deleteCustomAction(savedSummary.id)
+assert(!(await listCustomActions()).some((a) => a.id === savedSummary.id), 'deleting the saved-as action removes it')
+const keptArt = await getArtifact(sumArtId)
+assert(keptArt && keptArt.prompt === sumArtPrompt, 'summary artifact keeps its prompt after the action is deleted')
+// domain invariant: update with empty name/prompt throws, ON AN EXISTING action
+const invariantProbe = await createCustomAction({ name: '探针', prompt: 'p' })
+let threw = false
+try { await updateCustomAction(invariantProbe.id, { name: '   ' }) } catch (e) { threw = true }
+assert(threw, 'updateCustomAction with blank name throws (domain invariant)')
+let threwP = false
+try { await updateCustomAction(invariantProbe.id, { prompt: '' }) } catch { threwP = true }
+assert(threwP, 'updateCustomAction with blank prompt throws (domain invariant)')
+
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)

@@ -37,6 +37,7 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
   const [prompt, setPrompt] = useState(TRANSFORMATION_PRESETS.find((p) => p.kind === initKind)?.defaultPrompt ?? '')
   const [error, setError] = useState<string | undefined>(undefined)
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => { void listCustomActions().then(setActions) }, [])
 
@@ -81,17 +82,29 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
   async function saveAction() {
     if (!name.trim()) { setError('操作名称不能为空'); return }
     if (!prompt.trim()) { setError('提示词不能为空'); return }
-    setError(undefined); setSaved(true)
-    if (selectedKey !== 'custom') {
-      // A saved action already selected -> UPDATE it (this is "保存对操作的修改").
-      await updateCustomAction(selectedKey, { name, prompt })
+    setError(undefined)
+    // Distinguish the three operation classes (v1.2.0):
+    //  - saved action  -> UPDATE it ("保存修改")
+    //  - builtin preset（总结/学习指南）-> 另存为自定义操作 (CREATE)
+    //  - new ('custom') -> CREATE
+    const op = selectedKey !== 'custom' ? customOps.find((o) => o.key === selectedKey) : null
+    setSaving(true)
+    try {
+      if (op && op.kind === 'saved') {
+        await updateCustomAction(op.key, { name, prompt })
+      } else {
+        const created = await createCustomAction({ name, prompt })
+        setSelectedKey(created.id)
+      }
       setActions(await listCustomActions())
-      return
+      setSaved(true)
+    } catch (e) {
+      // Never swallow: surface a clear error and keep the entered values (no "已保存").
+      setSaved(false)
+      setError(e instanceof Error ? e.message : '保存操作失败，请重试。')
+    } finally {
+      setSaving(false)
     }
-    // New (from a built-in 另存为, or a brand-new operation) -> CREATE.
-    const created = await createCustomAction({ name, prompt })
-    setSelectedKey(created.id)
-    setActions(await listCustomActions())
   }
 
   async function removeAction() {
@@ -155,7 +168,7 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
       {kind === 'custom' && (
         <>
           <Button variant="ghost" onClick={removeAction} disabled={busy || (selectedOp?.kind !== 'saved')}>删除</Button>
-          <Button variant="ghost" onClick={saveAction} disabled={busy}>{saved ? '保存修改' : '保存为操作'}</Button>
+          <Button variant="ghost" onClick={saveAction} disabled={busy || saving}>{saving ? '保存中…' : (saved ? '保存修改' : '保存为操作')}</Button>
         </>
       )}
       <Button variant="ghost" onClick={onCancel} disabled={busy}>取消</Button>
