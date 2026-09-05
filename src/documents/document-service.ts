@@ -187,18 +187,61 @@ export async function updateLastReadPage(id: string, page: number): Promise<void
   catch (e) { if (isRowMissing(e)) throw new DocumentNotFoundError(id); throw e; }
 }
 
+/** Error thrown when a rename / custom import name collides with an existing document name.
+ *  Service-level naming policy (Agent H, H5): a display fileName must be UNIQUE in the library. */
+export class DocumentNameConflictError extends Error {
+  constructor(name: string) { super('document name already in use: ' + name); this.name = 'DocumentNameConflictError' }
+}
+
+/** Service-level naming policy (Agent H, H5): assert `name` is not held by ANOTHER document
+ *  (excluding `excludeId`). The check runs as close to the write as the service allows so a
+ *  rename / custom import name can never silently produce a duplicate display name. */
+export async function assertDocumentNameAvailable(name: string, excludeId?: string): Promise<void> {
+  const all = await idbGetAll('documents') as any[]
+  if (all.some(r => r.id !== excludeId && r.fileName === name)) throw new DocumentNameConflictError(name)
+}
+
 /** B4 rename: only fileName + updatedAt change. The import provenance
  *  (importSource.originalFileName) is NEVER touched — it stays the original import name. */
 export async function renameDocument(id: string, newName: string): Promise<void> {
   const name = newName.trim()
   if (!name) throw new Error('document name must be non-empty after trim')
+  await assertDocumentNameAvailable(name, id)
   try { await idbUpdate('documents', id, (cur: any) => ({ ...cur, fileName: name, updatedAt: Date.now(), recordVersion: 3 })); }
   catch (e) { if (isRowMissing(e)) throw new DocumentNotFoundError(id); throw e; }
 }
 
-/** Lazy-hash computation for a single document (B8): computes + persists contentHash and
- *  fastFingerprint when missing. Reads the source Blob exactly once per compute. Returns the
- *  hashes (may already exist → no re-read). Throws DocumentNotFoundError / BinaryMissing. */
+/** Lazy CHEAP fingerprint for one document (Agent H, H4): reads the source Blob once, computes
+ *  + persists fastFingerprint (head+tail only) when missing. This is the STAGE-2 candidate filter;
+ *  it must NOT trigger a full content hash. Throws DocumentNotFound / BinaryMissing.) */
+export async function ensureDocumentFastFingerprint(id: string): Promise<{ fastFingerprint?: string }> {
+  const row = await idbGet('documents', id)
+  if (!row) throw new DocumentNotFoundError(id)
+  if (row.fastFingerprint) return { fastFingerprint: row.fastFingerprint }
+  const blob = await readDocumentSourceBlob(id)
+  const fastFingerprint = await computeFastFingerprint(blob)
+  try { await idbUpdate('documents', id, (cur: any) => ({ ...cur, fastFingerprint })) }
+  catch (e) { if (isRowMissing(e)) throw new DocumentNotFoundError(id); /* metadata-only; keep in memory */ }
+  return { fastFingerprint }
+}
+
+/** Lazy FULL content hash for one document (Agent H, H4). This is the ONLY value that may
+ *  assert an exact duplicate. It is computed ONLY when a size+fingerprint candidate qualifies
+ *  (IO-level staging — never a whole-library scan). Throws DocumentNotFound / BinaryMissing. */
+export async function ensureDocumentContentHash(id: string): Promise<{ contentHash?: string }> {
+  const row = await idbGet('documents', id)
+  if (!row) throw new DocumentNotFoundError(id)
+  if (row.contentHash) return { contentHash: row.contentHash }
+  const blob = await readDocumentSourceBlob(id)
+  const contentHash = await computeContentHash(blob)
+  try { await idbUpdate('documents', id, (cur: any) => ({ ...cur, contentHash })) }
+  catch (e) { if (isRowMissing(e)) throw new DocumentNotFoundError(id); /* metadata-only; keep in memory */ }
+  return { contentHash }
+}
+
+/** Convenience: compute + persist BOTH digests when missing (used where the full pair is needed
+ *  at once, e.g. older callers / backup round-trip). Reads the source Blob exactly once. The
+ *  import path uses the split functions so it can stage IO by fingerprint. */
 export async function ensureDocumentHash(id: string): Promise<{ contentHash?: string; fastFingerprint?: string }> {
   const row = await idbGet('documents', id)
   if (!row) throw new DocumentNotFoundError(id)

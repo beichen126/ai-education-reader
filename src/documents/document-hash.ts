@@ -19,6 +19,14 @@ function hex(bytes: Uint8Array): string {
   return out
 }
 
+/** Whether Web Crypto (crypto.subtle) is available. Duplicate detection is an ENHANCEMENT
+ * (Agent H, H1): when it is unavailable a valid PDF must still import, and only the filename
+ * conflict path stays active — never reject a valid import because hashing is off. */
+export function isHashAvailable(): boolean {
+  const subtle = (globalThis as any).crypto?.subtle
+  return !!subtle?.digest
+}
+
 async function digestSHA256(chunks: Uint8Array[]): Promise<string> {
   const subtle = (globalThis as any).crypto?.subtle
   if (!subtle?.digest) throw new Error('crypto.subtle unavailable: cannot compute document hash')

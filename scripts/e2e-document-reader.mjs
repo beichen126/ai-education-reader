@@ -8,14 +8,14 @@
 // Covers: library import -> reader -> chapter jump -> prev/next -> direct page ->
 // close -> reopen (progress restored) -> reload (still restored) -> page zoom
 // (zoom viewer + transient HUD) -> responsive (mobile toc drawer) -> delete.
-import { chromium } from 'playwright-core'
+import { launchBrowser } from './e2e-browser.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF = 'test/fixtures/outline-sample.pdf'
 const results = []
 const errors = []
 const assert = (c, m) => results.push((c ? 'PASS  ' : 'FAIL  ') + m)
 
-const browser = await chromium.launch({ channel: 'msedge', headless: true })
+const browser = await launchBrowser()
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 const page = await ctx.newPage()
 page.on('pageerror', e => errors.push('pageerror: ' + e.message))

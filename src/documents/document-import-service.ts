@@ -2,8 +2,8 @@
 // DocumentLibrary React component. Owns: validation, duplicate candidate lookup (layered),
 // fingerprint/content-hash, exact-duplicate detection, name-conflict resolution metadata,
 // and document creation. The React component only renders state and hands the file over.
-import { createDocument, updateDocumentChapters, listDocumentSummaries, ensureDocumentHash, type DocumentSummary } from './document-service'
-import { computeDocumentHashes, type DocumentHashes } from './document-hash'
+import { createDocument, updateDocumentChapters, listDocumentSummaries, ensureDocumentFastFingerprint, ensureDocumentContentHash, type DocumentSummary } from './document-service'
+import { computeContentHash, computeFastFingerprint, isHashAvailable, type DocumentHashes } from './document-hash'
 import { chapterNodesFromPdfOutline } from './chapter-model'
 import type { PdfSession } from '../pdf/pdf-session'
 import { newStableId } from '../engine/types'
@@ -19,8 +19,11 @@ export type ImportAnalysis = {
   pageCount: number
   chapters: ChapterNode[]
   chapterSource: 'none' | 'native'
-  contentHash: string
-  fastFingerprint: string
+  /** Full SHA-256 of the source binary. OPTIONAL: absent when Web Crypto is unavailable (H1) or
+   *  when no potential duplicate candidate existed (H3 — the full hash is computed lazily). */
+  contentHash?: string
+  /** Cheap head+tail fingerprint (stage-2 candidate filter). Optional for the same reasons. */
+  fastFingerprint?: string
   conflict: ImportConflict
 }
 
@@ -55,21 +58,29 @@ export function nextAvailableName(baseName: string, existing: ReadonlySet<string
 
 // ---- layered duplicate detection (B8) ----
 /**
- * Stage 1 filters by fileSize; Stage 2 lazily ensures the candidate fast fingerprint; Stage 3
- * compares the full contentHash (the ONLY value that may assert "exact duplicate"). Never
- * precomputes hashes for the whole library — only size-matched candidates get a lazy hash.
+ * Layered, IO-staged duplicate detection (Agent H, H2). Stage 1 filters by fileSize. Stage 2
+ * ensures each candidate's CHEAP fast fingerprint and EXCLUDES fingerprint-mismatched candidates
+ * BEFORE any full content-hash read. Stage 3 computes the FULL content hash only for a
+ * fingerprint-matching candidate (the ONLY value that may assert an exact duplicate — a
+ * fingerprint match is never treated as a duplicate). When Web Crypto is unavailable (H1) the
+ * whole hash layer is skipped: a valid import still succeeds and only filename conflicts apply.
  */
-export async function resolveImportConflict(input: { fileName: string; fileSize: number; contentHash: string; fastFingerprint: string }, summaries?: DocumentSummary[]): Promise<ImportConflict> {
+export async function resolveImportConflict(input: { fileName: string; fileSize: number; contentHash?: string; fastFingerprint?: string }, summaries?: DocumentSummary[]): Promise<ImportConflict> {
   const all = summaries ?? (await listDocumentSummaries())
   const candidates = all.filter(s => s.fileSize === input.fileSize)
+  const hashAvailable = isHashAvailable()
   for (const c of candidates) {
-    if (!c.contentHash || !c.fastFingerprint) {
-      try { const h = await ensureDocumentHash(c.id); c.contentHash = h.contentHash; c.fastFingerprint = h.fastFingerprint }
-      catch { /* unreadable candidate — skip, never block an import */ }
+    if (!hashAvailable) break // H1: no hashing -> can never assert an exact duplicate
+    // Stage 2: ensure candidate fingerprint (cheap head+tail). Mismatch -> exclude, no full read.
+    let cFp = c.fastFingerprint
+    if (!cFp) { try { cFp = (await ensureDocumentFastFingerprint(c.id)).fastFingerprint } catch { /* unreadable — skip */ } }
+    if (cFp && input.fastFingerprint && cFp !== input.fastFingerprint) continue
+    // Stage 3: fingerprint matched (or input fingerprint unavailable) — only NOW the full hash.
+    const cHash = c.contentHash ?? (cFp ? (await ensureDocumentContentHash(c.id)).contentHash : undefined)
+    if (input.contentHash && cHash && cHash === input.contentHash) {
+      return { kind: 'exact-duplicate', existingDocumentId: c.id, existingFileName: c.fileName }
     }
   }
-  const exact = candidates.find(c => c.contentHash === input.contentHash)
-  if (exact) return { kind: 'exact-duplicate', existingDocumentId: exact.id, existingFileName: exact.fileName }
   const sameName = all.find(s => s.fileName === input.fileName)
   if (sameName) {
     const existing = new Set(all.map(s => s.fileName))
@@ -79,8 +90,11 @@ export async function resolveImportConflict(input: { fileName: string; fileSize:
 }
 
 // ---- import analysis + creation ----
-/** Open the PDF once, read pageCount + native outline, hash it, and run the conflict check.
- *  The temporary session is ALWAYS closed (idempotent) — the reader opens its own later. */
+/** Open the PDF once, read pageCount + native outline, run the (IO-staged) conflict check, and
+ *  the temporary session is ALWAYS closed (idempotent) — the reader opens its own later (H1/H3).
+ *  Hash is an ENHANCEMENT: only the cheap fingerprint is computed when Web Crypto is available,
+ *  and the FULL content hash is computed ONLY when there is a potential same-size candidate (a
+ *  plain first import never re-reads the whole file just to hash it). */
 export async function analyzeImport(file: File, summaries?: DocumentSummary[]): Promise<ImportAnalysis> {
   const { openPdfSession, readSessionOutline, closePdfSession } = await import('../pdf/pdf-session')
   let session: PdfSession | null = null
@@ -93,9 +107,19 @@ export async function analyzeImport(file: File, summaries?: DocumentSummary[]): 
       const o = await readSessionOutline(session)
       if (o.items.length > 0) { chapters = chapterNodesFromPdfOutline(o.items); chapterSource = 'native' }
     } catch { /* no outline -> none */ }
-    const hashes = await computeDocumentHashes(file)
-    const conflict = await resolveImportConflict({ fileName: file.name, fileSize: file.size, contentHash: hashes.contentHash, fastFingerprint: hashes.fastFingerprint }, summaries)
-    return { fileName: file.name, pageCount: opened.doc.pageCount, chapters, chapterSource, contentHash: hashes.contentHash, fastFingerprint: hashes.fastFingerprint, conflict }
+    const all = summaries ?? (await listDocumentSummaries())
+    const hashAvailable = isHashAvailable()
+    const fastFingerprint = hashAvailable ? await computeFastFingerprint(file) : undefined
+    // Stage-3 full hash only when a potential (same-size) candidate exists — H3 lazy, H1 degrade.
+    const hasSizeCandidate = all.some(s => s.fileSize === file.size)
+    const contentHash = (hashAvailable && hasSizeCandidate) ? await computeContentHash(file) : undefined
+    const conflict = await resolveImportConflict({ fileName: file.name, fileSize: file.size, contentHash, fastFingerprint }, all)
+    return {
+      fileName: file.name, pageCount: opened.doc.pageCount, chapters, chapterSource,
+      ...(contentHash !== undefined ? { contentHash } : {}),
+      ...(fastFingerprint !== undefined ? { fastFingerprint } : {}),
+      conflict,
+    }
   } finally {
     if (session) { try { await closePdfSession(session) } catch { /* ignore */ } }
   }
@@ -110,8 +134,9 @@ export type FinalizeImportInput = {
   chapters: ChapterNode[]
   chapterSource: 'none' | 'native'
   sourceBlob: Blob
-  contentHash: string
-  fastFingerprint: string
+  /** Optional: absent when Web Crypto is unavailable (H1) or no candidate existed (H3). */
+  contentHash?: string
+  fastFingerprint?: string
 }
 
 /** Create the document record + persist any native outline. Returns the new document id. */

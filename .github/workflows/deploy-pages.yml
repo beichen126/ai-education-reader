@@ -38,8 +38,35 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
-  deploy:
+  # Agent H (H8): the Pages deployment must NOT ship on unit/build green alone. Run the
+  # critical browser E2E subset (the three chains this cycle touched + backup) against a real
+  # preview of the built app and gate `deploy` on it. Uses the Playwright-bundled Chromium so
+  # it does NOT depend on a Windows runner having Edge installed. Failures block deployment.
+  browser-e2e:
     needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium for Playwright
+        run: npx playwright-core install --with-deps chromium
+      - name: Build
+        run: npm run build
+      - name: Critical browser E2E (gate deploy)
+        env:
+          RELEASE_SKIP_UNIT: '1'
+          RELEASE_E2E: 'e2e-artifacts,e2e-document-reader,e2e-document-context,e2e-backup'
+          PLAYWRIGHT_CHANNEL: 'chromium'
+        run: npm run test:release
+  deploy:
+    needs: [build, browser-e2e]
     runs-on: ubuntu-latest
     environment:
       name: github-pages

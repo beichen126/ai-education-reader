@@ -1,6 +1,6 @@
 // Backup V4 browser round-trip: seed a full V4 state, then export via the real settings UI,
 // clear app data, import the downloaded backup, reload, and verify restore.
-import { chromium } from 'playwright-core'
+import { launchBrowser } from './e2e-browser.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const results = [], errors = []
 const assert = (c, m) => results.push((c ? 'PASS  ' : 'FAIL  ') + m)
@@ -45,7 +45,7 @@ async function seedBackup(page) {
   }))
 }
 
-const browser = await chromium.launch({ channel: 'msedge', headless: true })
+const browser = await launchBrowser()
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
 page.on('pageerror', e => errors.push('pageerror: ' + e.message))
 

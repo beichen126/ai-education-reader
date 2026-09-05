@@ -46,7 +46,10 @@ function run(cmd, args, opts = {}) {
 }
 
 function startServer() {
-  const child = spawn(NPM, ['run', 'preview', '--', '--port', String(PORT), '--host', HOST], {
+  // --strictPort (Agent H, H6): if the port is already taken, vite preview FAILS instead of
+  // silently moving to the next free port — so the E2E never tests a stale server that is not
+  // the one the release gate just started (a previous 5299 leak would otherwise pass silently).
+  const child = spawn(NPM, ['run', 'preview', '--', '--port', String(PORT), '--host', HOST, '--strictPort'], {
     cwd: process.cwd(), stdio: 'ignore', detached: true, shell: true,
   })
   child.unref()
@@ -55,7 +58,15 @@ function startServer() {
 
 function stopServer(pid) {
   if (!pid) return
-  try { spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' }) } catch { /* best-effort */ }
+  try {
+    if (process.platform === 'win32') {
+      // Windows: kill the process tree (npm -> node -> vite).
+      spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
+    } else {
+      // POSIX (e.g. Ubuntu CI): the detached child is a process-group leader; kill the group.
+      try { process.kill(-pid, 'SIGTERM') } catch { try { process.kill(-pid, 'SIGKILL') } catch { try { process.kill(pid, 'SIGKILL') } catch { /* best-effort */ } } }
+    }
+  } catch { /* best-effort */ }
 }
 
 async function waitHttp(url, timeoutMs = 30000) {

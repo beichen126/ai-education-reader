@@ -7,7 +7,7 @@
 // logic extracted into document-import-service.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatBytes } from '../storage/diagnostics'
-import { deleteDocument, renameDocument, listDocumentSummaries, getDocumentContextDescriptor, type DocumentSummary } from './document-service'
+import { deleteDocument, renameDocument, listDocumentSummaries, getDocumentContextDescriptor, DocumentNameConflictError, type DocumentSummary } from './document-service'
 import { analyzeImport, createDocumentFromImport, sanitizeFileName, nextAvailableName, type ImportAnalysis } from './document-import-service'
 import { sortDocuments, loadSortPreference, saveSortPreference, DOCUMENT_SORT_KEYS, DOCUMENT_SORT_LABELS, type DocumentSortKey } from './document-sort'
 import { documentUiActions, useDocumentUi } from './document-ui-store'
@@ -146,6 +146,7 @@ export function DocumentLibrary() {
     const p = pendingImport; if (!p) return
     const s = sanitizeFileName(customName ?? '')
     if (!(customName ?? '').trim()) { setCustomNameErr('文件名不能为空。'); return }
+    if (existingNames.has(s)) { setCustomNameErr('文件名已被占用，请更换。'); return }
     setPendingImport(null); setCustomName(null)
     await finalizeResolved(p.analysis, s, p.file)
   }
@@ -160,7 +161,7 @@ export function DocumentLibrary() {
     try {
       await renameDocument(renameId, sanitizeFileName(trimmed))
       setRenameId(null); await refresh()
-    } catch { setRenameErr('重命名失败，请重试。') }
+    } catch (e) { setRenameErr(e instanceof DocumentNameConflictError ? '已存在同名文件。' : '重命名失败，请重试。') }
     finally { setImporting(false) }
   }
   const cancelRename = () => { setRenameId(null); setRenameName(''); setRenameErr(null) }

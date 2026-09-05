@@ -2,10 +2,10 @@
 // detection, reading-time split (lastReadAt vs updatedAt), migration backfill, backup round
 // trip of the new metadata, and no-cascade delete ownership.
 import 'fake-indexeddb/auto'
-import { createDocument, renameDocument, updateLastReadPage, ensureDocumentHash, getDocument, listDocumentSummaries, deleteDocument, updateDocumentChapters } from '../src/documents/document-service.ts'
+import { createDocument, renameDocument, updateLastReadPage, ensureDocumentHash, getDocument, listDocumentSummaries, deleteDocument, updateDocumentChapters, assertDocumentNameAvailable, DocumentNameConflictError } from '../src/documents/document-service.ts'
 import { sortDocuments, loadSortPreference, saveSortPreference, sanitizeDocumentSortKey, DEFAULT_DOCUMENT_SORT } from '../src/documents/document-sort.ts'
 import { sanitizeFileName, nextAvailableName, resolveImportConflict, createDocumentFromImport } from '../src/documents/document-import-service.ts'
-import { computeDocumentHashes } from '../src/documents/document-hash.ts'
+import { computeDocumentHashes, isHashAvailable } from '../src/documents/document-hash.ts'
 import { backfillDocumentMetadata } from '../src/storage/migration.ts'
 import { buildBackup } from '../src/export/backup-export.ts'
 import { parseAndValidate, restoreBackup } from '../src/export/backup-import.ts'
@@ -250,6 +250,70 @@ function newStaleFreeId(seed: string) { return 'buf-' + seed + '-' + Math.random
   const att = await idbGet('attachments', attId)
   assert(!!att, '删除 Document 后 Context 附件仍在（不级联）')
   assert((await getDocument(docId)) === undefined, '删除 Document 移除文档行')
+}
+
+
+// ================= Agent H (H2/H3/H5/H9): staged dedup, filename uniqueness, crypto degrade ================
+{
+  const pdf = (bytes: number[]) => new Blob([new Uint8Array(bytes)], { type: 'application/pdf' })
+  // Two blobs with IDENTICAL first+last 4KiB (equal fast fingerprint) but a DIFFERENT middle
+  // (different full SHA-256) must NEVER be declared an exact duplicate.
+  const head = Array.from({ length: 4096 }, () => 1)
+  const tail = Array.from({ length: 4096 }, () => 9)
+  const blobA = pdf([...head, ...Array.from({ length: 1000 }, () => 2), ...tail])
+  const blobB = pdf([...head, ...Array.from({ length: 1000 }, () => 3), ...tail])
+  const hA = await computeDocumentHashes(blobA), hB = await computeDocumentHashes(blobB)
+  assert(Math.max(blobA.size, blobB.size) > 8192 && blobA.size === blobB.size, 'dedup fixture: same size, > 8KiB')
+  assert(hA.fastFingerprint === hB.fastFingerprint, 'dedup fixture: same fast fingerprint (head+tail equal)')
+  assert(hA.contentHash !== hB.contentHash, 'dedup fixture: different full content hash')
+  await idbClearAll()
+  await createDocument({ id: 'seed', fileName: 'a.pdf', mimeType: 'application/pdf', fileSize: blobA.size, pageCount: 1, sourceBlob: blobA })
+  // same size + same fingerprint + different content -> NOT duplicate (full hash distinguishes)
+  const sameFpDiff = await resolveImportConflict({ fileName: 'new.pdf', fileSize: blobA.size, contentHash: hB.contentHash, fastFingerprint: hB.fastFingerprint })
+  assert(!(sameFpDiff.kind === 'exact-duplicate'), 'same size + same fingerprint + different content -> NOT exact-duplicate (full SHA distinguishes)')
+  // same size + different fingerprint -> excluded before any full-hash compare
+  const diffFp = await resolveImportConflict({ fileName: 'new2.pdf', fileSize: blobA.size, contentHash: hB.contentHash, fastFingerprint: hB.fastFingerprint + 'X' })
+  assert(!(diffFp.kind === 'exact-duplicate'), 'same size + different fingerprint -> NOT exact-duplicate (fingerprint excluded)')
+  // exact same file (same size + same fingerprint + same content) -> duplicate
+  await createDocument({ id: 'same', fileName: 'b.pdf', mimeType: 'application/pdf', fileSize: blobA.size, pageCount: 1, sourceBlob: blobA, contentHash: hA.contentHash, fastFingerprint: hA.fastFingerprint })
+  const exact = await resolveImportConflict({ fileName: 'c.pdf', fileSize: blobA.size, contentHash: hA.contentHash, fastFingerprint: hA.fastFingerprint })
+  assert(exact.kind === 'exact-duplicate', 'exact same file -> exact-duplicate (full SHA equal)')
+}
+
+// ---- Web Crypto unavailable (H1): PDF import must NOT be blocked / exact dup not asserted ----
+{
+  const subtleReal = (globalThis as any).crypto?.subtle
+  let ok = false
+  try { Object.defineProperty((globalThis as any).crypto, 'subtle', { value: undefined, configurable: true }); ok = true } catch { /* non-configurable */ }
+  assert(!isHashAvailable(), 'crypto.subtle missing -> isHashAvailable() false')
+  await idbClearAll()
+  await createDocument({ id: 'n', fileName: 'name.pdf', mimeType: 'application/pdf', fileSize: 4, pageCount: 1, sourceBlob: pdf([1,1,1,1]) })
+  const c1 = await resolveImportConflict({ fileName: 'name.pdf', fileSize: 4 })
+  assert(c1.kind === 'name-conflict', 'crypto missing: same-name -> name-conflict (import still workable, no exact-dup claim)')
+  const c2 = await resolveImportConflict({ fileName: 'other.pdf', fileSize: 4, contentHash: undefined, fastFingerprint: undefined })
+  assert(c2.kind === 'none', 'crypto missing: different-name -> none, NOT exact-duplicate')
+  if (ok) { try { Object.defineProperty((globalThis as any).crypto, 'subtle', { value: subtleReal, configurable: true }) } catch { /* ignore */ } }
+  assert(isHashAvailable(), 'crypto.subtle restored -> isHashAvailable() true again')
+}
+
+// ---- filename uniqueness (H5) ----
+{
+  await idbClearAll()
+  await createDocument({ id: 'u1', fileName: 'same.pdf', mimeType: 'application/pdf', fileSize: 3, pageCount: 1, sourceBlob: pdf([1,2,3]) })
+  await createDocument({ id: 'u2', fileName: 'other.pdf', mimeType: 'application/pdf', fileSize: 3, pageCount: 1, sourceBlob: pdf([4,5,6]) })
+  let conflict = false
+  try { await renameDocument('u2', 'same.pdf') } catch (e) { conflict = e instanceof DocumentNameConflictError }
+  assert(conflict, 'rename to an existing name -> DocumentNameConflictError (rejected)')
+  // same-name rename of the SAME doc is allowed (no-op / self, excluding its own id)
+  await renameDocument('u1', 'same.pdf')
+  assert((await getDocument('u1'))!.fileName === 'same.pdf', 'rename to its own name is allowed (not a self-conflict)')
+  // assertDocumentNameAvailable directly
+  let avail = false
+  try { await assertDocumentNameAvailable('taken.pdf', undefined); avail = true } catch { avail = false }
+  assert(avail, 'assertDocumentNameAvailable: unknown name is available')
+  let taken = false
+  try { await assertDocumentNameAvailable('same.pdf', undefined) } catch { taken = true }
+  assert(taken, 'assertDocumentNameAvailable: existing name is NOT available')
 }
 
 uninstallMock()

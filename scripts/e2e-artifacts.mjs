@@ -1,11 +1,11 @@
 // Study Artifact E2E: Note (source cutoff + edit/reload) + Quiz (valid). Real UI + mock model.
-import { chromium } from 'playwright-core'
+import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot, installMockModel, getLastRequestBody, getRouteHits } from './e2e-fixture.mjs'
 function getRouteHitsCompletions() { return getRouteHits().completions }
 const results = [], errors = []
 const assert = (c, m) => results.push((c ? 'PASS  ' : 'FAIL  ') + m)
 
-const browser = await chromium.launch({ channel: 'msedge', headless: true })
+const browser = await launchBrowser()
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
 page.on('pageerror', e => errors.push('pageerror: ' + e.message))
 
@@ -67,6 +67,25 @@ await page.waitForTimeout(700)
 // Close the note editor overlay so the conversation's A2 trigger is reachable again.
 await page.locator('button:has-text("关闭")').last().click()
 await page.waitForTimeout(500)
+
+// ---- Agent F (F4): closing the editor IMMEDIATELY after typing flushes the pending edit ----
+await page.locator('text=学习成果').click()
+await page.locator('text=我的笔记标题').waitFor({ state: 'visible', timeout: 8000 })
+await page.locator('text=我的笔记标题').click()
+await page.waitForTimeout(500)
+// type, then click 关闭 IMMEDIATELY (well inside the 450ms autosave debounce)
+await page.locator('textarea[class*="textarea"]').fill('最后编辑-立即关闭')
+await page.locator('button:has-text("关闭")').last().click()
+await page.waitForTimeout(700)
+// reopen from the library and verify the flush-on-close persisted the last keystrokes
+await page.locator('text=学习成果').click()
+await page.locator('text=我的笔记标题').waitFor({ state: 'visible', timeout: 8000 })
+await page.locator('text=我的笔记标题').click()
+await page.waitForTimeout(500)
+const bodyAfterFastClose = await page.locator('textarea[class*="textarea"]').inputValue()
+assert(bodyAfterFastClose.includes('最后编辑-立即关闭'), 'F4: closing editor immediately after typing persists the last edit (got ' + bodyAfterFastClose + ')')
+await page.locator('button:has-text("关闭")').last().click()
+await page.waitForTimeout(400)
 
 // ---- Quiz from A2 (index 1 assistant): valid structured quiz ----
 const quizJSON = JSON.stringify({ questions: [{ id: 'q1', type: 'single-choice', question: '2+2=?', options: ['3', '4', '5'], answer: 1, explanation: '2+2=4' }] })

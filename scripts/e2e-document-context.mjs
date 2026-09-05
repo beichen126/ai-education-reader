@@ -3,12 +3,12 @@
 // document provenance), NOT a mere status message. Covers: Composer unscoped document
 // transition (0.1), temporary PdfSession (0.2), parent-chapter context and provenance
 // (0.3), reader ancestor selection, multi-chapter normalization, cancellation (0.4).
-import { chromium } from 'playwright-core'
+import { launchBrowser } from './e2e-browser.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF = 'test/fixtures/outline-sample.pdf'
 const results = [], errors = []
 const assert = (c, m) => results.push((c ? 'PASS  ' : 'FAIL  ') + m)
-const browser = await chromium.launch({ channel: 'msedge', headless: true })
+const browser = await launchBrowser()
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 const page = await ctx.newPage()
 page.on('pageerror', e => errors.push('pageerror: ' + e.message))
