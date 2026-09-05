@@ -33,6 +33,10 @@ const OPTIONAL_E2E = [
   'e2e-theme',
   'e2e-native-toc',
   'e2e-ai-toc',
+  'e2e-ai-toc-calibration',
+  'e2e-ai-toc-navigation',
+  'e2e-chapter-builder-v113',
+  'e2e-custom-actions',
   'e2e-toc-thumbnails',
   'e2e-toc-review-layout',
 ]

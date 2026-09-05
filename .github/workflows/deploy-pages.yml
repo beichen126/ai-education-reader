@@ -62,7 +62,7 @@ jobs:
       - name: Critical browser E2E (gate deploy)
         env:
           RELEASE_SKIP_UNIT: '1'
-          RELEASE_E2E: 'e2e-artifacts,e2e-document-reader,e2e-document-context,e2e-backup'
+          RELEASE_E2E: 'e2e-artifacts,e2e-document-reader,e2e-document-context,e2e-ai-toc,e2e-ai-toc-navigation,e2e-branching,e2e-backup'
           PLAYWRIGHT_CHANNEL: 'chromium'
         run: npm run test:release
   deploy:
