@@ -164,3 +164,92 @@ export async function readPdfOutline(): Promise<PdfOutlineResult> {
 export async function readOutlineForDocument(doc: import('pdfjs-dist').PDFDocumentProxy): Promise<PdfOutlineResult> {
   return parsePdfOutline(doc)
 }
+
+
+// ---- Reader display path (Agent C, C1/C2/C3) — SVG-free, PDF.js-respecting boundary. ----
+
+/** Distinct error for a cancelled/aborted page render. Callers must treat this as a
+ *  normal "superseded" path, never as a page-render failure. */
+export class PdfCancellationError extends Error {
+  constructor() { super('page render cancelled'); this.name = 'PdfCancellationError' }
+}
+
+/** True when an error is a PDF.js rendering cancellation (the RenderTask was .cancel()ed).
+ *  This MUST NOT be surfaced as "第 x 页渲染失败" — it means a newer render won. */
+export function isRenderCancellation(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false
+  const name = (e as { name?: unknown }).name
+  if (name === 'PdfCancellationError' || name === 'RenderingCancelledException') return true
+  return /RenderingCancelled/i.test(String((e as { message?: unknown }).message ?? ''))
+}
+
+/** A display-ready page surface produced by the Reader display path. `bitmap` when
+ *  createImageBitmap succeeded (GPU-friendly, closable); otherwise the render canvas
+ *  itself. Both can be drawn to a visible canvas via ctx.drawImage. */
+export type PageSurface = {
+  surface: ImageBitmap | HTMLCanvasElement
+  width: number
+  height: number
+  scale: number
+  pageNumber: number
+}
+
+/** A cancellable in-flight surface render. `cancel()` tears down the PDF.js RenderTask
+ *  so a stale render STOPS CPU work instead of merely discarding a late result (C3). */
+export type PageSurfaceRender = {
+  promise: Promise<PageSurface>
+  cancel(): void
+}
+
+/** Read a page's viewport at scale 1 — the anchor for viewport-aware display scaling. */
+export async function readPageViewport1(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number): Promise<{ width: number; height: number }> {
+  const page = await doc.getPage(pageNumber)
+  const vp = page.getViewport({ scale: 1 })
+  return { width: vp.width, height: vp.height }
+}
+
+/** Render one page to a display surface (canvas -> ImageBitmap) at an exact scale.
+ *  Contrary to the AI/export path (renderPageForDocument -> JPEG Blob), this path
+ *  NEVER encodes to a Blob — the surface stays a GPU-friendly bitmap / canvas the
+ *  Reader blits directly to its visible canvas (C1/C2). Returns a cancellable handle. */
+export function startPageSurfaceRender(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number, scale: number): PageSurfaceRender {
+  let task: { cancel(): void } | null = null
+  let cancelled = false
+  const promise = (async (): Promise<PageSurface> => {
+    const page = await doc.getPage(pageNumber)
+    if (cancelled) throw new PdfCancellationError()
+    const vp = page.getViewport({ scale })
+    const width = Math.max(1, Math.floor(vp.width))
+    const height = Math.max(1, Math.floor(vp.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const rt = page.render({ canvas, viewport: vp, background: '#ffffff' })
+    task = rt
+    try {
+      await rt.promise
+    } catch (e) {
+      canvas.width = 0
+      canvas.height = 0
+      if (cancelled || isRenderCancellation(e)) throw new PdfCancellationError()
+      throw new PdfError('render-failed', 'render failed')
+    }
+    try {
+      const bitmap = await createImageBitmap(canvas)
+      canvas.width = 0
+      canvas.height = 0
+      return { surface: bitmap, width, height, scale, pageNumber }
+    } catch {
+      // createImageBitmap unsupported / raced; keep the canvas itself as the surface.
+      if (cancelled) throw new PdfCancellationError()
+      return { surface: canvas, width, height, scale, pageNumber }
+    }
+  })()
+  return {
+    promise,
+    cancel() {
+      cancelled = true
+      try { task?.cancel() } catch { /* ignore */ }
+    },
+  }
+}
