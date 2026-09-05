@@ -633,7 +633,7 @@ export function DocumentReader() {
               {(display.pageError || pageError) && <div className={css.errorBox} data-testid="reader-page-error">{display.pageError || pageError}</div>}
               {display.surface && (
                 <button className={css.pageBtn} data-testid="reader-page" disabled={zoomBusy} onClick={openZoom}>
-                  <canvas ref={display.canvasRef} className={css.pageCanvas} data-testid="reader-page-img" data-render-width={String(display.surface.width)} data-render-height={String(display.surface.height)} width={display.surface.width} height={display.surface.height} />
+                  <canvas ref={display.canvasRef} className={css.pageCanvas} data-testid="reader-page-img" aria-label={'PDF 第 ' + page + ' 页'} data-render-width={String(display.surface.width)} data-render-height={String(display.surface.height)} width={display.surface.width} height={display.surface.height} />
                 </button>
               )}
             </main>
