@@ -33,9 +33,17 @@ export type LearningDocument = {
   sourceBlob: Blob
   chapters: ChapterNode[]
   chapterSource: DocumentChapterSource
+  /** Last page the user actually read. 0 = never read (metadata only, no binary read). */
   lastReadPage: number
+  /** Most recent READING activity (page turn / Reader open). Semantically distinct from
+   *  updatedAt (metadata mutation). Backfilled from updatedAt/createdAt for pre-v1.1.1 records. */
+  lastReadAt: number
   /** Original import origin (PDF today; future PPT/PPTX conversion still lands here). */
   importSource?: { kind: 'pdf' | 'ppt' | 'pptx'; originalFileName: string }
+  /** Full SHA-256 of the source binary (content-hash dedup stage 3). Lazy-computed only. */
+  contentHash?: string
+  /** Fast fingerprint (first+last chunk digest) — dedup stage 2 candidate filter. */
+  fastFingerprint?: string
   createdAt: number
   updatedAt: number
 }

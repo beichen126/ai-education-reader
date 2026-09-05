@@ -61,6 +61,10 @@ function validateDocuments(input: Record<string, any>): void {
     if (!isInt(m.pageCount) || m.pageCount < 1) throw new BackupError('document.pageCount 非法')
     const okLastRead = m.lastReadPage === 0 || (isInt(m.lastReadPage) && m.lastReadPage >= 1 && m.lastReadPage <= m.pageCount)
     if (!okLastRead) throw new BackupError('document.lastReadPage 非法（0 或 1..pageCount 的整数）')
+    if (m.lastReadAt !== undefined && !isNum(m.lastReadAt)) throw new BackupError('document.lastReadAt 必须是数字')
+    if (m.contentHash !== undefined && !isStr(m.contentHash)) throw new BackupError('document.contentHash 非法')
+    if (m.fastFingerprint !== undefined && !isStr(m.fastFingerprint)) throw new BackupError('document.fastFingerprint 非法')
+    if (m.lastReadAt !== undefined && m.lastReadAt < 0) throw new BackupError('document.lastReadAt 不能为负')
     if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('document 时间戳必须是数字')
     if (!VALID_DOC_CHAPTER_SOURCES.has(m.chapterSource)) throw new BackupError('document.chapterSource 非法')
     if (m.importSource !== undefined) {
@@ -287,7 +291,9 @@ export async function restoreBackup(backup: Backup): Promise<void> {
       const blob = base64ToBlob(d.data, d.mimeType);
       const ref = await persistBinary('documents', d.id, blob, { mimeType: d.mimeType });
       if (ref.storage === 'opfs') staged.push({ ref, path: ref.path });
-      documentRows.push({ ...d.meta, source: ref, recordVersion: 2 });
+      // recordVersion 3 + lastReadAt backfill (old backups lack the field).
+      const lastReadAt = (typeof d.meta.lastReadAt === 'number') ? d.meta.lastReadAt : (typeof d.meta.updatedAt === 'number' ? d.meta.updatedAt : (typeof d.meta.createdAt === 'number' ? d.meta.createdAt : 0));
+      documentRows.push({ ...d.meta, lastReadAt, source: ref, recordVersion: 3 });
     }
     // C. Build replacement metadata records pointing at the NEW binary refs.
     const settings = [

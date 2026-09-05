@@ -32,7 +32,7 @@ async function migrateLegacyDocuments(): Promise<{ migrated: number; failed: num
         await idbUpdate('documents', id, (cur: any) => {
           if (!cur || cur.source || !(cur.sourceBlob instanceof Blob)) throw new Error('row changed');
           const { sourceBlob, ...rest } = cur;
-          return { ...rest, source: ref, recordVersion: 2 };
+          return { ...rest, source: ref, recordVersion: 3 };
         });
         migrated += 1;
       } catch (e) {
@@ -93,6 +93,35 @@ export async function migrateLegacyBinaryStorage(): Promise<MigrationResult> {
   const d = await migrateLegacyDocuments();
   const a = await migrateLegacyAttachments();
   return { migratedDocuments: d.migrated, migratedAttachments: a.migrated, failed: d.failed + a.failed };
+}
+
+/**
+ * Agent B (B2): backfill lastReadAt + bump recordVersion for pre-v1.1.1 document records that
+ * predate the reading-time metadata split. Non-blocking, best-effort: a row that already has
+ * lastReadAt is left untouched; a missing one is initialized from updatedAt (then createdAt).
+ * Reading also backfills at hydrate time, so this is a durability step, not a correctness gate.
+ */
+export async function backfillDocumentMetadata(): Promise<{ migrated: number; failed: number }> {
+  let migrated = 0; let failed = 0;
+  let keys: string[] = []
+  try { keys = await idbGetAllKeys('documents'); } catch { return { migrated, failed } }
+  for (const id of keys) {
+    let row: any
+    try { row = await idbGet('documents', id) } catch { failed += 1; continue }
+    if (!row) continue
+    const lastReadAt = (typeof row.lastReadAt === 'number') ? row.lastReadAt : (typeof row.updatedAt === 'number' ? row.updatedAt : (typeof row.createdAt === 'number' ? row.createdAt : 0))
+    const needsLastReadAt = typeof row.lastReadAt !== 'number'
+    const needsVersion = row.recordVersion !== 3
+    if (!needsLastReadAt && !needsVersion) continue
+    try {
+      await idbUpdate('documents', id, (cur: any) => {
+        if (!cur) throw new Error('row changed')
+        return { ...cur, lastReadAt: (typeof cur.lastReadAt === 'number' ? cur.lastReadAt : lastReadAt), recordVersion: 3 }
+      })
+      migrated += 1
+    } catch (e) { if (e instanceof Error && e.message === 'row changed') continue; failed += 1 }
+  }
+  return { migrated, failed }
 }
 
 /** Count legacy rows still waiting for migration (diagnostics display, non-blocking). */

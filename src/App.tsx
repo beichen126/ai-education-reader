@@ -5,7 +5,7 @@ import { AppFrame } from './dsh/layout/AppFrame'
 import { useSessions, initStore } from './engine/sessions-store'
 import { flushAllDrafts } from './engine/draft-store'
 import { initSettings } from './engine/settings-store'
-import { migrateLegacyBinaryStorage } from './storage/migration'
+import { migrateLegacyBinaryStorage, backfillDocumentMetadata } from './storage/migration'
 import { cleanupOrphanAttachments } from './engine/attachment-service'
 import { requestStoragePersist } from './storage/binary-store'
 import { useUi } from './engine/ui-store'
@@ -44,6 +44,8 @@ export function App() {
   useEffect(() => {
     if (boot !== 'ready') return
     void migrateLegacyBinaryStorage().catch((e) => console.warn('binary migration failed', e))
+    // Agent B (B2): non-blocking backfill of lastReadAt + recordVersion bump for old doc rows.
+    void backfillDocumentMetadata().catch((e) => console.warn('document metadata backfill failed', e))
     // P2: conservative attachment-graph reachability cleanup after boot (best-effort, never
     // blocks boot, never deletes fresh/in-flight data, no modal — diagnostics only).
     void cleanupOrphanAttachments().catch(() => {})
