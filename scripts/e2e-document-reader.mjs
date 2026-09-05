@@ -31,6 +31,22 @@ const openLibrary = async () => {
   await page.locator(FILES_ENTRY).first().click()
   await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
 }
+// Import a PDF and open the Reader. A re-import of a file already in the library now shows the
+// B7 duplicate-conflict dialog instead of silently duplicating — accept '仍然导入副本' so the
+// copy is stored and the Reader opens. Import runs async (analyze -> conflict resolution), so
+// poll until either the Reader opened (no conflict) or the conflict dialog is shown.
+const importPdfAndOpen = async (pdf) => {
+  await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(pdf)
+  for (let i = 0; i < 40; i++) {
+    if (await page.locator('[data-testid="document-reader"]').count()) break
+    if (await page.locator('[data-testid="import-conflict"]').count()) break
+    await page.waitForTimeout(250)
+  }
+  if (await page.locator('[data-testid="import-conflict"]').count()) {
+    await page.locator('[data-testid="duplicate-import-copy"]').click()
+  }
+  await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
+}
 
 // ---- A. library empty state -> import PDF -> Reader opens on page 1 ----
 await openLibrary()
@@ -149,15 +165,15 @@ await page.waitForTimeout(400)
 assert(await page.locator('[data-testid="sidebar-new-chat"]').count() === 1, 'H: sidebar new chat works')
 
 // ---- J. repeat import: A -> reader -> back -> B -> both documents kept ----
+// B7 duplicate detection: a re-import of the SAME file now shows a conflict dialog instead of
+// silently duplicating. Accept "仍然导入副本" so the copy is stored and the Reader opens.
 await openLibrary()
-await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(PDF)
-await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
+await importPdfAndOpen(PDF)
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
 await page.locator('[data-testid="reader-back"]').click()
 await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(await page.locator('[data-testid="library-import"]').isEnabled(), 'J: 导入 PDF re-enabled after reader round-trip')
-await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/outline-tricky.pdf')
-await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
+await importPdfAndOpen('test/fixtures/outline-tricky.pdf')
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
 assert((await page.locator('[data-testid="reader-title"]').textContent()).includes('outline-tricky.pdf'), 'J: second import opens B reader (got ' + await page.locator('[data-testid="reader-title"]').textContent() + ')')
 await page.locator('[data-testid="reader-back"]').click()
@@ -179,8 +195,7 @@ await openLibrary()
 
 // ---- L. Escape BEFORE the debounce (1000ms) — cleanup flush must restore the page ----
 await openLibrary()
-await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(PDF)
-await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
+await importPdfAndOpen(PDF)
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
 await page.locator('[data-testid="reader-page-input"]').fill('6')
 await page.locator('[data-testid="reader-page-input"]').press('Enter')
@@ -198,8 +213,7 @@ await page.waitForTimeout(300)
 
 // ---- M. Reader -> Context bridge (current page / current chapter / manual range) ----
 await openLibrary()
-await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(PDF)
-await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
+await importPdfAndOpen(PDF)
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
 const ctxMsg = async () => (await page.locator('[data-testid="reader-ctx-msg"]').textContent().catch(() => '')) || ''
 // current page (jump to 5)
@@ -307,8 +321,7 @@ await page.waitForTimeout(300)
 
 // ---- N. soft confirm >30 pages: continue executes ONCE (no loop) + cancel is clean ----
 await openLibrary()
-await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/.playwright/outline-big.pdf')
-await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
+await importPdfAndOpen('test/.playwright/outline-big.pdf')
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
 const groupsBefore = await page.evaluate(async () => {
   const db = await new Promise((res, rej) => { const r = indexedDB.open('ai-education-reader', 5); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
@@ -362,7 +375,12 @@ await page.waitForTimeout(300)
 // ---- I. delete document (confirm accepted via dialog handler) ----
 await openLibrary()
 const beforeDel = await page.locator('[data-testid^="doc-card-"]').count()
+// B3: actions live in the ⋯ overflow menu; open it before revealing 删除.
+await page.locator('[data-testid^="doc-menu-"]').first().click()
 await page.locator('[data-testid^="doc-delete-"]').first().click()
+// B10: delete now confirms through an in-app dialog (not window.confirm).
+await page.locator('[data-testid="delete-confirm"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.locator('[data-testid="delete-confirm"]').click()
 await page.waitForTimeout(500)
 const afterDel = await page.locator('[data-testid^="doc-card-"]').count()
 assert(afterDel === beforeDel - 1, 'I: delete removes one document (' + beforeDel + ' -> ' + afterDel + ')')
