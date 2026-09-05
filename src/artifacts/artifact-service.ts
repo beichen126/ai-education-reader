@@ -114,7 +114,11 @@ export async function createArtifactDraft(input: {
     prompt: input.prompt,
     createdAt: now,
     updatedAt: now,
-    status: 'generating',
+    // A NEW artifact starts as a DRAFT. It must NOT be 'generating' until it actually
+    // holds the global generation lock (see markArtifactGenerating). This is the core
+    // invariant: no artifact is ever 'generating' without owning generation, so a busy/
+    // failed attempt can never leave a zombie 'generating' record behind.
+    status: 'draft',
   }
   await saveArtifact(artifact)
   return artifact
@@ -134,10 +138,31 @@ export async function markArtifactReady(id: StableId, payload: { content?: strin
   return updated
 }
 
-export async function markArtifactError(id: StableId, message: string): Promise<StudyArtifact | undefined> {
+/**
+ * Claim generation ownership on an artifact. Only called AFTER the global generation
+ * lock has been acquired, so an artifact can never be 'generating' without really
+ * owning generation. Returns the updated record, or undefined when the artifact is gone
+ * or was edited/deleted since `expectUpdatedAt` (a stale claim must not proceed).
+ */
+export async function markArtifactGenerating(id: StableId, expectUpdatedAt?: number): Promise<StudyArtifact | undefined> {
   const a = await getArtifact(id)
   if (!a) return undefined
-  const updated: StudyArtifact = { ...a, status: 'error', error: message, updatedAt: Date.now() }
+  if (expectUpdatedAt !== undefined && a.updatedAt !== expectUpdatedAt) return undefined
+  const updated: StudyArtifact = { ...a, status: 'generating', updatedAt: Date.now() }
+  await saveArtifact(updated)
+  return updated
+}
+
+/**
+ * Mark an artifact as error. `generatedContent` may be provided to keep the RAW model
+ * output so a failed quiz is never silently lost (the user can inspect what the model
+ * actually produced). When `generatedContent` is supplied it is preserved even though
+ * the artifact is in error state.
+ */
+export async function markArtifactError(id: StableId, message: string, payload?: { generatedContent?: string }): Promise<StudyArtifact | undefined> {
+  const a = await getArtifact(id)
+  if (!a) return undefined
+  const updated: StudyArtifact = { ...a, status: 'error', error: message, ...(payload?.generatedContent !== undefined ? { generatedContent: payload.generatedContent } : {}), updatedAt: Date.now() }
   await saveArtifact(updated)
   return updated
 }

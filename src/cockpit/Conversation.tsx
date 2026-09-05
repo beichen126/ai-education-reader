@@ -1,5 +1,6 @@
 
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
 import { uiActions, useUi } from '../engine/ui-store'
@@ -30,9 +31,10 @@ import { ArtifactCreateDialog } from '../artifacts/ArtifactCreateDialog'
 import { ArtifactLibrary } from '../artifacts/ArtifactLibrary'
 import { ArtifactEditor } from '../artifacts/ArtifactEditor'
 import { QuizViewer } from '../artifacts/QuizViewer'
-import { createArtifactDraft, markArtifactReady, markArtifactError } from '../artifacts/artifact-service'
+import { createArtifactDraft, removeArtifact, isArtifactSourceLive } from '../artifacts/artifact-service'
 import { getArtifact, listArtifacts } from '../artifacts/artifact-store'
-import { generateArtifact } from '../artifacts/artifact-generation'
+import { generateArtifact, ArtifactGenerationError } from '../artifacts/artifact-generation'
+import { exportQuizJson, exportQuizMarkdown } from '../artifacts/artifact-export'
 import { runBranchReply } from '../engine/branch-thread'
 import { branchThreadKey, getBranchDraft, setBranchDraftText, addBranchDraftImages, removeBranchDraftImage, clearBranchDraftMemory } from '../engine/draft-store'
 import { useBranchChat } from './use-branch-chat'
@@ -67,18 +69,33 @@ export function Conversation() {
   const activeStreamingId = busy && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
   const [menuMsgId, setMenuMsgId] = useState<string | null>(null)
   const [creating, setCreating] = useState<{ kind: ArtifactKind; messageId: string } | null>(null)
+  const [creatingBusy, setCreatingBusy] = useState(false)
+  const [creatingError, setCreatingError] = useState<string | undefined>(undefined)
   const [artView, setArtView] = useState<'library' | null>(null)
   const [openArtifact, setOpenArtifact] = useState<StudyArtifact | null>(null)
   const [libArtifacts, setLibArtifacts] = useState<StudyArtifact[]>([])
   const hasBranches = branchChat.branches.length > 0
   const activeThread = session ? (branchChat.activeBranchId ? { type: 'branch' as const, conversationId: session.id, branchId: branchChat.activeBranchId } : { type: 'root' as const, conversationId: session.id }) : undefined
   async function onCreateArtifact(input: { kind: ArtifactKind; prompt: string; presetId?: string }) {
-    if (!session || !creating) return
-    const a = await createArtifactDraft({ kind: input.kind, conversationId: session.id, branchId: branchChat.activeBranchId, throughMessageId: creating.messageId, prompt: input.prompt, presetId: input.presetId })
+    if (!session || !creating || creatingBusy) return
+    setCreatingBusy(true); setCreatingError(undefined)
+    let draftId: string | undefined
     try {
+      const a = await createArtifactDraft({ kind: input.kind, conversationId: session.id, branchId: branchChat.activeBranchId, throughMessageId: creating.messageId, prompt: input.prompt, presetId: input.presetId })
+      draftId = a.id
       const out = await generateArtifact(a.id, { call: artifactModelCall })
       setCreating(null); setOpenArtifact(out); void branchChat.refresh()
-    } catch { setCreating(null) }
+    } catch (e) {
+      // A2: never swallow generation errors. The dialog stays open and shows the error.
+      setCreatingError(e instanceof ArtifactGenerationError ? e.message : '生成失败：' + String((e as any)?.message ?? e))
+      // A1: if the fresh draft was never claimed (busy / pre-flight failure), don't leak it.
+      if (draftId) {
+        const cur = await getArtifact(draftId)
+        if (cur && cur.status === 'draft') await removeArtifact(draftId).catch(() => undefined)
+      }
+    } finally {
+      setCreatingBusy(false)
+    }
   }
   function openLibrary() { void listArtifacts().then(setLibArtifacts); setArtView('library') }
   return (
@@ -113,12 +130,12 @@ export function Conversation() {
               </div>
               {!hasKey && <div className={css.emptyHint}>开始前，需要配置你自己的 DeepSeek API Key。</div>}
             </div>
-          ) : messages.map(m => <MessageRow key={m.id} m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => setCreating({ kind, messageId: mid })} />)}
+          ) : messages.map(m => <MessageRow key={m.id} m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} />)}
         </div>
         <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" onClick={openLibrary}>学习成果</Button></div>
         <Composer sessionId={session?.id} busy={busy} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
       </div>
-      {creating && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', padding: '1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}><ArtifactCreateDialog sourceLabel={creatingSourceLabel(session, branchChat.activeBranchId, creating.messageId)} initialKind={creating.kind} onSubmit={(i) => void onCreateArtifact(i)} onCancel={() => setCreating(null)} /></div></div>)}
+      {creating && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', padding: '1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}><ArtifactCreateDialog sourceLabel={creatingSourceLabel(session, branchChat.activeBranchId, creating.messageId)} initialKind={creating.kind} busy={creatingBusy} error={creatingError} onSubmit={(i) => void onCreateArtifact(i)} onCancel={() => setCreating(null)} /></div></div>)}
       {artView === 'library' && <ArtifactLibraryOverlay artifacts={libArtifacts} onOpen={(a) => { setOpenArtifact(a); setArtView(null) }} onClose={() => setArtView(null)} />}
       {openArtifact && <ArtifactViewerOverlay artifact={openArtifact} onOpen={setOpenArtifact} onClose={() => setOpenArtifact(null)} onChanged={() => void branchChat.refresh()} />}
     </div>
@@ -390,6 +407,83 @@ function ArtifactLibraryOverlay({ artifacts, onOpen, onClose }: { artifacts: Stu
   return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', width: 'min(46rem, 94vw)', maxHeight: '86vh', overflow: 'auto' }}><ArtifactLibrary onOpen={onOpen} /></div></div>)
 }
 function ArtifactViewerOverlay({ artifact, onOpen, onClose, onChanged }: { artifact: StudyArtifact; onOpen: (a: StudyArtifact) => void; onClose: () => void; onChanged: () => void }) {
-  const isQuiz = artifact.kind === 'quiz' && !!artifact.quiz
-  return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', width: 'min(54rem, 94vw)', height: '86vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>{isQuiz ? <QuizViewer quiz={artifact.quiz!} /> : <ArtifactEditor artifact={artifact} onOpenArtifact={onOpen} onClose={onClose} onChanged={onChanged} />}</div></div>)
+  // A11: evaluate source liveness dynamically when the artifact is opened (the frozen
+  // source.snapshot.sourceDeleted flag is never trusted after creation).
+  const [live, setLive] = useState<boolean | null>(null)
+  useEffect(() => { let ok = true; void isArtifactSourceLive(artifact).then((v) => { if (ok) setLive(v) }).catch(() => { if (ok) setLive(false) }); return () => { ok = false } }, [artifact.id])
+  const sourceDeleted = live === false
+  let body: ReactNode | null = null
+  if (artifact.status === 'draft' || artifact.status === 'generating') {
+    body = <GeneratingArtifactBody artifact={artifact} onClose={onClose} />
+  } else if (artifact.status === 'error') {
+    body = <ErrorArtifactBody artifact={artifact} sourceDeleted={sourceDeleted} onClose={onClose} onOpen={onOpen} onChanged={onChanged} />
+  } else if (artifact.kind === 'quiz' && artifact.quiz) {
+    body = <QuizArtifactBody artifact={artifact} sourceDeleted={sourceDeleted} onClose={onClose} />
+  } else {
+    body = <ArtifactEditor artifact={artifact} onOpenArtifact={onOpen} onClose={onClose} onChanged={onChanged} sourceDeleted={sourceDeleted} />
+  }
+  return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', width: 'min(54rem, 94vw)', height: '86vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>{body}</div></div>)
+}
+
+function ArtifactPanelChrome({ artifact, sourceDeleted, onClose, actions }: { artifact: StudyArtifact; sourceDeleted: boolean; onClose: () => void; actions?: ReactNode }) {
+  return (<div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--dsw-alias-border-l2)', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+    <strong style={{ color: 'var(--dsw-alias-label-primary)' }}>{artifact.title}</strong>
+    <span style={{ fontSize: '0.75rem', color: 'var(--dsw-alias-label-tertiary)' }}>{artifact.source.snapshot.sourceLabel}{sourceDeleted ? ' · 原会话已删除' : ''}</span>
+    <div style={{ flex: 1 }} />
+    {actions}
+    <Button size="sm" variant="outline" aria-label="关闭" onClick={onClose}>关闭</Button>
+  </div>)
+}
+
+function GeneratingArtifactBody({ artifact, onClose }: { artifact: StudyArtifact; onClose: () => void }) {
+  return (<div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <ArtifactPanelChrome artifact={artifact} sourceDeleted={false} onClose={onClose} />
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '0.75rem', padding: '2rem', color: 'var(--dsw-alias-label-secondary)' }}>
+      <div className={css.artifactSpinner} aria-hidden="true" />
+      <div>{artifact.status === 'generating' ? '正在生成…' : '尚未开始生成'}</div>
+      <div style={{ fontSize: '0.8125rem', color: 'var(--dsw-alias-label-tertiary)' }}>生成完成后将在这里显示成果；失败时也可在此查看错误原因。</div>
+    </div>
+  </div>)
+}
+
+function ErrorArtifactBody({ artifact, sourceDeleted, onClose, onOpen, onChanged }: { artifact: StudyArtifact; sourceDeleted: boolean; onClose: () => void; onOpen: (a: StudyArtifact) => void; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [showRaw, setShowRaw] = useState(false)
+  const [err, setErr] = useState<string | undefined>(undefined)
+  async function regenerate() {
+    setBusy(true); setErr(undefined)
+    try {
+      const draft = await createArtifactDraft({ kind: artifact.kind, conversationId: artifact.source.conversationId, branchId: artifact.source.branchId, throughMessageId: artifact.source.throughMessageId, prompt: artifact.prompt, presetId: artifact.presetId })
+      try {
+        const out = await generateArtifact(draft.id, { call: artifactModelCall })
+        onOpen(out)
+      } catch (e) {
+        const cur = await getArtifact(draft.id)
+        if (cur && cur.status === 'draft') await removeArtifact(draft.id).catch(() => undefined)
+        setErr(e instanceof ArtifactGenerationError ? e.message : '生成失败：' + String((e as any)?.message ?? e))
+      }
+    } finally { setBusy(false) }
+  }
+  async function del() { if (!globalThis.confirm('删除该学习成果？')) return; await removeArtifact(artifact.id); onChanged(); onClose() }
+  return (<div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <ArtifactPanelChrome artifact={artifact} sourceDeleted={sourceDeleted} onClose={onClose} actions={<Button size="sm" variant="ghost" aria-label="删除" onClick={() => void del()}>删除</Button>} />
+    <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
+      <div style={{ color: 'var(--dsw-alias-state-error-primary)', fontWeight: 600, marginBottom: '0.5rem' }}>生成失败</div>
+      <p style={{ color: 'var(--dsw-alias-label-secondary)', margin: '0 0 0.75rem' }}>{artifact.error || '未知错误'}</p>
+      {err && <p style={{ color: 'var(--dsw-alias-state-error-primary)', margin: '0 0 0.75rem' }}>{err}</p>}
+      {artifact.generatedContent !== undefined && (<button type="button" className={css.filterBtn} onClick={() => setShowRaw(!showRaw)}>{showRaw ? '收起原始输出' : '查看原始输出'}</button>)}
+      {showRaw && artifact.generatedContent !== undefined && (<pre style={{ marginTop: '0.75rem', maxHeight: '16rem', overflow: 'auto', background: 'var(--dsw-alias-bg-base)', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '0.5rem', padding: '0.625rem', whiteSpace: 'pre-wrap', fontSize: '0.8125rem', color: 'var(--dsw-alias-label-primary)' }}>{artifact.generatedContent}</pre>)}
+    </div>
+    <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--dsw-alias-border-l2)', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+      <Button size="sm" variant="primary" disabled={busy} onClick={() => void regenerate()}>{busy ? '生成中…' : '重新生成'}</Button>
+    </div>
+  </div>)
+}
+
+function QuizArtifactBody({ artifact, sourceDeleted, onClose }: { artifact: StudyArtifact; sourceDeleted: boolean; onClose: () => void }) {
+  const canExport = !!artifact.quiz
+  return (<div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <ArtifactPanelChrome artifact={artifact} sourceDeleted={sourceDeleted} onClose={onClose} actions={canExport ? (<><Button size="sm" variant="ghost" aria-label="导出 Markdown" onClick={() => exportQuizMarkdown(artifact)}>导出 Markdown</Button><Button size="sm" variant="ghost" aria-label="导出 JSON" onClick={() => exportQuizJson(artifact)}>导出 JSON</Button></>) : undefined} />
+    <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>{artifact.quiz ? <QuizViewer quiz={artifact.quiz} /> : null}</div>
+  </div>)
 }

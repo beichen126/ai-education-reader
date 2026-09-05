@@ -33,8 +33,13 @@ function requireString(v: unknown, field: string): string {
   return v
 }
 
+// A reasonable upper bound on number of options (A12). Keeps letter labels A..Z safe and
+// prevents a stray model from emitting hundreds of options.
+const MAX_OPTION_OPTIONS = 26
+
 function validateOptions(v: unknown): string[] {
   if (!Array.isArray(v) || v.length === 0) throw new QuizValidationError('options 必须是非空字符串数组')
+  if (v.length > MAX_OPTION_OPTIONS) throw new QuizValidationError('options 数量超过上限（' + MAX_OPTION_OPTIONS + '）')
   for (const o of v) if (!isStr(o) || o.trim() === '') throw new QuizValidationError('options 含非法项')
   return v
 }
@@ -79,30 +84,87 @@ export function validateQuizQuestion(v: unknown): QuizQuestion {
 export function validateQuizDocument(v: unknown): QuizDocument {
   if (!isObj(v) || !Array.isArray(v.questions) || v.questions.length === 0) throw new QuizValidationError('quiz 必须是含非空 questions 数组的对象')
   const ids = new Set<string>()
-  const questions = v.questions.map((q: unknown) => {
-    const parsed = validateQuizQuestion(q)
-    if (ids.has(parsed.id)) throw new QuizValidationError('question.id 重复')
-    ids.add(parsed.id)
-    return parsed
+  const questions = v.questions.map((q: unknown, qi: number) => {
+    try {
+      const parsed = validateQuizQuestion(q)
+      if (ids.has(parsed.id)) throw new QuizValidationError('question.id 重复')
+      ids.add(parsed.id)
+      return parsed
+    } catch (e) {
+      // A5: surface the SPECIFIC failing question for a helpful recovery message.
+      if (e instanceof QuizValidationError) throw new QuizValidationError('第 ' + (qi + 1) + ' 题：' + e.message)
+      throw e
+    }
   })
   return { questions }
 }
+
 /**
- * Parse + validate a model response into a QuizDocument. Model output is UNTRUSTED:
- * strip code fences, locate the JSON object, then strictly validate structure.
- * Throws QuizValidationError on any malformed shape (never saved as 'ready').
+ * Extract the raw JSON value from the model output. Model output is UNTRUSTED: strip code
+ * fences, locate the JSON object, then return the parsed value. Throws QuizValidationError
+ * when no parseable object is found.
  */
-export function parseQuizDocument(rawText: string): QuizDocument {
+export function extractQuizJson(rawText: string): unknown {
   const text = stripFences(String(rawText ?? '').trim())
   if (!text) throw new QuizValidationError('模型输出为空')
-  let parsed: unknown
-  try { parsed = JSON.parse(text) }
+  try { return JSON.parse(text) }
   catch {
     const start = text.indexOf('{')
     if (start < 0) throw new QuizValidationError('输出中未找到 JSON 对象')
-    parsed = tryParseBalanced(text, start)
+    return tryParseBalanced(text, start)
   }
-  return validateQuizDocument(parsed)
+}
+
+/** Convert an option letter ('B') to its 0-based index (1). Returns null when ambiguous. */
+function letterToIndex(s: unknown): number | null {
+  if (typeof s !== 'string') return null
+  const t = s.trim().toUpperCase()
+  if (t.length === 1 && t >= 'A' && t <= 'Z') return t.charCodeAt(0) - 65
+  return null
+}
+
+/**
+ * A4 normalization layer. Only ever makes UNAMBIGUOUS fixes to common model output:
+ *   - `option` -> `options`
+ *   - single-choice `answer: "B"` -> `1` (only when it maps cleanly to a letter)
+ *   - multiple-choice `answers: ["A","C"]` -> `[0,2]`
+ *   - true-false `answer: "true"/"false"` (and explicit Chinese 正确/错误/对/错/是/否) -> boolean
+ * NEVER guesses ambiguous answers, NEVER drops malformed questions, NEVER fabricates data.
+ * Anything it can't fix cleanly is left for strict validation to reject.
+ */
+export function normalizeQuizJson(v: unknown): unknown {
+  if (!isObj(v)) return v
+  const out: Record<string, any> = { ...v }
+  if (!Array.isArray(out.options) && Array.isArray(out.option)) out.options = out.option
+  if (out.type === 'multi-choice' || out.type === 'multiple' || out.type === 'multi') out.type = 'multiple-choice'
+  if (out.type === 'single-choice' && typeof out.answer === 'string') {
+    const idx = letterToIndex(out.answer)
+    if (idx !== null) out.answer = idx
+  }
+  if (out.type === 'multiple-choice' && Array.isArray(out.answers)) {
+    if (out.answers.every((x: unknown) => typeof x === 'string')) {
+      const idxs = out.answers.map((x: unknown) => letterToIndex(x))
+      if (idxs.every((i: number | null) => i !== null)) out.answers = idxs as number[]
+    }
+  }
+  if (out.type === 'true-false' && typeof out.answer === 'string') {
+    const t = out.answer.trim().toLowerCase()
+    if (t === 'true' || t === '正确' || t === '对' || t === '是') out.answer = true
+    else if (t === 'false' || t === '错误' || t === '错' || t === '否') out.answer = false
+  }
+  if (Array.isArray(out.questions)) out.questions = out.questions.map((q: unknown) => normalizeQuizJson(q))
+  return out
+}
+
+/**
+ * Parse + normalize + strictly validate a model response into a QuizDocument.
+ * Model output is UNTRUSTED. Normalization happens before strict validation so the
+ * persisted schema stays strict. Throws QuizValidationError on any shape that cannot
+ * be normalized to a valid document (never saved as 'ready').
+ */
+export function parseQuizDocument(rawText: string): QuizDocument {
+  const parsed = extractQuizJson(rawText)
+  return validateQuizDocument(normalizeQuizJson(parsed))
 }
 
 function stripFences(text: string): string {

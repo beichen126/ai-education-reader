@@ -4,7 +4,7 @@ import { buildContextMessages, buildApiMessages, buildRequestMessages, type ApiC
 import { toDataUrl, AttachmentError } from '../engine/attachment-service'
 import { globalGenerationLock } from '../engine/chat-generation-service'
 import { getArtifact } from './artifact-store'
-import { markArtifactReady, markArtifactError, materializeSourceMessages } from './artifact-service'
+import { markArtifactReady, markArtifactError, markArtifactGenerating, materializeSourceMessages } from './artifact-service'
 import { parseQuizDocument, QuizValidationError } from './artifact-validation'
 import type { StudyArtifact } from './artifact-types'
 
@@ -26,11 +26,18 @@ export async function generateArtifact(artifactId: StableId, opts: { call: Artif
   // Regeneration must NEVER silently overwrite a finalized + possibly-edited artifact.
   // The caller creates a NEW revision draft for regeneration; the old one stays safe.
   if (a.status === 'ready') throw new ArtifactGenerationError('already-finalized', '该学习成果已完成，如需重新生成请先创建新版本')
+  if (a.status === 'generating') throw new ArtifactGenerationError('busy', '该学习成果正在生成中')
   const key = 'artifact:' + artifactId
   const controller = new AbortController()
-  if (!globalGenerationLock.tryAcquire(key, controller)) throw new ArtifactGenerationError('busy', '已有模型任务正在进行，请稍后再试')
-  const startUpdatedAt = a.updatedAt
+  // A1 core invariant: ONLY an artifact that truly owns generation may be 'generating'.
+  // Acquire the global lock BEFORE the draft->generating transition. A busy lock throws
+  // and leaves the artifact in its prior (draft/error) status — never a zombie 'generating'
+  // record, and never a second artifact created by a double submit.
+  if (!globalGenerationLock.tryAcquire(key, controller)) throw new ArtifactGenerationError('busy', '模型正在执行其他生成任务，请稍后再试')
+  const preClaimUpdatedAt = a.updatedAt
   try {
+    // ---- pre-flight (no state change): validate + build the request so a blocked
+    // generation fails BEFORE it is ever claimed as 'generating'. ----
     const settings = getSettingsSnapshot()
     if (!settings.apiKey) { await markArtifactError(artifactId, '未配置 API Key'); throw new ArtifactGenerationError('no-api-key', '未配置 API Key') }
     // Frozen source: never re-read the live conversation, never include later messages.
@@ -47,33 +54,40 @@ export async function generateArtifact(artifactId: StableId, opts: { call: Artif
     }
     const reqMsgs = buildRequestMessages(apiMsgs, settings)
     reqMsgs.push({ role: 'user', content: a.prompt })
+    // ---- NOW claim generation ownership. The artifact may be 'generating' from here on ----
+    const claimed = await markArtifactGenerating(artifactId, preClaimUpdatedAt)
+    if (!claimed) throw new ArtifactGenerationError('stale', '学习成果已更新，本次生成已丢弃')
+    const startUpdatedAt = claimed.updatedAt
     const content = await opts.call({ apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMsgs, signal: controller.signal })
     // Late/fresh re-check: if the artifact was edited or deleted while we generated, the
     // result must be dropped (a late write can never overwrite a newer revision).
     const fresh = await getArtifact(artifactId)
     if (!fresh || fresh.updatedAt !== startUpdatedAt || fresh.status !== 'generating'
-        || (fresh.content ?? '') !== (a.content ?? '') || JSON.stringify(fresh.quiz ?? null) !== JSON.stringify(a.quiz ?? null)) {
+        || (fresh.content ?? '') !== (claimed.content ?? '') || JSON.stringify(fresh.quiz ?? null) !== JSON.stringify(claimed.quiz ?? null)) {
+      await markArtifactError(artifactId, '本次生成结果已过期，未能保存（学习成果已被修改或删除）。')
       throw new ArtifactGenerationError('stale', '学习成果已更新，本次结果已丢弃')
     }
     if (a.kind === 'quiz') {
       try {
         const quiz = parseQuizDocument(content)
-        const out = await markArtifactReady(artifactId, { quiz, generatedText: content }, a.updatedAt)
+        const out = await markArtifactReady(artifactId, { quiz, generatedText: content }, startUpdatedAt)
         if (!out) throw new ArtifactGenerationError('stale', '学习成果已更新，本次结果已丢弃')
         return out
       } catch (e) {
         if (e instanceof QuizValidationError) {
-          await markArtifactError(artifactId, '生成的题目结构不合法，请重试。')
-          throw new ArtifactGenerationError('invalid-quiz', '生成的题目结构不合法，请重试。')
+          // A5: never lose a near-correct model result. Keep the raw output + specific reason.
+          await markArtifactError(artifactId, '题目解析失败：' + e.message, { generatedContent: content })
+          throw new ArtifactGenerationError('invalid-quiz', '题目解析失败：' + e.message)
         }
         throw e
       }
     }
-    const out = await markArtifactReady(artifactId, { content, generatedText: content }, a.updatedAt)
+    const out = await markArtifactReady(artifactId, { content, generatedText: content }, startUpdatedAt)
     if (!out) throw new ArtifactGenerationError('stale', '学习成果已更新，本次结果已丢弃')
     return out
   } catch (e) {
     if (e instanceof ArtifactGenerationError) { throw e }
+    // Any other failure (network / API / model) must leave a deterministic terminal status.
     const isAbort = (e as any)?.name === 'AbortError'
     await markArtifactError(artifactId, isAbort ? '已取消' : '生成失败：' + String((e as any)?.message ?? e))
     throw e

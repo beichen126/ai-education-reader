@@ -36,7 +36,7 @@ assert(mat.length === 3 && mat[2].content === 'branchcontent', 'frozen source me
 // ---- 3. custom prompt stored exactly + preset registry present ----
 const art = await createArtifactDraft({ kind: 'note', conversationId: convId, branchId: b.id, throughMessageId: 'a0', prompt: 'MY CUSTOM PROMPT', presetId: 'note' })
 assert(art.prompt === 'MY CUSTOM PROMPT', 'custom prompt stored exactly')
-assert(art.status === 'generating' && art.source.snapshot.sourceDeleted === false, 'new artifact is generating with frozen snapshot')
+assert(art.status === 'draft' && art.source.snapshot.sourceDeleted === false, 'new artifact is a draft (NOT generating until it owns the lock) with frozen snapshot')
 assert(presetForKind('note')!.defaultPrompt.length > 0, 'preset prompt exists in registry (not JSX)')
 assert(TRANSFORMATION_PRESETS.length === 5 && presetForKind('custom')!.kind === 'custom', 'five presets incl. custom')
 

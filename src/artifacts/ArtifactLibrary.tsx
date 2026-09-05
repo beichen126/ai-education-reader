@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '../dsh/primitives/Button'
 import { listArtifacts, deleteArtifact } from './artifact-store'
+import { isArtifactSourceLive } from './artifact-service'
 import type { ArtifactKind, StudyArtifact } from './artifact-types'
 import css from './artifact.module.css'
 
@@ -25,8 +26,18 @@ export function ArtifactLibrary({ onOpen }: Props) {
   const [arts, setArts] = useState<StudyArtifact[]>([])
   const [filter, setFilter] = useState<'all' | ArtifactKind>('all')
   const [loaded, setLoaded] = useState(false)
+  // A11: the frozen source.snapshot.sourceDeleted flag is never trusted; evaluate the
+  // live source conversation/branch on open and display the dynamic result.
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set())
   useEffect(() => { void reload() }, [])
-  async function reload() { const a = await listArtifacts(); setArts(a); setLoaded(true) }
+  async function reload() {
+    const a = await listArtifacts()
+    setArts(a)
+    const del = new Set<string>()
+    await Promise.all(a.map(async (art) => { if (!(await isArtifactSourceLive(art))) del.add(art.id) }))
+    setDeletedIds(del)
+    setLoaded(true)
+  }
   const shown = filter === 'all' ? arts : arts.filter((a) => a.kind === filter)
 
   async function remove(id: string) {
@@ -46,7 +57,7 @@ export function ArtifactLibrary({ onOpen }: Props) {
         <div key={a.id} className={css.card} role="button" tabIndex={0} onClick={() => onOpen(a)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpen(a) }} aria-label={'打开 ' + a.title}>
           <h3 className={css.cardTitle}>{a.title}</h3>
           <p className={css.cardKind}>{KIND_LABEL[a.kind]}</p>
-          <p className={css.cardMeta}>{a.source.snapshot.sourceLabel}{a.source.snapshot.sourceDeleted ? ' · 原会话已删除' : ''}</p>
+          <p className={css.cardMeta}>{a.source.snapshot.sourceLabel}{deletedIds.has(a.id) ? ' · 原会话已删除' : ''}</p>
           <p className={css.cardMeta}>{new Date(a.updatedAt).toLocaleString()}</p>
           <div style={{ marginTop: '0.5rem' }}>
             <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onOpen(a) }}>打开</Button>

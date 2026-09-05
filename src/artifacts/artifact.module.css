@@ -18,6 +18,11 @@
 .titleInput:focus { border-color: var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-base); outline: none; }
 .editorBody { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; min-height: 0; }
 .editorBody.narrow { grid-template-columns: 1fr; grid-auto-rows: minmax(0, 1fr); }
+.editorBody.previewOnly { grid-template-columns: 1fr; }
+.previewOnly { grid-template-columns: 1fr; }
+.modeSwitch { display: inline-flex; border: 1px solid var(--dsw-alias-border-l2); border-radius: 0.5rem; overflow: hidden; }
+.modeBtn { appearance: none; border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 0.75rem; cursor: pointer; padding: 0.25rem 0.5rem; }
+.modeBtn.active { background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-label-primary); font-weight: 600; }
 .pane { display: flex; flex-direction: column; min-height: 0; }
 .paneLabel { font-size: 0.75rem; color: var(--dsw-alias-label-tertiary); margin-bottom: 0.25rem; }
 .textarea { flex: 1; resize: none; border: 1px solid var(--dsw-alias-border-l2); border-radius: 0.5rem; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; padding: 0.625rem; min-height: 12rem; }
