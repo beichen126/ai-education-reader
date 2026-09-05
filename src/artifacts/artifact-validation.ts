@@ -211,7 +211,14 @@ export function validateArtifact(v: unknown): StudyArtifact | null {
   if (v.content !== undefined && !isStr(v.content)) return null
   if (v.error !== undefined && !isStr(v.error)) return null
   if (v.generatedContent !== undefined && !isStr(v.generatedContent)) return null
-  if (v.kind === 'quiz') { try { if (!validateQuizDocument(v.quiz)) return null } catch { return null } }
-  else if (v.quiz !== undefined) return null
+  if (v.kind === 'quiz') {
+    // Quiz artifacts: the `quiz` payload is only REQUIRED once the artifact reaches `ready`.
+    // draft / generating / error may legitimately carry NO quiz yet (generation failed, or the
+    // artifact was created but never finished). This matches the v1.1.1 lifecycle (draft, generating,
+    // ready, error) which the old unconditional check contradicted.
+    // When a quiz IS present it must ALWAYS pass strict validation (never weakened).
+    if (v.quiz !== undefined) { try { if (!validateQuizDocument(v.quiz)) return null } catch { return null } }
+    else if (v.status === 'ready') return null // a ready quiz MUST carry a valid payload
+  } else if (v.quiz !== undefined) return null
   return v as StudyArtifact
 }

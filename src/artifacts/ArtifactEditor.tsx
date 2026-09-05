@@ -44,19 +44,61 @@ export function ArtifactEditor({ artifact, onOpenArtifact, onClose, onChanged, s
   const [genError, setGenError] = useState<string | undefined>(undefined)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const cp = useCopyFeedback(body)
+  const mountedRef = useRef(true)
+  // Latest unsaved text + the artifact it belongs to. A flush after an artifact switch must
+  // still write to the ORIGINAL artifact (never leak into the next open artifact).
+  const pendingRef = useRef<{ artId: string; text: string } | null>(null)
+  const prevArtIdRef = useRef(artifact.id)
 
   useEffect(() => {
+    // A pending edit belongs to the PREVIOUS artifact when switching; flush it BEFORE the
+    // editor resets, so the last keystrokes are never lost on an artifact switch.
+    if (prevArtIdRef.current !== artifact.id) flushPendingSave()
+    prevArtIdRef.current = artifact.id
     setTitle(artifact.title); setBody(artifact.content ?? ''); setGenError(undefined)
     // A8: narrow screens default to Edit; desktop defaults to Split.
     setMode(typeof window !== 'undefined' && window.innerWidth < 720 ? 'edit' : 'split')
   }, [artifact.id])
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
 
+  // Debounced autosave with pending-write ownership: a snapshot is written only after 450ms
+  // idle, but an explicit close / unmount / page-hide flushes the last edit through
+  // flushPendingSave() (never a fire-and-forget the unmount cleanup then drops).
   function scheduleSave(next: string) {
     setBody(next)
+    pendingRef.current = { artId: artifact.id, text: next }
     if (timer.current) clearTimeout(timer.current)
-    timer.current = setTimeout(() => { void (async () => { await updateArtifactContent(artifact.id, next); setSaved(true); setTimeout(() => setSaved(false), 1200); onChanged() })() }, 450)
+    timer.current = setTimeout(() => { timer.current = null; void persistPending() }, 450)
   }
+  async function persistPending() {
+    const p = pendingRef.current
+    pendingRef.current = null
+    if (!p) return
+    await updateArtifactContent(p.artId, p.text)
+    if (mountedRef.current) { setSaved(true); setTimeout(() => setSaved(false), 1200) }
+    onChanged()
+  }
+  function flushPendingSave() {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null }
+    void persistPending()
+  }
+  const requestClose = () => { flushPendingSave(); onClose() }
+
+  // Unmount: cancel the debounce AND flush any pending edit (covers overlay backdrop close,
+  // document switch, artifact navigation, Escape — any path that bypasses requestClose).
+  useEffect(() => () => {
+    mountedRef.current = false
+    if (timer.current) { clearTimeout(timer.current); timer.current = null }
+    void persistPending()
+  }, [])
+  // The page can be hidden/unloaded at any time — flush the last edit so a system kill or a
+  // quick tab switch within the 450ms window never drops a keystroke.
+  useEffect(() => {
+    const flush = () => flushPendingSave()
+    const onVis = () => { if (document.visibilityState === 'hidden') flushPendingSave() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', onVis)
+    return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onVis) }
+  }, [])
   async function commitTitle() { if (title.trim() && title.trim() !== artifact.title) { await updateArtifactTitle(artifact.id, title); onChanged() } }
   async function doCopy() { cp.onCopy() }
   async function doDelete() { if (!globalThis.confirm('删除该学习成果？')) return; await removeArtifact(artifact.id); onChanged(); onClose() }
@@ -93,7 +135,7 @@ export function ArtifactEditor({ artifact, onOpenArtifact, onClose, onChanged, s
       <Button size="sm" variant="ghost" aria-label="导出 Markdown" onClick={doExport}>导出 Markdown</Button>
       <Button size="sm" variant="ghost" aria-label="重新生成" disabled={busy} onClick={() => void doRegenerate()}>{busy ? '生成中…' : '重新生成'}</Button>
       <Button size="sm" variant="ghost" aria-label="删除" onClick={() => void doDelete()}>删除</Button>
-      <Button size="sm" variant="outline" aria-label="关闭" onClick={onClose}>关闭</Button>
+      <Button size="sm" variant="outline" aria-label="关闭" onClick={requestClose}>关闭</Button>
     </div>
     {genError && <div className={css.error} role="alert">{genError}</div>}
     <div className={css.editorBody + (mode === 'edit' ? ' ' + css.narrow : '') + (mode === 'preview' ? ' ' + css.previewOnly : '')}>

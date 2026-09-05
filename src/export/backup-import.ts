@@ -7,6 +7,7 @@ import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type 
 import { validateBranchGraph } from '../branches/branch-path'
 import { validateArtifact, validateQuizDocument } from '../artifacts/artifact-validation'
 import type { ConversationBranch } from '../branches/branch-types'
+import type { StudyArtifact } from '../artifacts/artifact-types'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -251,7 +252,10 @@ function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], a
     artifactIds.add(a.id)
     const va = validateArtifact(a)
     if (!va) throw new BackupError('artifact 形状不合法')
-    if (va.kind === 'quiz') { try { validateQuizDocument(va.quiz) } catch { throw new BackupError('artifact quiz 结构不合法') } }
+    // Only a PRESENT quiz payload must be structurally valid. A non-ready quiz (draft /
+    // generating / error) may carry no quiz yet — validateArtifact already rejects a ready
+    // quiz missing its payload, so guard against undefined here to avoid a hard import crash.
+    if (va.kind === 'quiz' && va.quiz !== undefined) { try { validateQuizDocument(va.quiz) } catch { throw new BackupError('artifact quiz 结构不合法') } }
   }
 
   for (const ab of input.activeBranches) {
@@ -266,6 +270,21 @@ function base64ToBlob(data: string, mime: string): Blob {
   const bytes = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
   return new Blob([bytes], { type: mime || 'application/octet-stream' })
+}
+
+// After an import there is NO live generation ownership. A backup taken mid-generation would
+// otherwise resurrect as a permanent "正在生成……" spinner with nothing driving it. Map any
+// generating artifact to a recoverable error, preserving any existing content / quiz / raw output.
+function restoreArtifacts(artifacts: StudyArtifact[]): StudyArtifact[] {
+  return artifacts.map((a) => {
+    if (a.status !== 'generating') return a
+    return {
+      ...a,
+      status: 'error',
+      error: '备份时该学习成果仍在生成，恢复后需要重新生成。',
+      ...(a.generatedContent !== undefined ? { generatedContent: a.generatedContent } : {}),
+    }
+  })
 }
 
 // Staged restore (Stage 9.4D): decodes + stages new binary objects, commits metadata in ONE
@@ -314,7 +333,7 @@ export async function restoreBackup(backup: Backup): Promise<void> {
     const oldAtts = await oldAttachmentRefs();
     oldRefs.push(...oldDocs, ...oldAtts);
     // E. One atomic IDB replacement.
-    await idbReplaceAll({ settings, conversations: backup.conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows, conversationBranches: (backup as BackupV4).branches || [], artifacts: (backup as BackupV4).artifacts || [] });
+    await idbReplaceAll({ settings, conversations: backup.conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows, conversationBranches: (backup as BackupV4).branches || [], artifacts: restoreArtifacts((backup as BackupV4).artifacts || []) });
   } catch (e) {
     // Rollback: delete every staged OPFS file. Old IDB is untouched.
     for (const s of staged) { if (s.path) { try { await deleteBinary(s.ref) } catch { /* orphan */ } } }
