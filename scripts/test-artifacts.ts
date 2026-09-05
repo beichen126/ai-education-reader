@@ -87,6 +87,18 @@ await removeArtifact(delArt.id)
 const resurrect = await markArtifactReady(delArt.id, { content: 'x', generatedText: 'x' }, delArt.updatedAt)
 assert(resurrect === undefined, 'late write cannot resurrect a deleted artifact')
 
+// ---- 9.5 legacy summary/study-guide artifacts stay valid + readable (A0/A10) ----
+const legConv = newStableId()
+await saveConversation({ id: legConv, title: 'leg', createdAt: 1, updatedAt: 1, messages: [msg('l0', 'user', 'src')] })
+for (const kind of ['summary', 'study-guide'] as const) {
+  const leg = await createArtifactDraft({ kind, conversationId: legConv, throughMessageId: 'l0', prompt: 'p' })
+  assert(leg.kind === kind, 'legacy kind ' + kind + ' can be drafted')
+  const readyArt = await markArtifactReady(leg.id, { content: kind + ' content', generatedText: kind + ' content' }, leg.updatedAt)
+  assert(!!readyArt && readyArt.status === 'ready' && readyArt.content === kind + ' content', 'legacy ' + kind + ' finalizes + reads')
+  const round = await getArtifact(leg.id)
+  assert(!!round && round.kind === kind && round.content === kind + ' content', 'legacy ' + kind + ' still readable after save')
+}
+
 // ---- 9. validateArtifact sanity ----
 const shaped = { id: 'a1', kind: 'note', title: 't', source: { conversationId: 'c', throughMessageId: 'm', snapshot: { conversationId: 'c', throughMessageId: 'm', createdAt: 1, messages: [], provenance: [], sourceLabel: 'x', sourceDeleted: false } }, prompt: 'p', createdAt: 1, updatedAt: 1, status: 'ready', content: 'x' }
 assert(!!validateArtifact(shaped), 'well-shaped artifact validates')
