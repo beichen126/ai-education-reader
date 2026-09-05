@@ -1,5 +1,5 @@
-.overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 2000; display: flex; align-items: stretch; }
-.panel { flex: none; width: min(720px, calc(100vw - 24px)); max-height: 100vh; display: flex; flex-direction: column; background: var(--dsw-alias-bg-layer-1); border-right: 1px solid var(--dsw-alias-border-l2); box-shadow: 0 0 40px rgba(0,0,0,0.18); }
+.overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 2000; display: flex; align-items: stretch; pointer-events: none; }
+.panel { position: relative; flex: none; width: min(720px, calc(100vw - 24px)); height: 100%; max-height: 100vh; display: flex; flex-direction: column; background: var(--dsw-alias-bg-layer-1); border-right: 1px solid var(--dsw-alias-border-l2); box-shadow: 0 0 40px rgba(0,0,0,0.18); pointer-events: auto; }
 .header { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .title { font-size: 15px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .sub { font-size: 12px; color: var(--dsw-alias-label-secondary); }
@@ -26,6 +26,12 @@
 .field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .input { flex: 1; min-width: 0; min-height: 30px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; padding: 3px 6px; font-size: 12px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
 .offset { border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.calib { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.calibMeta { min-width: 0; line-height: 1.4; overflow-wrap: anywhere; }
+.calibMeta b { color: var(--dsw-alias-label-primary); font-weight: 600; }
+.detail { border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 6px; }
+.detailSummary { font-size: 11px; color: var(--dsw-alias-label-tertiary); cursor: pointer; user-select: none; }
+.offsetAdv { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .nav { flex: none; display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--dsw-alias-border-l2); }
 .confirmWrap { position: absolute; left: 0; top: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; background: rgba(12,14,18,0.4); padding: 16px; }
 .confirmBox { width: min(360px, 100%); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.24); padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }

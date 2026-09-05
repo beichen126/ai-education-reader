@@ -15,11 +15,79 @@ export type MappedTocItem = {
   manualOverride?: boolean
 }
 
+// ---- page-label canonicalization (v1.1.3) ------------------------------------
+// The AI faithfully transcribes the PRINTED label, which may carry typographic
+// decoration (e.g. "/1", "／24", "……24", "— 15"). We NEVER rewrite the raw
+// pageLabel stored on the item (that faithful transcription is what the UI shows).
+// Canonicalization exists only so a decorated label can be read as the single
+// Arabic integer it denotes, for (a) matching against PDF PageLabels and (b) numeric
+// offset calibration. It is deliberately conservative: an unambiguous single-integer
+// reading is required. Anything mixing letters / CJK / ranges / decimals / several
+// digit runs returns null. It never "does OCR" — "O1", "I", "l1" all return null.
+
+/** Decorative punctuation/space that may surround a printed page number. Never digits,
+ *  letters, or CJK ideographs (those leave the label ambiguous and must be rejected). */
+const NUMERIC_DECORATION = /^[\s\u00A0\u3000\u2028\u2029\uFEFF/\\\uFF0F\u00B7\u2022\u2026\u22EF\.\uFF0E,\uFF0C\u3001\u3002;\uFF1B:\uFF1A_\-\u2013\u2014'"“”()\[\]\uFF08\uFF09\u300C\u300D\u300E\u300F]*$/
+
+function isPureDecoration(s: string): boolean { return NUMERIC_DECORATION.test(s) }
+
+/**
+ * Interpret 'raw' as a single Arabic integer page number and return its canonical
+ * decimal string (leading zeros are not ambiguous, so they are stripped).
+ * Returns null when the label is NOT a safe, unambiguous single-integer reading.
+ *
+ *   "1", " 1 ", "/1", "／1", "1/", "·1", "1·", "……24", "24……", "···31", "— 15" -> digits
+ *   "A-1", "S1", "1-2", "1.2", "3a", "iii", "IV", "附1", "O1", "I"              -> null
+ */
+export function canonicalizeNumericPageLabel(raw: string): string | null {
+  if (typeof raw !== 'string') return null
+  const s = raw.trim()
+  if (s === '') return null
+  // No digit at all -> not a number (roman numerals, letters, symbols).
+  if (!/[0-9]/.test(s)) return null
+  // Locate the FIRST contiguous ASCII-digit run.
+  let start = -1
+  for (let i = 0; i < s.length; i++) { if (s[i] >= '0' && s[i] <= '9') { start = i; break } }
+  if (start < 0) return null
+  let end = start
+  while (end < s.length && s[end] >= '0' && s[end] <= '9') end++
+  const core = s.slice(start, end)
+  // A digit OUTSIDE this single run means the label is compound (a range "1-2",
+  // a decimal "1.2", or a multi-part "3.5/7") -> ambiguous -> reject.
+  const outside = s.slice(0, start) + s.slice(end)
+  if (/[0-9]/.test(outside)) return null
+  // Everything to the left and right of the digits must be pure decoration.
+  if (!isPureDecoration(s.slice(0, start))) return null
+  if (!isPureDecoration(s.slice(end))) return null
+  // Normalize to the integer value (strips leading zeros; "007" -> "7").
+  const n = Number(core)
+  if (!Number.isSafeInteger(n)) return null
+  return String(n)
+}
+
+/** Numeric value of a canonicalizable page label, or null when it is not one. */
+export function canonicalNumericPageNumber(raw: string): number | null {
+  const c = canonicalizeNumericPageLabel(raw)
+  if (c == null) return null
+  const n = Number(c)
+  return Number.isFinite(n) ? n : null
+}
+
 /** Exact label -> physical page (1-based PDF index). Returns 0 if not found. */
 export function exactLabelToPage(labels: string[] | null | undefined, pageLabel: string): number {
   if (!labels) return 0
   const target = String(pageLabel).trim()
+  // Priority 1: the RAW label trims to a PDF label (e.g. the PDF label is itself "/1").
   for (let i = 0; i < labels.length; i++) if (String(labels[i]).trim() === target) return i + 1
+  // Priority 2: BOTH sides canonicalize to the SAME single integer (e.g. AI "/24" vs PDF "24").
+  // Only performed when BOTH sides are safe numeric labels — never a fuzzy match.
+  const targetCanon = canonicalizeNumericPageLabel(target)
+  if (targetCanon != null) {
+    for (let i = 0; i < labels.length; i++) {
+      const labCanon = canonicalizeNumericPageLabel(String(labels[i]).trim())
+      if (labCanon != null && labCanon === targetCanon) return i + 1
+    }
+  }
   return 0
 }
 
@@ -51,8 +119,63 @@ export function buildInitialMapping(entries: { title: string; level: number; pag
   })
 }
 
-/** Is a page label a plain Arabic integer string? */
-export function isNumericLabel(label: string): boolean { return /^\d+$/.test(String(label).trim()) }
+/** Is a page label a single safe Arabic integer (after canonicalization)? */
+export function isNumericLabel(label: string): boolean { return canonicalizeNumericPageLabel(label) != null }
+
+/** Whether numeric offset / anchor calibration is available for these items: at least
+ *  one item's printed page label can be canonically read as an integer. This is a
+ *  CALIBRATION capability and is deliberately independent of whether the PDF provides
+ *  native PageLabels (that is the separate AUTO-MAPPING capability). */
+export function canUseNumericOffset(items: Pick<MappedTocItem, 'pageLabel'>[]): boolean {
+  return items.some(it => canonicalizeNumericPageLabel(it.pageLabel) != null)
+}
+
+// ---- page-label families (v1.1.3) -----------------------------------------
+// A printed page label falls into exactly one family. Only the ARABIC-NUMERIC family
+// is ever offset-calibrated. The ROMAN family is recognised (so exact PDF PageLabels can
+// still match and so future work could add a Roman family calibration seam), but it is
+// NOT auto-remapped by a numeric offset — that would risk mapping the whole book wrong.
+// The OTHER family (S12 / A-3 / 1-2 / 附录1) is NEVER numericized: exact PDF PageLabel first,
+// otherwise unresolved (the user confirms it). No fuzzy inference on any family.
+
+export type PageLabelFamily = 'numeric' | 'roman' | 'other'
+
+const ROMAN = /^[IVXLCDM]+$/i
+
+/** Strict Roman numeral parser (case-insensitive). Returns the integer or null for any
+ *  non-Roman / out-of-range / non-canonical input (e.g. "IIII", "VX", "O", "iv1" -> null). */
+export function romanNumeralValue(raw: string): number | null {
+  if (typeof raw !== 'string') return null
+  const s = raw.trim().toUpperCase()
+  if (s === '' || !ROMAN.test(s)) return null
+  const map: Record<string, number> = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 }
+  let total = 0
+  let prev = 0
+  for (let i = s.length - 1; i >= 0; i--) {
+    const v = map[s[i]]
+    if (v < prev) total -= v
+    else { total += v; prev = v }
+  }
+  if (total < 1 || total > 3999) return null
+  if (encodeRoman(total) !== s) return null
+  return total
+}
+
+/** Encode 1..3999 as a canonical (subtractive) Roman numeral — used for strict validation. */
+function encodeRoman(n: number): string {
+  const syms: [number, string][] = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']]
+  let out = ''
+  let x = n
+  for (const [v, s] of syms) { while (x >= v) { out += s; x -= v } }
+  return out
+}
+
+/** Classify a printed label into its family. Safe, deterministic, no OCR. */
+export function pageLabelFamily(raw: string): PageLabelFamily {
+  if (canonicalizeNumericPageLabel(raw) != null) return 'numeric'
+  if (romanNumeralValue(raw) != null) return 'roman'
+  return 'other'
+}
 
 /**
  * Compute a numeric offset from ONE calibration anchor: printed label N maps to
@@ -65,14 +188,15 @@ export function numericOffsetFromAnchor(printed: number, physicalPage: number): 
 /**
  * Recompute Arabic-numeric mapped items using a global offset. Items already tagged
  * manualOverride are preserved (never remapped). Only applies to items whose label is
- * a plain integer and which are currently unresolved or offset-derived.
+ * a safe single Arabic integer (after canonicalization) and which are currently
+ * unresolved or offset-derived. The raw pageLabel is NEVER rewritten; a decorated
+ * label such as "/24" is canonicalized purely for the arithmetic.
  */
 export function applyGlobalOffset(items: MappedTocItem[], offset: number): MappedTocItem[] {
   return items.map(it => {
     if (it.manualOverride) return it
-    if (!isNumericLabel(it.pageLabel)) return it
-    const printed = parseInt(it.pageLabel, 10)
-    if (!Number.isFinite(printed)) return it
+    const printed = canonicalNumericPageNumber(it.pageLabel)
+    if (printed == null) return it
     const page = printed + offset
     return { ...it, startPage: page >= 1 ? page : null }
   })

@@ -94,8 +94,9 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
   }
 
   const requestDelete = (index: number) => {
-    if (draftHasChildren(items, index)) { setPendingDelete(index); return }
-    setItems(prev => deleteDraftSubtree(prev, index))
+    // v1.1.3: there is no undo, so EVERY delete (leaf OR parent) must be explicitly confirmed.
+    // A leaf delete is just as destructive as a parent delete (the row is gone for good).
+    setPendingDelete(index)
   }
   const applyOp = (fn: (items: ChapterDraftItem[], index: number) => ChapterDraftItem[], index: number) => {
     setItems(prev => fn(cloneChapterDraft(prev), index))
@@ -148,7 +149,11 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
     return () => window.removeEventListener('keydown', onKey)
   }, [confirmDiscard, pendingDelete, onClose, saving])
 
-  const childCount = pendingDelete != null ? subtreeCount(items, pendingDelete) : 0
+  const delIndex = pendingDelete
+  const delItem = delIndex != null ? items[delIndex] : null
+  const delTitle = delItem?.title?.trim() || '（未命名）'
+  const delHasChildren = delIndex != null ? draftHasChildren(items, delIndex) : false
+  const delCount = delIndex != null ? subtreeCount(items, delIndex) : 0
   return (
     <div className={css.overlay} data-testid="chapter-builder">
       <div className={css.panel}>
@@ -165,7 +170,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
         {hint && <div className={css.hint} data-testid="cb-hint">{hint}</div>}
         {skippedUnresolved > 0 && <div className={css.warn} data-testid="cb-skipped">原目录中有 {skippedUnresolved} 项无法定位页码，未自动加入编辑结果。</div>}
         <div className={css.list} data-testid="cb-list">
-          {items.length === 0 && <div className={css.empty} data-testid="cb-empty">尚无章节，点击下方“添加章节”开始。</div>}
+          {items.length === 0 && <div className={css.empty} data-testid="cb-empty">尚无章节，点击下方“从 PDF 第 {currentPage || 1} 页新建章节”开始。</div>}
           {items.map((it, i) => (
             <BuilderRow
               key={it.id}
@@ -188,15 +193,14 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
         </div>
         <div className={css.footer}>
           <div className={css.footerBtns}>
-            <button type="button" className={css.btn} data-testid="cb-add" disabled={saving} onClick={insertNew}>+ 添加章节</button>
-            <button type="button" className={css.btn} data-testid="cb-add-current" disabled={saving} onClick={insertNew}>从当前页添加：{currentPage || 1}</button>
+            <button type="button" className={css.btn} data-testid="cb-add" disabled={saving} onClick={insertNew}>+ 从 PDF 第 {currentPage || 1} 页新建章节</button>
           </div>
         </div>
       </div>
       {pendingDelete != null && (
         <div className={css.confirm} data-testid="cb-confirm">
           <div className={css.confirmBox}>
-            <div>删除该章节将同时删除其下属 {childCount} 个子章节。确认删除？</div>
+            <div>{delHasChildren ? '确认删除「' + delTitle + '」及其 ' + delCount + ' 个子章节？' : '确认删除「' + delTitle + '」？'}</div>
             <div className={css.confirmBtns}>
               <button type="button" className={css.btn} data-testid="cb-confirm-no" onClick={() => setPendingDelete(null)}>取消</button>
               <button type="button" className={css.btnPrimary} data-testid="cb-confirm-yes" onClick={() => { const idx = pendingDelete; setPendingDelete(null); setItems(prev => deleteDraftSubtree(prev, idx)); }}>确认删除</button>
@@ -254,9 +258,9 @@ function BuilderRow(props: {
       <div className={css.rowOps}>
         <button type="button" className={css.op} data-testid={'cb-up-' + index} title="上移" disabled={!canUp} onClick={onUp}>↑</button>
         <button type="button" className={css.op} data-testid={'cb-down-' + index} title="下移" disabled={!canDown} onClick={onDown}>↓</button>
-        <button type="button" className={css.op + ' ' + css.opDanger} data-testid={'cb-del-' + index} title="删除" onClick={onDelete}>×</button>
         <button type="button" className={css.op} data-testid={'cb-outdent-' + index} title="减少缩进" disabled={!canOutdent} onClick={onOutdent}>←</button>
         <button type="button" className={css.op} data-testid={'cb-indent-' + index} title="缩进" disabled={!canIndent} onClick={onIndent}>→</button>
+        <button type="button" className={css.op + ' ' + css.opDel} data-testid={'cb-del-' + index} title="删除" onClick={onDelete}>删除</button>
       </div>
       {error && <div className={css.error} data-testid={'cb-row-err-' + index}>{error}</div>}
     </div>

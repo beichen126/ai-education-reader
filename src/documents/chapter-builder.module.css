@@ -1,5 +1,5 @@
-.overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: rgba(12,14,18,0.5); padding: 16px; }
-.panel { width: min(720px, 100%); max-height: min(760px, calc(100vh - 32px)); display: flex; flex-direction: column; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,0.28); overflow: hidden; }
+.overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 2000; display: flex; align-items: stretch; pointer-events: none; }
+.panel { position: relative; flex: none; width: min(720px, calc(100vw - 24px)); height: 100%; max-height: 100vh; display: flex; flex-direction: column; background: var(--dsw-alias-bg-layer-1); border-right: 1px solid var(--dsw-alias-border-l2); box-shadow: 0 0 40px rgba(0,0,0,0.18); pointer-events: auto; overflow: hidden; }
 .header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .title { font-size: 15px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .headerBtns { display: flex; gap: 8px; }
@@ -24,12 +24,14 @@
 .op:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .op:disabled { opacity: 0.35; cursor: not-allowed; }
 .opDanger:hover { background: rgba(214, 69, 69, 0.12); color: var(--dsw-alias-state-error-primary); }
+.opDel { margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-state-error-primary); }
+.opDel:hover { background: rgba(214, 69, 69, 0.12); color: var(--dsw-alias-state-error-primary); }
 .footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--dsw-alias-border-l2); }
 .footerBtns { display: flex; gap: 8px; }
 .error { padding: 6px 16px; font-size: 12px; color: var(--dsw-alias-state-error-primary); }
 .hint { padding: 6px 16px 0; font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .warn { padding: 6px 16px 0; font-size: 12px; color: var(--dsw-alias-state-warning-primary, #b7791f); }
-.confirm { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 2100; display: flex; align-items: center; justify-content: center; background: rgba(12,14,18,0.4); padding: 16px; }
+.confirm { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 2100; display: flex; align-items: center; justify-content: center; background: rgba(12,14,18,0.4); padding: 16px; pointer-events: auto; }
 .confirmBox { width: min(360px, 100%); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.24); padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
 .confirmBtns { display: flex; justify-content: flex-end; gap: 8px; }
 

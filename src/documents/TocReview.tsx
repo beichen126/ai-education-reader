@@ -4,7 +4,7 @@
 // only happens after the user explicitly confirms, and only when the draft is valid.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { validateChapterDraft, buildChapterTreeFromDraft, type ChapterDraftItem } from './chapter-builder'
-import { applyGlobalOffset, setManualPageOverride, validateMappedTocReview, type MappedTocItem } from './toc-mapping'
+import { applyGlobalOffset, setManualPageOverride, validateMappedTocReview, canUseNumericOffset, canonicalNumericPageNumber, type MappedTocItem } from './toc-mapping'
 import { emptyReviewState, markRowUnchecked, markChangedRowsUnchecked, verifiedCount as countVerified, resolveSaveStage, type ReviewState, type ReviewStateValue } from './toc-review-state'
 import type { ChapterNode, DocumentChapterSource } from './document-types'
 import css from './toc-review.module.css'
@@ -14,15 +14,13 @@ export type TocReviewSave = { chapters: ChapterNode[]; source: DocumentChapterSo
 type Props = {
   pageCount: number
   items: MappedTocItem[]
-  labels: string[] | null
-  labelsPlainNumeric: boolean
   onJump: (page: number) => void
   onSave: (save: TocReviewSave) => Promise<void>
   onClose: () => void
   onEditAll: (items: MappedTocItem[]) => void
 }
 
-export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump, onSave, onClose, onEditAll }: Props) {
+export function TocReview({ pageCount, items, onJump, onSave, onClose, onEditAll }: Props) {
   const [rows, setRows] = useState<MappedTocItem[]>(items)
   const [state, setState] = useState<ReviewState>(() => emptyReviewState(items.length))
   const [idx, setIdx] = useState(0)
@@ -91,11 +89,17 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
   const invalidCount = validation.errorCount
   const isBlocking = (i: number) => validation.blockingRowIndices.includes(i)
 
+  // v1.1.3: numeric offset / anchor calibration is available whenever at least one row's
+  // printed page label can be read as a safe integer. This deliberately does NOT depend on
+  // the PDF providing native PageLabels — those are the AUTO-MAPPING capability; the numeric
+  // offset is the separate FALLBACK CALIBRATION capability (previously hidden for PDFs with no
+  // PageLabels, which is exactly when it is needed most).
+  const canOffset = useMemo(() => canUseNumericOffset(rows), [rows])
+
   const jump = (i: number) => { const p = rows[i]?.startPage; if (p != null) onJump(p); setIdx(i) }
   const markVerified = (i: number) => setState(s => ({ ...s, [i]: 'verified' }))
   // 9.4C.1: verify is a no-op (with a hint) for a blocking/unresolved row — never marked verified.
   const verifyButton = (i: number) => { if (isBlocking(i)) { setSaveError('第 ' + (i + 1) + ' 项仍需修正后才能标记为正确。'); return } markVerified(i) }
-  const markIssue = (i: number) => setState(s => ({ ...s, [i]: 'issue' }))
 
   // 继续检查 (Stage 9.4D.1): if the CURRENT row is blocking, set an explicit hint and STAY
   // on it (never silently jump to the next item). Otherwise mark verified and advance.
@@ -115,6 +119,25 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
   const applyGlobal = () => {
     const n = Number(offset.trim())
     if (!Number.isFinite(n)) return
+    setRows(r => {
+      const before = r.map(x => x.startPage)
+      const after = applyGlobalOffset(r, n)
+      setState(s => markChangedRowsUnchecked(s, before, after))
+      return after
+    })
+  }
+  // v1.1.3 "以当前项校准全书": the user never computes an offset. They just fill the current
+  // item's PDF physical page (the PDF页 field above) and click calibrate. The system derives
+  // offset = physicalPage - printedLabel, then remaps every other canonical-Arabic item.
+  // The anchor row is already a manualOverride so it is never overwritten by the global remap.
+  const calibrateWithCurrent = () => {
+    const cur = rows[idx]
+    if (!cur) return
+    if (cur.startPage == null) { setSaveError('请先为当前项填写对应的 PDF 物理页，再用它校准全书。'); return }
+    const printed = canonicalNumericPageNumber(cur.pageLabel)
+    if (printed == null) { setSaveError('「' + cur.pageLabel + '」不是可识别的纯数字页码，无法作为校准项。'); return }
+    const n = cur.startPage - printed
+    setOffset(String(n))
     setRows(r => {
       const before = r.map(x => x.startPage)
       const after = applyGlobalOffset(r, n)
@@ -204,7 +227,6 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
                 <div className={css.itemMeta}>L{it.level} · {it.pageLabel}{it.startPage != null ? ' → PDF ' + it.startPage : ' · 页码待确认'}</div>
                 <div className={css.itemBtns}>
                   <button type="button" className={css.mini} data-testid={'toc-review-ok-' + i} disabled={isBlocking(i)} onClick={(e) => { e.stopPropagation(); verifyButton(i) }}>✓ 正确</button>
-                  <button type="button" className={css.mini} data-testid={'toc-review-issue-' + i} onClick={(e) => { e.stopPropagation(); markIssue(i) }}>! 待改</button>
                 </div>
               </div>
             ))}
@@ -216,11 +238,20 @@ export function TocReview({ pageCount, items, labels, labelsPlainNumeric, onJump
             <label className={css.field}>标题 <input className={css.input} data-testid="toc-review-title" value={rows[idx]?.title || ''} onChange={e => editRow(idx, { title: e.target.value })} /></label>
             <label className={css.field}>层级 <input className={css.input} data-testid="toc-review-level" value={levelRaw[idx] ?? String(rows[idx]?.level ?? '')} inputMode="numeric" onChange={e => onLevelInput(idx, e.target.value)} /></label>
             <label className={css.field}>PDF页 <input className={css.input} data-testid="toc-review-page" value={rows[idx]?.startPage ?? ''} placeholder="待确认" onChange={e => onPageInput(idx, e.target.value)} /></label>
-            {labelsPlainNumeric && (
+            {canOffset && (
               <div className={css.offset}>
-                <div className={css.adjustTitle}>页码映射（offset）</div>
-                <label className={css.field}>offset <input className={css.input} data-testid="toc-review-offset" value={offset} onChange={e => setOffset(e.target.value)} /></label>
-                <button type="button" className={css.mini} data-testid="toc-review-apply-offset" onClick={applyGlobal}>重新计算全书映射</button>
+                <div className={css.adjustTitle}>页码映射</div>
+                <div className={css.calib} data-testid="toc-review-calib">
+                  <span className={css.calibMeta}>当前项印刷页 <b data-testid="toc-review-calib-printed">{rows[idx]?.pageLabel ?? '—'}</b> · 对应 PDF 页 {rows[idx]?.startPage != null ? rows[idx]?.startPage : '请在上方“PDF页”填写后再匹配'}</span>
+                  <button type="button" className={css.mini} data-testid="toc-review-calibrate" onClick={calibrateWithCurrent}>按此对应关系匹配其余页码</button>
+                </div>
+                <details className={css.detail}>
+                  <summary className={css.detailSummary}>高级：数字偏移（offset）</summary>
+                  <div className={css.offsetAdv}>
+                    <label className={css.field}>offset <input className={css.input} data-testid="toc-review-offset" value={offset} onChange={e => setOffset(e.target.value)} /></label>
+                    <button type="button" className={css.mini} data-testid="toc-review-apply-offset" onClick={applyGlobal}>重新计算全书映射</button>
+                  </div>
+                </details>
               </div>
             )}
           </div>

@@ -21,6 +21,11 @@ assert(!t.includes('children'), 'transcription prompt must NOT instruct children
 assert(!t.includes('JSON 数组'), 'transcription prompt must NOT instruct a JSON array');
 assert(!/\[\]/.test(t.replace(/数组中/,'')), 'transcription prompt must NOT instruct an array literal');
 
+// --- v1.1.3: prompt must forbid simplified/traditional drift + clarify pageLabel scope ---
+assert(t.includes('简体/繁体') || (t.includes('简体') && t.includes('繁体')), 'transcription prompt addresses simplified/traditional (no drift)');
+assert(t.includes('简繁转换'), 'transcription prompt explicitly forbids 简繁转换');
+assert(t.includes('不要混入 pageLabel') || t.includes('页码本体'), 'transcription prompt scopes pageLabel to the printed page only');
+
 // --- parser/prompt match: a model following the prompt yields a parseable row ---
 {
   const sample = '{"title":"第一章 绪论","pageLabel":"1","sourceImageIndex":1,"visualIndent":0,"numbering":"第一章"}\n{"title":"第一节 研究对象","pageLabel":"3","sourceImageIndex":2}';

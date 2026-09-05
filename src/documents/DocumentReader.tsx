@@ -109,8 +109,6 @@ export function DocumentReader() {
   const [aiTocExtracting, setAiTocExtracting] = useState(false)
   const [aiTocMsg, setAiTocMsg] = useState<string | null>(null)
   const [aiTocItems, setAiTocItems] = useState<MappedTocItem[] | null>(null)
-  const [aiTocLabels, setAiTocLabels] = useState<string[] | null>(null)
-  const [aiTocLabelsPlainNumeric, setAiTocLabelsPlainNumeric] = useState(false)
   // Finding 9.4D.2-0.6: AI TOC progress dialog state (real phase progress, hide/cancel/error/retry).
   const [aiTocProgress, setAiTocProgress] = useState<AiTocProgress | null>(null)
   const [aiTocDialogHidden, setAiTocDialogHidden] = useState(false)
@@ -156,7 +154,7 @@ export function DocumentReader() {
       aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
       aiTocGenRef.current++
       setTocPickerOpen(false); setAiTocExtracting(false); setAiTocMsg(null)
-      setAiTocItems(null); setAiTocLabels(null); setAiTocLabelsPlainNumeric(false); setTocReviewOpen(false)
+      setAiTocItems(null); setTocReviewOpen(false)
       setAiTocProgress(null); setAiTocDialogHidden(false); setAiTocError(null); lastAiTocPagesRef.current = []
       return
     }
@@ -178,7 +176,7 @@ export function DocumentReader() {
       aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
       aiTocGenRef.current++
       setTocPickerOpen(false); setAiTocExtracting(false); setAiTocMsg(null)
-      setAiTocItems(null); setAiTocLabels(null); setAiTocLabelsPlainNumeric(false); setTocReviewOpen(false)
+      setAiTocItems(null); setTocReviewOpen(false)
       setAiTocProgress(null); setAiTocDialogHidden(false); setAiTocError(null); lastAiTocPagesRef.current = []
       try {
         const d = await getDocument(docId)
@@ -440,7 +438,7 @@ export function DocumentReader() {
       })
       if (gen !== aiTocGenRef.current || docIdRef.current !== ownedDocId) return
       if (!res.ok) { setAiTocError((res as { error: string }).error); return }
-      setAiTocItems(res.items); setAiTocLabels(res.labels); setAiTocLabelsPlainNumeric(res.labelsPlainNumeric)
+      setAiTocItems(res.items)
       setAiTocMsg(null); setAiTocError(null)
       setTocReviewOpen(true)
     } catch {
@@ -527,16 +525,25 @@ export function DocumentReader() {
     if (!doc) return
     const onKey = (e: KeyboardEvent) => {
       if (viewerOpenRef.current) return
-      // Chapter Builder / TOC Review own keyboard priority while open — no page-turning.
-      if (builderOpenRef.current) return
-      if (tocReviewOpenRef.current) return
+      const t = document.activeElement as HTMLElement | null
+      const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || (t as HTMLElement).isContentEditable)
+      // TOC Review / Chapter Builder are DOCKED on the left (item 6/11): the PDF stays
+      // operable. Escape is owned by them (they close themselves / their confirm layer);
+      // ArrowLeft/ArrowRight still page the PDF ONLY when focus is not in a text input
+      // (so in-field text editing keeps its arrows). No double keyboard handler conflict.
+      if (tocReviewOpenRef.current || builderOpenRef.current) {
+        if (e.key === 'Escape') return
+        if (inField) return
+        if (e.key === 'ArrowLeft') { e.preventDefault(); go(pageRef.current - 1, pageCount) }
+        else if (e.key === 'ArrowRight') { e.preventDefault(); go(pageRef.current + 1, pageCount) }
+        return
+      }
       // Restore-original confirm: Escape cancels it, never closes the Reader.
       if (restoreConfirmOpen && e.key === 'Escape') { e.preventDefault(); setRestoreConfirmOpen(false); return }
-      const t = document.activeElement as HTMLElement | null
       // Context menu takes Escape ONLY — arrows / typing / everything else pass through.
       if (ctxMenuOpenRef.current && e.key === 'Escape') { e.preventDefault(); setCtxMenuOpen(false); setCtxMode('menu'); return }
       // Page-input editing defers ARROWS only; Escape always closes the reader.
-      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && e.key !== 'Escape') return
+      if (inField && e.key !== 'Escape') return
       if (e.key === 'ArrowLeft') { e.preventDefault(); go(pageRef.current - 1, pageCount) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); go(pageRef.current + 1, pageCount) }
       else if (e.key === 'Escape') { documentUiActions.close() }
@@ -739,8 +746,6 @@ export function DocumentReader() {
         <TocReview
           pageCount={pageCount}
           items={aiTocItems}
-          labels={aiTocLabels}
-          labelsPlainNumeric={aiTocLabelsPlainNumeric}
           onJump={(p) => go(p, pageCount)}
           onSave={saveAiToc}
           onClose={() => setTocReviewOpen(false)}
