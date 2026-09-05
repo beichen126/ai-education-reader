@@ -12,7 +12,7 @@
 [隐私说明](#privacy--local-first) · 
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v1.0.0-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v1.1.0-green?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
 ![BYOK](https://img.shields.io/badge/BYOK-self--hosted-green?style=flat-square)
@@ -102,7 +102,7 @@ RAG 适合"不知道内容在哪"的开放式问答；而学习阅读，你一�
 <img src="docs/assets/readme/01-reader-context.webp" alt="Reader 就近加入章节" width="100%" />
 
 
-## 功能现状（v1.0.0 · 正式发布）
+## 功能现状（v1.1.0 · 正式发布）
 
 ### SHIPPED ✅
 
@@ -124,10 +124,18 @@ RAG 适合"不知道内容在哪"的开放式问答；而学习阅读，你一�
 | 导出 Markdown + 图片 ZIP | 会话转 Markdown + 全部图片，自包含 |
 | 系统 / 浅色 / 深色 | 设计 token 层统一换肤，深色低眩光 |
 | 桌面 / 平板 / 手机 | 响应式；无动画依赖，E-Ink 友好 |
+| 会话分支 Conversation Branching | 从任意历史回答继续另一条学习路线，支持嵌套分支与规范归属分叉 |
+| 分支独立草稿 | 主线 / 各分支各自独立的未发送文本、图片与 PDF Context |
+| 统一生成与停止生成 | 主线与分支共用同一全局生成状态，支持统一的「停止生成」 |
+| 学习成果 Study Artifacts | 从当前学习上下文生成 笔记 / 总结 / 学习指南 / 测验 / 自定义学习成果 |
+| 可编辑笔记 | AI 输出进入独立可编辑学习文档（Markdown + 预览 + 自动保存） |
+| 结构化测验 | 结构化题目 / 答案 / 解释 / 来源，提交揭晓 |
+| 学习成果库 Artifact Library | 浏览 / 筛选 / 打开 / 删除学习成果 |
+| 备份 Backup V4 | 分支、分支草稿、学习成果、激活分支与附件一并持久化 |
 
 ### NOT SHIPPED 🚧
 
-- **PPTX 导入**：v1.0.0 未针对 fidelity gate 验证浏览器内 PPTX→PDF 渲染器，故未开放（见 [Roadmap](docs/ROADMAP.md)）。
+- **PPTX 导入**：v1.1.0 未针对 fidelity gate 验证浏览器内 PPTX→PDF 渲染器，故未开放（见 [Roadmap](docs/ROADMAP.md)）。
 - 云同步 / 登录 / 账户：不包含。
 - PDFium 备用渲染后端：未包含（纯 PDF.js）。
 
@@ -199,7 +207,7 @@ npm run docs:screenshots   # 由真实 production build 生成 README 截图
 
 - AI 调用依赖 BYOK；视觉能力取决于你所配置的模型。
 - 单次 PDF Context 最多 120 页；超过 30 页会二次确认。
-- 备份为 V2 Base64 JSON，大资料库时内存占用较高。
+- 完整备份为 Backup V4 JSON；大资料库时 Base64 内存占用较高。
 - 交互式 PDF JS / 3D / 嵌入媒体不在范围内。
 - PPTX 导入（Planned）本版本未开放。
 
@@ -220,4 +228,3 @@ npm run docs:screenshots   # 由真实 production build 生成 README 截图
 
 [MIT](./LICENSE)。代码与设计 token 部分来自 DeepSeek Harness (DSH) 上游 Web UI（MIT，版权归 DeepSeek，
 见 [THIRD_PARTY_NOTICES](./THIRD_PARTY_NOTICES)）；PDF.js (pdfjs-dist) 为 Apache-2.0。
-
