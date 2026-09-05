@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '../dsh/primitives/Button'
 import { listArtifacts, deleteArtifact } from './artifact-store'
-import { isArtifactSourceLive } from './artifact-service'
+import { filterLiveArtifactSources } from './artifact-service'
 import type { ArtifactKind, StudyArtifact } from './artifact-types'
 import css from './artifact.module.css'
 
@@ -33,8 +33,7 @@ export function ArtifactLibrary({ onOpen }: Props) {
   async function reload() {
     const a = await listArtifacts()
     setArts(a)
-    const del = new Set<string>()
-    await Promise.all(a.map(async (art) => { if (!(await isArtifactSourceLive(art))) del.add(art.id) }))
+    const del = await filterLiveArtifactSources(a)
     setDeletedIds(del)
     setLoaded(true)
   }

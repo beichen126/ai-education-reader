@@ -86,6 +86,37 @@ export async function isArtifactSourceLive(artifact: StudyArtifact): Promise<boo
   return true
 }
 
+/**
+ * Batch source-liveness check for a whole artifact list (avoids the N+1 of calling
+ * isArtifactSourceLive per artifact). Artifacts that share a conversation are resolved
+ * once, and each conversation's branch list is read once, so a 50-artifact library never
+ * issues 50 conversation reads + 50 branch reads. A live conversation + a still-present
+ * branch (when one is selected) keeps an artifact live; anything else is marked dead.
+ * Returns the set of artifact ids whose live source is gone.
+ */
+export async function filterLiveArtifactSources(artifacts: StudyArtifact[]): Promise<Set<string>> {
+  const dead = new Set<string>()
+  const byConv = new Map<string, StudyArtifact[]>()
+  for (const a of artifacts) {
+    const cid = a.source.conversationId
+    const group = byConv.get(cid)
+    if (group) group.push(a); else byConv.set(cid, [a])
+  }
+  for (const [cid, group] of byConv) {
+    const conv = await getConversation(cid)
+    if (!conv) { for (const a of group) dead.add(a.id); continue }
+    const branchIds = [...new Set(group.map((a) => a.source.branchId).filter((b): b is StableId => !!b))]
+    if (branchIds.length === 0) continue // all root artifacts; conversation exists -> live
+    let liveBranchIds: Set<string>
+    try { liveBranchIds = new Set((await listBranchesByConversation(cid)).map((b) => b.id)) }
+    catch { liveBranchIds = new Set() }
+    for (const a of group) {
+      if (a.source.branchId && !liveBranchIds.has(a.source.branchId)) dead.add(a.id)
+    }
+  }
+  return dead
+}
+
 const KIND_TITLE: Record<ArtifactKind, string> = { note: '笔记', quiz: '题目', summary: '总结', 'study-guide': '学习指南', custom: '自定义结果' }
 function defaultTitle(kind: ArtifactKind): string { return KIND_TITLE[kind] }
 
