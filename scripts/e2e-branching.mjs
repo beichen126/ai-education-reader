@@ -21,6 +21,14 @@ await installMockModel(page, ['这是', '分支', '回答'])
 const triggers = await page.locator('button[aria-label="消息操作"]').count()
 assert(triggers === 2, 'Main shows 2 assistant message action triggers (got ' + triggers + ')')
 
+// v1.2.0 typography: BranchMenu items must not exceed the main UI body size (<= 14px).
+await page.locator('button[aria-label="消息操作"]').first().click()
+await page.waitForTimeout(200)
+const menuFont = await page.evaluate(() => { const it = document.querySelector('[role="menuitem"]'); return it ? getComputedStyle(it).fontSize : 'none' })
+assert(menuFont !== 'none' && parseFloat(menuFont) <= 14, 'BranchMenu item font-size <= 14px (got ' + menuFont + ')')
+await page.keyboard.press('Escape')
+await page.waitForTimeout(200)
+
 // Branch from A1 (first assistant message) via real UI.
 await createBranchFromMessage(page, 0)
 const barText = await page.textContent('body').catch(() => '')
