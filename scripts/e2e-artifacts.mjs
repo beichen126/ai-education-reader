@@ -153,9 +153,11 @@ await page.waitForTimeout(400)
 
 // ---- Artifact Library: browse/filter/delete ----
 await page.locator('text=学习成果').click()
-await page.locator('text=笔记').first().waitFor({ state: 'visible', timeout: 8000 })
-const libNote = await page.locator('text=我的笔记标题').count()
-assert(libNote >= 1, 'Artifact Library lists the Note')
+// Wait for the ACTUAL note card (not the always-present '笔记' label) — the artifact list loads
+// asynchronously, and on a slower CI runner counting too early returned 0 even though the note
+// was present (a later assertion confirmed it). Making the gate deterministic, not flaky.
+await page.locator('text=我的笔记标题').first().waitFor({ state: 'visible', timeout: 8000 })
+assert(await page.locator('text=我的笔记标题').count() >= 1, 'Artifact Library lists the Note')
 await page.locator('button:has-text("题目")').first().click()
 await page.waitForTimeout(500)
 // A6: open the failed quiz (first 题目 card = newest) -> error view with recovery actions.
@@ -179,9 +181,8 @@ await page.waitForTimeout(500)
 const delBtns = await page.locator('button:has-text("删除")').all()
 if (delBtns.length > 0) { await delBtns[0].click(); await page.waitForTimeout(500) }
 await page.locator('button:has-text("全部")').first().click()
-await page.waitForTimeout(500)
-const afterDelete = await page.locator('text=我的笔记标题').count()
-assert(afterDelete >= 1, 'Artifact Library still shows the Note after deleting a card')
+await page.locator('text=我的笔记标题').first().waitFor({ state: 'visible', timeout: 8000 })
+assert(await page.locator('text=我的笔记标题').count() >= 1, 'Artifact Library still shows the Note after deleting a card')
 
 await browser.close()
 const pageErrors = errors.length ? errors.join(' | ') : '(none)'
