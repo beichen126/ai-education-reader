@@ -8,7 +8,7 @@ import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDr
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { t } from '../engine/locale'
-import { MessageText, IconCloseOutline16, Button } from '../dsh/primitives'
+import { MessageText, IconCloseOutline16, IconFolderOpenOutline16, Button } from '../dsh/primitives'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
 import { galleryActions } from '../gallery/gallery-store'
@@ -17,8 +17,9 @@ import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult, type RenderedPdfPage } from '../pdf/pdf-types'
 import { newStableId } from '../engine/types'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
-import { IconPhoto16 } from './composer-icons'
-import { setComposerTriggers, triggerComposerImages, triggerComposerPdf } from '../engine/composer-triggers'
+import { IconPhoto16, IconDocument16 } from './composer-icons'
+import { setComposerTriggers, triggerComposerMaterials } from '../engine/composer-triggers'
+import { documentUiActions } from '../documents/document-ui-store'
 import { DocumentContextPicker } from '../documents/DocumentContextPicker'
 import { executeDocumentContext } from '../documents/document-context-service'
 import { getSessionsCurrent } from '../engine/sessions-store'
@@ -122,10 +123,10 @@ export function Conversation() {
           {!session || messages.length === 0 ? (
             <div className={css.emptyHero}>
               <div className={css.emptyTitle}>AI 学习阅读器</div>
-              <div className={css.emptyHint}>还没有学习内容。上传一张图片，或者打开一份 PDF 开始。</div>
+              <div className={css.emptyHint}>还没有学习内容。添加资料，或从资料库开始。</div>
               <div className={css.emptyActions}>
-                <Button variant="primary" data-testid="empty-add-image" onClick={triggerComposerImages}>添加图片</Button>
-                <Button variant="outline" data-testid="empty-open-pdf" onClick={triggerComposerPdf}>打开 PDF</Button>
+                <Button variant="primary" data-testid="empty-add-materials" onClick={triggerComposerMaterials}>添加资料</Button>
+                <Button variant="outline" data-testid="empty-open-library" onClick={() => documentUiActions.openLibrary()}>打开资料库</Button>
                 {!hasKey && <Button variant="outline" data-testid="empty-configure" onClick={uiActions.openSettings}>配置 API</Button>}
               </div>
               {!hasKey && <div className={css.emptyHint}>开始前，需要配置你自己的 DeepSeek API Key。</div>}
@@ -233,10 +234,11 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
   const libCancelledRef = useRef(false)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
   const pdfInputRef = useRef<HTMLInputElement | null>(null)
+  const materialsInputRef = useRef<HTMLInputElement | null>(null)
   const attachBtnRef = useRef<HTMLButtonElement | null>(null)
   const attachMenuRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
-    setComposerTriggers({ openImages: () => imageInputRef.current?.click(), openPdf: () => pdfInputRef.current?.click() })
+    setComposerTriggers({ openImages: () => imageInputRef.current?.click(), openPdf: () => pdfInputRef.current?.click(), openMaterials: () => materialsInputRef.current?.click() })
     return () => { setComposerTriggers(null); libCancelledRef.current = true; libGenRef.current++ }
   }, [])
   const addPdfToDraft = async (payload: PdfAddPayload): Promise<PdfAddResult> => {
@@ -321,6 +323,19 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
       setPhotoError(attachmentErrorLabel(e?.kind || 'read-failed'))
     }
   }
+  // Unified "添加资料" picker: images batch into the ordinary image pipeline; a single PDF
+  // opens the real PdfPanel flow. A mixed batch / multiple PDFs never silently half-succeeds
+  // (no "images added then a PDF pops then user cancels" partial state) — it shows clear guidance.
+  const onMaterialsSelected = (files: FileList) => {
+    const all = Array.from(files)
+    if (all.length === 0) return
+    const isPdf = (f: File) => /.pdf$/i.test(f.name) || f.type === 'application/pdf'
+    const pdfs = all.filter(isPdf)
+    const imgs = all.filter(f => !isPdf(f))
+    if (pdfs.length === 0) { onFiles(files); return }
+    if (pdfs.length === 1 && imgs.length === 0) { setPdfPanel({ open: true, file: pdfs[0] }); return }
+    setPhotoError('一次请选择一个 PDF，或选择一组图片。')
+  }
   // User removes a pending draft image explicitly -> the attachment is gone for good.
   const removePic = (id: string) => { removeDraftImage(key, id); void deleteAttachment(id) }
   // Focus drives an immediate jump above the on-screen keyboard (measured once, no polling).
@@ -363,19 +378,20 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
         {/* ONE unified attachment trigger (A2). Clicking opens a compact menu dispatching to
             the existing image / local-PDF / library actions. The hidden file inputs stay;
             the trigger merely dispatches into them. No domain merge. */}
-        <button type="button" ref={attachBtnRef} className={css.attachBtn} role="button" aria-label="添加内容" title="添加内容" data-testid="composer-attach" aria-haspopup="menu" aria-expanded={attachMenuOpen} onClick={() => setAttachMenuOpen(v => !v)}>
-          <IconPhoto16 />
+        <button type="button" ref={attachBtnRef} className={css.attachBtn} role="button" aria-label="添加资料" title="添加资料" data-testid="composer-attach" aria-haspopup="menu" aria-expanded={attachMenuOpen} onClick={() => setAttachMenuOpen(v => !v)}>
+          <IconDocument16 />
         </button>
         {attachMenuOpen && (
           <div className={css.addFileMenu} data-testid="composer-add-file-menu" ref={attachMenuRef}>
-            <div className={css.menuTitle}>添加内容</div>
-            <button type="button" className={css.menuItem} data-testid="composer-add-image" onClick={() => { setAttachMenuOpen(false); imageInputRef.current?.click() }}>🖼 图片</button>
-            <button type="button" className={css.menuItem} data-testid="composer-add-pdf" onClick={() => { setAttachMenuOpen(false); pdfInputRef.current?.click() }}>📄 打开本地 PDF</button>
-            <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}>📚 从文件资料库选择</button>
+            <div className={css.menuTitle}>添加资料</div>
+            <button type="button" className={css.menuItem} data-testid="composer-add-image" onClick={() => { setAttachMenuOpen(false); imageInputRef.current?.click() }}><IconPhoto16 /> 打开本地图片</button>
+            <button type="button" className={css.menuItem} data-testid="composer-add-pdf" onClick={() => { setAttachMenuOpen(false); pdfInputRef.current?.click() }}><IconDocument16 /> 打开本地 PDF</button>
+            <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}><IconFolderOpenOutline16 /> 从资料库添加</button>
           </div>
         )}
-        <input ref={imageInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
-        <input ref={pdfInputRef} type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
+        <input ref={imageInputRef} data-testid="composer-images-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
+        <input ref={pdfInputRef} data-testid="composer-pdf-input" type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
+        <input ref={materialsInputRef} data-testid="composer-materials-input" type="file" accept=".pdf,application/pdf,.jpg,.jpeg,.png,.gif,.webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onMaterialsSelected(e.target.files); e.target.value = '' }} />
         <textarea className={css.composerText} value={text} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
           onChange={e => setDraftText(key, e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }} />
