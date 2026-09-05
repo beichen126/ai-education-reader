@@ -1,10 +1,14 @@
 .overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 1500; display: flex; flex-direction: column; background: var(--dsw-alias-bg-base); overflow: hidden; }
-.head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.head { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--dsw-alias-border-l2); gap: 8px; }
 .title { font-size: 16px; font-weight: 600; color: var(--dsw-alias-label-primary); }
-.headBtns { display: flex; align-items: center; gap: 8px; }
+.headBtns { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sortSelect { min-height: 36px; padding: 6px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
 .primaryBtn { min-height: 36px; padding: 6px 14px; border: none; border-radius: 8px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 13px; cursor: pointer; }
 .primaryBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.secondaryBtn { min-height: 36px; padding: 6px 14px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--dsw-alias-label-secondary); }
+.secondaryBtn:disabled { opacity: 0.5; cursor: not-allowed; }
 .closeBtn { min-height: 36px; padding: 6px 12px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--dsw-alias-label-secondary); }
+.danger { color: var(--dsw-alias-state-error-primary); }
 .error { margin: 8px 16px 0; padding: 8px 12px; border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-state-error-primary); font-size: 12px; }
 .error { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .error > span:first-child { min-width: 0; }
@@ -13,15 +17,34 @@
 .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--dsw-alias-label-secondary); font-size: 14px; }
 .emptyHint { color: var(--dsw-alias-label-tertiary); font-size: 13px; }
 .list { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-.card { display: flex; align-items: stretch; gap: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); }
+/* Card: the whole body is the read target (B3). No duplicate 阅读 button. */
+.card { display: flex; align-items: center; gap: 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); }
 .cardMain { flex: 1; min-width: 0; text-align: left; border: none; background: transparent; padding: 12px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; }
+.cardMain:hover { background: var(--dsw-alias-interactive-bg-hover); border-radius: 12px; }
 .cardTitle { font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; }
 .cardMeta { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
-.cardActions { display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 10px 12px; }
-.actionBtn { min-height: 34px; padding: 4px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
+.cardActions { display: flex; align-items: center; gap: 6px; padding: 10px 12px 10px 0; }
+.actionBtn { min-height: 34px; padding: 4px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
 .actionBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.danger { color: var(--dsw-alias-state-error-primary); }
+.menuWrap { position: relative; }
+.menuBtn { width: 34px; height: 34px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-size: 16px; line-height: 1; cursor: pointer; }
+.menuBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; min-width: 140px; background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); overflow: hidden; }
+.menuItem { display: block; width: 100%; text-align: left; border: none; background: transparent; padding: 9px 14px; font-size: 13px; color: var(--dsw-alias-label-primary); cursor: pointer; }
+.menuItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
+/* Dialog backdrops (rename / delete / import conflict). */
+.dialogBackdrop { position: fixed; inset: 0; z-index: 1600; background: rgba(0, 0, 0, 0.35); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.dialog { width: 100%; max-width: 420px; background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.dialogTitle { font-size: 15px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.dialogText { font-size: 13px; line-height: 1.55; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.dialogErr { font-size: 12px; color: var(--dsw-alias-state-error-primary); }
+.dialogBtns { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+.dialogBtns .primaryBtn, .dialogBtns .secondaryBtn { flex: 1; min-width: 0; }
+.renameInput { min-height: 38px; padding: 6px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-size: 14px; }
+.customWrap { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 10px; }
 @media (max-width: 700px) {
-  .card { flex-wrap: wrap; }
-  .cardActions { flex-direction: row; width: 100%; padding: 0 8px 10px; }
+  .card { flex-direction: column; align-items: stretch; }
+  .cardMain { padding: 12px 14px; }
+  .cardActions { padding: 0 10px 12px; justify-content: flex-end; }
+  .menu { right: 0; }
 }
