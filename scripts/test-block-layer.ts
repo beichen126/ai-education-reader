@@ -42,9 +42,9 @@ const tblNode = root.children.find((c:any)=>c.type==='table')
 assert(!!table.table && table.table.id === (mid + '/table-' + tblNode.position.start.offset + '-' + tblNode.position.end.offset), 'tableId from source position => ' + table.table.id)
 assert(table.table.rows === 2 && table.table.cols === 2, 'table rows/cols = 2x2')
 
-// 8) code block is NOT annotatable
+// 8) code block is ordinary annotatable canonical text
 const code = blocks.find(b=>b.type==='code')
-assert(code.annotatable === false, 'code block annotatable = false')
+assert(code.annotatable === true, 'code block annotatable = true')
 assert(code.canonicalText === 'const a = 1', 'code canonical = code text')
 
 // 9) paragraphs/blocks annotatable by default

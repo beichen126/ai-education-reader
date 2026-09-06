@@ -3,7 +3,7 @@ import type { Annotation } from '../annotations/annotation-types'
 import { ANNOTATION_VERSION } from '../annotations/annotation-types'
 import type { Attachment } from '../engine/types'
 import { persistBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
-import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupV1, type BackupV2, type BackupV3, type BackupV4, type BackupDraft, type BackupBranchDraft, type BackupActiveBranch, type BackupAppearance } from './backup-types'
+import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupV1, type BackupV2, type BackupV3, type BackupV4, type BackupV5, type BackupDraft, type BackupBranchDraft, type BackupActiveBranch, type BackupAppearance } from './backup-types'
 import { validateBranchGraph } from '../branches/branch-path'
 import { validateArtifact, validateQuizDocument } from '../artifacts/artifact-validation'
 import type { ConversationBranch } from '../branches/branch-types'
@@ -25,6 +25,12 @@ const VALID_CHAPTER_SOURCES = new Set(['native', 'ai-toc', 'manual'])
 const VALID_IMPORT_KINDS = new Set(['pdf', 'ppt', 'pptx'])
 const VALID_DOC_CHAPTER_SOURCES = new Set(['none', 'native', 'ai-toc', 'manual', 'mixed'])
 const VALID_APPEARANCE = new Set(['system', 'light', 'dark'])
+
+function validatePdfContext(ctx: unknown): void {
+  if (!isObj(ctx) || !isNonEmptyStr(ctx.documentId) || !Array.isArray(ctx.pageNumbers) || ctx.pageNumbers.length === 0 || !ctx.pageNumbers.every((p: unknown) => isInt(p) && p > 0) || !isNum(ctx.createdAt) || ctx.createdAt < 0) {
+    throw new BackupError('message.pdfContext 非法')
+  }
+}
 
 function isBase64(data: unknown): boolean {
   if (!isStr(data) || data.length === 0 || data.length % 4 !== 0) return false
@@ -79,12 +85,32 @@ function validateDocuments(input: Record<string, any>): void {
   }
 }
 
+function validateDocumentNotes(input: Record<string, any>): void {
+  if (input.version < 5) return
+  if (!Array.isArray(input.documentNotes)) throw new BackupError('缺少 documentNotes 数组')
+  const docById = new Map<string, any>((input.documents as any[]).map(d => [d.id, d.meta]))
+  const ids = new Set<string>()
+  const pages = new Set<string>()
+  for (const note of input.documentNotes) {
+    if (!isObj(note) || !isNonEmptyStr(note.id)) throw new BackupError('documentNote 缺少合法的 id')
+    if (ids.has(note.id)) throw new BackupError('documentNote id 重复')
+    ids.add(note.id)
+    if (!isNonEmptyStr(note.documentId) || !docById.has(note.documentId)) throw new BackupError('documentNote.documentId 非法')
+    if (!isInt(note.pageNumber) || note.pageNumber < 1 || note.pageNumber > docById.get(note.documentId).pageCount) throw new BackupError('documentNote.pageNumber 非法')
+    const pageKey = note.documentId + ':' + note.pageNumber
+    if (pages.has(pageKey)) throw new BackupError('同一文档页面只能有一条 documentNote')
+    pages.add(pageKey)
+    if (!isStr(note.content)) throw new BackupError('documentNote.content 必须是字符串')
+    if (!isNum(note.createdAt) || !isNum(note.updatedAt) || note.updatedAt < note.createdAt) throw new BackupError('documentNote 时间戳非法')
+  }
+}
+
 export function parseAndValidate(input: unknown): Backup {
   if (!isObj(input)) throw new BackupError('不是一个有效的备份对象')
   if (input.format !== BACKUP_FORMAT && input.format !== LEGACY_BACKUP_FORMAT) throw new BackupError('格式不匹配：不是本产品的备份文件（支持 ' + BACKUP_FORMAT + ' 与 ' + LEGACY_BACKUP_FORMAT + '）')
-  if (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4) throw new BackupError('版本不支持：当前仅支持 v1 / v2 / v3 / v4')
+  if (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4 && input.version !== 5) throw new BackupError('版本不支持：当前仅支持 v1 / v2 / v3 / v4 / v5')
   const isV3 = input.version === 3
-  const isV4 = input.version === 4
+  const isV4 = input.version === 4 || input.version === 5
   if (!Array.isArray(input.conversations)) throw new BackupError('缺少 conversations 数组')
   if (!Array.isArray(input.annotations)) throw new BackupError('缺少 annotations 数组')
   if (!Array.isArray(input.attachments)) throw new BackupError('缺少 attachments 数组')
@@ -112,6 +138,7 @@ export function parseAndValidate(input: unknown): Backup {
       if (!isStr(m.content)) throw new BackupError('message.content 必须是字符串')
       if (!Array.isArray(m.images) || !m.images.every(isStr)) throw new BackupError('message.images 必须是字符串数组')
       if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('message 时间戳必须是数字')
+      if (m.pdfContext !== undefined) validatePdfContext(m.pdfContext)
       mids.add(m.id)
     }
     messageIds.set(c.id, mids)
@@ -187,6 +214,7 @@ export function parseAndValidate(input: unknown): Backup {
 
   if (isV4) validateV4BranchesAndArtifacts(input as BackupV4, input.conversations, input.attachments)
   validateDocuments(input)
+  validateDocumentNotes(input)
   return input as Backup
 }
 
@@ -219,6 +247,7 @@ function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], a
       if (!isStr(m.content)) throw new BackupError('branch message.content 非法')
       if (!Array.isArray(m.images) || !m.images.every(isStr)) throw new BackupError('branch message.images 非法')
       if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('branch message 时间戳非法')
+      if (m.pdfContext !== undefined) validatePdfContext(m.pdfContext)
       if (locals.has(m.id)) throw new BackupError('branch message.id 重复')
       locals.add(m.id)
       for (const img of m.images) if (!attIds.has(img)) throw new BackupError('branch message 引用了不存在的附件：' + String(img).slice(0, 8))
@@ -340,7 +369,7 @@ export async function restoreBackup(backup: Backup): Promise<void> {
     const oldAtts = await oldAttachmentRefs();
     oldRefs.push(...oldDocs, ...oldAtts);
     // E. One atomic IDB replacement.
-    await idbReplaceAll({ settings, conversations: backup.conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows, conversationBranches: (backup as BackupV4).branches || [], artifacts: restoreArtifacts((backup as BackupV4).artifacts || []) });
+    await idbReplaceAll({ settings, conversations: backup.conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows, documentNotes: (backup as BackupV5).documentNotes || [], conversationBranches: (backup as BackupV4).branches || [], artifacts: restoreArtifacts((backup as BackupV4).artifacts || []) });
   } catch (e) {
     // Rollback: delete every staged OPFS file. Old IDB is untouched.
     for (const s of staged) { if (s.path) { try { await deleteBinary(s.ref) } catch { /* orphan */ } } }

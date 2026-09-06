@@ -1,9 +1,10 @@
 import { listConversations, getAnnotationsByConversation, getAttachmentRow, getSetting } from '../storage/storage'
 import { idbGetAll } from '../storage/idb'
 import { listDocumentRecords, readDocumentSourceBlob } from '../documents/document-service'
+import { listDocumentNotes } from '../documents/document-note-service'
 import type { Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
-import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupDocument, type BackupV3, type BackupDraft, type BackupV4, type BackupBranchDraft, type BackupActiveBranch } from './backup-types'
+import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupDocument, type BackupV3, type BackupDraft, type BackupV5, type BackupBranchDraft, type BackupActiveBranch } from './backup-types'
 import { readBinary } from '../storage/binary-store'
 import { BackupError, parseAndValidate } from './backup-import'
 import { allBranches, getActiveBranch } from '../branches/branch-store'
@@ -31,7 +32,7 @@ async function attachmentBlobOf(id: string, mime: string): Promise<Blob> {
   return blob.type ? blob : blob.slice(0, blob.size, mime || 'application/octet-stream')
 }
 
-export async function buildBackup(): Promise<BackupV4> {
+export async function buildBackup(): Promise<BackupV5> {
   const conversations = await listConversations()
   const annotations: Annotation[] = []
   const attachments: BackupAttachment[] = []
@@ -108,8 +109,9 @@ export async function buildBackup(): Promise<BackupV4> {
     catch { throw new BackupError('本地文件数据不完整，无法生成完整备份：文档 ' + rec.id.slice(0, 8) + ' 数据缺失') }
     documents.push({ id: rec.id, meta: rec.meta as BackupDocument['meta'], mimeType: blob.type || rec.meta.mimeType || 'application/pdf', data: await blobToBase64(blob) })
   }
+  const documentNotes = await listDocumentNotes()
   const artifacts = await listArtifacts()
-  const backup: BackupV4 = { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents, drafts, appearance: appearanceOut, branches, branchDrafts, artifacts, activeBranches }
+  const backup: BackupV5 = { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents, documentNotes, drafts, appearance: appearanceOut, branches, branchDrafts, artifacts, activeBranches }
   // Final self-validation (finding 9.4D.2-0.2): the assembled object MUST pass the SAME
   // pure reference-integrity validator used for import (no JSON round-trip). A "complete"
   // backup that references a missing attachment/document/draft is rejected here, not shipped.

@@ -4,7 +4,7 @@
 .closeBtn { color: var(--dsw-alias-label-primary); }
 .title { flex: 1; min-width: 0; text-align: center; font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 .topActions { display: flex; align-items: center; gap: 8px; }
-.tocToggle { display: none; min-height: 36px; padding: 4px 12px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; border-radius: 8px; color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
+.tocToggle, .noteToggle { display: none; min-height: 36px; padding: 4px 12px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; border-radius: 8px; color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
 .body { flex: 1; min-height: 0; display: flex; }
 .toc { flex: none; width: 240px; border-right: 1px solid var(--dsw-alias-border-l2); overflow-y: auto; overflow-x: hidden; padding: 10px 8px; background: var(--dsw-alias-bg-layer-1); }
 .tocTitle { font-size: 12px; color: var(--dsw-alias-label-tertiary); padding: 0 8px 8px; }
@@ -37,6 +37,11 @@
 .buildBtn { min-height: 36px; padding: 4px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; white-space: nowrap; }
 .buildBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .stage { flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 12px; position: relative; }
+.notePanel { flex: none; width: min(280px, 28vw); min-width: 200px; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-left: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); }
+.noteTitle { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.noteInput { flex: 1; min-height: 120px; width: 100%; box-sizing: border-box; resize: none; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; line-height: 1.5; }
+.noteInput:focus { outline: none; border-color: var(--dsw-alias-brand-primary); }
+.noteStatus { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
 .hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .pageBtn { border: none; background: transparent; padding: 0; cursor: zoom-in; display: block; max-width: 100%; max-height: 100%; }
 .pageImg { display: block; max-width: 100%; max-height: calc(100vh - 190px); object-fit: contain; box-shadow: 0 1px 6px rgba(0,0,0,0.18); border-radius: 4px; }
@@ -72,5 +77,6 @@
 @media (max-width: 1023px) {
   .toc { position: fixed; left: 0; top: 57px; bottom: 58px; width: min(280px, 80vw); z-index: 20; background: var(--dsw-alias-bg-base); border-right: 1px solid var(--dsw-alias-border-l2); transform: translateX(-100%); transition: transform 140ms ease-out; box-shadow: 0 4px 18px rgba(0,0,0,0.18); }
   .toc.tocOpen { transform: translateX(0); }
-  .tocToggle { display: inline-block; }
+  .tocToggle, .noteToggle { display: inline-block; }
+  .notePanel { position: fixed; right: 0; top: 57px; bottom: 58px; width: min(280px, 82vw); min-width: 0; z-index: 20; box-shadow: 0 4px 18px rgba(0,0,0,0.18); }
 }

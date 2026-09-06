@@ -23,6 +23,7 @@ import { documentUiActions } from '../documents/document-ui-store'
 import { DocumentContextPicker } from '../documents/DocumentContextPicker'
 import { executeDocumentContext } from '../documents/document-context-service'
 import { getSessionsCurrent } from '../engine/sessions-store'
+import { layoutStore, useLayoutStore } from '../engine/layout-store'
 import type { PdfSelection } from '../pdf/pdf-types'
 import { buildAttachmentDisplayItems, type AttachmentDisplayItem } from '../attachments/attachment-display'
 import { PdfContextCard } from './PdfContextCard'
@@ -49,6 +50,7 @@ export function Conversation() {
   const status = useSessions(s => s.status)
   const sendError = useSessions(s => s.sendError)
   const hasKey = useSettings(s => !!s.apiKey)
+  const narrow = useLayoutStore(s => s.narrow)
   const listRef = useRef<HTMLDivElement | null>(null)
   const atBottomRef = useRef(true)
   const onScroll = () => { const el = listRef.current; if (!el) return; atBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 60 }
@@ -100,7 +102,14 @@ export function Conversation() {
   }
   function openLibrary() { void listArtifacts().then(setLibArtifacts); setArtView('library') }
   return (
-    <div className={css.conversation}>
+    <div className={css.conversation} data-testid="conversation">
+      {narrow && (
+        <div className={css.mobileTopbar}>
+          <button type="button" className={css.mobileHistoryBtn} data-testid="mobile-history" onClick={() => layoutStore.actions.openNarrowSidebar()}>
+            ☰ 历史会话
+          </button>
+        </div>
+      )}
       {!hasKey && (
         <div className={css.noKeyBanner}>
           <span>本项目使用 BYOK，需要配置你自己的 API Key 才能调用模型。</span>
@@ -146,16 +155,17 @@ export function Conversation() {
 function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu, onBranch, onArtifact }: { m: any; streamingId?: string; convId?: string; imgOffset: number; menuOpen?: boolean; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: ArtifactKind, messageId: string) => void }) {
   if (m.role === 'user') {
     return (
-      <div className={css.msg + ' ' + css.msgUser}>
+      <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>
         <div className={css.bubble}><MessageText text={m.content} /></div>
         {m.images.length > 0 && <MessageAttachmentStrip convId={convId} message={m} imgOffset={imgOffset} />}
+        {m.pdfContext && <PdfSourceButton context={m.pdfContext} />}
       </div>
     )
   }
   const isStreaming = m.id === streamingId
   const stable = !isStreaming && m.content
   return (
-    <div className={css.msg + ' ' + css.msgAssistant}>
+    <div className={css.msg + ' ' + css.msgAssistant} data-message-id={m.id}>
       {isStreaming ? (
         <div className={css.assistantBody}>{m.content}</div>
       ) : m.content ? (
@@ -170,6 +180,16 @@ function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu,
         </div>
       )}
     </div>
+  )
+}
+
+function PdfSourceButton({ context }: { context: { documentId: string; pageNumbers: number[] } }) {
+  const pages = context.pageNumbers.filter((p): p is number => Number.isInteger(p) && p > 0)
+  if (!context.documentId || pages.length === 0) return null
+  return (
+    <button type="button" className={css.pdfSourceBtn} data-testid="message-pdf-source" onClick={() => documentUiActions.openReader(context.documentId, pages[0])}>
+      查看来源页面 · 第 {pages[0]} 页{pages.length > 1 ? `（共 ${pages.length} 页）` : ''}
+    </button>
   )
 }
 

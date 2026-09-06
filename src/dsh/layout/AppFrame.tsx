@@ -150,6 +150,7 @@ export function AppFrame({
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
   const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
+  const mobileDrawerWidth = Math.min(240, Math.max(0, viewport * 0.72))
   const colsRef = useRef(cols)
   colsRef.current = cols
 
@@ -177,26 +178,28 @@ const productTitle = ((globalThis as any).process?.env?.DSH_CLIENT_TITLE) ?? t('
     <div
       ref={frameRef}
       className={css.frame}
-      style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
+      style={{ gridTemplateColumns: narrow ? `0px minmax(0, 1fr) 0px` : `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
+      data-narrow={narrow || undefined}
       data-dragging={dragging || undefined}
     >
       <DocumentTitle
         productTitle={productTitle}
         {...documentTitle === undefined ? {} : { title: documentTitle }}
       />
-      <div className={css.sidebarCol}>
+      <div className={css.sidebarCol} data-drawer-open={narrow && panels.narrowExpanded ? true : undefined}>
         {/* Render-site slot call with live concession output: a closed
             sidebar keeps the mounted slot at the compact-rail width, and the
             component sees its rendered state as owner params decided here
             (collapsed follows the resolved rail, so a derived auto-collapse
             renders the rail UI too). */}
-        {renderSlot('sidebar', {
-          collapsed: sidebarCollapsed,
-          width: cols.sidebar,
-        })}
+          {renderSlot('sidebar', {
+            collapsed: narrow ? !panels.narrowExpanded : sidebarCollapsed,
+            width: narrow ? mobileDrawerWidth : cols.sidebar,
+          })}
       </div>
+      {narrow && panels.narrowExpanded && <button type="button" className={css.mobileBackdrop} data-testid="mobile-history-backdrop" aria-label="关闭历史会话" onClick={() => actions.closeNarrowSidebar()} />}
       <>
         {/* Both column occupants stay at fixed tree positions from first
             paint — no loading gate: a bare status line reads worse than

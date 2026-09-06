@@ -1,4 +1,4 @@
-import { idbGet, idbGetAll, idbPut, idbDelete, idbUpdate } from '../storage/idb'
+import { idbGet, idbGetAll, idbPut, idbUpdate, idbDeleteDocumentAndNotes } from '../storage/idb'
 import { persistBinary, readBinary, deleteBinary, binaryExists, type StoredBinary } from '../storage/binary-store'
 import type { LearningDocument, DocumentChapterSource, ChapterNode } from './document-types'
 import { computeContentHash, computeFastFingerprint } from './document-hash'
@@ -264,7 +264,9 @@ export async function getStoredDocumentRecord(id: string): Promise<StoredDocumen
 
 export async function deleteDocument(id: string): Promise<void> {
   const row = await idbGet('documents', id);
-  await idbDelete('documents', id);
+  // Notes are owned by the document. Delete both records in one transaction so
+  // a failed delete cannot leave an orphan page note behind.
+  await idbDeleteDocumentAndNotes(id);
   if (row && hasSourceRef(row) && row.source.storage === 'opfs') { try { await deleteBinary(row.source) } catch { /* orphan */ } }
 }
 

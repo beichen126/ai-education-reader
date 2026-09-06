@@ -1,6 +1,6 @@
 const DB_NAME = 'ai-education-reader'
-const DB_VERSION = 5
-const STORES = ['settings', 'conversations', 'attachments', 'annotations', 'documents', 'conversationBranches', 'artifacts'] as const
+const DB_VERSION = 6
+const STORES = ['settings', 'conversations', 'attachments', 'annotations', 'documents', 'documentNotes', 'conversationBranches', 'artifacts'] as const
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -30,6 +30,10 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('documents')) db.createObjectStore('documents', { keyPath: 'id' })
       const docs = req.transaction!.objectStore('documents')
       if (!docs.indexNames.contains('by_updatedAt')) docs.createIndex('by_updatedAt', 'updatedAt')
+      if (!db.objectStoreNames.contains('documentNotes')) db.createObjectStore('documentNotes', { keyPath: 'id' })
+      const notes = req.transaction!.objectStore('documentNotes')
+      if (!notes.indexNames.contains('by_document')) notes.createIndex('by_document', 'documentId')
+      if (!notes.indexNames.contains('by_document_page')) notes.createIndex('by_document_page', ['documentId', 'pageNumber'], { unique: true })
       // Branch + Artifact stores (post-v1 feature line). Store creation is guarded so an
       // upgrade from a DB that already has them (e.g. after a re-run) is a no-op.
       if (!db.objectStoreNames.contains('conversationBranches')) db.createObjectStore('conversationBranches', { keyPath: 'id' })
@@ -168,6 +172,22 @@ export async function idbRunTxn(storeNames: string[], fn: (txn: IDBTransaction) 
   await txnDone(txn)
 }
 
+/** Atomically remove a Document and every page note owned by it. */
+export async function idbDeleteDocumentAndNotes(documentId: string): Promise<void> {
+  const db = await openDb()
+  const txn = db.transaction(['documents', 'documentNotes'], 'readwrite')
+  txn.objectStore('documents').delete(documentId)
+  const index = txn.objectStore('documentNotes').index('by_document')
+  const cursorReq = index.openCursor(IDBKeyRange.only(documentId))
+  cursorReq.onsuccess = () => {
+    const cursor = cursorReq.result
+    if (!cursor) return
+    txn.objectStore('documentNotes').delete(cursor.primaryKey)
+    cursor.continue()
+  }
+  await txnDone(txn)
+}
+
 /** Clear EVERY store in one readwrite transaction (destructive: used by clear local data). */
 export async function idbClearAll(): Promise<void> {
   const db = await openDb()
@@ -177,10 +197,10 @@ export async function idbClearAll(): Promise<void> {
 }
 
 export async function closeDb(): Promise<void> { if (dbPromise) { const db = await dbPromise; try { db.close() } catch { /* ignore */ } dbPromise = null } }
-export async function idbReplaceAll(records: { settings: any[]; conversations: any[]; attachments: any[]; annotations: any[]; documents?: any[]; conversationBranches?: any[]; artifacts?: any[] }): Promise<void> {
+export async function idbReplaceAll(records: { settings: any[]; conversations: any[]; attachments: any[]; annotations: any[]; documents?: any[]; documentNotes?: any[]; conversationBranches?: any[]; artifacts?: any[] }): Promise<void> {
   const db = await openDb()
-  const txn = db.transaction(['settings', 'conversations', 'attachments', 'annotations', 'documents', 'conversationBranches', 'artifacts'], 'readwrite')
-  const stores = ['settings', 'conversations', 'attachments', 'annotations', 'documents', 'conversationBranches', 'artifacts'] as const
+  const txn = db.transaction(['settings', 'conversations', 'attachments', 'annotations', 'documents', 'documentNotes', 'conversationBranches', 'artifacts'], 'readwrite')
+  const stores = ['settings', 'conversations', 'attachments', 'annotations', 'documents', 'documentNotes', 'conversationBranches', 'artifacts'] as const
   for (const s of stores) txn.objectStore(s).clear()
   const put = (store: string, vals: any[]) => { const os = txn.objectStore(store); for (const v of vals) os.put(v) }
   put('settings', records.settings)
@@ -188,6 +208,7 @@ export async function idbReplaceAll(records: { settings: any[]; conversations: a
   put('attachments', records.attachments)
   put('annotations', records.annotations)
   if (records.documents) put('documents', records.documents)
+  if (records.documentNotes) put('documentNotes', records.documentNotes)
   if (records.conversationBranches) put('conversationBranches', records.conversationBranches)
   if (records.artifacts) put('artifacts', records.artifacts)
   await txnDone(txn)

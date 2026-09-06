@@ -4,6 +4,22 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。开发中的改动先进入 `Unreleased`，正式发布 tag 时再移动到对应版本。
 
+## [1.3.0] - 2026-09-07
+
+### Added
+
+- PDF 消息现在携带文档 ID、页码和创建时间，可从历史消息直接打开来源页面。
+- 阅读器新增按文档 + 页码保存的页面笔记，支持自动保存、备份恢复，并在删除 PDF 时级联清理。
+- 代码块进入文本标注管线，支持单行、多行和整段代码选择，刷新后保持高亮。
+- 移动端历史会话改为最大 240px 的 drawer，支持遮罩、返回和选中会话关闭。
+- 所有消息统一提供 `data-message-id`，backup schema 升级到 v5；旧 v1–v4 backup 仍可导入。
+
+### Changed
+
+- IndexedDB schema 升级，新增 `documentNotes` 页面笔记存储。
+
+---
+
 ## [1.2.0] - 2026-09-06
 
 ### Added

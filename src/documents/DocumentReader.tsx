@@ -7,6 +7,7 @@
 // effect only keeps pagehide/visibility flush.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getDocument, updateLastReadPage, updateDocumentChapters, DocumentBinaryMissingError } from './document-service'
+import { getDocumentNote, saveDocumentNote } from './document-note-service'
 import { useSessions, getSessionsCurrent } from '../engine/sessions-store'
 import { formatBytes } from '../storage/diagnostics'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
@@ -49,6 +50,8 @@ const EMPTY_DOC_STATE = {
 export function DocumentReader() {
   const ui = useDocumentUi(x => x)
   const docId = ui.view === 'reader' ? ui.documentId : null
+  const readerRequestId = ui.view === 'reader' ? ui.requestId : 0
+  const requestedPage = ui.view === 'reader' ? ui.pageNumber : undefined
   const [doc, setDoc] = useState<LearningDocument | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const sessionRef = useRef<PdfSession | null>(null)
@@ -57,6 +60,11 @@ export function DocumentReader() {
   const urlOwnerRef = useRef(createUrlOwner())
   const [pageInput, setPageInput] = useState('')
   const [pageError, setPageError] = useState<string | null>(null)
+  const [notesOpen, setNotesOpen] = useState(false)
+  const [noteText, setNoteText] = useState('')
+  const [noteLoading, setNoteLoading] = useState(false)
+  const [noteSavedAt, setNoteSavedAt] = useState<number | null>(null)
+  const noteLoadedKeyRef = useRef<string | null>(null)
   const [zoomBusy, setZoomBusy] = useState(false)
   // ---- Reader正文 display path (Agent C): direct visible canvas, no JPEG Blob on the
   //      main reading pipeline. The hook owns viewport-aware scaling, caching, prefetch,
@@ -187,7 +195,7 @@ export function DocumentReader() {
         ownedSession = o.session
         sessionRef.current = o.session
         setDoc(d); setPageCount(d.pageCount)
-        const start = clampReaderPage(d.lastReadPage || 1, d.pageCount)
+        const start = clampReaderPage((requestedPage ?? d.lastReadPage) || 1, d.pageCount)
         setPage(start); setPageInput(String(start))
         // Detect whether the ORIGINAL PDF has a native outline — ephemeral, used only
         // for the 整理/恢复 目录 UI. Reading must never fail because of this.
@@ -223,7 +231,38 @@ export function DocumentReader() {
       urlOwnerRef.current.revokeAll()
       setViewerUrl(null); viewerOpenRef.current = false
     }
-  }, [docId, persist])
+  }, [docId, readerRequestId, persist])
+
+  // Page notes are keyed by document + page. Loading is intentionally independent
+  // from the PDF render so a slow note read never blocks page navigation.
+  useEffect(() => {
+    if (!docId || !doc || !notesOpen) return
+    let cancelled = false
+    const key = docId + ':' + page
+    noteLoadedKeyRef.current = null
+    setNoteLoading(true); setNoteSavedAt(null)
+    setNoteText('')
+    void getDocumentNote(docId, page).then(note => {
+      if (cancelled) return
+      noteLoadedKeyRef.current = key
+      setNoteText(note?.content ?? '')
+    }).catch(() => {
+      if (!cancelled) setNoteText('')
+    }).finally(() => { if (!cancelled) setNoteLoading(false) })
+    return () => { cancelled = true }
+  }, [docId, doc, page, notesOpen])
+
+  useEffect(() => {
+    if (!docId || !doc || !notesOpen || noteLoading) return
+    const targetDocId = docId
+    const targetPage = page
+    if (noteLoadedKeyRef.current !== targetDocId + ':' + targetPage) return
+    const flush = () => { void saveDocumentNote(targetDocId, targetPage, noteText).then(() => setNoteSavedAt(Date.now())).catch(() => {}) }
+    const timer = window.setTimeout(flush, 450)
+    // Page changes, closing the panel, and unmounts must not discard the latest
+    // edit just because the debounce window has not elapsed yet.
+    return () => { window.clearTimeout(timer); flush() }
+  }, [docId, doc, page, noteText, notesOpen, noteLoading])
 
   // ---- Invalidate any PENDING zoom render on navigation (Agent G, G2): every page turn / doc
   //      switch (and reader close) bumps the zoom generation, so a zoom that is still rendering
@@ -608,6 +647,7 @@ export function DocumentReader() {
             <button className={css.buildBtn} data-testid="reader-build" title="从此页新建章节" onClick={() => { setBuilderSeed(true); setBuilderSaveSource('manual'); setBuilderOpen(true) }}>从此页新建章节</button>
           )}
           <button className={css.tocToggle} data-testid="reader-toc-toggle" onClick={() => setTocOpen(o => !o)}>目录</button>
+          {doc && <button className={css.noteToggle} data-testid="reader-notes-toggle" onClick={() => setNotesOpen(o => !o)}>{notesOpen ? '收起笔记' : '笔记'}</button>}
           <button className={css.closeBtn} data-testid="reader-close" onClick={() => { documentUiActions.close() }}>关闭</button>
         </div>
       </div>
@@ -663,6 +703,13 @@ export function DocumentReader() {
                 </button>
               )}
             </main>
+            {notesOpen && doc && (
+              <aside className={css.notePanel} data-testid="reader-notes">
+                <div className={css.noteTitle}>第 {page} 页笔记</div>
+                <textarea className={css.noteInput} value={noteText} disabled={noteLoading} placeholder="记录这一页的想法…" onChange={e => setNoteText(e.target.value)} />
+                <div className={css.noteStatus}>{noteLoading ? '正在加载…' : noteSavedAt ? '已自动保存' : '输入后自动保存'}</div>
+              </aside>
+            )}
           </>
         )}
       </div>

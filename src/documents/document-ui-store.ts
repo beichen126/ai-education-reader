@@ -6,9 +6,10 @@ import { useSyncExternalStore } from 'react'
 export type DocumentUiState =
   | { view: 'closed' }
   | { view: 'library' }
-  | { view: 'reader'; documentId: string }
+  | { view: 'reader'; documentId: string; pageNumber?: number; requestId: number }
 
 let s: DocumentUiState = { view: 'closed' }
+let readerRequestId = 0
 const subs = new Set<() => void>()
 function notify() { subs.forEach(f => f()) }
 function useDocumentUi<T>(sel: (s: DocumentUiState) => T): T {
@@ -16,7 +17,11 @@ function useDocumentUi<T>(sel: (s: DocumentUiState) => T): T {
 }
 export const documentUiActions = {
   openLibrary() { s = { view: 'library' }; notify() },
-  openReader(documentId: string) { s = { view: 'reader', documentId }; notify() },
+  openReader(documentId: string, pageNumber?: number) {
+    readerRequestId += 1
+    s = { view: 'reader', documentId, ...(Number.isInteger(pageNumber) && pageNumber! > 0 ? { pageNumber } : {}), requestId: readerRequestId }
+    notify()
+  },
   backToLibrary() { s = { view: 'library' }; notify() },
   close() { s = { view: 'closed' }; notify() },
 }

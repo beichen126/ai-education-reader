@@ -52,7 +52,7 @@ await setSetting('apiKey', 'sk-secret')
 
 // ---- build V4 backup ----
 const backup = await buildBackup()
-assert(backup.version === 4, 'backup version is 4 (got ' + backup.version + ')')
+assert(backup.version === 5, 'backup version is 5 (got ' + backup.version + ')')
 const v4 = backup as any
 assert(v4.branches.length === 2, 'backup includes both branches')
 assert(v4.branchDrafts.length === 1 && v4.branchDrafts[0].branchId === bB.id, 'backup includes branch draft')

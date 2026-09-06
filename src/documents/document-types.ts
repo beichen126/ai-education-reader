@@ -47,3 +47,12 @@ export type LearningDocument = {
   createdAt: number
   updatedAt: number
 }
+
+export type DocumentNote = {
+  id: string
+  documentId: string
+  pageNumber: number
+  content: string
+  createdAt: number
+  updatedAt: number
+}

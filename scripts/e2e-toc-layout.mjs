@@ -41,7 +41,7 @@ const chapters = [
 ]
 await page.evaluate((chapters) => {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('ai-education-reader', 5)
+    const req = indexedDB.open('ai-education-reader', 6)
     req.onsuccess = () => {
       const db = req.result
       const tx = db.transaction('documents', 'readwrite')

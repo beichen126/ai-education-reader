@@ -47,7 +47,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
     )
   }
   return (
-    <div className={css.sidebar} style={{ width }}>
+    <div className={css.sidebar} style={{ width }} data-testid={narrow ? 'mobile-history-drawer' : undefined} role={narrow ? 'dialog' : undefined} aria-label={narrow ? '历史会话' : undefined}>
       <div className={css.sidebarHead}>
         <div className={css.sidebarTitle}>AI 学习阅读器</div>
         <div className={css.sidebarHeadBtns}>
@@ -114,7 +114,7 @@ function SessionRow({ session, active, busy, narrow }: { session: ChatSession; a
   }
   return (
     <div className={css.sessionRowWrap + (active ? ' ' + css.sessionRowWrapActive : '')}>
-      <button className={css.sessionRow} onClick={onOpen}>
+      <button className={css.sessionRow} data-testid="history-session" onClick={onOpen}>
         <span className={css.sessionDot} data-state={active ? 'done' : 'idle'} />
         <span className={css.sessionTitle}>{displayTitle(session)}</span>
         <span className={css.sessionCount}>{session.messages.length}</span>

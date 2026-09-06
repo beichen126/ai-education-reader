@@ -33,6 +33,35 @@
   border-right: 1px solid var(--dsw-alias-border-l1);
 }
 
+.frame[data-narrow] .sidebarCol {
+  display: block;
+  visibility: hidden;
+}
+
+.frame[data-narrow] .sidebarCol[data-drawer-open] {
+  visibility: visible;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: min(240px, 72vw);
+  z-index: 31;
+  box-shadow: 6px 0 24px rgba(0,0,0,.18);
+}
+
+.mobileBackdrop {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: min(240px, 72vw);
+  z-index: 30;
+  border: 0;
+  padding: 0;
+  background: rgba(0,0,0,.28);
+  cursor: pointer;
+}
+
 .centerCol {
   min-width: 0;
   display: flex;

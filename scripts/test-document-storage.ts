@@ -10,11 +10,12 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
 
 const pdfBlob = (n: number) => new Blob([new Uint8Array(n).fill(5)], { type: 'application/pdf' })
 
-// --- DB v4: documents store + index exist, legacy stores intact ---
+// --- DB v6: documents + documentNotes stores exist, legacy stores intact ---
 await idbClearAll()
-const db = await new Promise<IDBDatabase>((res, rej) => { const r = indexedDB.open('ai-education-reader', 5); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
+const db = await new Promise<IDBDatabase>((res, rej) => { const r = indexedDB.open('ai-education-reader', 6); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
 const names = [...db.objectStoreNames]
 assert(names.includes('documents'), 'documents store exists')
+assert(names.includes('documentNotes'), 'documentNotes store exists')
 for (const s of ['settings', 'conversations', 'attachments', 'annotations']) assert(names.includes(s), s + ' store still exists')
 const idx = db.transaction('documents', 'readonly').objectStore('documents').indexNames
 assert(idx.contains('by_updatedAt'), 'documents.by_updatedAt index exists')

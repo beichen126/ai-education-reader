@@ -57,7 +57,7 @@ await page.locator('text=从这里分支').waitFor({ state: 'visible', timeout: 
 await page.locator('text=从这里分支').click()
 await page.waitForTimeout(700)
 const branches = await page.evaluate(() => new Promise((resolve) => {
-  const req = indexedDB.open('ai-education-reader', 5)
+  const req = indexedDB.open('ai-education-reader', 6)
   req.onsuccess = () => { const db = req.result; const tx = db.transaction('conversationBranches','readonly'); const g = tx.objectStore('conversationBranches').getAll(); g.onsuccess = () => { try { db.close() } catch {}; resolve((g.result||[]).map(b => ({ title: b.title, parentBranchId: b.parentBranchId || null, fork: b.forkMessageId }))) }; g.onerror = () => resolve([]) }
   req.onerror = () => resolve([])
 }))

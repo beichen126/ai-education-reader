@@ -79,7 +79,15 @@ function blockEl(node: any, ctx: RenderCtx, onTableAction?: (tableId: string) =>
     const hl = isMathHl(annotations, mathId)
     return <div data-block-id={bid} data-block-type='math' data-math-id={mathId} data-math-kind="block" data-annotatable='false' className={(css.mathBlock || '') + (hl ? ' ' + css.studyMathHighlighted : '')} dangerouslySetInnerHTML={{ __html: kathRender(node.value || '', true) }} onClick={(e) => { e.stopPropagation(); if (ctx.onMathAction) ctx.onMathAction(mathId, 'block') }}></div>
   }
-  if (t === 'code') return <pre data-block-id={bid} data-block-type='code' data-annotatable='false'><code>{node.value || ''}</code></pre>
+  if (t === 'code') {
+    const value = node.value || ''
+    const st = cur.v
+    cur.v += value.length
+    // Code is ordinary canonical text. Keeping the complete value in one leaf
+    // preserves newlines while allowing the selection mapper to calculate a
+    // precise substring for single-line and multi-line selections.
+    return <pre data-block-id={bid} data-block-type='code' data-annotatable='true'><code><span data-canonical-start={st} data-canonical-end={cur.v}>{value}</span></code></pre>
+  }
   return null
 }
 

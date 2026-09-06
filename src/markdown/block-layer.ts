@@ -93,7 +93,7 @@ export function buildBlockModels(root: Root, messageId: string): BlockModel[] {
       } else if (t === 'math') {
         out.push({ id: blockIdOf(messageId, t, startOf(node), endOf(node)), messageId, type: t, sourceStart: startOf(node), sourceEnd: endOf(node), canonicalText: (node as any).value || '', annotatable: false, headingPath: headingPath.filter(Boolean).slice() })
       } else if (t === 'code') {
-        out.push({ id: blockIdOf(messageId, t, startOf(node), endOf(node)), messageId, type: t, sourceStart: startOf(node), sourceEnd: endOf(node), canonicalText: (node as any).value || '', annotatable: false, headingPath: headingPath.filter(Boolean).slice() })
+        out.push({ id: blockIdOf(messageId, t, startOf(node), endOf(node)), messageId, type: t, sourceStart: startOf(node), sourceEnd: endOf(node), canonicalText: (node as any).value || '', annotatable: true, headingPath: headingPath.filter(Boolean).slice() })
       } else {
         // container with children (e.g., list) — recurse into listItem children
         if (node.children && Array.isArray(node.children)) walk(node.children)

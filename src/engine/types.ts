@@ -26,11 +26,18 @@ export type PdfAttachmentSource = {
   selection: PdfSelection | PdfSelectionV1
 }
 
+/** The document/page provenance carried by a user message that included PDF pages. */
+export type PdfContext = {
+  documentId: string
+  pageNumbers: number[]
+  createdAt: number
+}
+
 /** Canonical attachment metadata. The binary blob lives in IndexedDB 'attachments' keyed by id. No base64/objectURL here.
  * source is OPTIONAL: ordinary user-uploaded images and all pre-Stage-5 attachments omit it. */
 export type Attachment = { id: StableId; name: string; mimeType: string; size: number; createdAt: number; updatedAt: number; source?: PdfAttachmentSource }
 /** Message holds only stable attachment id references, never objectURL/base64. */
-export type Message = { id: StableId; role: MessageRole; content: string; images: StableId[]; createdAt: number; updatedAt: number }
+export type Message = { id: StableId; role: MessageRole; content: string; images: StableId[]; createdAt: number; updatedAt: number; pdfContext?: PdfContext }
 export type Conversation = { id: StableId; title: string; createdAt: number; updatedAt: number; messages: Message[] }
 export const NEW_TITLE = '新会话'
 export function newStableId(): StableId { return globalThis.crypto.randomUUID() }
