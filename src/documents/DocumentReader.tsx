@@ -40,6 +40,17 @@ import css from './document-reader.module.css'
 
 type TocTreeState = { expanded: ReadonlySet<string> }
 
+type NoteEditorSession = {
+  documentId: string
+  pageNumber: number
+  key: string
+  text: string
+  loaded: boolean
+  dirty: boolean
+  timer: number | null
+  lastSave: Promise<void> | null
+}
+
 const EMPTY_DOC_STATE = {
   doc: null as LearningDocument | null,
   pageCount: 0,
@@ -64,7 +75,7 @@ export function DocumentReader() {
   const [noteText, setNoteText] = useState('')
   const [noteLoading, setNoteLoading] = useState(false)
   const [noteSavedAt, setNoteSavedAt] = useState<number | null>(null)
-  const noteLoadedKeyRef = useRef<string | null>(null)
+  const noteSessionRef = useRef<NoteEditorSession | null>(null)
   const [zoomBusy, setZoomBusy] = useState(false)
   // ---- Reader正文 display path (Agent C): direct visible canvas, no JPEG Blob on the
   //      main reading pipeline. The hook owns viewport-aware scaling, caching, prefetch,
@@ -139,6 +150,31 @@ export function DocumentReader() {
     if (id) persist(id, pageRef.current)
   }, [persist])
   const flushRef = useRef(flushProgress); flushRef.current = flushProgress
+
+  const flushNoteSession = useCallback((session: NoteEditorSession): Promise<void> => {
+    if (session.timer !== null) {
+      window.clearTimeout(session.timer)
+      session.timer = null
+    }
+    if (!session.loaded || !session.dirty) return session.lastSave ?? Promise.resolve()
+    const content = session.text
+    session.dirty = false
+    const prior = session.lastSave ?? Promise.resolve()
+    const save = prior.catch(() => undefined).then(async () => {
+      await saveDocumentNote(session.documentId, session.pageNumber, content)
+      if (noteSessionRef.current === session) setNoteSavedAt(Date.now())
+    })
+    session.lastSave = save
+    return save
+  }, [])
+
+  const queueNoteSave = useCallback((session: NoteEditorSession) => {
+    if (session.timer !== null) window.clearTimeout(session.timer)
+    session.timer = window.setTimeout(() => {
+      session.timer = null
+      void flushNoteSession(session)
+    }, 450)
+  }, [flushNoteSession])
 
   // ---- load document now OWNS the whole lifecycle for one docId ----
   useEffect(() => {
@@ -236,33 +272,30 @@ export function DocumentReader() {
   // Page notes are keyed by document + page. Loading is intentionally independent
   // from the PDF render so a slow note read never blocks page navigation.
   useEffect(() => {
-    if (!docId || !doc || !notesOpen) return
+    if (!docId || !doc || !notesOpen) {
+      noteSessionRef.current = null
+      return
+    }
     let cancelled = false
     const key = docId + ':' + page
-    noteLoadedKeyRef.current = null
+    const session: NoteEditorSession = { documentId: docId, pageNumber: page, key, text: '', loaded: false, dirty: false, timer: null, lastSave: null }
+    noteSessionRef.current = session
     setNoteLoading(true); setNoteSavedAt(null)
     setNoteText('')
     void getDocumentNote(docId, page).then(note => {
-      if (cancelled) return
-      noteLoadedKeyRef.current = key
-      setNoteText(note?.content ?? '')
+      if (cancelled || noteSessionRef.current !== session) return
+      session.loaded = true
+      session.text = note?.content ?? ''
+      setNoteText(session.text)
     }).catch(() => {
-      if (!cancelled) setNoteText('')
+      if (!cancelled && noteSessionRef.current === session) { session.loaded = true; session.text = ''; setNoteText('') }
     }).finally(() => { if (!cancelled) setNoteLoading(false) })
-    return () => { cancelled = true }
-  }, [docId, doc, page, notesOpen])
-
-  useEffect(() => {
-    if (!docId || !doc || !notesOpen || noteLoading) return
-    const targetDocId = docId
-    const targetPage = page
-    if (noteLoadedKeyRef.current !== targetDocId + ':' + targetPage) return
-    const flush = () => { void saveDocumentNote(targetDocId, targetPage, noteText).then(() => setNoteSavedAt(Date.now())).catch(() => {}) }
-    const timer = window.setTimeout(flush, 450)
-    // Page changes, closing the panel, and unmounts must not discard the latest
-    // edit just because the debounce window has not elapsed yet.
-    return () => { window.clearTimeout(timer); flush() }
-  }, [docId, doc, page, noteText, notesOpen, noteLoading])
+    return () => {
+      cancelled = true
+      void flushNoteSession(session).catch(() => {})
+      if (noteSessionRef.current === session) noteSessionRef.current = null
+    }
+  }, [docId, doc, page, notesOpen, flushNoteSession])
 
   // ---- Invalidate any PENDING zoom render on navigation (Agent G, G2): every page turn / doc
   //      switch (and reader close) bumps the zoom generation, so a zoom that is still rendering
@@ -706,7 +739,12 @@ export function DocumentReader() {
             {notesOpen && doc && (
               <aside className={css.notePanel} data-testid="reader-notes">
                 <div className={css.noteTitle}>第 {page} 页笔记</div>
-                <textarea className={css.noteInput} value={noteText} disabled={noteLoading} placeholder="记录这一页的想法…" onChange={e => setNoteText(e.target.value)} />
+                <textarea className={css.noteInput} value={noteText} disabled={noteLoading} placeholder="记录这一页的想法…" onChange={e => {
+                  const value = e.target.value
+                  setNoteText(value)
+                  const session = noteSessionRef.current
+                  if (session?.loaded) { session.text = value; session.dirty = true; queueNoteSave(session) }
+                }} />
                 <div className={css.noteStatus}>{noteLoading ? '正在加载…' : noteSavedAt ? '已自动保存' : '输入后自动保存'}</div>
               </aside>
             )}

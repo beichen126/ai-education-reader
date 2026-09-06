@@ -132,6 +132,61 @@ export async function idbBatchDelete(store: string, keys: any[]): Promise<void> 
   for (const k of keys) os.delete(k)
   await txnDone(txn)
 }
+
+/**
+ * Atomically upsert a document-owned page note. The document existence check and
+ * note write/delete share one transaction, so a note save cannot race a document
+ * deletion into recreating an orphan row.
+ *
+ * `undefined` means the document no longer exists (or the content was blank).
+ * An existing orphan row is removed as part of the same transaction.
+ */
+export async function idbSaveDocumentNote(documentId: string, noteId: string, pageNumber: number, content: string, now: number): Promise<any | undefined> {
+  const db = await openDb()
+  const txn = db.transaction(['documents', 'documentNotes'], 'readwrite')
+  const documents = txn.objectStore('documents')
+  const notes = txn.objectStore('documentNotes')
+  const documentReq = documents.get(documentId)
+  const noteReq = notes.get(noteId)
+  let documentRow: any = undefined
+  let existing: any = undefined
+  let documentReady = false
+  let noteReady = false
+  let result: any | undefined
+
+  return new Promise<any | undefined>((resolve, reject) => {
+    let settled = false
+    const fail = (error: unknown) => {
+      if (settled) return
+      settled = true
+      reject(error instanceof Error ? error : new Error(String(error)))
+    }
+    const apply = () => {
+      if (!documentReady || !noteReady || settled) return
+      if (!documentRow || !content.trim()) {
+        if (existing) notes.delete(existing.id)
+        return
+      }
+      result = {
+        id: existing?.id ?? noteId,
+        documentId,
+        pageNumber,
+        content,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      }
+      notes.put(result)
+    }
+    documentReq.onsuccess = () => { documentRow = documentReq.result; documentReady = true; apply() }
+    documentReq.onerror = () => fail(documentReq.error)
+    noteReq.onsuccess = () => { existing = noteReq.result; noteReady = true; apply() }
+    noteReq.onerror = () => fail(noteReq.error)
+    txn.oncomplete = () => { if (!settled) { settled = true; resolve(result) } }
+    txn.onerror = () => fail(txn.error)
+    txn.onabort = () => fail(new Error('transaction aborted'))
+  })
+}
+
 /**
  * Atomic read-modify-write on ONE readwrite transaction: get(key) -> updater(current)
  * -> put(next), all in the same transaction. No read/write split can happen, so

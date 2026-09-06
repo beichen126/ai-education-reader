@@ -1,4 +1,4 @@
-import { idbDelete, idbGet, idbGetAll, idbGetAllByIndex, idbPut } from '../storage/idb'
+import { idbDelete, idbGet, idbGetAll, idbGetAllByIndex, idbSaveDocumentNote } from '../storage/idb'
 import type { DocumentNote } from './document-types'
 export type { DocumentNote } from './document-types'
 
@@ -6,7 +6,16 @@ function noteId(documentId: string, pageNumber: number): string {
   return documentId + '/page-' + pageNumber
 }
 
+// Writes for the same document/page are serialized here as a second line of
+// defense. The IndexedDB transaction below protects document ownership; this
+// queue protects ordering when several async saves are already in flight.
+const saveQueues = new Map<string, Promise<void>>()
+
 export async function getDocumentNote(documentId: string, pageNumber: number): Promise<DocumentNote | undefined> {
+  // A Reader close/reopen can happen before the lifecycle flush transaction has
+  // committed. Wait for the same-key write queue so reopening never reloads a
+  // stale value that is about to be replaced.
+  await (saveQueues.get(noteId(documentId, pageNumber)) ?? Promise.resolve())
   return idbGet('documentNotes', noteId(documentId, pageNumber))
 }
 
@@ -16,23 +25,13 @@ export async function listDocumentNotes(documentId?: string): Promise<DocumentNo
 }
 
 export async function saveDocumentNote(documentId: string, pageNumber: number, content: string): Promise<DocumentNote | undefined> {
-  const clean = content
-  const existing = await getDocumentNote(documentId, pageNumber)
-  if (!clean.trim()) {
-    if (existing) await idbDelete('documentNotes', existing.id)
-    return undefined
-  }
-  const now = Date.now()
-  const next: DocumentNote = {
-    id: existing?.id ?? noteId(documentId, pageNumber),
-    documentId,
-    pageNumber,
-    content: clean,
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  }
-  await idbPut('documentNotes', next)
-  return next
+  const key = noteId(documentId, pageNumber)
+  const prior = saveQueues.get(key) ?? Promise.resolve()
+  const result = prior.catch(() => undefined).then(() => idbSaveDocumentNote(documentId, key, pageNumber, content, Date.now())) as Promise<DocumentNote | undefined>
+  const tail = result.then(() => undefined, () => undefined)
+  saveQueues.set(key, tail)
+  void tail.then(() => { if (saveQueues.get(key) === tail) saveQueues.delete(key) })
+  return result
 }
 
 export async function deleteDocumentNotes(documentId: string): Promise<void> {
