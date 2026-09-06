@@ -1,6 +1,6 @@
-// Mobile history drawer e2e for the v1.3.0 release gate.
-// Covers both requested phone sizes and verifies that the conversation remains
-// usable while the drawer is open.
+// Mobile history drawer e2e for the v1.3.1 release gate.
+// Covers the requested phone sizes and verifies that the conversation and its
+// unsent draft remain usable while the drawer is open.
 import { launchBrowser } from './e2e-browser.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
@@ -16,6 +16,8 @@ page.on('dialog', d => { void d.accept() })
 
 await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('[data-testid="mobile-history"]').waitFor({ state: 'visible', timeout: 25000 })
+const composer = page.locator('textarea[class*="composerText"]')
+await composer.waitFor({ state: 'visible', timeout: 10000 })
 
 const measure = () => page.evaluate(() => ({
   viewport: document.documentElement.clientWidth,
@@ -28,28 +30,37 @@ const noHorizontalOverflow = async (label) => {
   return m
 }
 
-for (const size of [{ width: 390, height: 844 }, { width: 375, height: 812 }]) {
+for (const size of [
+  { width: 375, height: 812 },
+  { width: 390, height: 844 },
+  { width: 412, height: 915 },
+]) {
   await page.setViewportSize(size)
   await page.waitForTimeout(150)
   const label = size.width + 'x' + size.height
   assert(await page.locator('[data-testid="mobile-history-drawer"]').count() === 0, label + ': drawer starts closed')
   await noHorizontalOverflow(label + ' closed')
 
+  const draft = '移动抽屉回归草稿 ' + label
+  await composer.fill(draft)
   await page.locator('[data-testid="mobile-history"]').click()
   const open = await page.locator('[data-testid="mobile-history-drawer"]').waitFor({ state: 'visible' }).then(() => measure())
   assert(open.drawerWidth > 0 && open.drawerWidth <= Math.min(240, size.width * 0.72) + 1, label + ': drawer width fits min(240px,72vw)')
   await noHorizontalOverflow(label + ' open')
   assert(await page.locator('[data-testid="conversation"]').count() > 0, label + ': conversation remains mounted')
+  assert(await composer.inputValue() === draft, label + ': draft remains while drawer is open')
 
   await page.locator('[data-testid="mobile-history-backdrop"]').click({ position: { x: 20, y: 20 } })
   await page.locator('[data-testid="mobile-history-drawer"]').waitFor({ state: 'hidden' })
   assert(true, label + ': backdrop closes drawer')
+  assert(await composer.inputValue() === draft, label + ': draft remains after backdrop close')
 
   await page.locator('[data-testid="mobile-history"]').click()
   await page.locator('[data-testid="mobile-history-drawer"]').waitFor({ state: 'visible' })
   await page.locator('[data-testid="sidebar-collapse"]').click()
   await page.locator('[data-testid="mobile-history-drawer"]').waitFor({ state: 'hidden' })
   assert(true, label + ': drawer header closes drawer')
+  assert(await composer.inputValue() === draft, label + ': draft remains after header close')
 
   await page.locator('[data-testid="mobile-history"]').click()
   await page.locator('[data-testid="mobile-history-drawer"]').waitFor({ state: 'visible' })
