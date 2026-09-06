@@ -3,6 +3,7 @@
 //   current PDF page -> related message -> exact conversation message
 // The fixture seeds one canonical multi-document message after importing two real PDFs.
 import { launchBrowser } from './e2e-browser.mjs'
+import { openDocumentLibrary } from './e2e-navigation.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF_A = 'test/fixtures/outline-sample.pdf'
@@ -20,11 +21,7 @@ page.on('dialog', (dialog) => { void dialog.accept() })
 await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
 
-const openLibrary = async () => {
-  if (await page.locator('[data-testid="document-library"]').count()) return
-  await page.locator('[data-testid="sidebar-entry-files"]').click()
-  await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
-}
+const openLibrary = () => openDocumentLibrary(page)
 const importAndOpen = async (file) => {
   await openLibrary()
   await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(file)

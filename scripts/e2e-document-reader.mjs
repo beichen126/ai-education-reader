@@ -9,6 +9,7 @@
 // close -> reopen (progress restored) -> reload (still restored) -> page zoom
 // (zoom viewer + transient HUD) -> responsive (mobile toc drawer) -> delete.
 import { launchBrowser } from './e2e-browser.mjs'
+import { openDocumentLibrary } from './e2e-navigation.mjs'
 import { readFileSync } from 'node:fs'
 // Single version source of truth: read from package.json so the assertion never hardcodes it.
 const APP_VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version
@@ -26,14 +27,9 @@ page.on('dialog', d => { void d.accept() })
 await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
 
-const FILES_ENTRY = '[data-testid="sidebar-entry-files"], [data-testid="rail-files"]'
 const IMAGES_ENTRY = '[data-testid="sidebar-entry-images"], [data-testid="rail-images"]'
 const inputVal = () => page.locator('[data-testid="reader-page-input"]').inputValue()
-const openLibrary = async () => {
-  if (await page.locator('[data-testid="document-library"]').count()) return
-  await page.locator(FILES_ENTRY).first().click()
-  await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
-}
+const openLibrary = () => openDocumentLibrary(page)
 // Import a PDF and open the Reader. A re-import of a file already in the library now shows the
 // B7 duplicate-conflict dialog instead of silently duplicating — accept '仍然导入副本' so the
 // copy is stored and the Reader opens. Import runs async (analyze -> conflict resolution), so

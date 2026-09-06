@@ -1,0 +1,27 @@
+export async function openDocumentLibrary(page) {
+  const library = page.locator('[data-testid="document-library"]')
+  if (await library.isVisible().catch(() => false)) return
+
+  const sidebarEntry = page.locator('[data-testid="sidebar-entry-files"]')
+  if (await sidebarEntry.isVisible().catch(() => false)) {
+    await sidebarEntry.click()
+  } else {
+    const railEntry = page.locator('[data-testid="rail-files"]')
+    if (await railEntry.isVisible().catch(() => false)) {
+      await railEntry.click()
+    } else {
+      const mobileHistory = page.locator('[data-testid="mobile-history"]')
+      if (!(await mobileHistory.isVisible().catch(() => false))) {
+        throw new Error('Document Library navigation unavailable: no visible files or mobile history entry')
+      }
+      await mobileHistory.click()
+      const drawer = page.locator('[data-testid="mobile-history-drawer"]')
+      await drawer.waitFor({ state: 'visible', timeout: 10000 })
+      const drawerEntry = drawer.locator('[data-testid="sidebar-entry-files"]')
+      await drawerEntry.waitFor({ state: 'visible', timeout: 10000 })
+      await drawerEntry.click()
+    }
+  }
+
+  await library.waitFor({ state: 'visible', timeout: 10000 })
+}

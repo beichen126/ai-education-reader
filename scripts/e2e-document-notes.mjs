@@ -1,5 +1,6 @@
 // Page-note lifecycle E2E: debounce, page-change flush, and close/reopen durability.
 import { launchBrowser } from './e2e-browser.mjs'
+import { openDocumentLibrary } from './e2e-navigation.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF = 'test/fixtures/outline-sample.pdf'
@@ -15,14 +16,7 @@ page.on('dialog', d => { void d.accept() })
 
 await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
-const filesEntry = page.locator('[data-testid="sidebar-entry-files"], [data-testid="rail-files"]').first()
-// At a narrow viewport the rail is intentionally visibility-hidden until the
-// history drawer opens. Invoke its real button handler without changing the
-// application layout just to reach the document library.
-const openLibrary = async () => {
-  await filesEntry.evaluate((el) => (el instanceof HTMLElement ? el.click() : undefined))
-  await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
-}
+const openLibrary = () => openDocumentLibrary(page)
 await openLibrary()
 await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(PDF)
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
