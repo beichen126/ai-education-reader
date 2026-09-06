@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// v1.1.1 release gate (Windows-first, not bash-only).
+// v1.3.1 release gate (Windows-first, not bash-only).
 //   npm run test:release
 // Orchestrates: typecheck -> test:all -> build -> critical E2E against a self-managed
 // vite preview server, and ALWAYS tears the preview process tree down in a finally
@@ -21,6 +21,10 @@ const CORE_E2E = [
   'e2e-artifacts',
   'e2e-document-reader',
   'e2e-document-context',
+  'e2e-document-notes',
+  'e2e-pdf-page-conversations',
+  'e2e-ai-toc',
+  'e2e-ai-toc-navigation',
   'e2e-mobile-history',
   'e2e-code-annotation',
   'e2e-branching',
