@@ -59,6 +59,7 @@ const seeded = await page.evaluate(async () => {
   const conversation = conversations.find((row) => row.id === last) || conversations[0]
   if (!conversation || documents.length < 2) throw new Error('seed prerequisites missing')
   const [documentA, documentB] = documents
+  const now = Date.now()
   const messageId = 'stage2b-message-multi-document'
   const message = {
     id: messageId,
@@ -68,21 +69,48 @@ const seeded = await page.evaluate(async () => {
     createdAt: Date.now(),
     updatedAt: Date.now(),
     pdfContexts: [
-      { documentId: documentA.id, pageNumbers: [3, 4], createdAt: Date.now() },
-      { documentId: documentB.id, pageNumbers: [3], createdAt: Date.now() },
+      { documentId: documentA.id, pageNumbers: [3], createdAt: now },
+      { documentId: documentB.id, pageNumbers: [3], createdAt: now },
     ],
   }
-  const updated = { ...conversation, title: 'Stage 2B provenance', updatedAt: Date.now(), messages: [...conversation.messages, message] }
+  const conversationB = {
+    id: 'stage2b-conversation-b',
+    title: 'Stage 2B branch target',
+    createdAt: now,
+    updatedAt: now,
+    messages: [{ id: 'stage2b-branch-fork', role: 'user', content: 'B root', images: [], createdAt: now, updatedAt: now }],
+  }
+  const branchTarget = {
+    id: 'stage2b-branch-message',
+    role: 'assistant',
+    content: 'Stage 2B branch-local exact target',
+    images: [],
+    createdAt: now + 1,
+    updatedAt: now + 1,
+    pdfContexts: [{ documentId: documentA.id, pageNumbers: [4], createdAt: now + 1 }],
+  }
+  const branch = {
+    id: 'stage2b-branch-x',
+    conversationId: conversationB.id,
+    forkMessageId: 'stage2b-branch-fork',
+    title: 'Branch X',
+    createdAt: now + 1,
+    updatedAt: now + 1,
+    messages: [branchTarget],
+  }
+  const updated = { ...conversation, title: 'Stage 2B provenance', updatedAt: now, messages: [...conversation.messages, message] }
   await new Promise((resolve, reject) => {
-    const tx = db.transaction(['conversations', 'settings'], 'readwrite')
+    const tx = db.transaction(['conversations', 'conversationBranches', 'settings'], 'readwrite')
     tx.objectStore('conversations').put(updated)
+    tx.objectStore('conversations').put(conversationB)
+    tx.objectStore('conversationBranches').put(branch)
     tx.objectStore('settings').put({ key: 'lastConversationId', value: conversation.id })
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)
     tx.onabort = () => reject(tx.error || new Error('seed transaction aborted'))
   })
   db.close()
-  return { conversationId: conversation.id, messageId, documentA: { id: documentA.id, fileName: documentA.fileName }, documentB: { id: documentB.id, fileName: documentB.fileName } }
+  return { conversationId: conversation.id, messageId, branchConversationId: conversationB.id, branchId: branch.id, branchMessageId: branchTarget.id, documentA: { id: documentA.id, fileName: documentA.fileName }, documentB: { id: documentB.id, fileName: documentB.fileName } }
 })
 
 await page.reload({ waitUntil: 'networkidle' })
@@ -127,6 +155,26 @@ await page.locator('[data-testid="document-reader"]').waitFor({ state: 'detached
 await message.waitFor({ state: 'visible', timeout: 10000 })
 const messageBoxB = await message.boundingBox()
 assert(!!messageBoxB && messageBoxB.y < 800 && messageBoxB.y + messageBoxB.height > 0, 'B2: document B related result returns to the same exact message')
+
+// Direction B3: cross-conversation related result -> branch-local exact message.
+// The Reader returns to Conversation A page 4, where only B/Branch X/M matches.
+await page.locator(`[data-message-id="${seeded.messageId}"] [data-testid="message-pdf-source"]`).nth(0).click()
+await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+await page.locator('[data-testid="reader-page-input"]').fill('4')
+await page.locator('[data-testid="reader-page-input"]').press('Enter')
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-page-input"]')?.value.trim() === '4', null, { timeout: 10000 })
+await page.locator('[data-testid="reader-related-toggle"]').waitFor({ state: 'visible', timeout: 15000 })
+await page.locator('[data-testid="reader-related-toggle"]').click()
+await page.locator('[data-testid="reader-related-item"]').waitFor({ state: 'visible', timeout: 10000 })
+assert((await page.locator('[data-testid="reader-related-item"]').count()) === 1, 'B3: page 4 has one branch-local related result')
+assert((await page.locator('[data-testid="reader-related-item"]').first().textContent()).includes('Stage 2B branch target'), 'B3: related result identifies branch conversation')
+await page.locator('[data-testid="reader-related-item"]').first().click()
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'detached', timeout: 10000 })
+const branchMessage = page.locator(`[data-message-id="${seeded.branchMessageId}"]`).first()
+await branchMessage.waitFor({ state: 'visible', timeout: 15000 })
+await page.getByText('Branch X', { exact: true }).waitFor({ state: 'visible', timeout: 15000 })
+const branchMessageBox = await branchMessage.boundingBox()
+assert(!!branchMessageBox && branchMessageBox.y < 800 && branchMessageBox.y + branchMessageBox.height > 0, 'B3: cross-conversation navigation activates Branch X and shows exact M in viewport')
 
 await browser.close()
 const pageErrors = errors.length ? errors.join(' | ') : '(none)'

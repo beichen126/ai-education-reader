@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { type Conversation, type Message, type StableId } from '../engine/types'
 import { buildEffectiveConversationPath, validateBranchGraph } from '../branches/branch-path'
 import { listBranchesByConversation, getActiveBranch, setActiveBranch } from '../branches/branch-store'
@@ -7,6 +7,7 @@ import type { ConversationBranch } from '../branches/branch-types'
 
 export function useBranchChat(conversation: Conversation | undefined): {
   branches: ConversationBranch[]
+  ready: boolean
   activeBranchId: StableId | undefined
   effectiveMessages: Message[]
   diagnostics: string[]
@@ -18,14 +19,21 @@ export function useBranchChat(conversation: Conversation | undefined): {
 } {
   const [branches, setBranches] = useState<ConversationBranch[]>([])
   const [activeBranchId, setActiveBranchId] = useState<StableId | undefined>(undefined)
+  const [loadedConversationId, setLoadedConversationId] = useState<StableId | undefined>(undefined)
+  const refreshGeneration = useRef(0)
 
   const refresh = useCallback(async () => {
-    if (!conversation?.id) { setBranches([]); setActiveBranchId(undefined); return }
-    const bs = await listBranchesByConversation(conversation.id)
-    const active = await getActiveBranch(conversation.id)
+    const conversationId = conversation?.id
+    const generation = ++refreshGeneration.current
+    if (!conversationId) { setBranches([]); setActiveBranchId(undefined); setLoadedConversationId(undefined); return }
+    setLoadedConversationId(undefined)
+    const bs = await listBranchesByConversation(conversationId)
+    const active = await getActiveBranch(conversationId)
+    if (generation !== refreshGeneration.current) return
     const valid = active && bs.some((b) => b.id === active) ? active : undefined
     setBranches(bs)
     setActiveBranchId(valid)
+    setLoadedConversationId(conversationId)
   }, [conversation?.id])
 
   useEffect(() => { void refresh() }, [refresh])
@@ -49,5 +57,6 @@ export function useBranchChat(conversation: Conversation | undefined): {
   const rename = useCallback(async (branchId: StableId, title: string) => { await renameBranch(branchId, title); await refresh() }, [refresh])
   const removeBranch = useCallback(async (branchId: StableId) => { await deleteBranchSubtree(branchId); await refresh(); setActiveBranchId(undefined) }, [refresh])
 
-  return { branches, activeBranchId, effectiveMessages, diagnostics, switchBranch, branchFrom, rename, removeBranch, refresh }
+  const ready = !!conversation?.id && loadedConversationId === conversation.id
+  return { branches, ready, activeBranchId, effectiveMessages, diagnostics, switchBranch, branchFrom, rename, removeBranch, refresh }
 }

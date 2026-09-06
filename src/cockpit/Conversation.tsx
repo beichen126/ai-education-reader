@@ -40,6 +40,7 @@ import { exportQuizJson, exportQuizMarkdown } from '../artifacts/artifact-export
 import { runBranchReply } from '../engine/branch-thread'
 import { branchThreadKey, getBranchDraft, setBranchDraftText, addBranchDraftImages, removeBranchDraftImage, clearBranchDraftMemory } from '../engine/draft-store'
 import { useBranchChat } from './use-branch-chat'
+import { resolveMessageNavigation } from './message-navigation'
 import { sendTextChat } from '../api/deepseek'
 import type { ArtifactKind, StudyArtifact, QuizDocument } from '../artifacts/artifact-types'
 import type { Message as TMessage } from '../engine/types'
@@ -68,21 +69,28 @@ export function Conversation() {
     lastRef.current = sig
   }, [sig])
   // Consume a one-shot navigation intent only after the selected conversation/thread
-  // has rendered its message DOM. There is no fixed-delay race with IndexedDB or React.
+  // has rendered its message DOM. Branch targets additionally wait for branch data
+  // belonging to this conversation; an empty pre-load state is not treated as missing.
   useEffect(() => {
-    if (!session || !focusMessage || focusMessage.conversationId !== session.id) return
-    if (focusMessage.branchId) {
-      if (branchChat.activeBranchId !== focusMessage.branchId) { void branchChat.switchBranch(focusMessage.branchId); return }
-    } else if (branchChat.activeBranchId) {
-      void branchChat.switchBranch(undefined)
-      return
-    }
-    const target = Array.from(listRef.current?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [])
-      .find((element) => element.dataset.messageId === focusMessage.messageId)
-    if (!target) { sessionsActions.clearMessageFocus(); return }
+    const target = focusMessage
+      ? Array.from(listRef.current?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [])
+        .find((element) => element.dataset.messageId === focusMessage.messageId)
+      : undefined
+    const decision = resolveMessageNavigation({
+      session,
+      focusMessage,
+      branches: branchChat.branches,
+      branchReady: branchChat.ready,
+      activeBranchId: branchChat.activeBranchId,
+      targetRendered: !!target,
+    })
+    if (decision.kind === 'switch-branch') { void branchChat.switchBranch(decision.branchId); return }
+    if (decision.kind === 'switch-root') { void branchChat.switchBranch(undefined); return }
+    if (decision.kind === 'clear') { sessionsActions.clearMessageFocus(); return }
+    if (decision.kind !== 'focus' || !target) return
     target.scrollIntoView({ behavior: 'smooth', block: 'center' })
     sessionsActions.clearMessageFocus()
-  }, [session, focusMessage, branchChat.activeBranchId, branchChat.switchBranch, messages.length])
+  }, [session, focusMessage, branchChat.branches, branchChat.ready, branchChat.activeBranchId, branchChat.switchBranch, messages.length])
   const streaming = status === 'streaming'
   const busy = status === 'sending' || status === 'streaming'
   const lastMsg0 = lastMsg
