@@ -18,8 +18,8 @@ await page.addInitScript(() => { window.__documentNoteTrace = [] })
 
 const traceForDiagnostics = async () => page.evaluate(() => window.__documentNoteTrace ?? [])
 
-const closeAndReopenReader = async (expected, message) => {
-  await page.evaluate(() => { window.__documentNoteTrace = [] })
+const closeAndReopenReader = async (expected, message, { resetTrace = true } = {}) => {
+  if (resetTrace) await page.evaluate(() => { window.__documentNoteTrace = [] })
   try {
     await page.locator('[data-testid="reader-close"]').click()
     await page.locator('[data-testid="document-reader"]').waitFor({ state: 'hidden', timeout: 10000 })
@@ -101,14 +101,16 @@ if (panelContent !== '收起前的最新内容') console.error('NOTE_LIFECYCLE_T
 
 // Closing the whole Reader must flush the current page before the document is
 // reopened from the library (not merely unmounting the note panel).
+await page.evaluate(() => { window.__documentNoteTrace = [] })
 await page.locator('[data-testid="reader-notes"] textarea').fill('关闭 Reader 前的最新内容')
-await closeAndReopenReader('关闭 Reader 前的最新内容', 'Reader close/reopen: latest note survives whole Reader unmount')
+await closeAndReopenReader('关闭 Reader 前的最新内容', 'Reader close/reopen: latest note survives whole Reader unmount', { resetTrace: false })
 
 // Repeat the immediate close/reopen chain without fixed sleeps. Each round
 // starts with a new edit and must read that exact snapshot after remounting.
 for (const [index, content] of ['close/reopen stress 1', 'close/reopen stress 2', 'close/reopen stress 3'].entries()) {
+  await page.evaluate(() => { window.__documentNoteTrace = [] })
   await page.locator('[data-testid="reader-notes"] textarea').fill(content)
-  await closeAndReopenReader(content, `Reader close/reopen stress round ${index + 1}: latest note survives remount`)
+  await closeAndReopenReader(content, `Reader close/reopen stress round ${index + 1}: latest note survives remount`, { resetTrace: false })
 }
 
 // Inject one transaction failure. The autosave must report the failure, keep

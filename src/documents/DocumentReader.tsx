@@ -804,6 +804,7 @@ export function DocumentReader() {
                   setNoteText(value)
                   setNoteSavedAt(null)
                   const session = noteSessionRef.current
+                  traceNoteLifecycle('reader-note-input', { key: session?.key ?? null, value, loaded: session?.loaded ?? null, dirtyBefore: session?.dirty ?? null })
                   if (session?.loaded) { session.text = value; session.dirty = true; queueNoteSave(session) }
                 }} />
                 <div className={css.noteStatus} data-testid="reader-note-status">{noteLoading ? '正在加载…' : noteSaveError ? '保存失败，将重试' : noteSavedAt ? '已自动保存' : '输入后自动保存'}</div>
