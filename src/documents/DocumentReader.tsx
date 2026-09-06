@@ -40,6 +40,7 @@ import type { MappedTocItem } from './toc-mapping'
 import type { LearningDocument, ChapterNode } from './document-types'
 import { findConversationsByDocumentPage, type PdfPageConversationHit } from '../pdf/pdf-page-conversations'
 import { flushNoteEditorSession, type NoteEditorSession } from './note-session'
+import { traceNoteLifecycle } from './note-debug'
 import css from './document-reader.module.css'
 
 type TocTreeState = { expanded: ReadonlySet<string> }
@@ -173,8 +174,15 @@ export function DocumentReader() {
   // Register a pending note write before a Reader transition commits. React's
   // passive effect cleanup still flushes as a backstop, and same-snapshot
   // flushes are deduplicated by note-session.
-  const flushCurrentNote = useCallback(() => {
+  const flushCurrentNote = useCallback((reason = 'unspecified') => {
     const session = noteSessionRef.current
+    traceNoteLifecycle('reader-flush-current', {
+      reason,
+      key: session?.key ?? null,
+      loaded: session?.loaded ?? null,
+      dirty: session?.dirty ?? null,
+      text: session?.text ?? null,
+    })
     if (session) void flushNoteSession(session).catch(() => {})
   }, [flushNoteSession])
 
@@ -275,6 +283,7 @@ export function DocumentReader() {
   // from the PDF render so a slow note read never blocks page navigation.
   useEffect(() => {
     if (!docId || !doc || !notesOpen) {
+      traceNoteLifecycle('reader-note-effect-skipped', { docId, page, hasDoc: !!doc, notesOpen })
       noteSessionRef.current = null
       return
     }
@@ -282,18 +291,24 @@ export function DocumentReader() {
     const key = docId + ':' + page
     const session: NoteEditorSession = { documentId: docId, pageNumber: page, key, text: '', loaded: false, dirty: false, timer: null, lastSave: null }
     noteSessionRef.current = session
+    traceNoteLifecycle('reader-note-session-created', { key, documentId: docId, pageNumber: page })
     setNoteLoading(true); setNoteSavedAt(null); setNoteSaveError(false)
     setNoteText('')
+    traceNoteLifecycle('reader-note-read-start', { key })
     void getDocumentNote(docId, page).then(note => {
       if (cancelled || noteSessionRef.current !== session) return
+      traceNoteLifecycle('reader-note-read-resolved', { key, content: note?.content ?? null })
       session.loaded = true
       session.text = note?.content ?? ''
       setNoteText(session.text)
+      traceNoteLifecycle('reader-note-read-applied', { key, content: session.text })
     }).catch(() => {
+      traceNoteLifecycle('reader-note-read-failed', { key })
       if (!cancelled && noteSessionRef.current === session) { session.loaded = true; session.text = ''; setNoteText('') }
     }).finally(() => { if (!cancelled) setNoteLoading(false) })
     return () => {
       cancelled = true
+      traceNoteLifecycle('reader-note-session-cleanup', { key, loaded: session.loaded, dirty: session.dirty, text: session.text })
       void flushNoteSession(session).catch(() => {})
       if (noteSessionRef.current === session) noteSessionRef.current = null
     }
@@ -345,13 +360,13 @@ export function DocumentReader() {
 
   const go = useCallback((p: number, count: number) => {
     const next = clampReaderPage(p, count)
-    flushCurrentNote()
+    flushCurrentNote('page-transition-go')
     setPage(prev => prev === next ? prev : next)
     setPageInput(String(next))
   }, [flushCurrentNote])
 
   const openRelatedConversation = useCallback(async (hit: PdfPageConversationHit) => {
-    flushCurrentNote()
+    flushCurrentNote('related-conversation-transition')
     const opened = await sessionsActions.openAtMessage(hit.conversationId, hit.messageId, hit.branchId)
     if (!opened) { setRelatedError('这条对话或消息已不存在。'); return }
     setRelatedOpen(false)
@@ -644,7 +659,7 @@ export function DocumentReader() {
       if (inField && e.key !== 'Escape') return
       if (e.key === 'ArrowLeft') { e.preventDefault(); go(pageRef.current - 1, pageCount) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); go(pageRef.current + 1, pageCount) }
-      else if (e.key === 'Escape') { flushCurrentNote(); documentUiActions.close() }
+      else if (e.key === 'Escape') { flushCurrentNote('escape-close'); documentUiActions.close() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -653,6 +668,7 @@ export function DocumentReader() {
   const commitPageInput = () => {
     const r = parsePageInput(pageInput, pageCount)
     if (r.ok === false) { setPageError(r.error); return }
+    traceNoteLifecycle('reader-page-input-transition', { from: page, to: r.page, key: noteSessionRef.current?.key ?? null, dirty: noteSessionRef.current?.dirty ?? null })
     setPageError(null); skipFirstProgressRef.current = false
     setPage(r.page); setPageInput(String(r.page))
   }
@@ -694,7 +710,7 @@ export function DocumentReader() {
   return (
     <div className={css.overlay} data-testid="document-reader">
       <div className={css.topbar}>
-        <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary() }}>← 文件</button>
+        <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote('reader-back'); documentUiActions.backToLibrary() }}>← 文件</button>
         <span className={css.title} data-testid="reader-title">{doc ? doc.fileName : '…'}</span>
         <div className={css.topActions}>
           {doc && (
@@ -711,8 +727,8 @@ export function DocumentReader() {
             <button className={css.buildBtn} data-testid="reader-build" title="从此页新建章节" onClick={() => { setBuilderSeed(true); setBuilderSaveSource('manual'); setBuilderOpen(true) }}>从此页新建章节</button>
           )}
           <button className={css.tocToggle} data-testid="reader-toc-toggle" onClick={() => setTocOpen(o => !o)}>目录</button>
-          {doc && <button className={css.noteToggle} data-testid="reader-notes-toggle" onClick={() => { if (notesOpen) flushCurrentNote(); setNotesOpen(o => !o) }}>{notesOpen ? '收起笔记' : '笔记'}</button>}
-          <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>关闭</button>
+          {doc && <button className={css.noteToggle} data-testid="reader-notes-toggle" onClick={() => { if (notesOpen) flushCurrentNote('note-panel-close'); setNotesOpen(o => !o) }}>{notesOpen ? '收起笔记' : '笔记'}</button>}
+          <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote('reader-close'); documentUiActions.close() }}>关闭</button>
         </div>
       </div>
       {relatedOpen && relatedConversations.length > 0 && (
@@ -840,7 +856,7 @@ export function DocumentReader() {
       {ctxMsg && (
         <div className={css.ctxMsg + (ctxMsg.ok ? ' ' + css.ctxMsgOk : '')} data-testid="reader-ctx-msg">
           <span>{ctxMsg.text}</span>
-          {ctxMsg.ok && <button className={css.ctxSecondary} data-testid="reader-ctx-back" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>返回对话</button>}
+          {ctxMsg.ok && <button className={css.ctxSecondary} data-testid="reader-ctx-back" onClick={() => { flushCurrentNote('context-back'); documentUiActions.close() }}>返回对话</button>}
         </div>
       )}
       {ctxPickerOpen && doc && (

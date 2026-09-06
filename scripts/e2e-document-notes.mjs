@@ -14,17 +14,27 @@ const page = await ctx.newPage()
 page.on('pageerror', e => errors.push('pageerror: ' + e.message))
 page.on('dialog', d => { void d.accept() })
 
+await page.addInitScript(() => { window.__documentNoteTrace = [] })
+
+const traceForDiagnostics = async () => page.evaluate(() => window.__documentNoteTrace ?? [])
+
 const closeAndReopenReader = async (expected, message) => {
-  await page.locator('[data-testid="reader-close"]').click()
-  await page.locator('[data-testid="document-reader"]').waitFor({ state: 'hidden', timeout: 10000 })
-  await openLibrary()
-  await page.locator('[data-testid^="doc-open-"]').first().click()
-  await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
-  await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
-  if (await page.locator('[data-testid="reader-notes"] textarea').count() === 0) await page.locator('[data-testid="reader-notes-toggle"]').click()
-  await page.locator('[data-testid="reader-notes"] textarea').waitFor({ state: 'visible', timeout: 10000 })
-  await page.waitForFunction((value) => document.querySelector('[data-testid="reader-notes"] textarea')?.value === value, expected, { timeout: 10000 })
-  assert(await page.locator('[data-testid="reader-notes"] textarea').inputValue() === expected, message)
+  await page.evaluate(() => { window.__documentNoteTrace = [] })
+  try {
+    await page.locator('[data-testid="reader-close"]').click()
+    await page.locator('[data-testid="document-reader"]').waitFor({ state: 'hidden', timeout: 10000 })
+    await openLibrary()
+    await page.locator('[data-testid^="doc-open-"]').first().click()
+    await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
+    await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+    if (await page.locator('[data-testid="reader-notes"] textarea').count() === 0) await page.locator('[data-testid="reader-notes-toggle"]').click()
+    await page.locator('[data-testid="reader-notes"] textarea').waitFor({ state: 'visible', timeout: 10000 })
+    await page.waitForFunction((value) => document.querySelector('[data-testid="reader-notes"] textarea')?.value === value, expected, { timeout: 10000 })
+    assert(await page.locator('[data-testid="reader-notes"] textarea').inputValue() === expected, message)
+  } catch (error) {
+    console.error('NOTE_LIFECYCLE_TRACE ' + JSON.stringify(await traceForDiagnostics()))
+    throw error
+  }
 }
 
 await page.goto(BASE, { waitUntil: 'networkidle' })
@@ -78,13 +88,16 @@ assert(await note.inputValue() === '切页前的最新内容', 'page change: lat
 
 // Closing the note panel immediately after an edit flushes the current value;
 // reopening the panel reads the committed value.
+await page.evaluate(() => { window.__documentNoteTrace = [] })
 await note.fill('收起前的最新内容')
 await page.locator('[data-testid="reader-notes-toggle"]').click()
 await page.locator('[data-testid="reader-notes"]').waitFor({ state: 'hidden' })
 await page.locator('[data-testid="reader-notes-toggle"]').click()
 await page.locator('[data-testid="reader-notes"] textarea').waitFor({ state: 'visible' })
 await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes"] textarea')?.value === '收起前的最新内容', null, { timeout: 10000 })
-assert(await page.locator('[data-testid="reader-notes"] textarea').inputValue() === '收起前的最新内容', 'close/reopen: pending edit is flushed before reload')
+const panelContent = await page.locator('[data-testid="reader-notes"] textarea').inputValue()
+assert(panelContent === '收起前的最新内容', 'close/reopen: pending edit is flushed before reload')
+if (panelContent !== '收起前的最新内容') console.error('NOTE_LIFECYCLE_TRACE_PANEL ' + JSON.stringify(await traceForDiagnostics()))
 
 // Closing the whole Reader must flush the current page before the document is
 // reopened from the library (not merely unmounting the note panel).
