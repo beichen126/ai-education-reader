@@ -103,7 +103,7 @@ await idbClearAll()
 const v1 = parseAndValidate(v1backup())
 await restoreBackup(v1)
 assert((await listDocuments()).length === 0, 'V1 restore -> documents=[]')
-const conv = await new Promise<any>((res, rej) => { const r = indexedDB.open('ai-education-reader', 6); r.onsuccess = () => { const rr = r.result.transaction('conversations', 'readonly').objectStore('conversations').get('c1'); rr.onsuccess = () => res(rr.result); rr.onerror = () => rej(rr.error) }; r.onerror = () => rej(r.error) })
+const conv = await new Promise<any>((res, rej) => { const r = indexedDB.open('ai-education-reader'); r.onsuccess = () => { const rr = r.result.transaction('conversations', 'readonly').objectStore('conversations').get('c1'); rr.onsuccess = () => res(rr.result); rr.onerror = () => rej(rr.error) }; r.onerror = () => rej(r.error) })
 assert(!!conv && conv.messages[0].content === 'hi', 'V1 restore keeps conversation/message')
 
 // --- validation: malformed documents rejected ---

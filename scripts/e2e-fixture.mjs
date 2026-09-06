@@ -11,7 +11,7 @@ export async function seedAndBoot(page, { convs = [], settings = {} }) {
   await page.goto(process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/', { waitUntil: 'networkidle' })
   await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
   const seeded = await page.evaluate(({ convs, settings }) => new Promise((resolve) => {
-    const req = indexedDB.open('ai-education-reader', 6)
+    const req = indexedDB.open('ai-education-reader')
     req.onsuccess = () => { const db = req.result;
       const s = new Set(['conversations','settings','attachments','annotations','documents','conversationBranches','artifacts'])
       const names = Array.from(db.objectStoreNames)

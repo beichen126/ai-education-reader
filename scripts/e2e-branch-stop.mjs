@@ -48,12 +48,12 @@ assert(true, '停止生成 button appears during branch streaming')
 // Wait for the first delta to land, then record the partial assistant content (from the branch record).
 await page.waitForTimeout(700)
 const branchId = await page.evaluate(() => new Promise((resolve) => {
-  const req = indexedDB.open('ai-education-reader', 6)
+  const req = indexedDB.open('ai-education-reader')
   req.onsuccess = () => { const db = req.result; const g = db.transaction('conversationBranches','readonly').objectStore('conversationBranches').getAll(); g.onsuccess = () => { try { db.close() } catch {}; resolve((g.result||[]).map(b => b.id)[0] || null) }; g.onerror = () => resolve(null) }
   req.onerror = () => resolve(null)
 }))
 const readAssistant = async () => page.evaluate((bid) => new Promise((resolve) => {
-  const req = indexedDB.open('ai-education-reader', 6)
+  const req = indexedDB.open('ai-education-reader')
   req.onsuccess = () => { const db = req.result; const g = db.transaction('conversationBranches','readonly').objectStore('conversationBranches').get(bid); g.onsuccess = () => { try { db.close() } catch {}; const b = g.result; const a = (b?.messages||[]).find(m => m.role === 'assistant'); resolve(a ? a.content : '') }; g.onerror = () => resolve('') }
   req.onerror = () => resolve('')
 }), branchId)

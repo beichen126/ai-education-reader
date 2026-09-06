@@ -28,7 +28,7 @@ await page.waitForTimeout(400) // first deltas streamed, partial content durable
 
 async function branchMessages(bId) {
   return page.evaluate((bid) => new Promise((resolve) => {
-    const req = indexedDB.open('ai-education-reader', 6)
+    const req = indexedDB.open('ai-education-reader')
     req.onsuccess = () => { const db = req.result; const g = db.transaction('conversationBranches','readonly').objectStore('conversationBranches').get(bid); g.onsuccess = () => { try { db.close() } catch {}; const b = g.result; resolve(b ? (b.messages||[]).map(m => ({ role: m.role, content: m.content })) : null) }; g.onerror = () => resolve(null) }
     req.onerror = () => resolve(null)
   }), bId)
@@ -36,7 +36,7 @@ async function branchMessages(bId) {
 // Capture the branch id + its partial content during generation.
 await page.waitForTimeout(2200) // let the mock stream fully deliver + settle
 const branchId = await page.evaluate(() => new Promise((resolve) => {
-  const req = indexedDB.open('ai-education-reader', 6)
+  const req = indexedDB.open('ai-education-reader')
   req.onsuccess = () => { const db = req.result; const g = db.transaction('conversationBranches','readonly').objectStore('conversationBranches').getAll(); g.onsuccess = () => { try { db.close() } catch {}; resolve((g.result||[]).map(b => b.id)[0] || null) }; g.onerror = () => resolve(null) }
   req.onerror = () => resolve(null)
 }))

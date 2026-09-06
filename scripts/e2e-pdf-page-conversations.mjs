@@ -40,7 +40,7 @@ await closeReader()
 
 const seeded = await page.evaluate(async () => {
   const db = await new Promise((resolve, reject) => {
-    const request = indexedDB.open('ai-education-reader', 6)
+    const request = indexedDB.open('ai-education-reader')
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
   })

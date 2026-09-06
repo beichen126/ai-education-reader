@@ -104,7 +104,7 @@ await selectAndMark(message.locator('p code'), '内联 code 😀  空格', 'inli
 await selectAndMark(message.locator('p[data-block-type="paragraph"]').first(), '普通 Markdown 文本', 'ordinary Markdown text selection')
 
 const readAnnotations = () => page.evaluate(() => new Promise(resolve => {
-  const req = indexedDB.open('ai-education-reader', 6)
+  const req = indexedDB.open('ai-education-reader')
   req.onerror = () => resolve([])
   req.onsuccess = () => {
     const db = req.result

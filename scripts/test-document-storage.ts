@@ -12,7 +12,7 @@ const pdfBlob = (n: number) => new Blob([new Uint8Array(n).fill(5)], { type: 'ap
 
 // --- DB v6: documents + documentNotes stores exist, legacy stores intact ---
 await idbClearAll()
-const db = await new Promise<IDBDatabase>((res, rej) => { const r = indexedDB.open('ai-education-reader', 6); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
+const db = await new Promise<IDBDatabase>((res, rej) => { const r = indexedDB.open('ai-education-reader'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error) })
 const names = [...db.objectStoreNames]
 assert(names.includes('documents'), 'documents store exists')
 assert(names.includes('documentNotes'), 'documentNotes store exists')

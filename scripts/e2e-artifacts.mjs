@@ -138,7 +138,7 @@ await page.waitForTimeout(500)
 await page.locator('button:has-text("生成")').filter({ hasText: /^生成$/ }).last().click()
 await page.waitForTimeout(1500)
 const artifacts2 = await page.evaluate(() => new Promise((resolve) => {
-  const req = indexedDB.open('ai-education-reader', 6)
+  const req = indexedDB.open('ai-education-reader')
   req.onsuccess = () => { const db = req.result; const tx = db.transaction('artifacts','readonly'); const g = tx.objectStore('artifacts').getAll(); g.onsuccess = () => { try { db.close() } catch {}; resolve((g.result||[]).map(a => ({ kind: a.kind, status: a.status }))) }; g.onerror = () => resolve([]) }
 }))
 const badArtifact = artifacts2.find(a => a.kind === 'quiz' && a.status === 'error')

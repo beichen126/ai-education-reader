@@ -22,7 +22,7 @@ async function seedBackup(page) {
     const bB = { id: 'bB', conversationId: 'c1', parentBranchId: 'bA', forkMessageId: 'AA', title: '分支 B', createdAt: now, updatedAt: now, messages: [ msg('UB','user','分支B问'), msg('AB','assistant','分支B答') ] }
     const note = { id: 'note1', kind: 'note', title: '我的笔记', source: { conversationId: 'c1', throughMessageId: 'A1', snapshot: snapshot('c1','A1') }, prompt: '整理成笔记', createdAt: now, updatedAt: now, status: 'ready', content: '编辑后的笔记内容', generatedContent: '原本的笔记内容' }
     const quiz = { id: 'quiz1', kind: 'quiz', title: '我的题目', source: { conversationId: 'c1', throughMessageId: 'A1', snapshot: snapshot('c1','A1') }, prompt: '生成题目', createdAt: now, updatedAt: now, status: 'ready', quiz: { questions: [{ id: 'q1', type: 'single-choice', question: '2+2=?', options: ['3','4'], answer: 1, explanation: '2+2=4' }] } }
-    const req = indexedDB.open('ai-education-reader', 6)
+    const req = indexedDB.open('ai-education-reader')
     req.onsuccess = () => { const db = req.result;
       const stores = ['conversations','settings','attachments','annotations','documents','conversationBranches','artifacts']
       const txStores = stores.filter(s => db.objectStoreNames.contains(s))
@@ -95,7 +95,7 @@ assert(impMsg > 0, 'import success message shown (导入完成)')
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForTimeout(1500)
 const state = await page.evaluate(() => new Promise((resolve) => {
-  const req = indexedDB.open('ai-education-reader', 6)
+    const req = indexedDB.open('ai-education-reader')
   req.onsuccess = () => { const db = req.result;
     const rd = (store) => new Promise((res) => { const tx = db.transaction(store,'readonly').objectStore(store); const g = tx.getAll(); g.onsuccess = () => res(g.result || []); g.onerror = () => res([]) })
     const getSetting = (k, cb) => { const g = db.transaction('settings','readonly').objectStore('settings').get(k); g.onsuccess = () => cb(g.result ? g.result.value : undefined) }
@@ -121,14 +121,14 @@ assert(state.appearance === 'dark', 'dark appearance restored')
 assert(state.apiKey === '' || state.apiKey === undefined, 'API key NOT restored')
 // branch drafts
 const drafts = await page.evaluate(() => new Promise((resolve) => {
-  const req = indexedDB.open('ai-education-reader', 6)
+    const req = indexedDB.open('ai-education-reader')
   req.onsuccess = () => { const db = req.result; const g = db.transaction('settings','readonly').objectStore('settings').get('draft-branch:bA'); g.onsuccess = () => { try { db.close() } catch {}; resolve(g.result ? g.result.value : null) }; g.onerror = () => resolve(null) }
   req.onerror = () => resolve(null)
 }))
 assert(drafts && drafts.text === '分支A草稿' && drafts.imageIds.includes('imgA'), 'branch A draft text + image restored')
 // active branch restored
 const activeBranch = await page.evaluate(() => new Promise((resolve) => {
-  const req = indexedDB.open('ai-education-reader', 6)
+    const req = indexedDB.open('ai-education-reader')
   req.onsuccess = () => { const db = req.result; const g = db.transaction('settings','readonly').objectStore('settings').get('activeBranch:c1'); g.onsuccess = () => { try { db.close() } catch {}; resolve(g.result ? g.result.value : null) }; g.onerror = () => resolve(null) }
 }))
 assert(activeBranch === 'bB', 'active branch restored (bB)')
