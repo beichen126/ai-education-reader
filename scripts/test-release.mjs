@@ -51,7 +51,11 @@ const E2E = process.env.RELEASE_E2E
   : (EXTRA_E2E ? [...CORE_E2E, ...OPTIONAL_E2E] : CORE_E2E)
 
 function run(cmd, args, opts = {}) {
-  const r = spawnSync(cmd, args, { cwd: process.cwd(), stdio: opts.inherit ? 'inherit' : 'pipe', env: { ...process.env, ...(opts.env || {}) }, shell: !!opts.shell })
+  // Windows cannot execute the npm.cmd shim with shell=false on current Node
+  // runtimes (spawnSync returns EINVAL). Keep the POSIX path shell-free, while
+  // using the native Windows command interpreter for npm's .cmd wrapper.
+  const useShell = process.platform === 'win32' || !!opts.shell
+  const r = spawnSync(cmd, args, { cwd: process.cwd(), stdio: opts.inherit ? 'inherit' : 'pipe', env: { ...process.env, ...(opts.env || {}) }, shell: useShell })
   return r.status === 0
 }
 
