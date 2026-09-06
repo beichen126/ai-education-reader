@@ -9,6 +9,7 @@ export type NoteEditorSession = {
   dirty: boolean
   timer: number | null
   lastSave: Promise<void> | null
+  pendingContent?: string
 }
 
 export type NoteSaveWriter = (documentId: string, pageNumber: number, content: string) => Promise<DocumentNote | undefined>
@@ -32,6 +33,8 @@ export function flushNoteEditorSession(session: NoteEditorSession, write: NoteSa
   if (!session.loaded || !session.dirty) return session.lastSave ?? Promise.resolve()
 
   const attemptedContent = session.text
+  if (session.lastSave && session.pendingContent === attemptedContent) return session.lastSave
+  session.pendingContent = attemptedContent
   let writeResult: Promise<DocumentNote | undefined>
   try {
     // Do not move this call into a promise callback. saveDocumentNote uses
@@ -54,5 +57,12 @@ export function flushNoteEditorSession(session: NoteEditorSession, write: NoteSa
     throw error
   })
   session.lastSave = save
+  // Clear the deduplication marker after the ordered result settles. The
+  // rejection handler is attached here as well, so this observer cannot create
+  // an unhandled rejection of its own.
+  void save.then(
+    () => { if (session.pendingContent === attemptedContent) session.pendingContent = undefined },
+    () => { if (session.pendingContent === attemptedContent) session.pendingContent = undefined },
+  )
   return save
 }

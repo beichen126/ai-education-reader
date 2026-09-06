@@ -170,6 +170,14 @@ export function DocumentReader() {
     }, 450)
   }, [flushNoteSession])
 
+  // Register a pending note write before a Reader transition commits. React's
+  // passive effect cleanup still flushes as a backstop, and same-snapshot
+  // flushes are deduplicated by note-session.
+  const flushCurrentNote = useCallback(() => {
+    const session = noteSessionRef.current
+    if (session) void flushNoteSession(session).catch(() => {})
+  }, [flushNoteSession])
+
   // ---- load document now OWNS the whole lifecycle for one docId ----
   useEffect(() => {
     if (!docId) {
@@ -342,11 +350,12 @@ export function DocumentReader() {
   }, [])
 
   const openRelatedConversation = useCallback(async (hit: PdfPageConversationHit) => {
+    flushCurrentNote()
     const opened = await sessionsActions.openAtMessage(hit.conversationId, hit.messageId, hit.branchId)
     if (!opened) { setRelatedError('这条对话或消息已不存在。'); return }
     setRelatedOpen(false)
     documentUiActions.close()
-  }, [])
+  }, [flushCurrentNote])
 
   // ---- Reader -> Context bridge (Stage 9.2B2 / 9.2B2.1) ----
   // TWO phases, no confirm loop: requestContext() snapshots the operation identity
@@ -634,11 +643,11 @@ export function DocumentReader() {
       if (inField && e.key !== 'Escape') return
       if (e.key === 'ArrowLeft') { e.preventDefault(); go(pageRef.current - 1, pageCount) }
       else if (e.key === 'ArrowRight') { e.preventDefault(); go(pageRef.current + 1, pageCount) }
-      else if (e.key === 'Escape') { documentUiActions.close() }
+      else if (e.key === 'Escape') { flushCurrentNote(); documentUiActions.close() }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [doc, pageCount, go, restoreConfirmOpen])
+  }, [doc, pageCount, go, restoreConfirmOpen, flushCurrentNote])
 
   const commitPageInput = () => {
     const r = parsePageInput(pageInput, pageCount)
@@ -684,7 +693,7 @@ export function DocumentReader() {
   return (
     <div className={css.overlay} data-testid="document-reader">
       <div className={css.topbar}>
-        <button className={css.backBtn} data-testid="reader-back" onClick={() => { documentUiActions.backToLibrary() }}>← 文件</button>
+        <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary() }}>← 文件</button>
         <span className={css.title} data-testid="reader-title">{doc ? doc.fileName : '…'}</span>
         <div className={css.topActions}>
           {doc && (
@@ -702,7 +711,7 @@ export function DocumentReader() {
           )}
           <button className={css.tocToggle} data-testid="reader-toc-toggle" onClick={() => setTocOpen(o => !o)}>目录</button>
           {doc && <button className={css.noteToggle} data-testid="reader-notes-toggle" onClick={() => setNotesOpen(o => !o)}>{notesOpen ? '收起笔记' : '笔记'}</button>}
-          <button className={css.closeBtn} data-testid="reader-close" onClick={() => { documentUiActions.close() }}>关闭</button>
+          <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>关闭</button>
         </div>
       </div>
       {relatedOpen && relatedConversations.length > 0 && (
@@ -830,7 +839,7 @@ export function DocumentReader() {
       {ctxMsg && (
         <div className={css.ctxMsg + (ctxMsg.ok ? ' ' + css.ctxMsgOk : '')} data-testid="reader-ctx-msg">
           <span>{ctxMsg.text}</span>
-          {ctxMsg.ok && <button className={css.ctxSecondary} data-testid="reader-ctx-back" onClick={() => { documentUiActions.close() }}>返回对话</button>}
+          {ctxMsg.ok && <button className={css.ctxSecondary} data-testid="reader-ctx-back" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>返回对话</button>}
         </div>
       )}
       {ctxPickerOpen && doc && (

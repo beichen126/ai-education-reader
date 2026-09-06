@@ -57,7 +57,24 @@ assert(closing.dirty, 'failed autosave remains dirty before Reader cleanup')
 await flushNoteEditorSession(closing, closeWriter)
 assert(!closing.dirty && closeSaved[0] === 'ABC', 'Reader cleanup retry can persist the failed autosave')
 
-// E: a close/reopen read must observe the same-key write registration made by
+// E: a timer callback and a cleanup can request the same snapshot together,
+// but they must share one in-flight write rather than duplicate it.
+let releaseSameSnapshot!: () => void
+const sameSnapshotBarrier = new Promise<void>((resolve) => { releaseSameSnapshot = resolve })
+let sameSnapshotWrites = 0
+const sameSnapshotWriter = async (_documentId: string, _pageNumber: number, _content: string) => {
+  sameSnapshotWrites++
+  await sameSnapshotBarrier
+  return undefined
+}
+const sameSnapshot = makeSession('SAME')
+const firstSameSnapshot = flushNoteEditorSession(sameSnapshot, sameSnapshotWriter)
+const duplicateSameSnapshot = flushNoteEditorSession(sameSnapshot, sameSnapshotWriter)
+assert(sameSnapshotWrites === 1, 'duplicate flush for the same snapshot reuses the pending write')
+releaseSameSnapshot()
+await Promise.all([firstSameSnapshot, duplicateSameSnapshot])
+
+// F: a close/reopen read must observe the same-key write registration made by
 // flush before it is allowed to read durable state. This is deliberately
 // controlled rather than timing-based: the writer exposes its pending barrier
 // synchronously, and the reader waits only when that barrier is visible.
