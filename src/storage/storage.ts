@@ -1,5 +1,5 @@
 import { idbGet, idbGetAll, idbGetAllKeys, idbPut, idbDelete, idbGetAllByIndex, idbDeleteByIndex, idbBatchPut, idbBatchDelete, idbClearAll, idbRunTxn } from './idb'
-import type { Attachment } from '../engine/types'
+import { normalizeConversationPdfContexts, type Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import type { StoredBinary } from './binary-store'
 
@@ -26,9 +26,9 @@ export async function clearAllLocalData(): Promise<{ partialCleanup: boolean; fa
 export async function getSetting(key: string): Promise<any> { const row = await idbGet('settings', key); return row ? row.value : undefined }
 export async function setSetting(key: string, value: any): Promise<void> { await idbPut('settings', { key, value }) }
 export async function deleteSetting(key: string): Promise<void> { await idbDelete('settings', key) }
-export async function getConversation(id: string): Promise<any> { return idbGet('conversations', id) }
-export async function listConversations(): Promise<any[]> { const all = await idbGetAll('conversations'); return all.sort((a, b) => b.updatedAt - a.updatedAt) }
-export async function saveConversation(conv: any): Promise<void> { await idbPut('conversations', conv) }
+export async function getConversation(id: string): Promise<any> { const conv = await idbGet('conversations', id); return conv ? normalizeConversationPdfContexts(conv) : conv }
+export async function listConversations(): Promise<any[]> { const all = await idbGetAll('conversations'); return all.map(normalizeConversationPdfContexts).sort((a, b) => b.updatedAt - a.updatedAt) }
+export async function saveConversation(conv: any): Promise<void> { await idbPut('conversations', normalizeConversationPdfContexts(conv)) }
 export async function deleteConversation(id: string): Promise<void> { await idbDelete('conversations', id) }
 
 /** The durable settings key holding the last-active conversation id. */
@@ -46,8 +46,9 @@ export const LAST_CONVERSATION_ID_KEY = 'lastConversationId'
  * On failure nothing commits and the caller keeps its Draft intact.
  */
 export async function commitAcceptedUserMessage(conv: any, lastConversationId: string, draftKey: string | null): Promise<void> {
+  const normalized = normalizeConversationPdfContexts(conv)
   await idbRunTxn(['conversations', 'settings'], (txn) => {
-    txn.objectStore('conversations').put(conv)
+    txn.objectStore('conversations').put(normalized)
     txn.objectStore('settings').put({ key: LAST_CONVERSATION_ID_KEY, value: lastConversationId })
     if (draftKey) txn.objectStore('settings').delete(draftKey)
   })

@@ -15,7 +15,7 @@ import { galleryActions } from '../gallery/gallery-store'
 import { PdfPanel } from '../pdf/PdfPanel'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult, type RenderedPdfPage } from '../pdf/pdf-types'
-import { newStableId } from '../engine/types'
+import { newStableId, pdfContextsOf } from '../engine/types'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
 import { IconPhoto16, IconDocument16 } from './composer-icons'
 import { setComposerTriggers, triggerComposerMaterials } from '../engine/composer-triggers'
@@ -158,7 +158,7 @@ function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu,
       <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>
         <div className={css.bubble}><MessageText text={m.content} /></div>
         {m.images.length > 0 && <MessageAttachmentStrip convId={convId} message={m} imgOffset={imgOffset} />}
-        {m.pdfContext && <PdfSourceButton context={m.pdfContext} />}
+        {pdfContextsOf(m).map((context, index) => <PdfSourceButton key={context.documentId + ':' + index} context={context} />)}
       </div>
     )
   }

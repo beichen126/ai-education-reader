@@ -8,6 +8,7 @@ import { validateBranchGraph } from '../branches/branch-path'
 import { validateArtifact, validateQuizDocument } from '../artifacts/artifact-validation'
 import type { ConversationBranch } from '../branches/branch-types'
 import type { StudyArtifact } from '../artifacts/artifact-types'
+import { normalizeConversationPdfContexts, normalizeMessagePdfContexts } from '../engine/types'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -30,6 +31,11 @@ function validatePdfContext(ctx: unknown): void {
   if (!isObj(ctx) || !isNonEmptyStr(ctx.documentId) || !Array.isArray(ctx.pageNumbers) || ctx.pageNumbers.length === 0 || !ctx.pageNumbers.every((p: unknown) => isInt(p) && p > 0) || !isNum(ctx.createdAt) || ctx.createdAt < 0) {
     throw new BackupError('message.pdfContext 非法')
   }
+}
+
+function validatePdfContexts(contexts: unknown): void {
+  if (!Array.isArray(contexts)) throw new BackupError('message.pdfContexts 非法')
+  for (const ctx of contexts) validatePdfContext(ctx)
 }
 
 function isBase64(data: unknown): boolean {
@@ -138,6 +144,7 @@ export function parseAndValidate(input: unknown): Backup {
       if (!isStr(m.content)) throw new BackupError('message.content 必须是字符串')
       if (!Array.isArray(m.images) || !m.images.every(isStr)) throw new BackupError('message.images 必须是字符串数组')
       if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('message 时间戳必须是数字')
+      if (m.pdfContexts !== undefined) validatePdfContexts(m.pdfContexts)
       if (m.pdfContext !== undefined) validatePdfContext(m.pdfContext)
       mids.add(m.id)
     }
@@ -247,6 +254,7 @@ function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], a
       if (!isStr(m.content)) throw new BackupError('branch message.content 非法')
       if (!Array.isArray(m.images) || !m.images.every(isStr)) throw new BackupError('branch message.images 非法')
       if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('branch message 时间戳非法')
+      if (m.pdfContexts !== undefined) validatePdfContexts(m.pdfContexts)
       if (m.pdfContext !== undefined) validatePdfContext(m.pdfContext)
       if (locals.has(m.id)) throw new BackupError('branch message.id 重复')
       locals.add(m.id)
@@ -369,7 +377,9 @@ export async function restoreBackup(backup: Backup): Promise<void> {
     const oldAtts = await oldAttachmentRefs();
     oldRefs.push(...oldDocs, ...oldAtts);
     // E. One atomic IDB replacement.
-    await idbReplaceAll({ settings, conversations: backup.conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows, documentNotes: (backup as BackupV5).documentNotes || [], conversationBranches: (backup as BackupV4).branches || [], artifacts: restoreArtifacts((backup as BackupV4).artifacts || []) });
+    const conversations = backup.conversations.map(normalizeConversationPdfContexts)
+    const branches = ((backup as BackupV4).branches || []).map(branch => ({ ...branch, messages: branch.messages.map(normalizeMessagePdfContexts) }))
+    await idbReplaceAll({ settings, conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows, documentNotes: (backup as BackupV5).documentNotes || [], conversationBranches: branches, artifacts: restoreArtifacts((backup as BackupV4).artifacts || []) });
   } catch (e) {
     // Rollback: delete every staged OPFS file. Old IDB is untouched.
     for (const s of staged) { if (s.path) { try { await deleteBinary(s.ref) } catch { /* orphan */ } } }

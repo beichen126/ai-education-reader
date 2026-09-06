@@ -37,7 +37,36 @@ export type PdfContext = {
  * source is OPTIONAL: ordinary user-uploaded images and all pre-Stage-5 attachments omit it. */
 export type Attachment = { id: StableId; name: string; mimeType: string; size: number; createdAt: number; updatedAt: number; source?: PdfAttachmentSource }
 /** Message holds only stable attachment id references, never objectURL/base64. */
-export type Message = { id: StableId; role: MessageRole; content: string; images: StableId[]; createdAt: number; updatedAt: number; pdfContext?: PdfContext }
+export type Message = {
+  id: StableId
+  role: MessageRole
+  content: string
+  images: StableId[]
+  createdAt: number
+  updatedAt: number
+  /** Canonical v1.3.1 provenance shape. New messages write this field only. */
+  pdfContexts?: PdfContext[]
+  /** Legacy v1.3.0 compatibility field. Read and normalized, never written for new messages. */
+  pdfContext?: PdfContext
+}
+
+/** Read provenance from both the canonical and v1.3.0 legacy message shapes. */
+export function pdfContextsOf(message: Pick<Message, 'pdfContexts' | 'pdfContext'>): PdfContext[] {
+  if (Array.isArray(message.pdfContexts) && message.pdfContexts.length > 0) return message.pdfContexts
+  return message.pdfContext ? [message.pdfContext] : []
+}
+
+/** Normalize a persisted message to the canonical shape without mutating it. */
+export function normalizeMessagePdfContexts(message: Message): Message {
+  const contexts = pdfContextsOf(message)
+  const { pdfContext: _legacy, ...withoutLegacy } = message
+  return contexts.length > 0 ? { ...withoutLegacy, pdfContexts: contexts } : withoutLegacy
+}
+
+/** Normalize every message in a persisted conversation. */
+export function normalizeConversationPdfContexts<T extends { messages: Message[] }>(conversation: T): T {
+  return { ...conversation, messages: conversation.messages.map(normalizeMessagePdfContexts) }
+}
 export type Conversation = { id: StableId; title: string; createdAt: number; updatedAt: number; messages: Message[] }
 export const NEW_TITLE = '新会话'
 export function newStableId(): StableId { return globalThis.crypto.randomUUID() }

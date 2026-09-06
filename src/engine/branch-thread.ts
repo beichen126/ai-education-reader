@@ -6,7 +6,7 @@ import { getConversation } from '../storage/storage'
 import { getBranch, saveBranch, listBranchesByConversation } from '../branches/branch-store'
 import { acceptBranchUserMessage } from '../branches/branch-service'
 import { buildEffectiveConversationPath } from '../branches/branch-path'
-import { derivePdfContext } from '../pdf/pdf-message-context'
+import { attachPdfContexts } from '../pdf/pdf-message-context'
 
 // Per-branch ordered durable-write queue (mirrors the root writeChains). A stale checkpoint
 // can never overwrite a newer revision of a branch record.
@@ -84,8 +84,7 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
   if (!settings.apiKey) return false
   if (generationRegistry.isBusy()) return false
   const now = Date.now()
-  const pdfContext = await derivePdfContext(imageIds, now)
-  const msg: Message = { id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now, ...(pdfContext ? { pdfContext } : {}) }
+  const msg = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now }, imageIds, now)
   const controller = new AbortController()
   const key = genBranchKey(conversationId, branchId)
   if (!generationRegistry.begin(key, controller, 'sending')) return false

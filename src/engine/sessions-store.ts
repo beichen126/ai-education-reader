@@ -9,7 +9,7 @@ import { deleteConvAnnotations } from '../annotations/annotation-service'
 import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
 import { runThreadReply, type ReplyThread } from './stream-reply'
 import { generationRegistry, genRootKey } from './generation-registry'
-import { derivePdfContext } from '../pdf/pdf-message-context'
+import { attachPdfContexts } from '../pdf/pdf-message-context'
 
 export type { Conversation as ChatSession, Message as ChatMsg, Attachment as ChatImage }
 export const uid = (_p?: string) => newStableId()
@@ -107,8 +107,7 @@ export const sessionsActions = {
     const conv = state.byId[id]; if (!conv) return false
     if (!content.trim() && imageIds.length === 0) return false
     const now = Date.now()
-    const pdfContext = await derivePdfContext(imageIds, now)
-    const m: Message = { id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now, ...(pdfContext ? { pdfContext } : {}) }
+    const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now }, imageIds, now)
     const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
     const afterUser: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
     // Optimistically show 'sending' and block concurrent sends; revert on failure.
