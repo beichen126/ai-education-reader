@@ -39,20 +39,10 @@ import { getSettingsSnapshot } from '../engine/settings-store'
 import type { MappedTocItem } from './toc-mapping'
 import type { LearningDocument, ChapterNode } from './document-types'
 import { findConversationsByDocumentPage, type PdfPageConversationHit } from '../pdf/pdf-page-conversations'
+import { flushNoteEditorSession, type NoteEditorSession } from './note-session'
 import css from './document-reader.module.css'
 
 type TocTreeState = { expanded: ReadonlySet<string> }
-
-type NoteEditorSession = {
-  documentId: string
-  pageNumber: number
-  key: string
-  text: string
-  loaded: boolean
-  dirty: boolean
-  timer: number | null
-  lastSave: Promise<void> | null
-}
 
 const EMPTY_DOC_STATE = {
   doc: null as LearningDocument | null,
@@ -78,6 +68,7 @@ export function DocumentReader() {
   const [noteText, setNoteText] = useState('')
   const [noteLoading, setNoteLoading] = useState(false)
   const [noteSavedAt, setNoteSavedAt] = useState<number | null>(null)
+  const [noteSaveError, setNoteSaveError] = useState(false)
   const noteSessionRef = useRef<NoteEditorSession | null>(null)
   const [zoomBusy, setZoomBusy] = useState(false)
   // ---- Reader正文 display path (Agent C): direct visible canvas, no JPEG Blob on the
@@ -157,28 +148,25 @@ export function DocumentReader() {
   }, [persist])
   const flushRef = useRef(flushProgress); flushRef.current = flushProgress
 
-  const flushNoteSession = useCallback((session: NoteEditorSession): Promise<void> => {
-    if (session.timer !== null) {
-      window.clearTimeout(session.timer)
-      session.timer = null
-    }
-    if (!session.loaded || !session.dirty) return session.lastSave ?? Promise.resolve()
-    const content = session.text
-    session.dirty = false
-    const prior = session.lastSave ?? Promise.resolve()
-    const save = prior.catch(() => undefined).then(async () => {
-      await saveDocumentNote(session.documentId, session.pageNumber, content)
-      if (noteSessionRef.current === session) setNoteSavedAt(Date.now())
-    })
-    session.lastSave = save
-    return save
-  }, [])
+  const flushNoteSession = useCallback((session: NoteEditorSession): Promise<void> => flushNoteEditorSession(session, saveDocumentNote, {
+    onSaved: (savedSession, _attemptedContent, currentContent) => {
+      if (noteSessionRef.current !== savedSession) return
+      setNoteSaveError(false)
+      if (currentContent) setNoteSavedAt(Date.now())
+    },
+    onError: (failedSession) => {
+      if (noteSessionRef.current === failedSession) {
+        setNoteSaveError(true)
+        setNoteSavedAt(null)
+      }
+    },
+  }), [])
 
   const queueNoteSave = useCallback((session: NoteEditorSession) => {
     if (session.timer !== null) window.clearTimeout(session.timer)
     session.timer = window.setTimeout(() => {
       session.timer = null
-      void flushNoteSession(session)
+      void flushNoteSession(session).catch(() => {})
     }, 450)
   }, [flushNoteSession])
 
@@ -286,7 +274,7 @@ export function DocumentReader() {
     const key = docId + ':' + page
     const session: NoteEditorSession = { documentId: docId, pageNumber: page, key, text: '', loaded: false, dirty: false, timer: null, lastSave: null }
     noteSessionRef.current = session
-    setNoteLoading(true); setNoteSavedAt(null)
+    setNoteLoading(true); setNoteSavedAt(null); setNoteSaveError(false)
     setNoteText('')
     void getDocumentNote(docId, page).then(note => {
       if (cancelled || noteSessionRef.current !== session) return
@@ -788,10 +776,11 @@ export function DocumentReader() {
                 <textarea className={css.noteInput} value={noteText} disabled={noteLoading} placeholder="记录这一页的想法…" onChange={e => {
                   const value = e.target.value
                   setNoteText(value)
+                  setNoteSavedAt(null)
                   const session = noteSessionRef.current
                   if (session?.loaded) { session.text = value; session.dirty = true; queueNoteSave(session) }
                 }} />
-                <div className={css.noteStatus}>{noteLoading ? '正在加载…' : noteSavedAt ? '已自动保存' : '输入后自动保存'}</div>
+                <div className={css.noteStatus} data-testid="reader-note-status">{noteLoading ? '正在加载…' : noteSaveError ? '保存失败，将重试' : noteSavedAt ? '已自动保存' : '输入后自动保存'}</div>
               </aside>
             )}
           </>

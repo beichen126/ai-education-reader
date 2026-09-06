@@ -19,8 +19,11 @@ const filesEntry = page.locator('[data-testid="sidebar-entry-files"], [data-test
 // At a narrow viewport the rail is intentionally visibility-hidden until the
 // history drawer opens. Invoke its real button handler without changing the
 // application layout just to reach the document library.
-await filesEntry.evaluate((el) => (el instanceof HTMLElement ? el.click() : undefined))
-await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
+const openLibrary = async () => {
+  await filesEntry.evaluate((el) => (el instanceof HTMLElement ? el.click() : undefined))
+  await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
+}
+await openLibrary()
 await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(PDF)
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
@@ -75,6 +78,53 @@ await page.locator('[data-testid="reader-notes-toggle"]').click()
 await page.locator('[data-testid="reader-notes"] textarea').waitFor({ state: 'visible' })
 await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes"] textarea')?.value === '收起前的最新内容', null, { timeout: 10000 })
 assert(await page.locator('[data-testid="reader-notes"] textarea').inputValue() === '收起前的最新内容', 'close/reopen: pending edit is flushed before reload')
+
+// Closing the whole Reader must flush the current page before the document is
+// reopened from the library (not merely unmounting the note panel).
+await page.locator('[data-testid="reader-notes"] textarea').fill('关闭 Reader 前的最新内容')
+await page.locator('[data-testid="reader-close"]').click()
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'hidden', timeout: 10000 })
+await openLibrary()
+await page.locator('[data-testid^="doc-open-"]').first().click()
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+if (await page.locator('[data-testid="reader-notes"] textarea').count() === 0) await page.locator('[data-testid="reader-notes-toggle"]').click()
+await page.locator('[data-testid="reader-notes"] textarea').waitFor({ state: 'visible', timeout: 10000 })
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes"] textarea')?.value === '关闭 Reader 前的最新内容', null, { timeout: 10000 })
+assert(await page.locator('[data-testid="reader-notes"] textarea').inputValue() === '关闭 Reader 前的最新内容', 'Reader close/reopen: latest note survives whole Reader unmount')
+
+// Inject one transaction failure. The autosave must report the failure, keep
+// the session dirty, and the Reader cleanup flush must retry before reopen.
+await page.evaluate(() => {
+  const w = window
+  w.__failNextDocumentNotePut = true
+  if (w.__documentNotePutPatched) return
+  const put = IDBObjectStore.prototype.put
+  IDBObjectStore.prototype.put = function (...args) {
+    const request = put.apply(this, args)
+    if (this.name === 'documentNotes' && w.__failNextDocumentNotePut) {
+      w.__failNextDocumentNotePut = false
+      this.transaction.abort()
+    }
+    return request
+  }
+  w.__documentNotePutPatched = true
+})
+const failedNote = '失败后由 close 重试的内容'
+await page.locator('[data-testid="reader-notes"] textarea').fill(failedNote)
+await page.locator('[data-testid="reader-note-status"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-note-status"]')?.textContent === '保存失败，将重试', null, { timeout: 10000 })
+assert(true, 'save failure: autosave exposes failure without losing dirty state')
+await page.locator('[data-testid="reader-close"]').click()
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'hidden', timeout: 10000 })
+await openLibrary()
+await page.locator('[data-testid^="doc-open-"]').first().click()
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+if (await page.locator('[data-testid="reader-notes"] textarea').count() === 0) await page.locator('[data-testid="reader-notes-toggle"]').click()
+await page.locator('[data-testid="reader-notes"] textarea').waitFor({ state: 'visible', timeout: 10000 })
+await page.waitForFunction((expected) => document.querySelector('[data-testid="reader-notes"] textarea')?.value === expected, failedNote, { timeout: 10000 })
+assert(await page.locator('[data-testid="reader-notes"] textarea').inputValue() === failedNote, 'save failure -> Reader close retry -> reopen persists the note')
 
 await browser.close()
 for (const line of results) console.log(line)
