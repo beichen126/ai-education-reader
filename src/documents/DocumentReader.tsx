@@ -345,9 +345,10 @@ export function DocumentReader() {
 
   const go = useCallback((p: number, count: number) => {
     const next = clampReaderPage(p, count)
+    flushCurrentNote()
     setPage(prev => prev === next ? prev : next)
     setPageInput(String(next))
-  }, [])
+  }, [flushCurrentNote])
 
   const openRelatedConversation = useCallback(async (hit: PdfPageConversationHit) => {
     flushCurrentNote()
@@ -710,7 +711,7 @@ export function DocumentReader() {
             <button className={css.buildBtn} data-testid="reader-build" title="从此页新建章节" onClick={() => { setBuilderSeed(true); setBuilderSaveSource('manual'); setBuilderOpen(true) }}>从此页新建章节</button>
           )}
           <button className={css.tocToggle} data-testid="reader-toc-toggle" onClick={() => setTocOpen(o => !o)}>目录</button>
-          {doc && <button className={css.noteToggle} data-testid="reader-notes-toggle" onClick={() => setNotesOpen(o => !o)}>{notesOpen ? '收起笔记' : '笔记'}</button>}
+          {doc && <button className={css.noteToggle} data-testid="reader-notes-toggle" onClick={() => { if (notesOpen) flushCurrentNote(); setNotesOpen(o => !o) }}>{notesOpen ? '收起笔记' : '笔记'}</button>}
           <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>关闭</button>
         </div>
       </div>
