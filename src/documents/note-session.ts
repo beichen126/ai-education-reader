@@ -20,7 +20,9 @@ export type NoteSaveHooks = {
 
 /**
  * Flush one note snapshot without losing edits made while the write is in flight.
- * The caller's document-note service remains responsible for durable ordering and ownership.
+ * The writer is invoked synchronously so a durable service can register its
+ * same-key write barrier before a close/reopen read starts. The caller's
+ * document-note service remains responsible for durable ordering and ownership.
  */
 export function flushNoteEditorSession(session: NoteEditorSession, write: NoteSaveWriter, hooks: NoteSaveHooks = {}): Promise<void> {
   if (session.timer !== null) {
@@ -30,18 +32,26 @@ export function flushNoteEditorSession(session: NoteEditorSession, write: NoteSa
   if (!session.loaded || !session.dirty) return session.lastSave ?? Promise.resolve()
 
   const attemptedContent = session.text
+  let writeResult: Promise<DocumentNote | undefined>
+  try {
+    // Do not move this call into a promise callback. saveDocumentNote uses
+    // this synchronous call site to register the service-level read barrier.
+    writeResult = write(session.documentId, session.pageNumber, attemptedContent)
+  } catch (error) {
+    writeResult = Promise.reject(error)
+  }
+  // Observe the writer immediately so a rejection cannot become unhandled
+  // while an older session result is still settling.
+  const observedWrite = writeResult.then(value => value, error => { throw error })
   const prior = session.lastSave ?? Promise.resolve()
-  const save = prior.catch(() => undefined).then(async () => {
-    try {
-      await write(session.documentId, session.pageNumber, attemptedContent)
-      const currentContent = session.text === attemptedContent
-      session.dirty = !currentContent
-      hooks.onSaved?.(session, attemptedContent, currentContent)
-    } catch (error) {
-      session.dirty = true
-      hooks.onError?.(session, error)
-      throw error
-    }
+  const save = prior.catch(() => undefined).then(() => observedWrite).then(async () => {
+    const currentContent = session.text === attemptedContent
+    session.dirty = !currentContent
+    hooks.onSaved?.(session, attemptedContent, currentContent)
+  }).catch(error => {
+    session.dirty = true
+    hooks.onError?.(session, error)
+    throw error
   })
   session.lastSave = save
   return save
