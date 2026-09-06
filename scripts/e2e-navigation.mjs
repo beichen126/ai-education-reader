@@ -10,11 +10,11 @@ export async function openDocumentLibrary(page) {
     if (await railEntry.isVisible().catch(() => false)) {
       await railEntry.click()
     } else {
-      const mobileHistory = page.locator('[data-testid="mobile-history"]')
-      if (!(await mobileHistory.isVisible().catch(() => false))) {
-        throw new Error('Document Library navigation unavailable: no visible files or mobile history entry')
+      const railHistory = page.locator('[data-testid="rail-history"]')
+      if (!(await railHistory.isVisible().catch(() => false))) {
+        throw new Error('Document Library navigation unavailable: no visible files or history rail')
       }
-      await mobileHistory.click()
+      await railHistory.click()
       const drawer = page.locator('[data-testid="mobile-history-drawer"]')
       await drawer.waitFor({ state: 'visible', timeout: 10000 })
       const drawerEntry = drawer.locator('[data-testid="sidebar-entry-files"]')

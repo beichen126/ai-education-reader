@@ -35,7 +35,7 @@
 
 .frame[data-narrow] .sidebarCol {
   display: block;
-  visibility: hidden;
+  visibility: visible;
 }
 
 .frame[data-narrow] .sidebarCol[data-drawer-open] {

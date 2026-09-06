@@ -137,12 +137,10 @@ export function AppFrame({
     }
   }, [])
 
-  // Narrow viewports auto-collapse the sidebar; the store mirror keeps
-  // toggleSidebar's semantics right (narrow toggles flip the manual
-  // re-expand override, stores.ts). Collapsed is decided here, so the
-  // solver stays breakpoint-free: a narrow re-expand passes the preference
-  // (or the default when the wide preference is closed) and the center
-  // absorbs the squeeze.
+  // Narrow viewports keep the original collapsed rail visible. Only the
+  // expanded state uses the mobile drawer presentation; the store mirror keeps
+  // the narrow rail <-> drawer transition independent from the desktop width
+  // preference.
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
   const sidebarCollapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
@@ -178,7 +176,7 @@ const productTitle = ((globalThis as any).process?.env?.DSH_CLIENT_TITLE) ?? t('
     <div
       ref={frameRef}
       className={css.frame}
-      style={{ gridTemplateColumns: narrow ? `0px minmax(0, 1fr) 0px` : `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
+      style={{ gridTemplateColumns: narrow && panels.narrowExpanded ? `0px minmax(0, 1fr) 0px` : `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
       data-narrow={narrow || undefined}
@@ -196,7 +194,7 @@ const productTitle = ((globalThis as any).process?.env?.DSH_CLIENT_TITLE) ?? t('
             renders the rail UI too). */}
           {renderSlot('sidebar', {
             collapsed: narrow ? !panels.narrowExpanded : sidebarCollapsed,
-            width: narrow ? mobileDrawerWidth : cols.sidebar,
+            width: narrow && panels.narrowExpanded ? mobileDrawerWidth : cols.sidebar,
           })}
       </div>
       {narrow && panels.narrowExpanded && <button type="button" className={css.mobileBackdrop} data-testid="mobile-history-backdrop" aria-label="关闭历史会话" onClick={() => actions.closeNarrowSidebar()} />}

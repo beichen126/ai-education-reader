@@ -23,7 +23,6 @@ import { documentUiActions } from '../documents/document-ui-store'
 import { DocumentContextPicker } from '../documents/DocumentContextPicker'
 import { executeDocumentContext } from '../documents/document-context-service'
 import { getSessionsCurrent } from '../engine/sessions-store'
-import { layoutStore, useLayoutStore } from '../engine/layout-store'
 import type { PdfSelection } from '../pdf/pdf-types'
 import { buildAttachmentDisplayItems, type AttachmentDisplayItem } from '../attachments/attachment-display'
 import { PdfContextCard } from './PdfContextCard'
@@ -52,7 +51,6 @@ export function Conversation() {
   const status = useSessions(s => s.status)
   const sendError = useSessions(s => s.sendError)
   const hasKey = useSettings(s => !!s.apiKey)
-  const narrow = useLayoutStore(s => s.narrow)
   const listRef = useRef<HTMLDivElement | null>(null)
   const atBottomRef = useRef(true)
   const onScroll = () => { const el = listRef.current; if (!el) return; atBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 60 }
@@ -128,13 +126,6 @@ export function Conversation() {
   function openLibrary() { void listArtifacts().then(setLibArtifacts); setArtView('library') }
   return (
     <div className={css.conversation} data-testid="conversation">
-      {narrow && (
-        <div className={css.mobileTopbar}>
-          <button type="button" className={css.mobileHistoryBtn} data-testid="mobile-history" onClick={() => layoutStore.actions.openNarrowSidebar()}>
-            ☰ 历史会话
-          </button>
-        </div>
-      )}
       {!hasKey && (
         <div className={css.noKeyBanner}>
           <span>本项目使用 BYOK，需要配置你自己的 API Key 才能调用模型。</span>

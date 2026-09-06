@@ -35,6 +35,19 @@ await page.waitForTimeout(500)
 const expanded = await page.locator('[data-testid="sidebar-collapse"]').count()
 assert(expanded === 1, 'A1: clicking rail-history restores the expanded sidebar')
 
+// Every client keeps the original collapsed rail. At a narrow viewport the
+// expanded state is the drawer, so the rail itself must remain directly usable.
+await page.setViewportSize({ width: 900, height: 800 })
+await page.locator('[data-testid="rail-history"]').waitFor({ state: 'visible', timeout: 5000 })
+assert(await page.locator('[data-testid^="rail-"]').count() >= 2, 'A1: 900px viewport keeps the collapsed rail visible')
+assert(await page.locator('[data-testid="mobile-history"]').count() === 0, 'A1: no replacement single-button history entry is rendered')
+assert(await page.locator('[data-testid="sidebar-collapse"]').count() === 0, 'A1: 900px viewport starts collapsed, not as an expanded session drawer')
+await page.locator('[data-testid="rail-history"]').click()
+await page.locator('[data-testid="sidebar-collapse"]').waitFor({ state: 'visible', timeout: 5000 })
+assert(await page.locator('[data-testid="history-session"]').count() > 0, 'A1: expanding the 900px rail opens the session list')
+await page.setViewportSize({ width: 1440, height: 900 })
+await page.locator('[data-testid="sidebar-collapse"]').waitFor({ state: 'visible', timeout: 5000 })
+
 
 // ===== A2: COMPOSER — exactly ONE visible attachment trigger, unified menu ======
 {

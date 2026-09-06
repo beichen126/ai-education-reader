@@ -45,7 +45,7 @@ await seedAndBoot(page, {
   settings: { lastConversationId: CONVERSATION_A },
 })
 await page.setViewportSize({ width: 390, height: 844 })
-await page.locator('[data-testid="mobile-history"]').waitFor({ state: 'visible', timeout: 25000 })
+await page.locator('[data-testid="rail-history"]').waitFor({ state: 'visible', timeout: 25000 })
 const composer = page.locator('textarea[class*="composerText"]')
 await composer.waitFor({ state: 'visible', timeout: 10000 })
 const aOnly = page.getByText(A_ONLY, { exact: true })
@@ -78,7 +78,7 @@ for (const size of [
 
   const draft = '移动抽屉回归草稿 ' + label
   await composer.fill(draft)
-  await page.locator('[data-testid="mobile-history"]').click()
+  await page.locator('[data-testid="rail-history"]').click()
   const drawer = page.locator('[data-testid="mobile-history-drawer"]')
   const open = await drawer.waitFor({ state: 'visible' }).then(() => measure())
   assert(open.drawerWidth > 0 && open.drawerWidth <= Math.min(240, size.width * 0.72) + 1, label + ': drawer width fits min(240px,72vw)')
@@ -93,7 +93,7 @@ for (const size of [
   assert(true, label + ': backdrop closes drawer')
   assert(await composer.inputValue() === draft, label + ': draft remains after backdrop close')
 
-  await page.locator('[data-testid="mobile-history"]').click()
+  await page.locator('[data-testid="rail-history"]').click()
   await drawer.waitFor({ state: 'visible' })
   await page.locator('[data-testid="sidebar-collapse"]').click()
   await drawer.waitFor({ state: 'hidden' })
@@ -102,7 +102,7 @@ for (const size of [
 
   // Keep the existing session-selection coverage, but identify the target by
   // its unique title. At 390px this is the required A -> B behavior chain.
-  await page.locator('[data-testid="mobile-history"]').click()
+  await page.locator('[data-testid="rail-history"]').click()
   await drawer.waitFor({ state: 'visible' })
   const targetTitle = size.width === 390 ? B_TITLE : A_TITLE
   const target = drawer.locator('[data-testid="history-session"]').filter({ hasText: targetTitle })
@@ -118,7 +118,7 @@ for (const size of [
 
     // Restore A explicitly so the next viewport keeps the original draft
     // scenario independent of the cross-conversation assertion above.
-    await page.locator('[data-testid="mobile-history"]').click()
+    await page.locator('[data-testid="rail-history"]').click()
     await drawer.waitFor({ state: 'visible' })
     const restoreA = drawer.locator('[data-testid="history-session"]').filter({ hasText: A_TITLE })
     assert(await restoreA.count() === 1, label + ': A restore target is unique')
