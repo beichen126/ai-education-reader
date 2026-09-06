@@ -8,7 +8,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getDocument, updateLastReadPage, updateDocumentChapters, DocumentBinaryMissingError } from './document-service'
 import { getDocumentNote, saveDocumentNote } from './document-note-service'
-import { useSessions, getSessionsCurrent } from '../engine/sessions-store'
+import { useSessions, getSessionsCurrent, sessionsActions } from '../engine/sessions-store'
+import { listConversations } from '../storage/storage'
+import { allBranches } from '../branches/branch-store'
 import { formatBytes } from '../storage/diagnostics'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { renderPdfContextRanges, PdfContextRenderError, type ContextRenderProgress } from '../pdf/pdf-context-render'
@@ -36,6 +38,7 @@ import { AiTocProgressDialog } from './AiTocProgressDialog'
 import { getSettingsSnapshot } from '../engine/settings-store'
 import type { MappedTocItem } from './toc-mapping'
 import type { LearningDocument, ChapterNode } from './document-types'
+import { findConversationsByDocumentPage, type PdfPageConversationHit } from '../pdf/pdf-page-conversations'
 import css from './document-reader.module.css'
 
 type TocTreeState = { expanded: ReadonlySet<string> }
@@ -107,6 +110,9 @@ export function DocumentReader() {
   const [ctxRunning, setCtxRunning] = useState<{ total: number; done: number } | null>(null)
   const [ctxProgress, setCtxProgress] = useState<ContextRenderProgress | null>(null)
   const [ctxMsg, setCtxMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [relatedConversations, setRelatedConversations] = useState<PdfPageConversationHit[]>([])
+  const [relatedOpen, setRelatedOpen] = useState(false)
+  const [relatedError, setRelatedError] = useState<string | null>(null)
   const [ctxPending, setCtxPending] = useState<ReaderContextRequest | null>(null)
   const ctxGenRef = useRef(0)
   const ctxMenuOpenRef = useRef(false); ctxMenuOpenRef.current = ctxMenuOpen
@@ -297,6 +303,21 @@ export function DocumentReader() {
     }
   }, [docId, doc, page, notesOpen, flushNoteSession])
 
+  // Reverse provenance is a pure data query. Reader only loads the current records,
+  // filters by the exact document/page pair, and renders the lightweight result list.
+  useEffect(() => {
+    let cancelled = false
+    setRelatedOpen(false)
+    setRelatedError(null)
+    if (!docId || !doc) { setRelatedConversations([]); return () => { cancelled = true } }
+    setRelatedConversations([])
+    void Promise.all([listConversations(), allBranches()]).then(([conversations, branches]) => {
+      if (cancelled) return
+      setRelatedConversations(findConversationsByDocumentPage(doc.id, page, conversations, branches))
+    }).catch(() => { if (!cancelled) setRelatedConversations([]) })
+    return () => { cancelled = true }
+  }, [docId, doc?.id, page])
+
   // ---- Invalidate any PENDING zoom render on navigation (Agent G, G2): every page turn / doc
   //      switch (and reader close) bumps the zoom generation, so a zoom that is still rendering
   //      never installs a Blob for a page the user already left. Installed zoom URLs are
@@ -330,6 +351,13 @@ export function DocumentReader() {
     const next = clampReaderPage(p, count)
     setPage(prev => prev === next ? prev : next)
     setPageInput(String(next))
+  }, [])
+
+  const openRelatedConversation = useCallback(async (hit: PdfPageConversationHit) => {
+    const opened = await sessionsActions.openAtMessage(hit.conversationId, hit.messageId, hit.branchId)
+    if (!opened) { setRelatedError('这条对话或消息已不存在。'); return }
+    setRelatedOpen(false)
+    documentUiActions.close()
   }, [])
 
   // ---- Reader -> Context bridge (Stage 9.2B2 / 9.2B2.1) ----
@@ -676,6 +704,11 @@ export function DocumentReader() {
               {ctxBusy ? '处理中' : '加入对话'}
             </button>
           )}
+          {relatedConversations.length > 0 && (
+            <button className={css.relatedBtn} data-testid="reader-related-toggle" onClick={() => setRelatedOpen(o => !o)}>
+              相关对话 {relatedConversations.length}
+            </button>
+          )}
           {doc && doc.chapterSource !== 'native' && (
             <button className={css.buildBtn} data-testid="reader-build" title="从此页新建章节" onClick={() => { setBuilderSeed(true); setBuilderSaveSource('manual'); setBuilderOpen(true) }}>从此页新建章节</button>
           )}
@@ -684,6 +717,19 @@ export function DocumentReader() {
           <button className={css.closeBtn} data-testid="reader-close" onClick={() => { documentUiActions.close() }}>关闭</button>
         </div>
       </div>
+      {relatedOpen && relatedConversations.length > 0 && (
+        <div className={css.relatedPanel} data-testid="reader-related-conversations">
+          <div className={css.relatedTitle}>包含第 {page} 页的对话</div>
+          {relatedConversations.map((hit) => (
+            <button type="button" className={css.relatedItem} data-testid="reader-related-item" key={hit.conversationId + ':' + hit.messageId + ':' + hit.documentId + ':' + hit.pageNumber} onClick={() => void openRelatedConversation(hit)}>
+              <span className={css.relatedConversation}>{hit.conversationTitle}</span>
+              <span className={css.relatedMeta}>{new Date(hit.messageCreatedAt).toLocaleString()} · 消息 {hit.messageId.slice(0, 8)}</span>
+              {hit.messagePreview && <span className={css.relatedPreview}>“{hit.messagePreview}”</span>}
+            </button>
+          ))}
+          {relatedError && <div className={css.relatedError} data-testid="reader-related-error">{relatedError}</div>}
+        </div>
+      )}
       <div className={css.body}>
         {loadError ? (
           <div className={css.errorBox} data-testid="reader-error">{loadError}</div>

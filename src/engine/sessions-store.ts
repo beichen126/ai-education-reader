@@ -10,12 +10,14 @@ import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } 
 import { runThreadReply, type ReplyThread } from './stream-reply'
 import { generationRegistry, genRootKey } from './generation-registry'
 import { attachPdfContexts } from '../pdf/pdf-message-context'
+import { getBranch } from '../branches/branch-store'
 
 export type { Conversation as ChatSession, Message as ChatMsg, Attachment as ChatImage }
 export const uid = (_p?: string) => newStableId()
 /** Ink-screen-friendly UI render throttle (reserved for a future settings field). */
 export const streamRenderIntervalMs = 200
 export type RequestStatus = 'idle' | 'sending' | 'streaming' | 'error'
+export type MessageFocusTarget = { conversationId: StableId; messageId: StableId; branchId?: StableId }
 export function makeSession(title: string = NEW_TITLE): Conversation {
   const now = Date.now()
   return { id: newStableId(), title, createdAt: now, updatedAt: now, messages: [] }
@@ -23,7 +25,7 @@ export function makeSession(title: string = NEW_TITLE): Conversation {
 
 export type SessionsState = {
   list: Conversation[]; byId: Record<string, Conversation>; current: string | undefined; ready: boolean
-  status: RequestStatus; sendError: string | undefined
+  status: RequestStatus; sendError: string | undefined; focusMessage?: MessageFocusTarget
 }
 
 let state: SessionsState = { list: [], byId: {}, current: undefined, ready: false, status: 'idle', sendError: undefined }
@@ -40,6 +42,7 @@ export function useSessions<T>(sel: (s: SessionsState) => T): T { return useSync
 export function getSessionsStatus(): RequestStatus { return state.status }
 export function getSessionsSendError(): string | undefined { return state.sendError }
 export function getSessionsCurrent(): string | undefined { return state.current }
+export function getSessionsFocusTarget(): MessageFocusTarget | undefined { return state.focusMessage }
 
 function index(list: Conversation[]): Record<string, Conversation> {
   const m: Record<string, Conversation> = {}; for (const c of list) m[c.id] = c; return m
@@ -47,7 +50,7 @@ function index(list: Conversation[]): Record<string, Conversation> {
 function sortList(list: Conversation[]): Conversation[] { return [...list].sort((a, b) => b.updatedAt - a.updatedAt) }
 function toState(list: Conversation[], current?: string, ready = state.ready, status = state.status, sendError = state.sendError): SessionsState {
   const sorted = sortList(list)
-  return { list: sorted, byId: index(sorted), current: current ?? sorted[0]?.id, ready, status, sendError }
+  return { list: sorted, byId: index(sorted), current: current ?? sorted[0]?.id, ready, status, sendError, focusMessage: state.focusMessage }
 }
 function upsertState(conv: Conversation, extra?: Partial<SessionsState>) {
   setState({ ...toState(state.list.map(c => c.id === conv.id ? conv : c), state.current), ...(extra || {}) })
@@ -84,14 +87,33 @@ function drainWrites(convId: string): Promise<void> { return writeChains.get(con
 export const sessionsActions = {
   async newChat(): Promise<string> {
     const c = makeSession()
-    setState(toState([c, ...state.list], c.id))
+    setState({ ...toState([c, ...state.list], c.id), focusMessage: undefined })
     await saveConversation(c); await setSetting(LAST_CONV, c.id)
     return c.id
   },
   async open(id: string) {
     if (state.status === 'sending' || state.status === 'streaming') return // freeze: don't switch while generating
-    setState(toState(state.list, id, state.ready, state.status, state.sendError))
+    setState({ ...toState(state.list, id, state.ready, state.status, state.sendError), focusMessage: undefined })
     await setSetting(LAST_CONV, id)
+  },
+  /** Open a conversation and request a post-render scroll to one concrete message. */
+  async openAtMessage(id: string, messageId: string, branchId?: string): Promise<boolean> {
+    if (state.status === 'sending' || state.status === 'streaming') return false
+    const conversation = state.byId[id]
+    if (!conversation) { if (state.focusMessage) setState({ ...state, focusMessage: undefined }); return false }
+    if (branchId) {
+      const branch = await getBranch(branchId)
+      if (!branch || branch.conversationId !== id || !branch.messages.some((message) => message.id === messageId)) { if (state.focusMessage) setState({ ...state, focusMessage: undefined }); return false }
+    } else if (!conversation.messages.some((message) => message.id === messageId)) {
+      if (state.focusMessage) setState({ ...state, focusMessage: undefined })
+      return false
+    }
+    setState({ ...toState(state.list, id, state.ready, state.status, state.sendError), focusMessage: { conversationId: id, messageId, ...(branchId ? { branchId } : {}) } })
+    await setSetting(LAST_CONV, id)
+    return true
+  },
+  clearMessageFocus() {
+    if (state.focusMessage) setState({ ...state, focusMessage: undefined })
   },
   stopGenerating() { generationRegistry.cancel() },
   /**
@@ -160,7 +182,7 @@ export const sessionsActions = {
     writeChains.delete(id)
     const conv = state.byId[id]
     const next = toState(state.list.filter(c => c.id !== id), state.current === id ? undefined : state.current)
-    setState(next)
+    setState({ ...next, focusMessage: state.focusMessage?.conversationId === id ? undefined : state.focusMessage })
     await deleteConversation(id)
     if (conv) {
       const ids = new Set<string>()

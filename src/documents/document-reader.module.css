@@ -49,6 +49,16 @@
 .errorBox { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--dsw-alias-state-error-primary); font-size: 13px; }
 .ctxBtn { min-height: 36px; padding: 4px 14px; border: none; border-radius: 8px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 13px; cursor: pointer; white-space: nowrap; }
 .ctxBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.relatedBtn { min-height: 36px; padding: 4px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; white-space: nowrap; }
+.relatedBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.relatedPanel { position: absolute; top: 56px; right: 12px; z-index: 31; width: min(360px, calc(100vw - 24px)); max-height: min(460px, calc(100vh - 100px)); overflow-y: auto; background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+.relatedTitle { padding: 2px 4px 6px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.relatedItem { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; width: 100%; min-height: 58px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; text-align: left; }
+.relatedItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.relatedConversation { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+.relatedMeta, .relatedPreview { color: var(--dsw-alias-label-tertiary); font-size: 11px; overflow-wrap: anywhere; }
+.relatedPreview { color: var(--dsw-alias-label-secondary); line-height: 1.35; }
+.relatedError { padding: 6px 4px; color: var(--dsw-alias-state-error-primary); font-size: 12px; }
 .ctxMenu { position: absolute; top: 56px; right: 12px; z-index: 30; width: min(320px, calc(100vw - 24px)); background: var(--dsw-alias-bg-base); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.18); padding: 10px; display: flex; flex-direction: column; gap: 6px; }
 .ctxMenuTitle { font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .menuItem { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 42px; padding: 8px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; text-align: left; }

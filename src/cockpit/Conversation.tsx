@@ -47,6 +47,7 @@ import css from './cockpit.module.css'
 
 export function Conversation() {
   const session = useSessions(s => s.byId[s.current || ''])
+  const focusMessage = useSessions(s => s.focusMessage)
   const status = useSessions(s => s.status)
   const sendError = useSessions(s => s.sendError)
   const hasKey = useSettings(s => !!s.apiKey)
@@ -66,6 +67,22 @@ export function Conversation() {
     if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
     lastRef.current = sig
   }, [sig])
+  // Consume a one-shot navigation intent only after the selected conversation/thread
+  // has rendered its message DOM. There is no fixed-delay race with IndexedDB or React.
+  useEffect(() => {
+    if (!session || !focusMessage || focusMessage.conversationId !== session.id) return
+    if (focusMessage.branchId) {
+      if (branchChat.activeBranchId !== focusMessage.branchId) { void branchChat.switchBranch(focusMessage.branchId); return }
+    } else if (branchChat.activeBranchId) {
+      void branchChat.switchBranch(undefined)
+      return
+    }
+    const target = Array.from(listRef.current?.querySelectorAll<HTMLElement>('[data-message-id]') ?? [])
+      .find((element) => element.dataset.messageId === focusMessage.messageId)
+    if (!target) { sessionsActions.clearMessageFocus(); return }
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    sessionsActions.clearMessageFocus()
+  }, [session, focusMessage, branchChat.activeBranchId, branchChat.switchBranch, messages.length])
   const streaming = status === 'streaming'
   const busy = status === 'sending' || status === 'streaming'
   const lastMsg0 = lastMsg
