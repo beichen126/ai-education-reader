@@ -1,6 +1,7 @@
 import type { ProviderCapabilities, ResolvedSystemMessagePolicy } from '../api/provider-capabilities'
 import { DEFAULT_PROVIDER_CAPABILITIES } from '../api/provider-capabilities'
 import type { ChatThreadRef } from '../branches/branch-types'
+import { getBranch } from '../branches/branch-store'
 import { buildContextMessages } from '../api/deepseek'
 import type { Message, StableId } from '../engine/types'
 import { newStableId } from '../engine/types'
@@ -9,6 +10,7 @@ import { getPromptPreferences } from './prompt-preferences'
 import { capturePromptSnapshot, listEffectivePromptDefinitions, resolvePromptDefinition, type PromptResolutionDiagnostic } from './prompt-resolution'
 import { appendPromptTransition } from './prompt-timeline'
 import { compileConversationLogicalContext, type LogicalPromptContext } from './prompt-compiler'
+import { getPromptSnapshotIssues } from './prompt-validation'
 import type { PromptSnapshot, PromptTransition } from './prompt-types'
 
 export type CompilePolicySnapshot = {
@@ -45,6 +47,48 @@ export type PrepareSendContextInput = {
   now?: number
   id?: () => StableId
   currentModeSnapshot?: PromptSnapshot
+}
+
+export class AcceptedSendContractError extends Error {
+  readonly code: string
+  constructor(code: string, message: string) {
+    super(message)
+    this.code = code
+    this.name = 'AcceptedSendContractError'
+  }
+}
+
+function rejectAcceptedSend(code: string, message: string): never {
+  throw new AcceptedSendContractError(code, message)
+}
+
+async function validateAcceptedSendContract(input: PrepareSendContextInput): Promise<void> {
+  if (!input.acceptedMessageId || typeof input.acceptedMessageId !== 'string') rejectAcceptedSend('accepted-message-missing', 'acceptedMessageId is required')
+  if (!Array.isArray(input.messagesBeforeAcceptance) || !Array.isArray(input.candidateMessages)) rejectAcceptedSend('invalid-message-path', 'message paths must be arrays')
+
+  const previousIds = input.messagesBeforeAcceptance.map((message) => message?.id)
+  if (previousIds.some((id) => typeof id !== 'string' || !id)) rejectAcceptedSend('invalid-message-path', 'messagesBeforeAcceptance contains an invalid message id')
+  if (new Set(previousIds).size !== previousIds.length) rejectAcceptedSend('duplicate-message-id', 'messagesBeforeAcceptance contains a duplicate message id')
+  if (previousIds.includes(input.acceptedMessageId)) rejectAcceptedSend('accepted-message-already-exists', 'acceptedMessageId already exists before acceptance')
+  const candidateIds = input.candidateMessages.map((message) => message?.id)
+  if (candidateIds.some((id) => typeof id !== 'string' || !id) || new Set(candidateIds).size !== candidateIds.length) rejectAcceptedSend('duplicate-message-id', 'candidate messages contain a duplicate or invalid message id')
+  if (input.candidateMessages.length !== input.messagesBeforeAcceptance.length + 1) rejectAcceptedSend('candidate-not-extension', 'candidate messages must extend the previous path by exactly one message')
+  for (let index = 0; index < previousIds.length; index++) {
+    if (input.candidateMessages[index]?.id !== previousIds[index]) rejectAcceptedSend('candidate-not-extension', 'candidate messages do not extend the previous path')
+  }
+  const accepted = input.candidateMessages[input.candidateMessages.length - 1]
+  if (!accepted || accepted.id !== input.acceptedMessageId) rejectAcceptedSend('accepted-message-missing', 'candidate path does not contain the accepted message at its end')
+  if (accepted.role !== 'user') rejectAcceptedSend('accepted-message-role', 'accepted message must be a user message')
+
+  if (input.threadRef.type === 'branch') {
+    const branch = await getBranch(input.threadRef.branchId)
+    if (branch && branch.conversationId !== input.threadRef.conversationId) rejectAcceptedSend('thread-owner-mismatch', 'branch does not belong to the requested conversation')
+  }
+
+  if (input.currentModeSnapshot) {
+    const issues = getPromptSnapshotIssues(input.currentModeSnapshot)
+    if (issues.length > 0) rejectAcceptedSend('invalid-prompt-snapshot', issues[0].path + ': ' + issues[0].message)
+  }
 }
 
 function sameSnapshot(a: PromptSnapshot, b: PromptSnapshot): boolean {
@@ -135,6 +179,7 @@ function transitionForSend(
  * user message but creates no assistant placeholder.
  */
 export async function prepareAcceptedSendContext(input: PrepareSendContextInput): Promise<PreparedSendContext> {
+  await validateAcceptedSendContract(input)
   const now = input.now ?? Date.now()
   const resolution = input.currentModeSnapshot
     ? { snapshot: input.currentModeSnapshot, diagnostics: [] as PromptResolutionDiagnostic[] }

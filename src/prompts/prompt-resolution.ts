@@ -94,13 +94,36 @@ export function resolvePromptDefinition(
 
 /** Capture only values needed to explain one request; no definition reference survives. */
 export function capturePromptSnapshot(definition: PromptDefinition, now: number): PromptSnapshot {
-  return {
+  const base = {
     profileId: definition.id,
-    kind: definition.kind,
     name: String(definition.name),
     content: String(promptContent(definition)),
     revision: definition.revision,
     source: definition.source,
     capturedAt: now,
   }
+  switch (definition.kind) {
+    case 'conversation-mode':
+      return { ...base, kind: definition.kind }
+    case 'artifact':
+      return { ...base, kind: definition.kind, artifactKind: definition.artifactKind, ...(definition.protocolId ? { protocolId: definition.protocolId } : {}) }
+    case 'quick-follow-up':
+      return { ...base, kind: definition.kind, label: definition.label, pinned: definition.pinned, sortOrder: definition.sortOrder }
+    case 'protocol':
+      return {
+        ...base,
+        kind: definition.kind,
+        protocolDomain: definition.domain,
+        ...(definition.outputContract !== undefined ? { outputContract: definition.outputContract } : {}),
+        ...(definition.validator ? { validator: { ...definition.validator } } : {}),
+        overridePolicy: definition.overridePolicy,
+        ...(definition.baseProtocolId ? { baseProtocolId: definition.baseProtocolId } : {}),
+      }
+    default:
+      return assertNever(definition)
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error('Unhandled prompt definition kind: ' + String(value))
 }

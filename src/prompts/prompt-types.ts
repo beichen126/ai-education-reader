@@ -62,16 +62,48 @@ export type PromptDefinition =
 
 export type PromptSnapshotSource = PromptSource | 'legacy'
 
-/** A self-contained value captured for history; it never points back to a definition. */
-export type PromptSnapshot = {
+/** Shared immutable fields captured for history; it never points back to a definition. */
+export type PromptSnapshotBase = {
   profileId?: StableId
-  kind: PromptKind
   name: string
   content: string
   revision?: number
   source: PromptSnapshotSource
   capturedAt: number
 }
+
+export type ConversationModeSnapshot = PromptSnapshotBase & {
+  kind: 'conversation-mode'
+}
+
+export type ArtifactPromptSnapshot = PromptSnapshotBase & {
+  kind: 'artifact'
+  artifactKind: ArtifactKind
+  protocolId?: StableId
+}
+
+export type QuickFollowUpSnapshot = PromptSnapshotBase & {
+  kind: 'quick-follow-up'
+  label: string
+  pinned: boolean
+  sortOrder: number
+}
+
+export type ProtocolPromptSnapshot = PromptSnapshotBase & {
+  kind: 'protocol'
+  protocolDomain: ProtocolDomain
+  outputContract?: string
+  validator?: PromptValidatorMetadata
+  overridePolicy: 'read-only' | 'experimental'
+  baseProtocolId?: StableId
+}
+
+/** Discriminated, domain-bound metadata used by history, compilation, and backup. */
+export type PromptSnapshot =
+  | ConversationModeSnapshot
+  | ArtifactPromptSnapshot
+  | QuickFollowUpSnapshot
+  | ProtocolPromptSnapshot
 
 export type PromptTransition = {
   id: StableId

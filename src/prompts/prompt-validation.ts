@@ -204,12 +204,52 @@ export function getPromptSnapshotIssues(value: unknown): PromptMetadataIssue[] {
   const issues: PromptMetadataIssue[] = []
   if (!isObject(value)) return [{ code: 'NOT_OBJECT', path: '', message: 'prompt snapshot must be an object' }]
   if (value.profileId !== undefined && !isNonEmptyString(value.profileId)) issues.push({ code: 'INVALID_PROFILE_ID', path: 'profileId', message: 'profileId must be a non-empty string when present' })
-  if (typeof value.kind !== 'string' || !PROMPT_KINDS.has(value.kind as PromptKind)) issues.push({ code: 'INVALID_KIND', path: 'kind', message: 'snapshot kind is invalid' })
+  const validKind = typeof value.kind === 'string' && PROMPT_KINDS.has(value.kind as PromptKind)
+  if (!validKind) issues.push({ code: 'INVALID_KIND', path: 'kind', message: 'snapshot kind is invalid' })
   if (typeof value.name !== 'string') issues.push({ code: 'INVALID_NAME', path: 'name', message: 'snapshot name must be a string' })
   if (typeof value.content !== 'string') issues.push({ code: 'INVALID_CONTENT', path: 'content', message: 'snapshot content must be a string' })
   if (typeof value.source !== 'string' || !SNAPSHOT_SOURCES.has(value.source)) issues.push({ code: 'INVALID_SOURCE', path: 'source', message: 'snapshot source is invalid' })
   if (!isFiniteNumber(value.capturedAt) || value.capturedAt < 0) issues.push({ code: 'INVALID_CAPTURED_AT', path: 'capturedAt', message: 'capturedAt must be a non-negative finite number' })
   if (value.revision !== undefined && (!isFiniteNumber(value.revision) || !Number.isInteger(value.revision) || value.revision < 1)) issues.push({ code: 'INVALID_REVISION', path: 'revision', message: 'snapshot revision must be a positive integer when present' })
+  if (!validKind) return issues
+
+  const common = new Set(['profileId', 'kind', 'name', 'content', 'revision', 'source', 'capturedAt'])
+  const allowed = new Set(common)
+  switch (value.kind) {
+    case 'conversation-mode':
+      break
+    case 'artifact':
+      allowed.add('artifactKind')
+      allowed.add('protocolId')
+      if (typeof value.artifactKind !== 'string' || !ARTIFACT_KINDS.has(value.artifactKind)) add(issues, 'INVALID_ARTIFACT_KIND', 'artifactKind', 'artifactKind is not supported')
+      if (value.protocolId !== undefined && !isNonEmptyString(value.protocolId)) add(issues, 'INVALID_PROTOCOL_ID', 'protocolId', 'protocolId must be a non-empty string when present')
+      break
+    case 'quick-follow-up':
+      allowed.add('label')
+      allowed.add('pinned')
+      allowed.add('sortOrder')
+      if (!isNonEmptyString(value.label)) add(issues, 'INVALID_LABEL', 'label', 'label must be a non-empty string')
+      if (typeof value.pinned !== 'boolean') add(issues, 'INVALID_PINNED', 'pinned', 'pinned must be boolean')
+      if (!isFiniteNumber(value.sortOrder) || !Number.isInteger(value.sortOrder) || value.sortOrder < 0) add(issues, 'INVALID_SORT_ORDER', 'sortOrder', 'sortOrder must be a non-negative integer')
+      break
+    case 'protocol':
+      allowed.add('protocolDomain')
+      allowed.add('outputContract')
+      allowed.add('validator')
+      allowed.add('overridePolicy')
+      allowed.add('baseProtocolId')
+      if (!isNonEmptyString(value.protocolDomain)) add(issues, 'INVALID_PROTOCOL_DOMAIN', 'protocolDomain', 'protocolDomain must be a non-empty string')
+      if (value.outputContract !== undefined && typeof value.outputContract !== 'string') add(issues, 'INVALID_OUTPUT_CONTRACT', 'outputContract', 'outputContract must be a string when present')
+      if (value.validator !== undefined && (!isObject(value.validator) || !isNonEmptyString(value.validator.name) || typeof value.validator.description !== 'string')) add(issues, 'INVALID_VALIDATOR', 'validator', 'validator metadata is invalid')
+      if (typeof value.overridePolicy !== 'string' || !PROTOCOL_POLICIES.has(value.overridePolicy)) add(issues, 'INVALID_OVERRIDE_POLICY', 'overridePolicy', 'overridePolicy is not supported')
+      if (value.baseProtocolId !== undefined && !isNonEmptyString(value.baseProtocolId)) add(issues, 'INVALID_BASE_PROTOCOL_ID', 'baseProtocolId', 'baseProtocolId must be a non-empty string when present')
+      break
+    default:
+      return assertNever(value.kind as never)
+  }
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) add(issues, 'UNEXPECTED_FIELD', key, 'field is not valid for snapshot kind ' + value.kind)
+  }
   return issues
 }
 

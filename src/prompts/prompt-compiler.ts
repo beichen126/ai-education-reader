@@ -3,7 +3,7 @@ import { resolveSystemMessagePolicy } from '../api/provider-capabilities'
 import type { ApiChatMessage } from '../api/deepseek'
 import type { ChatThreadRef } from '../branches/branch-types'
 import type { Message, StableId } from '../engine/types'
-import { getPromptScopeSelectionIssues, getPromptTransitionIssues } from './prompt-validation'
+import { getPromptScopeSelectionIssues, getPromptSnapshotIssues, getPromptTransitionIssues } from './prompt-validation'
 import {
   type LogicalPromptBinding,
   type LogicalPromptContext,
@@ -117,18 +117,39 @@ function assertScope(domain: PromptRequestDomain, snapshots: readonly PromptSnap
   if (issues.length > 0) fail('scope-matrix-rejected', issues[0].message, issues[0].scope)
 }
 
-function assertSnapshot(snapshot: PromptSnapshot, expectedKind: PromptSnapshot['kind'], path: string): void {
+function assertSnapshot<K extends PromptSnapshot['kind']>(snapshot: PromptSnapshot, expectedKind: K, path: string): asserts snapshot is Extract<PromptSnapshot, { kind: K }> {
+  const issues = getPromptSnapshotIssues(snapshot)
+  if (issues.length > 0) fail('invalid-snapshot', issues[0].message, path + (issues[0].path ? '.' + issues[0].path : ''))
   if (snapshot.kind !== expectedKind) fail('scope-not-allowed', 'expected ' + expectedKind + ' snapshot', path + '.kind')
-  if (typeof snapshot.content !== 'string') fail('invalid-snapshot', 'snapshot content must be a string', path + '.content')
+}
+
+function expectedArtifactKind(domain: ArtifactPromptCompileInput['domain']): string {
+  return domain.slice('artifact-'.length)
 }
 
 function artifactLogical(input: ArtifactPromptCompileInput): LogicalPromptContext {
-  assertSnapshot(input.artifactPrompt, 'artifact', 'artifactPrompt')
-  if (input.protocolPrompt) assertSnapshot(input.protocolPrompt, 'protocol', 'protocolPrompt')
-  const snapshots = [input.artifactPrompt, ...(input.protocolPrompt ? [input.protocolPrompt] : [])]
+  assertSnapshot<'artifact'>(input.artifactPrompt, 'artifact', 'artifactPrompt')
+  const protocolPrompt = input.protocolPrompt
+  if (protocolPrompt) assertSnapshot<'protocol'>(protocolPrompt, 'protocol', 'protocolPrompt')
+  if (protocolPrompt && protocolPrompt.kind !== 'protocol') fail('scope-not-allowed', 'expected protocol snapshot', 'protocolPrompt.kind')
+  const protocolSnapshot = protocolPrompt as Extract<PromptSnapshot, { kind: 'protocol' }> | undefined
+  if (input.artifactPrompt.artifactKind !== expectedArtifactKind(input.domain)) {
+    fail('artifact-domain-mismatch', 'artifact snapshot kind does not match request domain', 'artifactPrompt.artifactKind')
+  }
+  if (input.artifactPrompt.protocolId && protocolSnapshot && input.artifactPrompt.protocolId !== protocolSnapshot.profileId) {
+    fail('protocol-binding-mismatch', 'artifact snapshot protocolId does not match protocol snapshot', 'artifactPrompt.protocolId')
+  }
+  if (input.domain === 'artifact-quiz') {
+    if (!protocolSnapshot || protocolSnapshot.protocolDomain !== 'quiz-output') {
+      fail('protocol-domain-mismatch', 'Quiz artifacts require the quiz-output protocol domain', 'protocolPrompt.protocolDomain')
+    }
+  } else if (protocolSnapshot?.protocolDomain === 'quiz-output') {
+    fail('protocol-domain-mismatch', 'quiz-output protocol may only be used for Quiz artifacts', 'protocolPrompt.protocolDomain')
+  }
+  const snapshots = [input.artifactPrompt, ...(protocolSnapshot ? [protocolSnapshot] : [])]
   assertScope(input.domain, snapshots)
   const bindings: LogicalPromptBinding[] = [
-    ...(input.protocolPrompt ? [{ role: 'system' as const, placement: 'before-messages' as const, snapshot: { ...input.protocolPrompt } }] : []),
+    ...(protocolSnapshot ? [{ role: 'system' as const, placement: 'before-messages' as const, snapshot: { ...protocolSnapshot } }] : []),
     { role: 'user', placement: 'after-messages', snapshot: { ...input.artifactPrompt } },
   ]
   return {
@@ -141,17 +162,19 @@ function artifactLogical(input: ArtifactPromptCompileInput): LogicalPromptContex
 }
 
 function protocolLogical(input: ProtocolPromptCompileInput): LogicalPromptContext {
-  assertSnapshot(input.protocolPrompt, 'protocol', 'protocolPrompt')
-  // PromptSnapshot intentionally carries only the content needed for historical
-  // explanation. The request domain is explicit at this boundary; do not invent
-  // a provider/protocol domain field that is absent from the snapshot contract.
-  assertScope(input.domain, [input.protocolPrompt])
+  assertSnapshot<'protocol'>(input.protocolPrompt, 'protocol', 'protocolPrompt')
+  if (input.protocolPrompt.kind !== 'protocol') fail('scope-not-allowed', 'expected protocol snapshot', 'protocolPrompt.kind')
+  const protocolPrompt = input.protocolPrompt as Extract<PromptSnapshot, { kind: 'protocol' }>
+  if (protocolPrompt.protocolDomain !== input.domain) {
+    fail('protocol-domain-mismatch', 'protocol snapshot domain does not match request domain', 'protocolPrompt.protocolDomain')
+  }
+  assertScope(input.domain, [protocolPrompt])
   return {
     domain: input.domain,
     messages: input.inputMessages.map((message) => ({ ...message, images: [...message.images] })),
     transitions: [],
     segments: [],
-    bindings: [{ role: 'system', placement: 'before-messages', snapshot: { ...input.protocolPrompt } }],
+    bindings: [{ role: 'system', placement: 'before-messages', snapshot: { ...protocolPrompt } }],
   }
 }
 

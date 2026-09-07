@@ -134,7 +134,7 @@ function validateMessagePromptMetadata(message: Record<string, any>): void {
   if (!isStr(metadata.promptSnapshot)) throw new BackupError('message.quickFollowUp.promptSnapshot 非法')
 }
 
-function validateArtifactPromptBundle(bundle: unknown): void {
+function validateArtifactPromptBundle(bundle: unknown, artifactKind?: StudyArtifact['kind']): void {
   if (!isObj(bundle) || !isStr(bundle.userPrompt) || !isNum(bundle.resolvedAt) || bundle.resolvedAt < 0) {
     throw new BackupError('artifact.promptBundle 基础结构非法')
   }
@@ -142,12 +142,18 @@ function validateArtifactPromptBundle(bundle: unknown): void {
     const issues = getPromptSnapshotIssues(bundle.template)
     if (issues.length > 0) throwPromptMetadataIssue('artifact.promptBundle.template', issues[0])
     if ((bundle.template as any).kind !== 'artifact') throw new BackupError('artifact.promptBundle.template.kind 必须是 artifact')
+    if (artifactKind && (bundle.template as any).artifactKind !== artifactKind) throw new BackupError('artifact.promptBundle.template.artifactKind 与 artifact.kind 不一致')
   }
   if (bundle.protocol !== undefined) {
     const issues = getPromptSnapshotIssues(bundle.protocol)
     if (issues.length > 0) throwPromptMetadataIssue('artifact.promptBundle.protocol', issues[0])
     if ((bundle.protocol as any).kind !== 'protocol') throw new BackupError('artifact.promptBundle.protocol.kind 必须是 protocol')
   }
+  const template = bundle.template as any
+  const protocol = bundle.protocol as any
+  if (template?.protocolId && protocol && template.protocolId !== protocol.profileId) throw new BackupError('artifact.promptBundle.template.protocolId 与 protocol.profileId 不一致')
+  if (template?.artifactKind === 'quiz' && protocol?.protocolDomain !== 'quiz-output') throw new BackupError('Quiz artifact.promptBundle 必须使用 quiz-output protocol')
+  if (template?.artifactKind !== 'quiz' && protocol?.protocolDomain === 'quiz-output') throw new BackupError('quiz-output protocol 只能用于 Quiz artifact')
 }
 
 function validateV6PromptData(input: BackupV6): void {
@@ -299,12 +305,18 @@ export function parseAndValidate(input: unknown): Backup {
       if (!Array.isArray(c.promptTransitions)) throw new BackupError('v6 conversation.promptTransitions 必须是数组')
       const issues = getPromptTransitionIssues(c.promptTransitions, c.messages.map((m: any) => m.id))
       if (issues.length > 0) throwPromptMetadataIssue('conversation ' + c.id + '.promptTransitions', issues[0])
+      for (const [index, transition] of c.promptTransitions.entries()) {
+        if (transition?.snapshot?.kind !== 'conversation-mode') throw new BackupError('conversation ' + c.id + '.promptTransitions[' + index + '].snapshot.kind 必须是 conversation-mode')
+      }
     }
   } else {
     for (const c of input.conversations) {
       if (c.promptTransitions !== undefined) {
         const issues = getPromptTransitionIssues(c.promptTransitions, c.messages.map((m: any) => m.id))
         if (issues.length > 0) throwPromptMetadataIssue('conversation ' + c.id + '.promptTransitions', issues[0])
+        for (const [index, transition] of c.promptTransitions.entries()) {
+          if (transition?.snapshot?.kind !== 'conversation-mode') throw new BackupError('conversation ' + c.id + '.promptTransitions[' + index + '].snapshot.kind 必须是 conversation-mode')
+        }
       }
     }
   }
@@ -368,6 +380,9 @@ function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], a
         if (!effectiveIds) throw new BackupError('分支 promptTransitions 无法解析有效消息路径')
         const issues = getPromptTransitionIssues(branch.promptTransitions, effectiveIds)
         if (issues.length > 0) throwPromptMetadataIssue('branch ' + branch.id + '.promptTransitions', issues[0])
+        for (const [index, transition] of branch.promptTransitions.entries()) {
+          if (transition?.snapshot?.kind !== 'conversation-mode') throw new BackupError('branch ' + branch.id + '.promptTransitions[' + index + '].snapshot.kind 必须是 conversation-mode')
+        }
       }
     }
   }
@@ -395,7 +410,7 @@ function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], a
     // generating / error) may carry no quiz yet — validateArtifact already rejects a ready
     // quiz missing its payload, so guard against undefined here to avoid a hard import crash.
     if (va.kind === 'quiz' && va.quiz !== undefined) { try { validateQuizDocument(va.quiz) } catch { throw new BackupError('artifact quiz 结构不合法') } }
-    if (a.promptBundle !== undefined) validateArtifactPromptBundle(a.promptBundle)
+    if (a.promptBundle !== undefined) validateArtifactPromptBundle(a.promptBundle, va.kind)
   }
 
   for (const ab of input.activeBranches) {
