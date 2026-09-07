@@ -34,6 +34,7 @@ const CORE_E2E = [
   'e2e-prompt-keyboard',
   'e2e-prompt-manager',
   'e2e-conversation-modes',
+  'e2e-branch-prompt-timeline',
   'e2e-mobile-prompt-navigation',
   'e2e-protocol-overrides',
   'e2e-quick-follow-up',
