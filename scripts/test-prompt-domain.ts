@@ -1,5 +1,6 @@
 import {
   getPromptDefinitionIssues,
+  getPromptSnapshotIssues,
   getPromptScopeMatrixIssues,
   getPromptScopeSelectionIssues,
   isPromptScopeSelectionValid,
@@ -37,6 +38,16 @@ const snapshot = capturePromptSnapshot(snapshotSource, 1234)
 snapshotSource.systemPrompt = 'mutated definition'
 assert(snapshot.content === 'system', 'snapshot content is independent from definition mutation')
 assert(snapshot.capturedAt === 1234 && snapshot.profileId === 'p' && snapshot.source === 'custom', 'snapshot captures injected time, id and source')
+const artifactSnapshot = capturePromptSnapshot(definitions[1], 1234)
+const quickSnapshot = capturePromptSnapshot(definitions[2], 1234)
+const protocolSnapshot = capturePromptSnapshot(definitions[3], 1234)
+assert(artifactSnapshot.kind === 'artifact' && artifactSnapshot.artifactKind === 'note', 'artifact snapshot carries artifactKind metadata')
+assert(quickSnapshot.kind === 'quick-follow-up' && quickSnapshot.label === '举例' && quickSnapshot.pinned === false && quickSnapshot.sortOrder === 0, 'quick follow-up snapshot carries interaction metadata')
+assert(protocolSnapshot.kind === 'protocol' && protocolSnapshot.protocolDomain === 'quiz-output' && protocolSnapshot.overridePolicy === 'read-only', 'protocol snapshot carries domain and contract metadata')
+assert(protocolSnapshot.kind === 'protocol' && getPromptSnapshotIssues({ ...protocolSnapshot, validator: { name: 'Quiz validator', description: 'strict' } }).length === 0, 'protocol snapshot accepts complete validator metadata')
+assert(getPromptSnapshotIssues({ ...artifactSnapshot, artifactKind: undefined }).some((issue) => issue.code === 'INVALID_ARTIFACT_KIND'), 'snapshot rejects a missing artifactKind')
+assert(getPromptSnapshotIssues({ ...artifactSnapshot, protocolDomain: 'quiz-output' }).some((issue) => issue.code === 'UNEXPECTED_FIELD'), 'snapshot rejects cross-kind protocol metadata on artifacts')
+assert(getPromptSnapshotIssues({ ...protocolSnapshot, artifactKind: 'quiz' }).some((issue) => issue.code === 'UNEXPECTED_FIELD'), 'snapshot rejects cross-kind artifact metadata on protocols')
 
 const invalid = { ...definitions[0], kind: 'artifact', artifactKind: 'not-a-kind' }
 assert(validatePromptDefinition(invalid) === null, 'discriminated union rejects mismatched artifact definition')

@@ -4,7 +4,7 @@ import { getConversation, saveConversation } from '../src/storage/storage.ts'
 import { saveSettings, DEFAULT_SETTINGS } from '../src/engine/settings-store.ts'
 import { sessionsActions } from '../src/engine/sessions-store.ts'
 import { createBranchFromMessage } from '../src/branches/branch-service.ts'
-import { getBranch } from '../src/branches/branch-store.ts'
+import { getBranch, saveBranch } from '../src/branches/branch-store.ts'
 import { prepareAcceptedSendContext, resolveCurrentConversationModeResult } from '../src/prompts/prompt-send.ts'
 import { projectLogicalPromptContext } from '../src/prompts/prompt-compile-strategies.ts'
 import { savePromptRecord, deletePromptRecord } from '../src/prompts/prompt-store.ts'
@@ -123,6 +123,43 @@ try {
 } catch { rejected = true }
 assert(rejected, 'invalid prompt timeline fails before message acceptance')
 assert((await getConversation('bad'))?.messages.length === 1, 'compile failure leaves the durable conversation unchanged')
+
+// Acceptance contract gates: reject malformed or stale candidates before any
+// prompt compilation or durable message transaction can run.
+const contractBefore = conversation.messages
+const contractTransitions = conversation.promptTransitions ?? []
+const contractInput = (overrides: Record<string, unknown> = {}) => ({
+  threadRef: { type: 'root' as const, conversationId },
+  messagesBeforeAcceptance: contractBefore,
+  candidateMessages: [...contractBefore, msg('contract-new', 'user', 'new')],
+  effectiveTransitions: contractTransitions,
+  localTransitions: contractTransitions,
+  acceptedMessageId: 'contract-new',
+  currentModeSnapshot: snapshot(modeB.id, '模式 B', 'B prompt', 1),
+  ...overrides,
+})
+async function assertContractReject(input: any, code: string, label: string): Promise<void> {
+  let actual = ''
+  try { await prepareAcceptedSendContext(input) } catch (error) { actual = String((error as any)?.code ?? '') }
+  assert(actual === code, label + ' (' + actual + ')')
+}
+await assertContractReject(contractInput({ acceptedMessageId: '' }), 'accepted-message-missing', 'acceptance rejects a missing acceptedMessageId')
+await assertContractReject(contractInput({ acceptedMessageId: contractBefore[0].id, candidateMessages: [...contractBefore, msg(contractBefore[0].id, 'user', 'duplicate')] }), 'accepted-message-already-exists', 'acceptance rejects an accepted id already present before acceptance')
+await assertContractReject(contractInput({ acceptedMessageId: 'contract-assistant', candidateMessages: [...contractBefore, msg('contract-assistant', 'assistant', 'wrong role')] }), 'accepted-message-role', 'acceptance rejects an assistant accepted message')
+await assertContractReject(contractInput({ candidateMessages: [msg('wrong-prefix', 'user', 'wrong'), ...contractBefore.slice(1), msg('contract-new', 'user', 'new')] }), 'candidate-not-extension', 'acceptance rejects a candidate that does not extend the previous path')
+await assertContractReject(contractInput({ candidateMessages: [...contractBefore, msg('contract-duplicate', 'user', 'duplicate'), msg('contract-duplicate', 'user', 'duplicate')] }), 'duplicate-message-id', 'acceptance rejects duplicate candidate message ids')
+await saveBranch({ id: 'wrong-owner-branch', conversationId: 'other-conversation', forkMessageId: contractBefore[0].id, title: 'wrong owner', createdAt: 1, updatedAt: 1, messages: [] })
+await assertContractReject(contractInput({
+  threadRef: { type: 'branch' as const, conversationId, branchId: 'wrong-owner-branch' },
+}), 'thread-owner-mismatch', 'acceptance rejects a branch owned by another conversation')
+for (const [field, value] of [
+  ['source', 'not-a-source'],
+  ['capturedAt', -1],
+  ['revision', 0],
+  ['name', 42],
+] as const) {
+  await assertContractReject(contractInput({ currentModeSnapshot: { ...snapshot(modeB.id, '模式 B', 'B prompt', 1), [field]: value } }), 'invalid-prompt-snapshot', 'acceptance rejects malformed snapshot ' + field)
+}
 
 const emptyDefault = await prepareAcceptedSendContext({
   threadRef: { type: 'root', conversationId: 'empty-default' },

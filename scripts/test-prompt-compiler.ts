@@ -16,7 +16,14 @@ function msg(id: string, role: 'user' | 'assistant', content = id, images: strin
   return { id, role, content, images, createdAt: 1, updatedAt: 1 }
 }
 function snap(id: string, kind: PromptSnapshot['kind'], content: string, name = id, revision = 1): PromptSnapshot {
-  return { profileId: id, kind, name, content, revision, source: kind === 'protocol' ? 'builtin' : 'custom', capturedAt: revision }
+  const base = { profileId: id, name, content, revision, source: kind === 'protocol' ? 'builtin' as const : 'custom' as const, capturedAt: revision }
+  switch (kind) {
+    case 'conversation-mode': return { ...base, kind }
+    case 'artifact': return { ...base, kind, artifactKind: id === 'quiz' ? 'quiz' : 'note' }
+    case 'quick-follow-up': return { ...base, kind, label: name, pinned: false, sortOrder: 0 }
+    case 'protocol':
+      return { ...base, kind, protocolDomain: id === 'quiz-protocol' ? 'quiz-output' : id === BUILTIN_PROMPT_IDS.protocolAiTocTranscription ? 'ai-toc-transcription' : 'ai-toc-transcription', overridePolicy: 'read-only' }
+  }
 }
 function tr(id: string, afterMessageId: string | null, snapshot: PromptSnapshot, createdAt: number): PromptTransition {
   return { id, afterMessageId, snapshot, createdAt }

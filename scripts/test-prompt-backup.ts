@@ -36,7 +36,11 @@ const rootSnapshot: PromptSnapshot = {
   profileId: 'deleted-profile', kind: 'conversation-mode', name: '已删除的模式', content: '历史内容仍完整', source: 'custom', revision: 3, capturedAt: 3,
 }
 const protocolSnapshot: PromptSnapshot = {
-  kind: 'protocol', name: '协议快照', content: '协议内容', source: 'experimental', capturedAt: 4,
+  profileId: 'experimental-toc', kind: 'protocol', name: '协议快照', content: '协议内容', source: 'experimental', capturedAt: 4,
+  protocolDomain: 'ai-toc-structure', overridePolicy: 'experimental',
+}
+const branchSnapshot: PromptSnapshot = {
+  profileId: 'branch-mode', kind: 'conversation-mode', name: '分支模式', content: '分支模式内容', source: 'custom', capturedAt: 4,
 }
 const message = (id: string, content = id) => ({ id, role: 'user' as const, content, images: [], createdAt: 1, updatedAt: 1 })
 
@@ -49,7 +53,7 @@ function v6Backup() {
   const branch = {
     id: 'branch-1', conversationId: root.id, forkMessageId: 'm1', title: '分支', createdAt: 2, updatedAt: 4,
     messages: [message('m2', '分支消息')],
-    promptTransitions: [{ id: 'transition-branch', afterMessageId: 'm2', snapshot: protocolSnapshot, createdAt: 4 }],
+    promptTransitions: [{ id: 'transition-branch', afterMessageId: 'm2', snapshot: branchSnapshot, createdAt: 4 }],
   }
   const artifact = {
     id: 'artifact-1', kind: 'note', title: '笔记', prompt: '旧提示词', createdAt: 4, updatedAt: 4, status: 'ready', content: '内容',
@@ -59,7 +63,7 @@ function v6Backup() {
         messages: [{ role: 'user', text: '分支消息', imageIds: [] }], provenance: [], sourceLabel: '历史会话', sourceDeleted: false,
       },
     },
-    promptBundle: { template: { kind: 'artifact', name: '笔记模板', content: '模板内容', source: 'custom', capturedAt: 4 }, userPrompt: '用户要求', protocol: protocolSnapshot, resolvedAt: 4 },
+    promptBundle: { template: { profileId: 'note-template', kind: 'artifact', artifactKind: 'note', name: '笔记模板', content: '模板内容', source: 'custom', capturedAt: 4 }, userPrompt: '用户要求', protocol: protocolSnapshot, resolvedAt: 4 },
   }
   return {
     format: 'ai-education-reader-backup', version: 6, exportedAt: 5, settings,
@@ -105,6 +109,9 @@ mustReject(badTransition, 'transition after an unrelated message')
 const badBundle = JSON.parse(JSON.stringify(full))
 badBundle.artifacts[0].promptBundle.protocol.kind = 'artifact'
 mustReject(badBundle, 'artifact protocol snapshot with the wrong kind')
+const incompleteSnapshot = JSON.parse(JSON.stringify(full))
+delete incompleteSnapshot.artifacts[0].promptBundle.template.artifactKind
+mustReject(incompleteSnapshot, 'pre-review V6 artifact snapshot missing its domain metadata')
 
 await idbClearAll()
 await saveConversation(full.conversations[0])
