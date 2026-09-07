@@ -1,6 +1,7 @@
 // Backup V4 browser round-trip: seed a full V4 state, then export via the real settings UI,
 // clear app data, import the downloaded backup, reload, and verify restore.
 import { launchBrowser } from './e2e-browser.mjs'
+import { openAppDb } from './e2e-idb.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const results = [], errors = []
 const assert = (c, m) => results.push((c ? 'PASS  ' : 'FAIL  ') + m)
@@ -53,7 +54,7 @@ await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
 const seeded = await seedBackup(page)
 await page.reload({ waitUntil: 'networkidle' })
-await page.waitForTimeout(1200)
+await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
 console.log('SEED:', seeded)
 
 // Open settings, export. Capture the download.
@@ -78,35 +79,29 @@ await page.locator('[data-testid="settings-clear-data"]').click()
 // The confirm is auto-accepted; the page reloads. Wait for the composer to be back.
 await page.waitForFunction(() => document.readyState === 'complete')
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
-await page.waitForTimeout(1200)
 
 // ---- reopen settings, import the downloaded backup via the real UI ----
 await page.locator('button:has-text("打开设置")').first().click()
-await page.waitForTimeout(800)
 const impInput = page.locator('input[type="file"][accept*=".json"]')
 await impInput.waitFor({ state: 'attached', timeout: 8000 })
 await impInput.setInputFiles(dlPath)
-await page.waitForTimeout(2500)
-const impMsg = await page.locator('text=导入完成').count().catch(() => 0)
+await page.locator('text=导入完成').waitFor({ state: 'visible', timeout: 20000 })
+const impMsg = await page.locator('text=导入完成').count()
 console.log('IMPORT msg present:', impMsg > 0)
 assert(impMsg > 0, 'import success message shown (导入完成)')
 
 // ---- reload and verify restore via IDB + attachment load ----
 await page.reload({ waitUntil: 'networkidle' })
-await page.waitForTimeout(1500)
-const state = await page.evaluate(() => new Promise((resolve) => {
-    const req = indexedDB.open('ai-education-reader')
-  req.onsuccess = () => { const db = req.result;
-    const rd = (store) => new Promise((res) => { const tx = db.transaction(store,'readonly').objectStore(store); const g = tx.getAll(); g.onsuccess = () => res(g.result || []); g.onerror = () => res([]) })
-    const getSetting = (k, cb) => { const g = db.transaction('settings','readonly').objectStore('settings').get(k); g.onsuccess = () => cb(g.result ? g.result.value : undefined) }
-    Promise.all([rd('conversations'), rd('conversationBranches'), rd('artifacts'), rd('attachments')]).then(([convs, branches, arts, atts]) => {
-      getSetting('apiKey', (apiKey) => {
-        getSetting('appearance', (appearance) => { try { db.close() } catch {}; resolve({ convs, branches, arts, atts, apiKey, appearance }) })
-      })
-    })
-  }
-  req.onerror = () => resolve({ err: 'open' })
-}))
+await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
+const [convs, branches, arts, atts, apiKeyRow, appearanceRow] = await Promise.all([
+  openAppDb(page, { store: 'conversations' }),
+  openAppDb(page, { store: 'conversationBranches' }),
+  openAppDb(page, { store: 'artifacts' }),
+  openAppDb(page, { store: 'attachments' }),
+  openAppDb(page, { store: 'settings', operation: 'get', key: 'apiKey' }),
+  openAppDb(page, { store: 'settings', operation: 'get', key: 'appearance' }),
+])
+const state = { convs, branches, arts, atts, apiKey: apiKeyRow?.value, appearance: appearanceRow?.value }
 assert(state.convs.some(c => c.id === 'c1'), 'Main conversation restored')
 assert(state.branches.some(b => b.id === 'bA') && state.branches.some(b => b.id === 'bB'), 'Branch A + nested Branch B restored')
 const bA = state.branches.find(b => b.id === 'bA')
@@ -120,17 +115,12 @@ assert(quiz && quiz.quiz && quiz.quiz.questions.length === 1 && quiz.quiz.questi
 assert(state.appearance === 'dark', 'dark appearance restored')
 assert(state.apiKey === '' || state.apiKey === undefined, 'API key NOT restored')
 // branch drafts
-const drafts = await page.evaluate(() => new Promise((resolve) => {
-    const req = indexedDB.open('ai-education-reader')
-  req.onsuccess = () => { const db = req.result; const g = db.transaction('settings','readonly').objectStore('settings').get('draft-branch:bA'); g.onsuccess = () => { try { db.close() } catch {}; resolve(g.result ? g.result.value : null) }; g.onerror = () => resolve(null) }
-  req.onerror = () => resolve(null)
-}))
+const draftRow = await openAppDb(page, { store: 'settings', operation: 'get', key: 'draft-branch:bA' })
+const drafts = draftRow?.value ?? null
 assert(drafts && drafts.text === '分支A草稿' && drafts.imageIds.includes('imgA'), 'branch A draft text + image restored')
 // active branch restored
-const activeBranch = await page.evaluate(() => new Promise((resolve) => {
-    const req = indexedDB.open('ai-education-reader')
-  req.onsuccess = () => { const db = req.result; const g = db.transaction('settings','readonly').objectStore('settings').get('activeBranch:c1'); g.onsuccess = () => { try { db.close() } catch {}; resolve(g.result ? g.result.value : null) }; g.onerror = () => resolve(null) }
-}))
+const activeBranchRow = await openAppDb(page, { store: 'settings', operation: 'get', key: 'activeBranch:c1' })
+const activeBranch = activeBranchRow?.value ?? null
 assert(activeBranch === 'bB', 'active branch restored (bB)')
 // attachment load succeeds: the restored image attachment row carries a present binary ref
 // (real browser stores it OPFS-first; idb inline is the fallback). A present ref means the
@@ -140,9 +130,10 @@ const bin = imgMain && imgMain.binary
 assert(imgMain && bin && (bin.blob || bin.storage === 'opfs' || bin.storage === 'idb'), 'restored attachment meta + binary ref present (can be previewed/loaded; storage=' + (bin && bin.storage) + ')')
 // Also verify the attachment preview path returns a usable Blob URL in the DOM by switching to Main.
 await page.locator('button[aria-label="切换到主线"]').first().click()
-await page.waitForTimeout(700)
-const anyImg = await page.locator('img[alt], img[data-testid], .msg img, img').count().catch(() => 0)
-console.log('DEBUG Main image elements:', anyImg)
+const imageLocator = page.locator('img[alt], img[data-testid], .msg img, img').first()
+await imageLocator.waitFor({ state: 'visible', timeout: 10000 })
+const anyImg = await page.locator('img[alt], img[data-testid], .msg img, img').count()
+assert(anyImg >= 1, 'Main conversation renders at least one restored image (got ' + anyImg + ')')
 
 await browser.close()
 const pageErrors = errors.length ? errors.join(' | ') : '(none)'
