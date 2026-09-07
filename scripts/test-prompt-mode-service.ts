@@ -3,7 +3,9 @@ import { closeDb, idbClearAll } from '../src/storage/idb.ts'
 import { getConversation, saveConversation } from '../src/storage/storage.ts'
 import { getBranch, listBranchesByConversation, saveBranch } from '../src/branches/branch-store.ts'
 import { BUILTIN_PROMPT_IDS } from '../src/prompts/prompt-registry.ts'
-import { promptSnapshotNeedsApply, switchConversationMode } from '../src/prompts/prompt-mode-service.ts'
+import { promptSnapshotNeedsApply, switchConversationMode, PromptModeServiceError } from '../src/prompts/prompt-mode-service.ts'
+import { generationRegistry } from '../src/engine/generation-registry.ts'
+import { tryWithConversationMutationLock } from '../src/prompts/prompt-mode-lock.ts'
 import { buildEffectivePromptPath } from '../src/prompts/effective-prompt-path.ts'
 import { deletePromptRecord, savePromptRecord } from '../src/prompts/prompt-store.ts'
 import type { Conversation, Message } from '../src/engine/types.ts'
@@ -62,6 +64,34 @@ const revision2 = { ...custom, revision: 2, updatedAt: 2, systemPrompt: 'v2 prom
 assert(!!snapshot && promptSnapshotNeedsApply(snapshot, revision2), 'profile revision change is detectable without mutating the stored snapshot')
 await deletePromptRecord(custom.id)
 assert(!!(await getConversation(customConversation.id) as Conversation).promptTransitions?.[0].snapshot && (await getConversation(customConversation.id) as Conversation).promptTransitions?.[0].snapshot.content === 'v1 prompt', 'deleting a profile leaves the historical snapshot inspectable')
+
+const generationBusyConversation = conversation('generation-busy')
+await saveConversation(generationBusyConversation)
+const generationLease = generationRegistry.acquire('root:' + generationBusyConversation.id, new AbortController(), 'sending')
+let generationRejected = false
+try {
+  await switchConversationMode({ conversationId: generationBusyConversation.id, modeId: BUILTIN_PROMPT_IDS.conversationDefault, now: 50, id: () => 't-generation-busy' })
+} catch (error) {
+  generationRejected = error instanceof PromptModeServiceError && error.code === 'generation-busy'
+}
+assert(generationRejected, 'mode switch rejects while a root generation lease is active')
+generationLease?.release()
+
+let unlockMutation!: () => void
+const heldMutation = tryWithConversationMutationLock(generationBusyConversation.id, async () => {
+  await new Promise<void>((resolve) => { unlockMutation = resolve })
+  return true
+})
+await Promise.resolve()
+let mutationRejected = false
+try {
+  await switchConversationMode({ conversationId: generationBusyConversation.id, modeId: BUILTIN_PROMPT_IDS.conversationSocratic, now: 51, id: () => 't-mutation-busy' })
+} catch (error) {
+  mutationRejected = error instanceof PromptModeServiceError && error.code === 'mutation-busy'
+}
+assert(mutationRejected, 'mode switch and send acceptance share one conversation mutation lock')
+unlockMutation()
+await heldMutation
 
 console.log('RESULT pass=' + pass + ' fail=' + fail)
 await closeDb()

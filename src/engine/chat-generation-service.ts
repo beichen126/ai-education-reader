@@ -5,7 +5,7 @@ import { getBranch, listBranchesByConversation, saveBranch } from '../branches/b
 import { acceptBranchUserMessage } from '../branches/branch-service'
 import { getConversation } from '../storage/storage'
 import { getSessionsStatus } from './sessions-store'
-import { generationRegistry, genRootKey, genBranchKey } from './generation-registry'
+import { generationRegistry, genRootKey, genBranchKey, type GenerationLease } from './generation-registry'
 export { genRootKey, genBranchKey } from './generation-registry'
 
 /**
@@ -68,13 +68,15 @@ export function adapterFor(ref: ChatThreadRef): ChatThreadAdapter {
  */
 export const globalGenerationLock: {
   get active(): { key: string; controller: AbortController; status: import('./generation-registry').GenerationStatus } | null
+  acquire(key: string, controller: AbortController): GenerationLease | null
   tryAcquire(key: string, controller: AbortController): boolean
   release(key: string): void
   cancelAll(): void
   isBusy: boolean
 } = {
   get active() { return generationRegistry.current() },
-  tryAcquire(key: string, controller: AbortController): boolean { return generationRegistry.begin(key, controller, 'streaming') },
+  acquire(key: string, controller: AbortController): GenerationLease | null { return generationRegistry.acquire(key, controller, 'sending') },
+  tryAcquire(key: string, controller: AbortController): boolean { return this.acquire(key, controller) !== null },
   release(key: string): void { generationRegistry.end(key) },
   cancelAll(): void { generationRegistry.cancel() },
   get isBusy(): boolean { return generationRegistry.isBusy() || getSessionsStatus() === 'sending' || getSessionsStatus() === 'streaming' },

@@ -8,11 +8,11 @@ import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError, sum
 import { deleteConvAnnotations } from '../annotations/annotation-service'
 import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
 import { runThreadReply, type ReplyThread } from './stream-reply'
-import { generationRegistry, genRootKey } from './generation-registry'
+import { generationRegistry, genRootKey, type GenerationLease } from './generation-registry'
 import { attachPdfContexts } from '../pdf/pdf-message-context'
 import { getBranch } from '../branches/branch-store'
 import { prepareAcceptedSendContext, type AcceptedSendContext } from '../prompts/prompt-send'
-import { isPromptModeLocked } from '../prompts/prompt-mode-lock'
+import { tryWithConversationMutationLock } from '../prompts/prompt-mode-lock'
 
 export type { Conversation as ChatSession, Message as ChatMsg, Attachment as ChatImage }
 export const uid = (_p?: string) => newStableId()
@@ -131,53 +131,59 @@ export const sessionsActions = {
    */
   async sendUserMessage(id: string, content: string, imageIds: StableId[] = []): Promise<boolean> {
     if (state.status === 'sending' || state.status === 'streaming') return false
-    if (isPromptModeLocked(id)) return false
-    // Double-submit guard while the acceptance transaction is in progress.
-    if (acceptingRef.current === id) return false
-    const conv = state.byId[id]; if (!conv) return false
-    if (!content.trim() && imageIds.length === 0) return false
-    const now = Date.now()
-    const settings = getSettingsSnapshot()
-    const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now }, imageIds, now)
-    const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
-    const candidate: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
-    // Optimistically show 'sending' and block concurrent sends; revert on failure.
-    upsertState(candidate, { status: 'sending', sendError: undefined })
-    acceptingRef.current = id
-    let acceptedSend: AcceptedSendContext
-    let afterUser: Conversation
-    try {
-      const prepared = await prepareAcceptedSendContext({
-        threadRef: { type: 'root', conversationId: id },
-        messagesBeforeAcceptance: conv.messages,
-        candidateMessages: candidate.messages,
-        effectiveTransitions: conv.promptTransitions ?? [],
-        localTransitions: conv.promptTransitions ?? [],
-        acceptedMessageId: m.id,
-      })
-      acceptedSend = prepared.context
-      afterUser = { ...candidate, promptTransitions: prepared.nextLocalTransitions }
-      upsertState(afterUser, { status: 'sending', sendError: undefined })
-      // ONE durable transaction: put conversation + put lastConversationId + delete the
-      // draft row. The user message is ACCEPTED only if this transaction commits. On
-      // failure nothing commits, the Draft stays intact and no reply stream starts.
-      const draftKey = draftSettingKey(id)
-      await commitAcceptedUserMessage(afterUser, id, draftKey)
-    } catch (e) {
-      // Revert the optimistic memory state; Draft memory + durable Draft remain intact.
-      upsertState(conv, { status: state.status === 'error' ? 'error' : 'idle', sendError: '消息发送失败，请重试。' })
+    const locked = await tryWithConversationMutationLock(id, async () => {
+      if (state.status === 'sending' || state.status === 'streaming') return false
+      // Double-submit guard while the acceptance transaction is in progress.
+      if (acceptingRef.current === id) return false
+      const conv = state.byId[id]; if (!conv) return false
+      if (!content.trim() && imageIds.length === 0) return false
+      const now = Date.now()
+      const settings = getSettingsSnapshot()
+      const controller = new AbortController()
+      const lease = generationRegistry.acquire(genRootKey(id), controller, 'sending')
+      if (!lease) return false
+      acceptingRef.current = id
+      let acceptedSend: AcceptedSendContext
+      let afterUser: Conversation
+      try {
+        const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now }, imageIds, now)
+        const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
+        const candidate: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
+        // Optimistically show 'sending'; the generation lease already blocks all other
+        // roots, branches, artifacts, and mode mutations at this point.
+        upsertState(candidate, { status: 'sending', sendError: undefined })
+        const prepared = await prepareAcceptedSendContext({
+          threadRef: { type: 'root', conversationId: id },
+          messagesBeforeAcceptance: conv.messages,
+          candidateMessages: candidate.messages,
+          effectiveTransitions: conv.promptTransitions ?? [],
+          localTransitions: conv.promptTransitions ?? [],
+          acceptedMessageId: m.id,
+        })
+        acceptedSend = prepared.context
+        afterUser = { ...candidate, promptTransitions: prepared.nextLocalTransitions }
+        upsertState(afterUser, { status: 'sending', sendError: undefined })
+        // ONE durable transaction: put conversation + put lastConversationId + delete the
+        // draft row. The user message is ACCEPTED only if this transaction commits.
+        await commitAcceptedUserMessage(afterUser, id, draftSettingKey(id))
+      } catch (e) {
+        // Revert the optimistic memory state; Draft memory + durable Draft remain intact.
+        upsertState(conv, { status: state.status === 'error' ? 'error' : 'idle', sendError: '消息发送失败，请重试。' })
+        acceptingRef.current = null
+        lease.release()
+        return false
+      }
       acceptingRef.current = null
-      return false
-    }
-    acceptingRef.current = null
-    // Accepted: the user message + its image ids are now durably in the conversation AND
-    // the draft row was deleted in the same commit. Clear Draft MEMORY without issuing
-    // another required database mutation (no duplicate write).
-    clearDraftMemory(id)
-    // Run the reply stream in the BACKGROUND so the caller can transfer attachment
-    // ownership immediately, without blocking on the network.
-    void runReplyStream(id, afterUser, settings, acceptedSend)
-    return true
+      // Accepted: the user message + its image ids are now durably in the conversation AND
+      // the draft row was deleted in the same commit. Clear Draft MEMORY without another
+      // required database mutation.
+      clearDraftMemory(id)
+      // Keep the lease while the background stream runs. It is released by the shared
+      // engine, including all preflight, abort, error, and deletion paths.
+      void runReplyStream(id, afterUser, settings, acceptedSend, lease)
+      return true
+    })
+    return locked.acquired ? locked.value : false
   },
   async addAssistant(id: string, content: string) {
     const conv = state.byId[id]; if (!conv) return
@@ -273,14 +279,14 @@ class RootReplyThread implements ReplyThread {
 }
 
 /** Fire-and-forget reply stream: runs AFTER the user message is accepted & persisted. */
-async function runReplyStream(id: string, afterUser: Conversation, settings: ReturnType<typeof getSettingsSnapshot>, acceptedSend: AcceptedSendContext): Promise<void> {
-  if (!settings.apiKey) { setState({ ...state, status: 'error', sendError: errorKindLabel('no-api-key') }); return }
-  const controller = new AbortController()
+async function runReplyStream(id: string, afterUser: Conversation, settings: ReturnType<typeof getSettingsSnapshot>, acceptedSend: AcceptedSendContext, lease: GenerationLease): Promise<void> {
+  if (!settings.apiKey) { lease.release(); setState({ ...state, status: 'error', sendError: errorKindLabel('no-api-key') }); return }
+  const controller = lease.controller
   const thread = new RootReplyThread(id)
   await runThreadReply(thread, settings, controller, (c, assistantId) => {
     abortControllerRef = c
     activeGeneration = { conversationId: id, assistantId, controller: c }
-  }, acceptedSend)
+  }, acceptedSend, lease)
   // The engine already flushed + drained + set status; clear ownership deterministically.
   activeGeneration = null
   abortControllerRef = null

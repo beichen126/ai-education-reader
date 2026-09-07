@@ -33,7 +33,8 @@ export async function generateArtifact(artifactId: StableId, opts: { call: Artif
   // Acquire the global lock BEFORE the draft->generating transition. A busy lock throws
   // and leaves the artifact in its prior (draft/error) status — never a zombie 'generating'
   // record, and never a second artifact created by a double submit.
-  if (!globalGenerationLock.tryAcquire(key, controller)) throw new ArtifactGenerationError('busy', '模型正在执行其他生成任务，请稍后再试')
+  const lease = globalGenerationLock.acquire(key, controller)
+  if (!lease) throw new ArtifactGenerationError('busy', '模型正在执行其他生成任务，请稍后再试')
   const preClaimUpdatedAt = a.updatedAt
   try {
     // ---- pre-flight (no state change): validate + build the request so a blocked
@@ -58,6 +59,7 @@ export async function generateArtifact(artifactId: StableId, opts: { call: Artif
     const claimed = await markArtifactGenerating(artifactId, preClaimUpdatedAt)
     if (!claimed) throw new ArtifactGenerationError('stale', '学习成果已更新，本次生成已丢弃')
     const startUpdatedAt = claimed.updatedAt
+    if (!lease.setStreaming()) throw new ArtifactGenerationError('busy', '本次生成已被停止')
     const content = await opts.call({ apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMsgs, signal: controller.signal })
     // Late/fresh re-check: if the artifact was edited or deleted while we generated, the
     // result must be dropped (a late write can never overwrite a newer revision).
@@ -92,6 +94,6 @@ export async function generateArtifact(artifactId: StableId, opts: { call: Artif
     await markArtifactError(artifactId, isAbort ? '已取消' : '生成失败：' + String((e as any)?.message ?? e))
     throw e
   } finally {
-    globalGenerationLock.release(key)
+    lease.release()
   }
 }

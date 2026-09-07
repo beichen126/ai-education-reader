@@ -1,17 +1,26 @@
 /**
  * Generation registry — the single ownership record for ONE active model generation
- * (root chat, branch chat, or artifact). Both the root conversation stream and every
- * branch stream register here, so the global status bar, the unified 停止生成 action,
- * the AbortController, and the lock are shared — never two competing trackers.
+ * (root chat, branch chat, or artifact).
  *
- * Status transitions: sending -> streaming -> idle (or -> idle on stop/error).
- * `cancel()` aborts the active controller and releases the ownership unconditionally.
+ * A lease is the only authority allowed to transition/release its generation. The
+ * token matters even when a caller reuses the same logical key: a late completion
+ * from an older generation can never release a newer owner.
  */
 
 export type GenerationStatus = 'idle' | 'sending' | 'streaming'
 
+export type GenerationLease = {
+  readonly key: string
+  readonly token: symbol
+  readonly controller: AbortController
+  setStreaming(): boolean
+  release(): void
+  isCurrent(): boolean
+}
+
 type ActiveGeneration = {
   key: string
+  token: symbol
   controller: AbortController
   status: GenerationStatus
 }
@@ -20,37 +29,85 @@ let active: ActiveGeneration | null = null
 const subs = new Set<() => void>()
 function emit() { for (const f of subs) f() }
 
+function sameOwner(key: string, controller: AbortController, token?: symbol): boolean {
+  return !!active
+    && active.key === key
+    && active.controller === controller
+    && (token === undefined || active.token === token)
+}
+
+function makeLease(key: string, token: symbol, controller: AbortController): GenerationLease {
+  return {
+    key,
+    token,
+    controller,
+    setStreaming(): boolean {
+      if (!sameOwner(key, controller, token)) return false
+      if (active!.status !== 'streaming') { active!.status = 'streaming'; emit() }
+      return true
+    },
+    release(): void {
+      if (!sameOwner(key, controller, token)) return
+      active = null
+      emit()
+    },
+    isCurrent(): boolean { return sameOwner(key, controller, token) },
+  }
+}
+
 export const generationRegistry = {
-  /** Begin a generation. Returns false when another generation is already active (one-at-a-time). */
+  /** Atomically acquire the one global generation slot. */
+  acquire(key: string, controller: AbortController, status: GenerationStatus = 'sending'): GenerationLease | null {
+    if (active) return null
+    const token = Symbol('generation:' + key)
+    active = { key, token, controller, status }
+    emit()
+    return makeLease(key, token, controller)
+  },
+
+  /**
+   * Compatibility entry point for older callers. A re-entry is valid only when it
+   * names the exact same controller; a same-key different controller is rejected.
+   */
   begin(key: string, controller: AbortController, status: GenerationStatus): boolean {
     if (active) {
-      if (active.key === key) { active.status = status; emit(); return true }
-      return false
+      if (!sameOwner(key, controller)) return false
+      if (active.status !== status) { active.status = status; emit() }
+      return true
     }
-    active = { key, controller, status }
-    emit()
-    return true
+    return this.acquire(key, controller, status) !== null
   },
   setStatus(status: GenerationStatus): void {
-    if (active) { active.status = status; emit() }
+    if (active && active.status !== status) { active.status = status; emit() }
   },
   getStatus(): GenerationStatus { return active ? active.status : 'idle' },
   getKey(): string | null { return active ? active.key : null },
   isBusy(): boolean { return !!active },
   current(): ActiveGeneration | null { return active },
-  /** End ownership for a specific key (no-op unless it is the active one). */
-  end(key: string): void {
-    if (active && active.key === key) { active = null; emit() }
+  /** Token-aware release. The optional legacy form is retained for old adapters. */
+  end(key: string, token?: symbol): void {
+    if (active && active.key === key && (token === undefined || active.token === token)) {
+      active = null
+      emit()
+    }
   },
   /** Abort + release ownership unconditionally (the unified stop action). */
   cancel(): void {
-    if (active) { try { active.controller.abort() } catch { /* ignore */ }; active = null; emit() }
+    if (active) {
+      try { active.controller.abort() } catch { /* ignore */ }
+      active = null
+      emit()
+    }
   },
-  /** Abort + release the active generation belonging to a conversation (root or any of its branches). */
+  /** Abort + release the active generation belonging to a conversation. */
   cancelForConversation(conversationId: string): void {
     if (!active) return
     const k = active.key
-    if (k === 'root:' + conversationId || k.startsWith('branch:' + conversationId + ':')) { try { active.controller.abort() } catch { /* ignore */ }; active = null; emit() }
+    if (k === 'root:' + conversationId || k.startsWith('branch:' + conversationId + ':')) {
+      try { active.controller.abort() } catch { /* ignore */ }
+      active = null
+      emit()
+    }
   },
   subscribe(fn: () => void): () => void { subs.add(fn); return () => { subs.delete(fn) } },
 }

@@ -7,14 +7,15 @@ import { appendPromptTransition } from './prompt-timeline'
 import { BUILTIN_CONVERSATION_MODES } from './prompt-registry'
 import { listPromptRecordsByKind } from './prompt-store'
 import { capturePromptSnapshot } from './prompt-resolution'
-import { withPromptModeLock } from './prompt-mode-lock'
+import { tryWithConversationMutationLock } from './prompt-mode-lock'
+import { generationRegistry } from '../engine/generation-registry'
 import type { ConversationModePrompt, PromptDefinition, PromptSnapshot, PromptTransition } from './prompt-types'
 import type { Conversation, StableId } from '../engine/types'
 import type { ConversationBranch } from '../branches/branch-types'
 import { newStableId } from '../engine/types'
 
 export class PromptModeServiceError extends Error {
-  readonly code: 'conversation-not-found' | 'branch-not-found' | 'branch-path-invalid' | 'mode-not-found' | 'invalid-transition'
+  readonly code: 'conversation-not-found' | 'branch-not-found' | 'branch-path-invalid' | 'mode-not-found' | 'invalid-transition' | 'generation-busy' | 'mutation-busy'
   constructor(code: PromptModeServiceError['code'], message: string) {
     super(message); this.name = 'PromptModeServiceError'; this.code = code
   }
@@ -69,7 +70,8 @@ export type SwitchConversationModeInput = {
  * message. Branch-local writes stay in the branch row and never create a branch.
  */
 export async function switchConversationMode(input: SwitchConversationModeInput): Promise<ModeSwitchResult> {
-  return withPromptModeLock(input.conversationId, async () => {
+  const locked = await tryWithConversationMutationLock(input.conversationId, async () => {
+    if (generationRegistry.isBusy()) throw new PromptModeServiceError('generation-busy', '模型正在生成，请等待本次生成结束后再切换会话模式')
     const conversation = await getConversation(input.conversationId) as Conversation | undefined
     if (!conversation) throw new PromptModeServiceError('conversation-not-found', '会话不存在')
     const branches = await listBranchesByConversation(input.conversationId)
@@ -104,4 +106,6 @@ export async function switchConversationMode(input: SwitchConversationModeInput)
     await saveBranch(updated)
     return { changed: true, definition, snapshot, transition, branch: updated }
   })
+  if (!locked.acquired) throw new PromptModeServiceError('mutation-busy', '会话正在发送消息，请稍后重试')
+  return locked.value
 }

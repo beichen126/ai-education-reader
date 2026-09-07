@@ -9,7 +9,7 @@ import { buildEffectiveConversationPath } from '../branches/branch-path'
 import { attachPdfContexts } from '../pdf/pdf-message-context'
 import { buildEffectivePromptPath } from '../prompts/effective-prompt-path'
 import { prepareAcceptedSendContext } from '../prompts/prompt-send'
-import { isPromptModeLocked } from '../prompts/prompt-mode-lock'
+import { tryWithConversationMutationLock } from '../prompts/prompt-mode-lock'
 
 // Per-branch ordered durable-write queue (mirrors the root writeChains). A stale checkpoint
 // can never overwrite a newer revision of a branch record.
@@ -81,21 +81,21 @@ export class BranchReplyThread implements ReplyThread {
  * Returns true when the branch accepted + streamed (or is streaming).
  */
 export async function runBranchReply(conversationId: StableId, branchId: StableId, content: string, imageIds: StableId[] = []): Promise<boolean> {
-  if (isPromptModeLocked(conversationId)) return false
-  const branch = await getBranch(branchId)
-  if (!branch) return false
-  const settings = getSettingsSnapshot()
-  if (!settings.apiKey) return false
-  if (generationRegistry.isBusy()) return false
-  const now = Date.now()
-  const msg = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now }, imageIds, now)
-  const controller = new AbortController()
-  const key = genBranchKey(conversationId, branchId)
-  if (!generationRegistry.begin(key, controller, 'sending')) return false
-  try {
-    const conversation = await getConversation(conversationId)
-    const branches = await listBranchesByConversation(conversationId)
-    if (!conversation) return false
+  const locked = await tryWithConversationMutationLock(conversationId, async () => {
+    const branch = await getBranch(branchId)
+    if (!branch) return false
+    const settings = getSettingsSnapshot()
+    if (!settings.apiKey) return false
+    const controller = new AbortController()
+    const key = genBranchKey(conversationId, branchId)
+    const lease = generationRegistry.acquire(key, controller, 'sending')
+    if (!lease) return false
+    try {
+      const now = Date.now()
+      const msg = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now }, imageIds, now)
+      const conversation = await getConversation(conversationId)
+      const branches = await listBranchesByConversation(conversationId)
+      if (!conversation) return false
     const effectiveMessagesBefore = buildEffectiveConversationPath(conversation, branches, branchId)
     const effectivePromptPath = buildEffectivePromptPath(conversation, branches, branchId)
     if (!effectivePromptPath.resolved) return false
@@ -109,9 +109,11 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
     })
     if (!(await acceptBranchUserMessage(branchId, msg, prepared.nextLocalTransitions))) return false
     const thread = new BranchReplyThread(conversationId, branchId)
-    await runThreadReply(thread, settings, controller, undefined, prepared.context)
+      await runThreadReply(thread, settings, controller, undefined, prepared.context, lease)
     return true
-  } finally {
-    generationRegistry.end(key)
-  }
+    } finally {
+      lease.release()
+    }
+  })
+  return locked.acquired ? locked.value : false
 }
