@@ -40,7 +40,7 @@ assert((await page.locator('[data-testid="toc-picker-start"]').textContent()).in
 await page.evaluate(() => {
   ;(globalThis).__dshMockAiToc = (req) => {
     if (req.phase === 'structure') {
-      return ['{"id":"r0001","level":1}', '{"id":"r0002","level":1}', '{"id":"r0003","level":2}', '{"id":"r0004","level":2}', '{"id":"r0005","level":2}', '{"id":"r0006","level":1}'].join('\n')
+      return '{"levels":[1,1,2,2,2,1]}'
     }
     const si = (n) => { const i = req.pages.indexOf(n) + 1; return i > 0 ? i : 1 }
     const rows = [

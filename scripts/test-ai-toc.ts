@@ -56,40 +56,47 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   assert(m.ok === false, 'out-of-range sourceImageIndex -> whole batch invalid');
 }
 
-// --- structure strict parse ---
+// --- compact structure strict parse ---
 {
-  const r = parseTocStructure('{"id":"r0001","level":1}\n{"id":"r0002","level":2}');
-  assert(r.ok === true && r.ok && r.proposals.length === 2, 'structure JSONL parses');
-  const bad = parseTocStructure('{"id":"r0001","level":1}\ngarbage');
-  assert(bad.ok === false, 'structure malformed line -> invalid');
+  const r = parseTocStructure('{"levels":[1,2]}');
+  assert(r.ok === true && r.ok && r.levels.join(',') === '1,2', 'compact structure object parses');
+  const fenced = parseTocStructure('```json\n{"levels":[1,2]}\n```');
+  assert(fenced.ok === true, 'fenced compact structure parses');
+  const bad = parseTocStructure('{"levels":[1,2,');
+  assert(bad.ok === false, 'compact structure malformed JSON -> invalid');
   if (!bad.ok) assert(bad.diagnostics.some(d => d.code === 'MALFORMED_OUTPUT'), 'malformed output diagnostic is explicit');
   const empty = parseTocStructure('  ');
   assert(empty.ok === false && !empty.ok && empty.diagnostics.some(d => d.code === 'EMPTY_OUTPUT'), 'empty structure output diagnostic is explicit');
-  const invalidLevel = parseTocStructure('{"id":"r0001","level":0}');
+  const invalidLevel = parseTocStructure('{"levels":[1,"2"]}');
   assert(invalidLevel.ok === false && !invalidLevel.ok && invalidLevel.diagnostics.some(d => d.code === 'INVALID_LEVEL'), 'invalid level diagnostic is explicit');
+  const old = parseTocStructure('{"id":"r0001","level":1}');
+  assert(old.ok === false, 'legacy per-row id/level output is rejected');
 }
 // --- structure validation: valid global levels ---
 {
   const rows = assignLocalRowIds(parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":1}\n{"title":"B.1","pageLabel":"3","sourceImageIndex":1}').ok ? parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":1}\n{"title":"B.1","pageLabel":"3","sourceImageIndex":1}').rows : [])
-  const v = validateTocStructure(rows, [{id:'r0001',level:1},{id:'r0002',level:2},{id:'r0003',level:3}]);
+  const v = validateTocStructure(rows, [1,2,3]);
   assert(v.ok === true && v.levels.join(',') === '1,2,3', 'valid global levels accepted');
 }
-// --- missing / unknown / duplicate id rejected ---
+// --- compact level count is strict ---
 {
   const rows2 = assignLocalRowIds(parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":1}').ok ? parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":1}').rows : [])
-  const missing = validateTocStructure(rows2, [{id:'r0001',level:1}]);
-  assert(missing.ok === false && missing.diagnostics.some(d => d.code === 'MISSING_ID'), 'missing id rejected with diagnostic');
-  assert(missing.diagnostics.some(d => d.code === 'LEVEL_COUNT_MISMATCH'), 'level count mismatch diagnostic is explicit');
-  const unknown = validateTocStructure(rows2, [{id:'r0001',level:1},{id:'r0002',level:2},{id:'r9999',level:3}]);
-  assert(unknown.ok === false && unknown.diagnostics.some(d => d.code === 'UNKNOWN_ID'), 'unknown id rejected with diagnostic');
-  const duplicate = validateTocStructure(rows2, [{id:'r0001',level:1},{id:'r0001',level:2}]);
-  assert(duplicate.ok === false && duplicate.diagnostics.some(d => d.code === 'DUPLICATE_ID'), 'duplicate id rejected with diagnostic');
+  const short = validateTocStructure(rows2, [1]);
+  assert(short.ok === false && short.diagnostics.some(d => d.code === 'LEVEL_COUNT_MISMATCH'), 'level count mismatch diagnostic is explicit');
+  const long = validateTocStructure(rows2, [1,2,3]);
+  assert(long.ok === false && long.diagnostics.some(d => d.code === 'LEVEL_COUNT_MISMATCH'), 'extra levels are rejected');
 }
 // --- level jump rejected ---
 {
   const rows3 = assignLocalRowIds(parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":1}\n{"title":"C","pageLabel":"3","sourceImageIndex":1}').ok ? parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":1}\n{"title":"C","pageLabel":"3","sourceImageIndex":1}').rows : [])
-  const jumped = validateTocStructure(rows3, [{id:'r0001',level:1},{id:'r0002',level:2},{id:'r0003',level:4}]);
+  const jumped = validateTocStructure(rows3, [1,2,4]);
   assert(jumped.ok === false && jumped.diagnostics.some(d => d.code === 'LEVEL_JUMP'), 'level jump rejected with diagnostic');
+}
+// --- a mid-directory selection is not rejected solely because its first row is not level 1 ---
+{
+  const rows = assignLocalRowIds(parseTocJsonl('{"title":"第三节","pageLabel":"1","sourceImageIndex":1}\n{"title":"第四节","pageLabel":"2","sourceImageIndex":1}\n{"title":"第二章","pageLabel":"3","sourceImageIndex":1}').ok ? parseTocJsonl('{"title":"第三节","pageLabel":"1","sourceImageIndex":1}\n{"title":"第四节","pageLabel":"2","sourceImageIndex":1}\n{"title":"第二章","pageLabel":"3","sourceImageIndex":1}').rows : [])
+  const mid = validateTocStructure(rows, [2,2,1]);
+  assert(mid.ok === true && mid.levels.join(',') === '2,2,1', 'mid-directory selection with first level 2 is accepted');
 }
 // --- user-facing messages stay actionable while diagnostics remain structured ---
 {

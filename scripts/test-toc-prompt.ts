@@ -33,17 +33,20 @@ assert(t.includes('不要混入 pageLabel') || t.includes('页码本体'), 'tran
   assert(r.ok === true && r.ok && r.rows[0].sourceImageIndex === 1 && r.rows[1].sourceImageIndex === 2, 'prompt-conformant JSONL parses (sourceImageIndex)');
 }
 
-// --- structure prompt: only id+level, forbids returning transcription fields ---
+// --- structure prompt: compact levels only, forbids returning transcription fields ---
 const s = TOC_STRUCTURE_PROMPT
-assert(s.includes('JSONL'), 'structure prompt requires JSONL');
+assert(s.includes('JSON 对象'), 'structure prompt requires compact JSON object');
+assert(s.includes('levels'), 'structure prompt requires levels sequence');
 assert(s.includes('level'), 'structure prompt proposes level');
-assert(s.includes('id'), 'structure prompt references row id');
+assert(s.includes('输入第 1 行对应 levels[0]'), 'structure prompt defines row-order mapping');
+assert(!s.includes('输出必须是 JSONL'), 'structure prompt no longer requests JSONL');
+assert(s.includes('不要返回 id'), 'structure prompt explicitly forbids row ids');
 assert(s.includes('不') && s.includes('title'), 'structure prompt forbids returning title/pageLabel etc');
 
 {
-  const sample = '{"id":"r0001","level":1}\n{"id":"r0002","level":2}';
+  const sample = '{"levels":[1,2]}';
   const r = parseTocStructure(sample);
-  assert(r.ok === true && r.ok && r.proposals.length === 2, 'structure-conformant JSONL parses');
+  assert(r.ok === true && r.ok && r.levels.length === 2, 'structure-conformant compact JSON parses');
 }
 
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)

@@ -61,7 +61,7 @@ function buildTailContext(prevRows: TocTranscriptionRow[]): string {
 }
 
 function buildSequentialText(rows: TocTranscriptionRow[]): string {
-  return rows.map(r => r.id + ' | ' + r.title + ' | indent ' + (r.visualIndent ?? '-') + ' | ' + (r.numbering ?? '-') + ' | p' + r.pageLabel).join('\n');
+  return rows.map((r, i) => 'row ' + (i + 1) + ' | ' + r.title + ' | indent ' + (r.visualIndent ?? '-') + ' | ' + (r.numbering ?? '-') + ' | p' + r.pageLabel).join('\n');
 }
 
 /**
@@ -147,7 +147,7 @@ export async function extractAiToc(opts: {
   allRows = reindexRows(allRows);
   if (allRows.length === 0) return { ok: false, error: '未识别到目录条目。' };
 
-  // ---- GLOBAL structure pass: text-only, proposes {id, level} per row ----
+  // ---- GLOBAL structure pass: text-only, proposes one compact level sequence ----
   onProgress?.({ phase: 'structuring' })
   let structureRaw: string | undefined
   let lastStructureDiagnostics: TocStructureDiagnostic[] = []
@@ -168,7 +168,7 @@ export async function extractAiToc(opts: {
         lastStructureAttempt = attempt + 1
         continue
       }
-      const sv = validateTocStructure(allRows, sp.proposals);
+      const sv = validateTocStructure(allRows, sp.levels);
       if (!sv.ok) {
         lastStructureDiagnostics = sv.diagnostics
         lastStructureAttempt = attempt + 1

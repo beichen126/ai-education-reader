@@ -6,7 +6,6 @@ import {
 
 let pass = 0, fail = 0
 function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' + m) } else { fail++; console.log('  FAIL: ' + m) } }
-const row = (id: string, level: number) => ({ id, level })
 
 // --- JSONL multiple lines + blank lines ---
 {
@@ -52,41 +51,41 @@ const row = (id: string, level: number) => ({ id, level })
   assert(rows.map(x => x.id).join(',') === 'r0001,r0002', 'stable local ids r0001/r0002 (got ' + rows.map(x => x.id).join(',') + ')')
   assert(rows.map(x => x.rowOrder).join(',') === '0,1', 'rowOrder assigned')
 }
-// --- structure parse ---
+// --- compact structure parse ---
 {
-  const r = parseTocStructure('{"id":"r0001","level":1}\n{"id":"r0002","level":2}')
-  assert(r.ok === true && r.ok && r.proposals.length === 2, 'structure JSONL parses')
+  const r = parseTocStructure('{"levels":[1,2]}')
+  assert(r.ok === true && r.ok && r.levels.join(',') === '1,2', 'compact structure object parses')
+  const fenced = parseTocStructure('```json\n{"levels":[1,2]}\n```')
+  assert(fenced.ok === true, 'fenced compact structure parses')
+  const old = parseTocStructure('{"id":"r0001","level":1}')
+  assert(old.ok === false, 'legacy per-row id/level output rejected')
 }
 
 // --- structure validation: valid global levels ---
 {
   const rows = assignLocalRowIds(parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":2}\n{"title":"B.1","pageLabel":"2","sourceImageIndex":1}').ok ? parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":2}\n{"title":"B.1","pageLabel":"2","sourceImageIndex":1}').rows : [])
-  const v = validateTocStructure(rows, [row('r0001',1), row('r0002',2), row('r0003',3)])
+  const v = validateTocStructure(rows, [1,2,3])
   assert(v.ok === true && v.levels.join(',') === '1,2,3', 'valid global levels accepted (got ' + v.levels.join(',') + ')')
 }
-// --- missing id rejected ---
+// --- level count mismatch rejected ---
 {
   const rows = assignLocalRowIds(parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":2}').ok ? parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":2}').rows : [])
-  const v = validateTocStructure(rows, [row('r0001',1)])
-  assert(v.ok === false, 'missing id rejected')
-}
-// --- extra id rejected ---
-{
-  const rows = assignLocalRowIds(parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}').ok ? parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}').rows : [])
-  const v = validateTocStructure(rows, [row('r0001',1), row('r9999',2)])
-  assert(v.ok === false, 'extra/unknown id rejected')
-}
-// --- duplicate id rejected ---
-{
-  const rows = assignLocalRowIds(parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":2}').ok ? parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":2}').rows : [])
-  const v = validateTocStructure(rows, [row('r0001',1), row('r0001',2)])
-  assert(v.ok === false, 'duplicate id rejected')
+  const short = validateTocStructure(rows, [1])
+  assert(short.ok === false && short.diagnostics.some(d => d.code === 'LEVEL_COUNT_MISMATCH'), 'short level sequence rejected')
+  const long = validateTocStructure(rows, [1,2,3])
+  assert(long.ok === false && long.diagnostics.some(d => d.code === 'LEVEL_COUNT_MISMATCH'), 'long level sequence rejected')
 }
 // --- level jump rejected ---
 {
   const rows = assignLocalRowIds(parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":2}\n{"title":"C","pageLabel":"3","sourceImageIndex":1}').ok ? parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":2}\n{"title":"C","pageLabel":"3","sourceImageIndex":1}').rows : [])
-  const v = validateTocStructure(rows, [row('r0001',1), row('r0002',2), row('r0003',4)])
+  const v = validateTocStructure(rows, [1,2,4])
   assert(v.ok === false, 'level jump 2->4 rejected')
+}
+// --- first row not level 1 is allowed for a mid-directory selection ---
+{
+  const rows = assignLocalRowIds(parseTocJsonl('{"title":"第三节","pageLabel":"1","sourceImageIndex":1}\n{"title":"第四节","pageLabel":"2","sourceImageIndex":1}\n{"title":"第二章","pageLabel":"3","sourceImageIndex":1}').ok ? parseTocJsonl('{"title":"第三节","pageLabel":"1","sourceImageIndex":1}\n{"title":"第四节","pageLabel":"2","sourceImageIndex":1}\n{"title":"第二章","pageLabel":"3","sourceImageIndex":1}').rows : [])
+  const v = validateTocStructure(rows, [2,2,1])
+  assert(v.ok === true && v.levels.join(',') === '2,2,1', 'mid-directory first level 2 accepted')
 }
 // --- normalization: min->1, relative depth kept ---
 {
@@ -105,7 +104,7 @@ const row = (id: string, level: number) => ({ id, level })
   const titles = all.map(x => x.title)
   assert(titles[0].includes('第二章') && titles[titles.length-1].includes('第二节'), 'cross-page transcription keeps line order (got ' + titles.join('|') + ')')
   assert(all[0].tocPage === 9 && all[1].tocPage === 10 && all[2].tocPage === 11, 'tocPage resolved locally per batch (9,10,11...)')
-  const v = validateTocStructure(all, all.map((x,i) => row(x.id, Math.min(i < 2 ? 1 : (i<4?2:3), 3))))
+  const v = validateTocStructure(all, all.map((x,i) => Math.min(i < 2 ? 1 : (i<4?2:3), 3)))
   assert(v.ok === true, 'cross-page global inference valid')
 }
 

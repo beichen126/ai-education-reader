@@ -32,7 +32,7 @@ assert((await page.locator('[data-testid="toc-picker-start"]').textContent()).in
 // --- B: extraction (mock) -> review opens ---
 await page.evaluate(() => { (globalThis).__dshMockAiToc = (req) => {
   if (req.phase === 'structure') {
-    return '{"id":"r0001","level":1}\n{"id":"r0002","level":1}'
+    return '{"levels":[1,1]}'
   }
   const si = (n) => { const i = req.pages.indexOf(n) + 1; return i > 0 ? i : 1 };
   return '{"title":"第一章 自然地理","pageLabel":"1","sourceImageIndex":' + si(req.pages[0]) + ',"visualIndent":0,"numbering":"第一章"}\n' +

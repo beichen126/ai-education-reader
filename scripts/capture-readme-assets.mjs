@@ -68,7 +68,7 @@ await page.locator('[data-testid^="doc-open-"]').first().click()
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
 await page.evaluate(() => { (globalThis).__dshMockAiToc = (req) => {
-  if (req.phase === 'structure') return '{"id":"r0001","level":1}\n{"id":"r0002","level":1}\n{"id":"r0003","level":2}'
+  if (req.phase === 'structure') return '{"levels":[1,1,2]}'
   return '{"title":"第一章 绪论","pageLabel":"1","sourceImageIndex":1,"visualIndent":0,"numbering":"第一章"}\n' +
     '{"title":"第二章 自然地理","pageLabel":"3","sourceImageIndex":2,"visualIndent":0,"numbering":"第二章"}\n' +
     '{"title":"2.1 地形","pageLabel":"3","sourceImageIndex":2,"visualIndent":1,"numbering":"2.1"}'

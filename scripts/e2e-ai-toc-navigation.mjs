@@ -28,7 +28,7 @@ async function seedAndSave() {
   await page.waitForTimeout(800)
   await page.locator('[data-testid="toc-thumb-1"]').click(); await page.locator('[data-testid="toc-thumb-2"]').click(); await page.locator('[data-testid="toc-thumb-3"]').click()
   await page.evaluate(() => { ;(globalThis).__dshMockAiToc = (req) => {
-    if (req.phase === 'structure') return '{"id":"r0001","level":1}\n{"id":"r0002","level":2}\n{"id":"r0003","level":2}\n{"id":"r0004","level":2}'
+    if (req.phase === 'structure') return '{"levels":[1,2,2,2]}'
     const si = (n) => { const i = req.pages.indexOf(n) + 1; return i > 0 ? i : 1 }
     const rows = [
       { title: '第一部分 方法论', pageLabel: '/1', sourceImageIndex: si(req.pages[0]) },

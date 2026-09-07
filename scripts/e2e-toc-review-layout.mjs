@@ -51,7 +51,7 @@ assert(thumb50 === 1, 'C: a placeholder slot for page 50 exists (selection spans
 
 // --- D: a mock returns a full review; check the 2-col layout ---
 await page.evaluate(() => { (globalThis).__dshMockAiToc = (req) => {
-  if (req.phase === 'structure') { let s=''; for (let i=1;i<=6;i++) s += '{"id":"r'+String(i).padStart(4,'0')+'","level":'+(i===1?1:2)+'}\n'; return s }
+  if (req.phase === 'structure') return '{"levels":[1,2,2,2,2,2]}'
   const rows = []
   const titles = ['第一章 自然地理学','第二节 自然地理环境各组成要素之间的相互作用','三、自然地理学与其他学科的关系','第四章 地球表层环境的组成与结构特征']
   for (let i=1;i<=6;i++) rows.push('{"title":"'+titles[(i-1)%titles.length]+'","pageLabel":"'+i+'","sourceImageIndex":'+(req.pages.indexOf(req.pages[Math.min(i-1,req.pages.length-1)])+1)+',"visualIndent":'+(i===1?0:1)+'}')

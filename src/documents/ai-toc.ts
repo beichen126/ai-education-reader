@@ -1,7 +1,7 @@
 // AI TOC domain (Stage 9.4C.1). PURE — no React / network / IndexedDB. Owns the
 // canonical pipeline for the model's UNTRUSTED structured output:
 //
-//   flat transcription (JSONL, NO levels) -> local ids -> GLOBAL structure pass
+//   flat transcription (JSONL, NO levels) -> local row order -> compact GLOBAL structure pass
 //   -> mapped draft (human review) -> user save.
 //
 // PROVENANCE RULES (P0):
@@ -139,8 +139,6 @@ export function mapTocSourcePages(rows: TocLocalRow[], pageBatch: number[]): Toc
   return { ok: true, rows: out }
 }
 
-export type TocStructureProposal = { id: string; level: number }
-
 /** Stable, non-sensitive reason codes for an untrusted structure response. These
  * are intentionally separate from the Chinese message: code drives retry/UI
  * behaviour while message is only useful for local development diagnostics. */
@@ -148,11 +146,7 @@ export type TocStructureDiagnosticCode =
   | 'EMPTY_OUTPUT'
   | 'MALFORMED_OUTPUT'
   | 'LEVEL_COUNT_MISMATCH'
-  | 'MISSING_ID'
-  | 'DUPLICATE_ID'
-  | 'UNKNOWN_ID'
   | 'INVALID_LEVEL'
-  | 'FIRST_ROW_NOT_ROOT'
   | 'LEVEL_JUMP'
   | 'API_ERROR'
   | 'ABORTED'
@@ -162,38 +156,40 @@ export type TocStructureDiagnostic = {
   message: string
   line?: number
   rowIndex?: number
-  id?: string
   expectedRows?: number
   actualLevels?: number
 }
 
 export type TocStructureParseResult =
-  | { ok: true; proposals: TocStructureProposal[] }
+  | { ok: true; levels: number[] }
   | { ok: false; line: number; diagnostics: TocStructureDiagnostic[] }
 
-/** STRICT parse of the GLOBAL structure pass output (JSONL of {id, level}).
- *  Any malformed non-blank line invalidates the whole result (no partial). */
+/** STRICT parse of the compact GLOBAL structure pass output ({levels:[...]}).
+ *  Row identity is local input order, so the model never copies ids. */
 export function parseTocStructure(text: string): TocStructureParseResult {
   let body = String(text ?? '').trim()
-  const fence = /^```(?:jsonl)?\s*([\s\S]*?)\s*```$/i.exec(body)
+  const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(body)
   if (fence) body = fence[1].trim()
   if (body === '') return { ok: false, line: 0, diagnostics: [{ code: 'EMPTY_OUTPUT', message: '结构分析无输出' }] }
-  const lines = body.split(/\r?\n/)
-  const proposals: TocStructureProposal[] = []
-  const diags: TocStructureDiagnostic[] = []
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i].trim()
-    if (raw === '') continue
-    let json: unknown
-    try { json = JSON.parse(raw) } catch { diags.push({ code: 'MALFORMED_OUTPUT', message: '第 ' + (i + 1) + ' 行不是合法 JSON', line: i + 1 }); continue }
-    if (!isRecord(json)) { diags.push({ code: 'MALFORMED_OUTPUT', message: '第 ' + (i + 1) + ' 行不是对象', line: i + 1 }); continue }
-    if (typeof json.id !== 'string' || json.id === '') { diags.push({ code: 'MALFORMED_OUTPUT', message: '第 ' + (i + 1) + ' 行缺少合法 id', line: i + 1 }); continue }
-    if (!Number.isInteger(json.level) || (json.level as number) < 1) { diags.push({ code: 'INVALID_LEVEL', message: '第 ' + (i + 1) + ' 行 level 必须是正整数', line: i + 1, id: json.id }); continue }
-    proposals.push({ id: json.id, level: json.level as number })
+  let json: unknown
+  try { json = JSON.parse(body) } catch {
+    return { ok: false, line: 0, diagnostics: [{ code: 'MALFORMED_OUTPUT', message: '结构分析结果不是合法 JSON' }] }
   }
-  if (diags.length > 0) return { ok: false, line: 0, diagnostics: diags }
-  if (proposals.length === 0) return { ok: false, line: 0, diagnostics: [{ code: 'EMPTY_OUTPUT', message: '结构分析无输出' }] }
-  return { ok: true, proposals }
+  if (!isRecord(json) || !Array.isArray(json.levels)) {
+    return { ok: false, line: 0, diagnostics: [{ code: 'MALFORMED_OUTPUT', message: '结构分析结果必须是 {levels:[...]} 对象' }] }
+  }
+  const diagnostics: TocStructureDiagnostic[] = []
+  const levels: number[] = []
+  for (let i = 0; i < json.levels.length; i++) {
+    const level = json.levels[i]
+    if (!Number.isInteger(level) || (level as number) < 1) {
+      diagnostics.push({ code: 'INVALID_LEVEL', message: '第 ' + (i + 1) + ' 项 level 必须是正整数', rowIndex: i })
+    } else {
+      levels.push(level as number)
+    }
+  }
+  if (diagnostics.length > 0) return { ok: false, line: 0, diagnostics }
+  return { ok: true, levels }
 }
 
 /** Deterministic level normalization: shift the observed minimum/root level to 1
@@ -214,40 +210,30 @@ export type TocStructureValidation = {
 }
 
 /**
- * Validate a global structure pass against the transcription rows:
- *   - every input id appears EXACTLY once (no missing / unknown / duplicate),
- *   - level integer >= 1,
- *   - after pure min->1 normalization, the first row = 1,
+ * Validate a compact global structure pass against transcription row order:
+ *   - exactly one level is returned for each input row,
+ *   - every level is an integer >= 1,
+ *   - normalize the minimum observed level to 1 without requiring the selected
+ *     slice's first row to be a global root,
  *   - no level transition jumps a parent (next <= prev + 1).
  * Returns normalized levels aligned to rows, or issues. Never partially persists.
  */
-export function validateTocStructure(rows: TocTranscriptionRow[], proposals: TocStructureProposal[]): TocStructureValidation {
+export function validateTocStructure(rows: TocTranscriptionRow[], proposedLevels: number[]): TocStructureValidation {
   const diagnostics: TocStructureDiagnostic[] = []
-  if (proposals.length !== rows.length) {
+  if (proposedLevels.length !== rows.length) {
     diagnostics.push({
       code: 'LEVEL_COUNT_MISMATCH',
-      message: '目录条目数 ' + rows.length + '，实际层级数 ' + proposals.length,
+      message: '目录条目数 ' + rows.length + '，实际层级数 ' + proposedLevels.length,
       expectedRows: rows.length,
-      actualLevels: proposals.length,
+      actualLevels: proposedLevels.length,
     })
   }
-  const byId = new Map<string, number>()
-  for (const p of proposals) {
-    if (byId.has(p.id)) {
-      diagnostics.push({ code: 'DUPLICATE_ID', message: '重复 id ' + p.id, id: p.id })
-    } else { byId.set(p.id, p.level) }
+  for (let i = 0; i < proposedLevels.length; i++) {
+    const level = proposedLevels[i]
+    if (!Number.isInteger(level) || level < 1) diagnostics.push({ code: 'INVALID_LEVEL', message: '第 ' + (i + 1) + ' 项 level 必须是正整数', rowIndex: i })
   }
-  for (const r of rows) {
-    if (!byId.has(r.id)) { diagnostics.push({ code: 'MISSING_ID', message: '缺少 id ' + r.id, id: r.id }); continue }
-    const lvl = byId.get(r.id) as number
-    if (!Number.isInteger(lvl) || lvl < 1) diagnostics.push({ code: 'INVALID_LEVEL', message: '非法 level for ' + r.id, id: r.id })
-  }
-  const expectedIds = new Set(rows.map(r => r.id))
-  for (const p of proposals) { if (!expectedIds.has(p.id)) diagnostics.push({ code: 'UNKNOWN_ID', message: '未知 id ' + p.id, id: p.id }) }
   if (diagnostics.length > 0) return { ok: false, issues: diagnostics.map(d => d.message), diagnostics, levels: [] }
-  const orderedLevels = rows.map(r => byId.get(r.id) as number)
-  const levels = normalizeTocLevels(orderedLevels)
-  if (levels[0] !== 1) diagnostics.push({ code: 'FIRST_ROW_NOT_ROOT', message: '首项归一化后不是层级 1', rowIndex: 0 })
+  const levels = normalizeTocLevels(proposedLevels)
   for (let i = 1; i < levels.length; i++) {
     if (levels[i] > levels[i - 1] + 1) { diagnostics.push({ code: 'LEVEL_JUMP', message: '第 ' + (i + 1) + ' 项层级跳变', rowIndex: i }); break }
   }
@@ -263,8 +249,7 @@ export function describeTocStructureFailure(diagnostics: TocStructureDiagnostic[
   if (codes.has('EMPTY_OUTPUT')) return '目录结构分析失败：AI 未返回目录层级。你可以重新识别或进入手动编辑。'
   if (codes.has('MALFORMED_OUTPUT')) return '目录结构分析失败：AI 返回的结构格式不正确。你可以重新识别或进入手动编辑。'
   if (codes.has('LEVEL_COUNT_MISMATCH')) return '目录结构分析失败：AI 返回的层级数量与目录条目不一致。你可以重新识别或进入手动编辑。'
-  if (codes.has('MISSING_ID') || codes.has('DUPLICATE_ID') || codes.has('UNKNOWN_ID')) return '目录结构分析失败：AI 返回的结构不完整。你可以重新识别或进入手动编辑。'
-  if (codes.has('INVALID_LEVEL') || codes.has('FIRST_ROW_NOT_ROOT') || codes.has('LEVEL_JUMP')) return '目录结构分析失败：AI 返回的目录层级无效。你可以重新识别或进入手动编辑。'
+  if (codes.has('INVALID_LEVEL') || codes.has('LEVEL_JUMP')) return '目录结构分析失败：AI 返回的目录层级无效。你可以重新识别或进入手动编辑。'
   return '目录结构分析失败，请重试或进入手动编辑。'
 }
 
@@ -318,6 +303,6 @@ export const TOC_TRANSCRIPTION_SYSTEM_PROMPT =
 
 export const TOC_STRUCTURE_PROMPT =
   '你是 PDF 目录结构分析助手。输入是逐行目录转录（含阅读顺序、缩进、编号），仅文本。\n' +
-  '你只负责整体判断每条目录的绝对层级。输出必须是 JSONL：每一行{"id":"行id","level":绝对层级数字}。\n' +
-  '你不可以返回或修改 title、pageLabel、tocPage、rowOrder、numbering、visualIndent 等任何其他字段；即使模型输出额外字段也会被忽略，绝不能用它们覆盖转录来源数据。\n' +
-  '你必须为输入中每个 id 恰好输出一行 level，按输入顺序，缺少、重复、未知 id 都算失败。只输出 JSONL，不要解释。'
+  '你只负责整体判断每条目录的绝对层级。输入第 1 行对应 levels[0]，输入第 2 行对应 levels[1]，依此类推。\n' +
+  '输出必须是一个紧凑 JSON 对象：{"levels":[1,2,3]}。levels 必须严格按输入行顺序，且正好包含与输入行数相同的正整数。\n' +
+  '你不可以返回或修改 title、pageLabel、tocPage、rowOrder、numbering、visualIndent 等任何其他字段；这些全部由本地转录和页码映射保留。不要返回 id，不要返回 JSONL，不要解释。'
