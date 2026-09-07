@@ -7,7 +7,7 @@ import type { PromptSnapshot, PromptTransition } from '../src/prompts/prompt-typ
 import type { Conversation, Message } from '../src/engine/types.ts'
 import type { ConversationBranch } from '../src/branches/branch-types.ts'
 import { saveBranch, getBranch } from '../src/branches/branch-store.ts'
-import { renameBranch } from '../src/branches/branch-service.ts'
+import { deleteBranchSubtree, renameBranch } from '../src/branches/branch-service.ts'
 import { savePromptRecord, deletePromptRecord } from '../src/prompts/prompt-store.ts'
 
 let pass = 0
@@ -87,6 +87,14 @@ await appendConversationPromptTransition(conversation.id, tr('tFrozen', 'm3', 'F
 await deletePromptRecord(customPrompt.id)
 const afterDelete = await getConversation(conversation.id) as Conversation | undefined
 assert(afterDelete?.promptTransitions?.some((item) => item.id === 'tFrozen') === true, 'deleting a profile does not alter stored snapshots')
+
+const doomed = branch('doomed', undefined, 'm1', [], [tr('tDoomed', 'm1', 'Doomed')])
+await saveBranch(doomed)
+await deleteBranchSubtree(doomed.id)
+const deletedBranch = await getBranch(doomed.id)
+const rootAfterBranchDelete = await getConversation(conversation.id) as Conversation | undefined
+assert(deletedBranch === undefined, 'deleting a branch subtree removes its local transition row')
+assert(rootAfterBranchDelete?.promptTransitions?.some((item) => item.id === 'tFrozen') === true, 'deleting a branch subtree leaves root transitions intact')
 
 let rejected = false
 try { await appendBranchPromptTransition('missing-branch', tr('tX', null, 'X')) } catch (error) { rejected = error instanceof PromptTransitionServiceError && error.code === 'branch-not-found' }
