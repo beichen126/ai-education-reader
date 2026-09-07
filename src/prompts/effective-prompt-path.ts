@@ -46,9 +46,11 @@ type Source = {
  */
 function materializeCandidates(candidates: Candidate[]): PromptTransition[] {
   const ordered = [...candidates].sort((a, b) => a.position - b.position || a.sourceDepth - b.sourceDepth || a.sourceIndex - b.sourceIndex)
-  const winnerByBoundary = new Map<string, Candidate>()
+  const winnerByBoundary = new Map<StableId | null, Candidate>()
   for (const candidate of ordered) {
-    const key = candidate.transition.afterMessageId ?? '__initial__'
+    // `null` is the real initial boundary. Never coerce it to a message id:
+    // `__initial__` is a legal persisted message id.
+    const key = candidate.transition.afterMessageId
     const previous = winnerByBoundary.get(key)
     if (!previous || candidate.sourceDepth >= previous.sourceDepth) winnerByBoundary.set(key, candidate)
   }
@@ -100,6 +102,7 @@ function collectSource(
   }
   const effectiveSet = new Set(effectiveMessageIds)
   const order = new Map(effectiveMessageIds.map((id, index) => [id, index]))
+  const seenBoundaries = new Set<StableId | null>()
   raw.forEach((transition, sourceIndex) => {
     if (badIndexes.has(sourceIndex) || !transition || typeof transition !== 'object') return
     if (seenTransitionIds.has(transition.id)) {
@@ -113,6 +116,18 @@ function collectSource(
       })
       return
     }
+    if (seenBoundaries.has(transition.afterMessageId)) {
+      diagnostics.push({
+        code: 'duplicate-transition',
+        owner: source.owner,
+        ...(source.branchId ? { branchId: source.branchId } : {}),
+        transitionId: transition.id,
+        path: 'promptTransitions[' + sourceIndex + '].afterMessageId',
+        message: 'same owner has duplicate transition boundary',
+      })
+      return
+    }
+    seenBoundaries.add(transition.afterMessageId)
     // A valid ancestor transition after the child fork is not corrupt; it is
     // simply outside the child route and therefore must not be inherited.
     if (transition.afterMessageId !== null && !effectiveSet.has(transition.afterMessageId)) return
@@ -130,7 +145,11 @@ function rootResult(conversation: Conversation, diagnostics: EffectivePromptPath
   const messageIds = conversation.messages.map((message) => message.id)
   const candidates: Candidate[] = []
   collectSource({ owner: 'root', sourceDepth: 0, transitions: conversation.promptTransitions, routeMessageIds: messageIds }, messageIds, new Set(), candidates, diagnostics)
-  return { transitions: materializeCandidates(candidates), messageIds, diagnostics, resolved: true }
+  return { transitions: materializeCandidates(candidates), messageIds, diagnostics, resolved: !hasDuplicateOwnerBoundary(diagnostics) }
+}
+
+function hasDuplicateOwnerBoundary(diagnostics: readonly EffectivePromptPathDiagnostic[]): boolean {
+  return diagnostics.some((item) => item.code === 'duplicate-transition' && item.message === 'same owner has duplicate transition boundary')
 }
 
 /**
@@ -169,7 +188,7 @@ export function buildEffectivePromptPath(
   const candidates: Candidate[] = []
   const seenTransitionIds = new Set<StableId>()
   for (const source of sources) collectSource(source, effectiveIds, seenTransitionIds, candidates, diagnostics)
-  return { transitions: materializeCandidates(candidates), messageIds: effectiveIds, diagnostics, resolved: true }
+  return { transitions: materializeCandidates(candidates), messageIds: effectiveIds, diagnostics, resolved: !hasDuplicateOwnerBoundary(diagnostics) }
 }
 
 export const buildEffectivePromptTimeline = buildEffectivePromptPath

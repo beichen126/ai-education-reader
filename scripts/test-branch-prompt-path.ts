@@ -66,6 +66,20 @@ const sameBoundaryRevision = branch('same-boundary-revision', undefined, 'm1', [
 result = buildEffectivePromptPath(conversation, [sameBoundaryRevision], 'same-boundary-revision')
 assert(result.transitions.some((item) => item.snapshot.revision === 1) && result.transitions.some((item) => item.snapshot.revision === 2), 'same profile revisions remain distinct snapshots')
 
+const sameBoundaryParent = branch('same-boundary-parent', undefined, 'm1', [msg('sbp')], [tr('tParentBoundary', 'm1', 'Parent boundary')])
+const sameBoundaryChild = branch('same-boundary-child', 'same-boundary-parent', 'm1', [msg('sbc')], [tr('tChildBoundary', 'm1', 'Child boundary')])
+result = buildEffectivePromptPath(conversation, [sameBoundaryParent, sameBoundaryChild], 'same-boundary-child')
+assert(result.transitions.some((item) => item.snapshot.name === 'Child boundary') && !result.transitions.some((item) => item.snapshot.name === 'Parent boundary'), 'deepest route owner wins at a shared message boundary')
+
+const nestedBoundaryParent = branch('nested-boundary-parent', undefined, 'm1', [msg('nbp')], [tr('tNestedParent', null, 'Nested parent initial')])
+const nestedBoundaryChild = branch('nested-boundary-child', 'nested-boundary-parent', 'nbp', [msg('nbc')], [tr('tNestedChild', null, 'Nested child initial')])
+result = buildEffectivePromptPath(conversation, [nestedBoundaryParent, nestedBoundaryChild], 'nested-boundary-child')
+assert(result.transitions.some((item) => item.snapshot.name === 'Nested child initial') && !result.transitions.some((item) => item.snapshot.name === 'Nested parent initial'), 'deepest route owner wins at the null boundary')
+
+const duplicateOwner = branch('duplicate-owner', undefined, 'm1', [], [tr('tDupA', 'm1', 'First'), tr('tDupB', 'm1', 'Second')])
+result = buildEffectivePromptPath(conversation, [duplicateOwner], 'duplicate-owner')
+assert(!result.resolved && result.diagnostics.some((item) => item.code === 'duplicate-transition' && item.message === 'same owner has duplicate transition boundary'), 'same-owner duplicate boundary is diagnostic and unresolved')
+
 const realSentinelMessage: Conversation = {
   id: 'sentinel-conversation', title: 'sentinel', createdAt: 1, updatedAt: 1,
   messages: [msg('__initial__'), msg('sentinel-next')],
