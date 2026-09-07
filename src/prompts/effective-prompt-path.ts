@@ -1,4 +1,5 @@
-import { buildEffectiveMessageIds, resolveBranchLineage, validateBranchGraph } from '../branches/branch-path'
+import { buildEffectiveMessagePath, resolveBranchLineage } from '../branches/branch-path'
+import type { EffectiveMessageRoute } from '../branches/branch-path'
 import type { BranchDiagnostic, ConversationBranch } from '../branches/branch-types'
 import type { Conversation, StableId } from '../engine/types'
 import { getPromptTransitionIssues } from './prompt-validation'
@@ -34,7 +35,7 @@ type Source = {
   branchId?: StableId
   sourceDepth: number
   transitions: unknown
-  routeMessageIds: StableId[]
+  routeMessagePath: EffectiveMessageRoute
 }
 
 /**
@@ -81,14 +82,15 @@ function invalidTransitionDiagnostic(
 
 function collectSource(
   source: Source,
-  effectiveMessageIds: readonly StableId[],
+  effectiveSet: ReadonlySet<StableId>,
+  effectiveOrder: ReadonlyMap<StableId, number>,
   seenTransitionIds: Set<StableId>,
   candidates: Candidate[],
   diagnostics: EffectivePromptPathDiagnostic[],
 ): void {
   const raw = source.transitions
   if (raw === undefined) return
-  const issues = getPromptTransitionIssues(raw, source.routeMessageIds)
+  const issues = getPromptTransitionIssues(raw, source.routeMessagePath)
   if (!Array.isArray(raw)) {
     diagnostics.push(invalidTransitionDiagnostic(source, issues[0] ?? { path: 'promptTransitions', message: 'promptTransitions must be an array' }))
     return
@@ -100,8 +102,6 @@ function collectSource(
     const transition = index === undefined ? undefined : raw[index]
     diagnostics.push(invalidTransitionDiagnostic(source, issue, transition))
   }
-  const effectiveSet = new Set(effectiveMessageIds)
-  const order = new Map(effectiveMessageIds.map((id, index) => [id, index]))
   const seenBoundaries = new Set<StableId | null>()
   raw.forEach((transition, sourceIndex) => {
     if (badIndexes.has(sourceIndex) || !transition || typeof transition !== 'object') return
@@ -134,7 +134,7 @@ function collectSource(
     seenTransitionIds.add(transition.id)
     candidates.push({
       transition,
-      position: transition.afterMessageId === null ? -1 : (order.get(transition.afterMessageId) ?? -1),
+      position: transition.afterMessageId === null ? -1 : (effectiveOrder.get(transition.afterMessageId) ?? -1),
       sourceDepth: source.sourceDepth,
       sourceIndex,
     })
@@ -144,7 +144,9 @@ function collectSource(
 function rootResult(conversation: Conversation, diagnostics: EffectivePromptPathDiagnostic[] = []): EffectivePromptPathResult {
   const messageIds = conversation.messages.map((message) => message.id)
   const candidates: Candidate[] = []
-  collectSource({ owner: 'root', sourceDepth: 0, transitions: conversation.promptTransitions, routeMessageIds: messageIds }, messageIds, new Set(), candidates, diagnostics)
+  const rootPositions = new Map(messageIds.map((messageId, position) => [messageId, position]))
+  const rootRoute = { has: (messageId: StableId) => rootPositions.has(messageId), position: (messageId: StableId) => rootPositions.get(messageId) }
+  collectSource({ owner: 'root', sourceDepth: 0, transitions: conversation.promptTransitions, routeMessagePath: rootRoute }, new Set(messageIds), rootPositions, new Set(), candidates, diagnostics)
   return { transitions: materializeCandidates(candidates), messageIds, diagnostics, resolved: !hasDuplicateOwnerBoundary(diagnostics) }
 }
 
@@ -164,9 +166,10 @@ export function buildEffectivePromptPath(
 ): EffectivePromptPathResult {
   if (!activeBranchId) return rootResult(conversation)
 
-  const diagnostics: EffectivePromptPathDiagnostic[] = validateBranchGraph(conversation, branches)
+  const materialized = buildEffectiveMessagePath(conversation, branches, activeBranchId)
+  const diagnostics: EffectivePromptPathDiagnostic[] = [...materialized.diagnostics]
   const lineage = resolveBranchLineage(branches, activeBranchId)
-  const effectiveIds = buildEffectiveMessageIds(conversation, branches, activeBranchId)
+  const effectiveIds = materialized.messageIds
   if (diagnostics.length > 0 || lineage === null || effectiveIds === null) {
     return { ...rootResult(conversation, diagnostics), resolved: false }
   }
@@ -176,18 +179,20 @@ export function buildEffectivePromptPath(
     owner: 'root',
     sourceDepth: 0,
     transitions: conversation.promptTransitions,
-    routeMessageIds: conversation.messages.map((message) => message.id),
+    routeMessagePath: materialized.rootRoute,
   }]
   lineage.forEach((branchId, index) => {
     const branch = byId.get(branchId)
     if (!branch) return
-    const routeMessageIds = buildEffectiveMessageIds(conversation, branches, branch.id) ?? []
-    sources.push({ owner: 'branch', branchId: branch.id, sourceDepth: index + 1, transitions: branch.promptTransitions, routeMessageIds })
+    const routeMessagePath = materialized.routeByBranch.get(branch.id)
+    if (routeMessagePath) sources.push({ owner: 'branch', branchId: branch.id, sourceDepth: index + 1, transitions: branch.promptTransitions, routeMessagePath })
   })
 
   const candidates: Candidate[] = []
+  const effectiveSet = new Set(effectiveIds)
+  const effectiveOrder = new Map(effectiveIds.map((id, index) => [id, index]))
   const seenTransitionIds = new Set<StableId>()
-  for (const source of sources) collectSource(source, effectiveIds, seenTransitionIds, candidates, diagnostics)
+  for (const source of sources) collectSource(source, effectiveSet, effectiveOrder, seenTransitionIds, candidates, diagnostics)
   return { transitions: materializeCandidates(candidates), messageIds: effectiveIds, diagnostics, resolved: !hasDuplicateOwnerBoundary(diagnostics) }
 }
 

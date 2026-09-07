@@ -12,6 +12,7 @@ import type { BranchDiagnostic, ConversationBranch, MessageOwner } from './branc
 
 type MessageIndex = { byId: Map<StableId, Message>; duplicates: Set<StableId> }
 type BranchIndexResult = { byId: Map<StableId, ConversationBranch>; duplicates: Set<StableId> }
+const branchIndexCache = new WeakMap<object, BranchIndexResult>()
 
 /** Globally unique message ids across root + every branch-local message. */
 function messageIndex(conversation: Conversation, branches: ConversationBranch[]): MessageIndex {
@@ -34,13 +35,17 @@ function messageIndex(conversation: Conversation, branches: ConversationBranch[]
 }
 
 function branchIndex(branches: ConversationBranch[]): BranchIndexResult {
+  const cached = branchIndexCache.get(branches)
+  if (cached) return cached
   const byId = new Map<StableId, ConversationBranch>()
   const duplicates = new Set<StableId>()
   for (const b of branches) {
     if (byId.has(b.id)) { duplicates.add(b.id); continue }
     byId.set(b.id, b)
   }
-  return { byId, duplicates }
+  const result = { byId, duplicates }
+  branchIndexCache.set(branches, result)
+  return result
 }
 
 type Ctx = {
@@ -184,6 +189,132 @@ export function buildEffectiveMessageIds(
   if (!activeBranchId) return conversation.messages.map((m) => m.id)
   const ctx = makeCtx(conversation, branches)
   return computeEffectiveIds(ctx, activeBranchId)
+}
+
+export type EffectiveMessagePathResult = {
+  messageIds: StableId[] | null
+  diagnostics: BranchDiagnostic[]
+  rootRoute: EffectiveMessageRoute
+  routeByBranch: Map<StableId, EffectiveMessageRoute>
+}
+
+/**
+ * Persistent membership/order view for one effective message route. A child
+ * route keeps a reference to its parent route and only stores its fork cut and
+ * local messages, so looking up a boundary does not copy the parent path.
+ */
+export type EffectiveMessageRoute = {
+  has(messageId: StableId): boolean
+  position(messageId: StableId): number | undefined
+}
+
+function createRootMessageRoute(messageIds: readonly StableId[]): EffectiveMessageRoute {
+  const positions = new Map(messageIds.map((messageId, position) => [messageId, position]))
+  const position = (messageId: StableId) => positions.get(messageId)
+  return { position, has: (messageId) => position(messageId) !== undefined }
+}
+
+function extendMessageRoute(
+  parent: EffectiveMessageRoute,
+  forkPosition: number,
+  localMessageIds: readonly StableId[],
+): EffectiveMessageRoute {
+  const localPositions = new Map<StableId, number>()
+  localMessageIds.forEach((messageId, index) => {
+    if (!localPositions.has(messageId)) localPositions.set(messageId, forkPosition + 1 + index)
+  })
+  const position = (messageId: StableId): number | undefined => {
+    const localPosition = localPositions.get(messageId)
+    if (localPosition !== undefined) return localPosition
+    const inheritedPosition = parent.position(messageId)
+    return inheritedPosition !== undefined && inheritedPosition <= forkPosition ? inheritedPosition : undefined
+  }
+  return { position, has: (messageId) => position(messageId) !== undefined }
+}
+
+/**
+ * Materialize one active route without validating unrelated branches or copying
+ * every ancestor path recursively. The branch index is cached by the immutable
+ * branch-array identity; each subsequent route read walks only the active
+ * lineage and its messages.
+ */
+export function buildEffectiveMessagePath(
+  conversation: Conversation,
+  branches: ConversationBranch[],
+  activeBranchId?: StableId,
+): EffectiveMessagePathResult {
+  const rootMessageIds = conversation.messages.map((message) => message.id)
+  const rootRoute = createRootMessageRoute(rootMessageIds)
+  const routeByBranch = new Map<StableId, EffectiveMessageRoute>()
+  if (!activeBranchId) return { messageIds: rootMessageIds, diagnostics: [], rootRoute, routeByBranch }
+
+  const index = branchIndex(branches)
+  const diagnostics: BranchDiagnostic[] = []
+  const lineage: ConversationBranch[] = []
+  const seen = new Set<StableId>()
+  let current: StableId | undefined = activeBranchId
+  while (current !== undefined) {
+    if (seen.has(current)) {
+      diagnostics.push({ code: 'cycle', branchId: current, cycle: [...seen, current] })
+      return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+    }
+    seen.add(current)
+    const branch = index.byId.get(current)
+    if (!branch) {
+      diagnostics.push({ code: 'missing-parent', branchId: current, parentBranchId: current })
+      return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+    }
+    if (index.duplicates.has(current)) {
+      diagnostics.push({ code: 'duplicate-id', branchId: current })
+      return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+    }
+    if (branch.conversationId !== conversation.id) {
+      diagnostics.push({ code: 'missing-conversation', branchId: current })
+      return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+    }
+    lineage.unshift(branch)
+    if (branch.parentBranchId !== undefined) {
+      const parent = index.byId.get(branch.parentBranchId)
+      if (!parent) {
+        diagnostics.push({ code: 'missing-parent', branchId: branch.id, parentBranchId: branch.parentBranchId })
+        return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+      }
+      if (parent.conversationId !== branch.conversationId) {
+        diagnostics.push({ code: 'wrong-conversation-parent', branchId: branch.id, parentBranchId: branch.parentBranchId })
+        return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+      }
+      current = branch.parentBranchId
+    } else current = undefined
+  }
+
+  const messageIds = [...rootMessageIds]
+  const positions = new Map(messageIds.map((id, position) => [id, position]))
+  const activeIds = new Set(messageIds)
+  let currentRoute = rootRoute
+  for (const branch of lineage) {
+    const forkPosition = positions.get(branch.forkMessageId)
+    if (forkPosition === undefined) {
+      diagnostics.push({ code: 'missing-fork', branchId: branch.id, forkMessageId: branch.forkMessageId })
+      return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+    }
+    for (let position = messageIds.length - 1; position > forkPosition; position--) {
+      positions.delete(messageIds[position])
+      activeIds.delete(messageIds[position])
+    }
+    messageIds.length = forkPosition + 1
+    for (const message of branch.messages) {
+      if (activeIds.has(message.id)) {
+        diagnostics.push({ code: 'duplicate-message-id', branchId: branch.id, messageId: message.id })
+        return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+      }
+      positions.set(message.id, messageIds.length)
+      activeIds.add(message.id)
+      messageIds.push(message.id)
+    }
+    currentRoute = extendMessageRoute(currentRoute, forkPosition, branch.messages.map((message) => message.id))
+    routeByBranch.set(branch.id, currentRoute)
+  }
+  return { messageIds, diagnostics, rootRoute, routeByBranch }
 }
 
 /**

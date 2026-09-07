@@ -262,11 +262,26 @@ export function validatePromptSnapshot(value: unknown): PromptSnapshot | null {
  * owning thread; passing it in keeps this domain helper independent of IDB/branch
  * storage while still rejecting transitions after an unrelated message.
  */
-export function getPromptTransitionIssues(value: unknown, boundaryIds: readonly string[]): PromptMetadataIssue[] {
+export type PromptBoundaryPath = {
+  has(boundaryId: string): boolean
+  position(boundaryId: string): number | undefined
+}
+
+export function getPromptTransitionIssues(value: unknown, boundaryIds: readonly string[] | PromptBoundaryPath): PromptMetadataIssue[] {
   const issues: PromptMetadataIssue[] = []
   if (!Array.isArray(value)) return [{ code: 'INVALID_TRANSITIONS', path: '', message: 'promptTransitions must be an array' }]
-  const boundaries = new Set(boundaryIds)
-  const order = new Map(boundaryIds.map((id, index) => [id, index]))
+  let hasBoundary: (boundaryId: string) => boolean
+  let boundaryPosition: (boundaryId: string) => number | undefined
+  if (Array.isArray(boundaryIds)) {
+    const boundaries = new Set(boundaryIds)
+    const order = new Map(boundaryIds.map((id, index) => [id, index]))
+    hasBoundary = (boundaryId) => boundaries.has(boundaryId)
+    boundaryPosition = (boundaryId) => order.get(boundaryId)
+  } else {
+    const route = boundaryIds as PromptBoundaryPath
+    hasBoundary = (boundaryId) => route.has(boundaryId)
+    boundaryPosition = (boundaryId) => route.position(boundaryId)
+  }
   const ids = new Set<string>()
   let previousPosition = -1
   let previousCreatedAt = -Infinity
@@ -280,9 +295,9 @@ export function getPromptTransitionIssues(value: unknown, boundaryIds: readonly 
     const boundaryId = transition.afterMessageId
     if (boundaryId !== null) {
       if (!isNonEmptyString(boundaryId)) issues.push({ code: 'INVALID_TRANSITION_BOUNDARY', path: path + '.afterMessageId', message: 'afterMessageId must be null or a message id' })
-      else if (!boundaries.has(boundaryId)) issues.push({ code: 'UNKNOWN_TRANSITION_BOUNDARY', path: path + '.afterMessageId', message: 'transition boundary is not on the effective message path' })
+      else if (!hasBoundary(boundaryId)) issues.push({ code: 'UNKNOWN_TRANSITION_BOUNDARY', path: path + '.afterMessageId', message: 'transition boundary is not on the effective message path' })
     }
-    const position = boundaryId === null ? -1 : (isNonEmptyString(boundaryId) ? (order.get(boundaryId) ?? -1) : -1)
+    const position = boundaryId === null ? -1 : (isNonEmptyString(boundaryId) ? (boundaryPosition(boundaryId) ?? -1) : -1)
     if (position < previousPosition) issues.push({ code: 'TRANSITION_ORDER', path, message: 'transition boundaries must be chronological' })
     previousPosition = Math.max(previousPosition, position)
     if (!isFiniteNumber(transition.createdAt) || transition.createdAt < 0) issues.push({ code: 'INVALID_TRANSITION_TIME', path: path + '.createdAt', message: 'createdAt must be non-negative and finite' })
@@ -293,6 +308,6 @@ export function getPromptTransitionIssues(value: unknown, boundaryIds: readonly 
   return issues
 }
 
-export function validatePromptTransitions(value: unknown, boundaryIds: readonly string[]): PromptTransition[] | null {
+export function validatePromptTransitions(value: unknown, boundaryIds: readonly string[] | PromptBoundaryPath): PromptTransition[] | null {
   return getPromptTransitionIssues(value, boundaryIds).length === 0 ? value as PromptTransition[] : null
 }
