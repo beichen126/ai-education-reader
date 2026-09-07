@@ -3,13 +3,16 @@ import type { Annotation } from '../annotations/annotation-types'
 import { ANNOTATION_VERSION } from '../annotations/annotation-types'
 import type { Attachment } from '../engine/types'
 import { persistBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
-import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupV1, type BackupV2, type BackupV3, type BackupV4, type BackupV5, type BackupDraft, type BackupBranchDraft, type BackupActiveBranch, type BackupAppearance } from './backup-types'
-import { validateBranchGraph } from '../branches/branch-path'
+import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupV1, type BackupV2, type BackupV3, type BackupV4, type BackupV5, type BackupV6, type BackupDraft, type BackupBranchDraft, type BackupActiveBranch, type BackupAppearance } from './backup-types'
+import { buildEffectiveMessageIds, validateBranchGraph } from '../branches/branch-path'
 import { validateArtifact, validateQuizDocument } from '../artifacts/artifact-validation'
 import type { ConversationBranch } from '../branches/branch-types'
 import type { StudyArtifact } from '../artifacts/artifact-types'
 import { normalizeConversationPdfContexts, normalizeMessagePdfContexts } from '../engine/types'
 import { sanitizeBookmarkRangePreferences, isBookmarkRangeEndMode } from '../documents/bookmark-range-preferences'
+import { getPromptDefinitionIssues, getPromptSnapshotIssues, getPromptTransitionIssues, validatePromptDefinition } from '../prompts/prompt-validation'
+import { DEFAULT_PROMPT_PREFERENCES } from '../prompts/prompt-preferences'
+import type { PromptDefinition, PromptSnapshot } from '../prompts/prompt-types'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -118,12 +121,76 @@ function validateDocumentNotes(input: Record<string, any>): void {
   }
 }
 
+function throwPromptMetadataIssue(prefix: string, issue: { path: string; message: string }): never {
+  throw new BackupError(prefix + (issue.path ? '.' + issue.path : '') + '：' + issue.message)
+}
+
+function validateMessagePromptMetadata(message: Record<string, any>): void {
+  if (message.quickFollowUp === undefined) return
+  const metadata = message.quickFollowUp
+  if (!isObj(metadata)) throw new BackupError('message.quickFollowUp 非法')
+  if (metadata.promptId !== undefined && !isNonEmptyStr(metadata.promptId)) throw new BackupError('message.quickFollowUp.promptId 非法')
+  if (!isNonEmptyStr(metadata.labelSnapshot)) throw new BackupError('message.quickFollowUp.labelSnapshot 非法')
+  if (!isStr(metadata.promptSnapshot)) throw new BackupError('message.quickFollowUp.promptSnapshot 非法')
+}
+
+function validateArtifactPromptBundle(bundle: unknown): void {
+  if (!isObj(bundle) || !isStr(bundle.userPrompt) || !isNum(bundle.resolvedAt) || bundle.resolvedAt < 0) {
+    throw new BackupError('artifact.promptBundle 基础结构非法')
+  }
+  if (bundle.template !== undefined) {
+    const issues = getPromptSnapshotIssues(bundle.template)
+    if (issues.length > 0) throwPromptMetadataIssue('artifact.promptBundle.template', issues[0])
+    if ((bundle.template as any).kind !== 'artifact') throw new BackupError('artifact.promptBundle.template.kind 必须是 artifact')
+  }
+  if (bundle.protocol !== undefined) {
+    const issues = getPromptSnapshotIssues(bundle.protocol)
+    if (issues.length > 0) throwPromptMetadataIssue('artifact.promptBundle.protocol', issues[0])
+    if ((bundle.protocol as any).kind !== 'protocol') throw new BackupError('artifact.promptBundle.protocol.kind 必须是 protocol')
+  }
+}
+
+function validateV6PromptData(input: BackupV6): void {
+  if (!Array.isArray(input.prompts)) throw new BackupError('缺少 prompts 数组')
+  const promptById = new Map<string, PromptDefinition>()
+  for (let i = 0; i < input.prompts.length; i++) {
+    const prompt = input.prompts[i]
+    const issues = getPromptDefinitionIssues(prompt)
+    if (issues.length > 0) throwPromptMetadataIssue('prompts[' + i + ']', issues[0])
+    const definition = validatePromptDefinition(prompt)
+    if (!definition) throw new BackupError('prompts[' + i + '] 定义非法')
+    if (definition.source === 'builtin') throw new BackupError('prompts[' + i + '] 不允许写入 builtin 定义')
+    if (promptById.has(definition.id)) throw new BackupError('prompt id 重复：' + definition.id.slice(0, 8))
+    promptById.set(definition.id, definition)
+  }
+
+  const preferences = input.promptPreferences
+  if (!isObj(preferences) || preferences.version !== 1) throw new BackupError('promptPreferences.version 非法')
+  if (!isNonEmptyStr(preferences.defaultConversationModeId)) throw new BackupError('promptPreferences.defaultConversationModeId 非法')
+  const defaultPrompt = promptById.get(preferences.defaultConversationModeId)
+  if (defaultPrompt && defaultPrompt.kind !== 'conversation-mode') throw new BackupError('promptPreferences.defaultConversationModeId 必须指向 conversation-mode')
+  if (!defaultPrompt && !preferences.defaultConversationModeId.startsWith('builtin-')) throw new BackupError('promptPreferences.defaultConversationModeId 引用了不存在的 prompt')
+
+  if (!Array.isArray(preferences.hiddenBuiltinPromptIds) || !preferences.hiddenBuiltinPromptIds.every(isNonEmptyStr)) throw new BackupError('promptPreferences.hiddenBuiltinPromptIds 非法')
+  if (new Set(preferences.hiddenBuiltinPromptIds).size !== preferences.hiddenBuiltinPromptIds.length) throw new BackupError('promptPreferences.hiddenBuiltinPromptIds 重复')
+  if (preferences.sortPreference !== undefined && preferences.sortPreference !== 'updatedAt-desc' && preferences.sortPreference !== 'name-asc') throw new BackupError('promptPreferences.sortPreference 非法')
+  if (!isObj(preferences.activeProtocolOverrideByDomain)) throw new BackupError('promptPreferences.activeProtocolOverrideByDomain 非法')
+  for (const [domain, id] of Object.entries(preferences.activeProtocolOverrideByDomain)) {
+    if (!isNonEmptyStr(domain) || !isNonEmptyStr(id)) throw new BackupError('promptPreferences.activeProtocolOverrideByDomain 内容非法')
+    const prompt = promptById.get(id)
+    if (!prompt || prompt.kind !== 'protocol' || prompt.source !== 'experimental' || prompt.domain !== domain) {
+      throw new BackupError('promptPreferences.activeProtocolOverrideByDomain 引用了非法 protocol override')
+    }
+  }
+}
+
 export function parseAndValidate(input: unknown): Backup {
   if (!isObj(input)) throw new BackupError('不是一个有效的备份对象')
   if (input.format !== BACKUP_FORMAT && input.format !== LEGACY_BACKUP_FORMAT) throw new BackupError('格式不匹配：不是本产品的备份文件（支持 ' + BACKUP_FORMAT + ' 与 ' + LEGACY_BACKUP_FORMAT + '）')
-  if (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4 && input.version !== 5) throw new BackupError('版本不支持：当前仅支持 v1 / v2 / v3 / v4 / v5')
-  const isV3 = input.version === 3
-  const isV4 = input.version === 4 || input.version === 5
+  if (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4 && input.version !== 5 && input.version !== 6) throw new BackupError('版本不支持：当前仅支持 v1 / v2 / v3 / v4 / v5 / v6')
+  const isV3 = input.version >= 3
+  const isV4 = input.version >= 4
+  const isV6 = input.version === 6
   if (!Array.isArray(input.conversations)) throw new BackupError('缺少 conversations 数组')
   if (!Array.isArray(input.annotations)) throw new BackupError('缺少 annotations 数组')
   if (!Array.isArray(input.attachments)) throw new BackupError('缺少 attachments 数组')
@@ -151,6 +218,7 @@ export function parseAndValidate(input: unknown): Backup {
       if (!isStr(m.content)) throw new BackupError('message.content 必须是字符串')
       if (!Array.isArray(m.images) || !m.images.every(isStr)) throw new BackupError('message.images 必须是字符串数组')
       if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('message 时间戳必须是数字')
+      validateMessagePromptMetadata(m)
       if (m.pdfContexts !== undefined) validatePdfContexts(m.pdfContexts)
       if (m.pdfContext !== undefined) validatePdfContext(m.pdfContext)
       mids.add(m.id)
@@ -226,14 +294,29 @@ export function parseAndValidate(input: unknown): Backup {
     }
   }
 
-  if (isV4) validateV4BranchesAndArtifacts(input as BackupV4, input.conversations, input.attachments)
+  if (isV6) {
+    for (const c of input.conversations) {
+      if (!Array.isArray(c.promptTransitions)) throw new BackupError('v6 conversation.promptTransitions 必须是数组')
+      const issues = getPromptTransitionIssues(c.promptTransitions, c.messages.map((m: any) => m.id))
+      if (issues.length > 0) throwPromptMetadataIssue('conversation ' + c.id + '.promptTransitions', issues[0])
+    }
+  } else {
+    for (const c of input.conversations) {
+      if (c.promptTransitions !== undefined) {
+        const issues = getPromptTransitionIssues(c.promptTransitions, c.messages.map((m: any) => m.id))
+        if (issues.length > 0) throwPromptMetadataIssue('conversation ' + c.id + '.promptTransitions', issues[0])
+      }
+    }
+  }
+  if (isV4) validateV4BranchesAndArtifacts(input as BackupV4, input.conversations, input.attachments, isV6)
+  if (isV6) validateV6PromptData(input as BackupV6)
   validateDocuments(input)
   validateDocumentNotes(input)
   return input as Backup
 }
 
 
-function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], attachments: any[]): void {
+function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], attachments: any[], requireV2Metadata = false): void {
   if (!Array.isArray(input.branches)) throw new BackupError('缺少 branches 数组')
   if (!Array.isArray(input.branchDrafts)) throw new BackupError('缺少 branchDrafts 数组')
   if (!Array.isArray(input.artifacts)) throw new BackupError('缺少 artifacts 数组')
@@ -261,6 +344,7 @@ function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], a
       if (!isStr(m.content)) throw new BackupError('branch message.content 非法')
       if (!Array.isArray(m.images) || !m.images.every(isStr)) throw new BackupError('branch message.images 非法')
       if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('branch message 时间戳非法')
+      validateMessagePromptMetadata(m)
       if (m.pdfContexts !== undefined) validatePdfContexts(m.pdfContexts)
       if (m.pdfContext !== undefined) validatePdfContext(m.pdfContext)
       if (locals.has(m.id)) throw new BackupError('branch message.id 重复')
@@ -277,6 +361,15 @@ function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], a
     const conv = convById.get(convId)
     const diags = validateBranchGraph(conv, convBranches)
     if (diags.length > 0) throw new BackupError('分支图不完整：' + diags[0].code + '（分支 ' + String(convBranches[0]?.id ?? '').slice(0, 8) + '）')
+    for (const branch of convBranches) {
+      if (requireV2Metadata && !Array.isArray(branch.promptTransitions)) throw new BackupError('v6 branch.promptTransitions 必须是数组')
+      if (branch.promptTransitions !== undefined) {
+        const effectiveIds = buildEffectiveMessageIds(conv, convBranches, branch.id)
+        if (!effectiveIds) throw new BackupError('分支 promptTransitions 无法解析有效消息路径')
+        const issues = getPromptTransitionIssues(branch.promptTransitions, effectiveIds)
+        if (issues.length > 0) throwPromptMetadataIssue('branch ' + branch.id + '.promptTransitions', issues[0])
+      }
+    }
   }
 
   const draftBranchIds = new Set<string>()
@@ -302,6 +395,7 @@ function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], a
     // generating / error) may carry no quiz yet — validateArtifact already rejects a ready
     // quiz missing its payload, so guard against undefined here to avoid a hard import crash.
     if (va.kind === 'quiz' && va.quiz !== undefined) { try { validateQuizDocument(va.quiz) } catch { throw new BackupError('artifact quiz 结构不合法') } }
+    if (a.promptBundle !== undefined) validateArtifactPromptBundle(a.promptBundle)
   }
 
   for (const ab of input.activeBranches) {
@@ -338,6 +432,7 @@ function restoreArtifacts(artifacts: StudyArtifact[]): StudyArtifact[] {
 // leaves the existing data intact (staged OPFS files deleted, old IDB untouched).
 export async function restoreBackup(backup: Backup): Promise<void> {
   const v2 = 'documents' in backup ? (backup as BackupV2) : null;
+  const v6 = backup.version === 6 ? (backup as BackupV6) : null;
   const staged: { ref: StoredBinary; path: string | null }[] = [];
   const oldRefs: StoredBinary[] = [];
   try {
@@ -376,6 +471,9 @@ export async function restoreBackup(backup: Backup): Promise<void> {
       // V3: restore the appearance + every persisted Draft row (unsent user data). The API
       // Key is NEVER restored (always empty). Draft rows re-create the unsent composer state.
       { key: 'appearance', value: (backup as BackupV3).appearance || 'system' },
+      // V6: prompt preferences are one durable snapshot. Legacy backups reset to the
+      // current defaults rather than inheriting preferences from the old local database.
+      { key: 'promptPreferences', value: v6?.promptPreferences ?? DEFAULT_PROMPT_PREFERENCES },
       ...((backup as BackupV3).drafts || []).map((d: BackupDraft) => ({ key: 'draft:' + d.conversationId, value: { version: 1, text: d.text, imageIds: d.imageIds } })),
       ...((backup as BackupV4).branchDrafts || []).map((d: BackupBranchDraft) => ({ key: 'draft-branch:' + d.branchId, value: { version: 1, text: d.text, imageIds: d.imageIds } })),
       ...((backup as BackupV4).activeBranches || []).map((ab: BackupActiveBranch) => ({ key: 'activeBranch:' + ab.conversationId, value: ab.branchId })),
@@ -387,7 +485,7 @@ export async function restoreBackup(backup: Backup): Promise<void> {
     // E. One atomic IDB replacement.
     const conversations = backup.conversations.map(normalizeConversationPdfContexts)
     const branches = ((backup as BackupV4).branches || []).map(branch => ({ ...branch, messages: branch.messages.map(normalizeMessagePdfContexts) }))
-    await idbReplaceAll({ settings, conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows, documentNotes: (backup as BackupV5).documentNotes || [], conversationBranches: branches, artifacts: restoreArtifacts((backup as BackupV4).artifacts || []) });
+    await idbReplaceAll({ settings, conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows, documentNotes: (backup as BackupV5).documentNotes || [], conversationBranches: branches, artifacts: restoreArtifacts((backup as BackupV4).artifacts || []), prompts: v6?.prompts || [] });
   } catch (e) {
     // Rollback: delete every staged OPFS file. Old IDB is untouched.
     for (const s of staged) { if (s.path) { try { await deleteBinary(s.ref) } catch { /* orphan */ } } }

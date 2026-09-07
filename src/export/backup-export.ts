@@ -4,12 +4,14 @@ import { listDocumentRecords, readDocumentSourceBlob } from '../documents/docume
 import { listDocumentNotes } from '../documents/document-note-service'
 import type { Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
-import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupDocument, type BackupV3, type BackupDraft, type BackupV5, type BackupBranchDraft, type BackupActiveBranch } from './backup-types'
+import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupDocument, type BackupV3, type BackupDraft, type BackupV6, type BackupBranchDraft, type BackupActiveBranch } from './backup-types'
 import { readBinary } from '../storage/binary-store'
 import { BackupError, parseAndValidate } from './backup-import'
 import { allBranches, getActiveBranch } from '../branches/branch-store'
 import { listArtifacts } from '../artifacts/artifact-store'
 import { listCustomActions } from '../artifacts/custom-action-store'
+import { listPromptRecords } from '../prompts/prompt-store'
+import { getPromptPreferences } from '../prompts/prompt-preferences'
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer()
@@ -32,8 +34,11 @@ async function attachmentBlobOf(id: string, mime: string): Promise<Blob> {
   return blob.type ? blob : blob.slice(0, blob.size, mime || 'application/octet-stream')
 }
 
-export async function buildBackup(): Promise<BackupV5> {
-  const conversations = await listConversations()
+export async function buildBackup(): Promise<BackupV6> {
+  const conversations = (await listConversations()).map((conversation) => ({
+    ...conversation,
+    promptTransitions: conversation.promptTransitions ?? [],
+  }))
   const annotations: Annotation[] = []
   const attachments: BackupAttachment[] = []
   const seen = new Set<string>()
@@ -48,7 +53,10 @@ export async function buildBackup(): Promise<BackupV5> {
     }
   }
   // Branch-local messages own attachments too (image / PDF Context / Document Context).
-  const branches = await allBranches()
+  const branches = (await allBranches()).map((branch) => ({
+    ...branch,
+    promptTransitions: branch.promptTransitions ?? [],
+  }))
   for (const b of branches) {
     for (const m of b.messages) for (const imgId of m.images) if (!seen.has(imgId)) seen.add(imgId)
   }
@@ -111,7 +119,9 @@ export async function buildBackup(): Promise<BackupV5> {
   }
   const documentNotes = await listDocumentNotes()
   const artifacts = await listArtifacts()
-  const backup: BackupV5 = { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents, documentNotes, drafts, appearance: appearanceOut, branches, branchDrafts, artifacts, activeBranches }
+  const prompts = await listPromptRecords()
+  const promptPreferences = await getPromptPreferences()
+  const backup: BackupV6 = { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents, documentNotes, drafts, appearance: appearanceOut, branches, branchDrafts, artifacts, activeBranches, prompts, promptPreferences }
   // Final self-validation (finding 9.4D.2-0.2): the assembled object MUST pass the SAME
   // pure reference-integrity validator used for import (no JSON round-trip). A "complete"
   // backup that references a missing attachment/document/draft is rejected here, not shipped.

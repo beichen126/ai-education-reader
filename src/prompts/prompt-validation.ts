@@ -2,6 +2,8 @@ import type {
   PromptDefinition,
   PromptKind,
   PromptRequestDomain,
+  PromptSnapshot,
+  PromptTransition,
   PromptScope,
   PromptScopeMatrix,
 } from './prompt-types'
@@ -10,6 +12,7 @@ const PROMPT_KINDS = new Set<PromptKind>(['conversation-mode', 'artifact', 'quic
 const PROMPT_SOURCES = new Set(['builtin', 'custom', 'experimental'])
 const ARTIFACT_KINDS = new Set(['note', 'quiz', 'summary', 'study-guide', 'custom'])
 const PROTOCOL_POLICIES = new Set(['read-only', 'experimental'])
+const SNAPSHOT_SOURCES = new Set(['builtin', 'custom', 'legacy', 'experimental'])
 
 export type PromptValidationIssue = {
   code: string
@@ -188,4 +191,68 @@ export function getPromptScopeSelectionIssues(domain: PromptRequestDomain, scope
 
 export function isPromptScopeSelectionValid(domain: PromptRequestDomain, scopes: readonly PromptScope[]): boolean {
   return getPromptScopeSelectionIssues(domain, scopes).length === 0
+}
+
+export type PromptMetadataIssue = {
+  code: string
+  path: string
+  message: string
+}
+
+/** Validate the self-contained value used by history and artifact provenance. */
+export function getPromptSnapshotIssues(value: unknown): PromptMetadataIssue[] {
+  const issues: PromptMetadataIssue[] = []
+  if (!isObject(value)) return [{ code: 'NOT_OBJECT', path: '', message: 'prompt snapshot must be an object' }]
+  if (value.profileId !== undefined && !isNonEmptyString(value.profileId)) issues.push({ code: 'INVALID_PROFILE_ID', path: 'profileId', message: 'profileId must be a non-empty string when present' })
+  if (typeof value.kind !== 'string' || !PROMPT_KINDS.has(value.kind as PromptKind)) issues.push({ code: 'INVALID_KIND', path: 'kind', message: 'snapshot kind is invalid' })
+  if (typeof value.name !== 'string') issues.push({ code: 'INVALID_NAME', path: 'name', message: 'snapshot name must be a string' })
+  if (typeof value.content !== 'string') issues.push({ code: 'INVALID_CONTENT', path: 'content', message: 'snapshot content must be a string' })
+  if (typeof value.source !== 'string' || !SNAPSHOT_SOURCES.has(value.source)) issues.push({ code: 'INVALID_SOURCE', path: 'source', message: 'snapshot source is invalid' })
+  if (!isFiniteNumber(value.capturedAt) || value.capturedAt < 0) issues.push({ code: 'INVALID_CAPTURED_AT', path: 'capturedAt', message: 'capturedAt must be a non-negative finite number' })
+  if (value.revision !== undefined && (!isFiniteNumber(value.revision) || !Number.isInteger(value.revision) || value.revision < 1)) issues.push({ code: 'INVALID_REVISION', path: 'revision', message: 'snapshot revision must be a positive integer when present' })
+  return issues
+}
+
+export function validatePromptSnapshot(value: unknown): PromptSnapshot | null {
+  return getPromptSnapshotIssues(value).length === 0 ? value as PromptSnapshot : null
+}
+
+/**
+ * Pure transition validator. `boundaryIds` is the effective message path for the
+ * owning thread; passing it in keeps this domain helper independent of IDB/branch
+ * storage while still rejecting transitions after an unrelated message.
+ */
+export function getPromptTransitionIssues(value: unknown, boundaryIds: readonly string[]): PromptMetadataIssue[] {
+  const issues: PromptMetadataIssue[] = []
+  if (!Array.isArray(value)) return [{ code: 'INVALID_TRANSITIONS', path: '', message: 'promptTransitions must be an array' }]
+  const boundaries = new Set(boundaryIds)
+  const order = new Map(boundaryIds.map((id, index) => [id, index]))
+  const ids = new Set<string>()
+  let previousPosition = -1
+  let previousCreatedAt = -Infinity
+  for (let i = 0; i < value.length; i++) {
+    const transition = value[i]
+    const path = 'promptTransitions[' + i + ']'
+    if (!isObject(transition)) { issues.push({ code: 'INVALID_TRANSITION', path, message: 'transition must be an object' }); continue }
+    if (!isNonEmptyString(transition.id)) issues.push({ code: 'INVALID_TRANSITION_ID', path: path + '.id', message: 'transition id is required' })
+    else if (ids.has(transition.id)) issues.push({ code: 'DUPLICATE_TRANSITION_ID', path: path + '.id', message: 'transition id is duplicated' })
+    else ids.add(transition.id)
+    const boundaryId = transition.afterMessageId
+    if (boundaryId !== null) {
+      if (!isNonEmptyString(boundaryId)) issues.push({ code: 'INVALID_TRANSITION_BOUNDARY', path: path + '.afterMessageId', message: 'afterMessageId must be null or a message id' })
+      else if (!boundaries.has(boundaryId)) issues.push({ code: 'UNKNOWN_TRANSITION_BOUNDARY', path: path + '.afterMessageId', message: 'transition boundary is not on the effective message path' })
+    }
+    const position = boundaryId === null ? -1 : (isNonEmptyString(boundaryId) ? (order.get(boundaryId) ?? -1) : -1)
+    if (position < previousPosition) issues.push({ code: 'TRANSITION_ORDER', path, message: 'transition boundaries must be chronological' })
+    previousPosition = Math.max(previousPosition, position)
+    if (!isFiniteNumber(transition.createdAt) || transition.createdAt < 0) issues.push({ code: 'INVALID_TRANSITION_TIME', path: path + '.createdAt', message: 'createdAt must be non-negative and finite' })
+    else if (transition.createdAt < previousCreatedAt) issues.push({ code: 'TRANSITION_TIME_ORDER', path, message: 'transition createdAt values must be chronological' })
+    else previousCreatedAt = transition.createdAt
+    if (getPromptSnapshotIssues(transition.snapshot).length > 0) issues.push(...getPromptSnapshotIssues(transition.snapshot).map((issue) => ({ ...issue, path: path + '.snapshot.' + issue.path })))
+  }
+  return issues
+}
+
+export function validatePromptTransitions(value: unknown, boundaryIds: readonly string[]): PromptTransition[] | null {
+  return getPromptTransitionIssues(value, boundaryIds).length === 0 ? value as PromptTransition[] : null
 }

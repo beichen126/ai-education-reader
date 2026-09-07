@@ -46,7 +46,7 @@ await createDocument({ id: 'doc1', fileName: '教材.pdf', mimeType: 'applicatio
 await restoreBackup(parseAndValidate(v2backup())) // seed a second state? no — just parse+restore below
 await saveDocumentNote('doc1', 3, '页面重点')
 const backup = await buildBackup()
-assert(backup.version === BACKUP_VERSION && BACKUP_VERSION === 5, 'exported backup version = 5')
+assert(backup.version === BACKUP_VERSION && BACKUP_VERSION === 6, 'exported backup version = 6')
 assert(backup.documents.length === 1, 'V2 export includes 1 document (got ' + backup.documents.length + ')')
 assert(backup.documentNotes.length === 1 && backup.documentNotes[0].content === '页面重点', 'v5 export includes page note')
 const bd = backup.documents[0]

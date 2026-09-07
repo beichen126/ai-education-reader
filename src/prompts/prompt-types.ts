@@ -73,6 +73,20 @@ export type PromptSnapshot = {
   capturedAt: number
 }
 
+export type PromptTransition = {
+  id: StableId
+  afterMessageId: StableId | null
+  snapshot: PromptSnapshot
+  createdAt: number
+}
+
+export type ArtifactPromptBundleSnapshot = {
+  template?: PromptSnapshot
+  userPrompt: string
+  protocol?: PromptSnapshot
+  resolvedAt: number
+}
+
 export type PromptScope = PromptKind
 
 export type PromptRequestDomain =

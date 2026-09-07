@@ -1,4 +1,5 @@
 import type { Message, StableId } from '../engine/types'
+import type { PromptTransition } from '../prompts/prompt-types'
 
 /**
  * A conversational branch: a divergent future of a conversation.
@@ -30,6 +31,9 @@ export type ConversationBranch = {
 
   /** ONLY branch-local continuation. Never duplicates inherited messages. */
   messages: Message[]
+
+  /** v2 mode transitions owned by this branch; inherited history is resolved by lineage. */
+  promptTransitions?: PromptTransition[]
 }
 
 /**

@@ -1,4 +1,5 @@
 import type { MessageRole, StableId } from '../engine/types'
+import type { ArtifactPromptBundleSnapshot } from '../prompts/prompt-types'
 
 /** The kind of study output an Artifact represents. */
 export type ArtifactKind = 'note' | 'quiz' | 'summary' | 'study-guide' | 'custom'
@@ -108,6 +109,8 @@ export type StudyArtifact = {
   error?: string
   /** The original model result, distinguishable from user-edited content (revision safety). */
   generatedContent?: string
+  /** v2: resolved prompt values used for this generation; legacy artifacts omit it. */
+  promptBundle?: ArtifactPromptBundleSnapshot
 }
 
 /** Prompt preset registry entry. Default prompts live here, never scattered through JSX. */

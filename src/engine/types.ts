@@ -1,5 +1,6 @@
 
 import type { PdfSelection } from '../pdf/pdf-types'
+import type { PromptTransition } from '../prompts/prompt-types'
 
 export type StableId = string
 export type MessageRole = 'user' | 'assistant'
@@ -48,6 +49,12 @@ export type Message = {
   pdfContexts?: PdfContext[]
   /** Legacy v1.3.0 compatibility field. Read and normalized, never written for new messages. */
   pdfContext?: PdfContext
+  /** v2: snapshot metadata for a real Quick Follow-up user interaction. */
+  quickFollowUp?: {
+    promptId?: StableId
+    labelSnapshot: string
+    promptSnapshot: string
+  }
 }
 
 /** Read provenance from both the canonical and v1.3.0 legacy message shapes. */
@@ -67,6 +74,6 @@ export function normalizeMessagePdfContexts(message: Message): Message {
 export function normalizeConversationPdfContexts<T extends { messages: Message[] }>(conversation: T): T {
   return { ...conversation, messages: conversation.messages.map(normalizeMessagePdfContexts) }
 }
-export type Conversation = { id: StableId; title: string; createdAt: number; updatedAt: number; messages: Message[] }
+export type Conversation = { id: StableId; title: string; createdAt: number; updatedAt: number; messages: Message[]; promptTransitions?: PromptTransition[] }
 export const NEW_TITLE = '新会话'
 export function newStableId(): StableId { return globalThis.crypto.randomUUID() }
