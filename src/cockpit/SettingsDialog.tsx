@@ -34,8 +34,6 @@ export function SettingsDialog() {
   const [test, setTest] = useState<string | null>(null)
   const [testOk, setTestOk] = useState<boolean | null>(null)
   const [saved, setSaved] = useState(false)
-  const [prompt, setPrompt] = useState(s.customSystemPrompt || '')
-  const [promptOn, setPromptOn] = useState(!!s.customSystemPromptEnabled)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
@@ -50,7 +48,7 @@ export function SettingsDialog() {
   }, [])
   useEffect(() => { void loadStorage() }, [loadStorage])
 
-  const onSave = async () => { await saveSettings({ apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), customSystemPrompt: prompt, customSystemPromptEnabled: promptOn, appearance: s.appearance, visionCapability }); setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  const onSave = async () => { await saveSettings({ ...s, apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), appearance: s.appearance, visionCapability }); setSaved(true); setTimeout(() => setSaved(false), 1500) }
   const onTest = async () => {
     setTest('正在测试…'); setTestOk(null)
     const r = await testConnection({ apiKey: key.trim(), baseUrl: base.trim() })
@@ -109,11 +107,6 @@ export function SettingsDialog() {
         <div className={css.settingsHint}>「自动」按模型名推断；「支持图片」对名称不含 vision 但支持图片的模型开启图片；「仅文本」禁止发送图片，避免误发。该设置会随备份一起导出。</div>
       </div>
       <div className={css.settingsHint}>API Key 保存在当前浏览器本地（IndexedDB），不进源码、不走 Git。发送消息时，所选文本与图片会直接发送到你配置的 API 服务（默认 https://api.deepseek.com）。本项目自身没有中转服务器。</div>
-      <div className={css.promptSection}>
-        <div className={css.promptRow}><label className={css.promptLabel}>固定提示词</label><input type="checkbox" checked={promptOn} onChange={e => setPromptOn(e.target.checked)} /></div>
-        <textarea className={css.promptArea} value={prompt} placeholder="每次请求作为 system prompt 注入，例如：回答任何学习问题时，第一行固定写“学习模式：”。" onChange={e => setPrompt(e.target.value)} />
-        <div className={css.settingsHint}>仅保存在本机 IndexedDB，作为全局 system prompt 注入，不进入聊天记录。</div>
-      </div>
       <div className={css.settingsActions}>
         <Button variant="outline" onClick={onTest}>{test ?? '测试连接'}</Button>
         <Button variant="primary" onClick={onSave}>{saved ? '已保存' : '保存'}</Button>
