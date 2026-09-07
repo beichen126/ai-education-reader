@@ -240,8 +240,10 @@ function ChapterTreeCheck({ nodes, checked, pageCount, bookmarkRangePreferences,
         return (
           <div key={n.id}>
             <div className={css.treeRow} data-depth={n.level} data-testid={'doc-context-node-' + n.id} style={{ paddingLeft: (Math.max(n.level, 1) - 1) * 16 + 4 }}>
-              <input type="checkbox" data-testid={'doc-context-check-' + n.id} checked={checked.has(n.id)} disabled={disabled} onChange={() => onToggle(n.id)} />
-              <span className={css.treeTitle} title={n.title}>{n.title}</span>
+              <label className={css.treeChoice}>
+                <input type="checkbox" data-testid={'doc-context-check-' + n.id} checked={checked.has(n.id)} disabled={disabled} onChange={() => onToggle(n.id)} />
+                <span className={css.treeTitle} title={n.title}>{n.title}</span>
+              </label>
               {presentation ? (
                 <span className={css.treeDetails}>
                   <span className={css.treeRange} data-testid={'doc-context-actual-' + n.id}>{presentation[mode].label}</span>
