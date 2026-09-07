@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
@@ -38,6 +38,16 @@ type ModalProps = ModalBaseProps & (
 export function Modal({
   open, onClose, title, closeLabel, description, children, footer, className, contentClassName, headless = false,
 }: ModalProps) {
+  const previousFocusRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!open) return
+    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    return () => {
+      const previous = previousFocusRef.current
+      previousFocusRef.current = null
+      if (previous?.isConnected) previous.focus()
+    }
+  }, [open])
   useEffect(() => {
     if (!open) return
     const onKeyDown = (e: KeyboardEvent) => {

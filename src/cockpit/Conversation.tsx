@@ -294,9 +294,21 @@ function QuickFollowUpAction({ item, disabled, sending, onSend, onInspect }: { i
 }
 
 function QuickFollowUpPromptDialog({ metadata, onClose }: { metadata: QuickFollowUpMetadata; onClose: () => void }) {
+  const closeRef = useRef<HTMLButtonElement | null>(null)
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); onClose() } }
+    document.addEventListener('keydown', onKeyDown)
+    const frame = window.requestAnimationFrame(() => closeRef.current?.focus())
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      window.cancelAnimationFrame(frame)
+      if (opener?.isConnected) opener.focus()
+    }
+  }, [onClose])
   return <div className={css.quickFollowUpOverlay} role="presentation" onClick={onClose}>
-    <div className={css.quickFollowUpDialog} role="dialog" aria-modal="true" aria-label="快捷追问实际提示词" data-testid="quick-follow-up-dialog" onClick={(event) => event.stopPropagation()}>
-      <div className={css.quickFollowUpDialogHeader}><strong>{metadata.labelSnapshot}</strong><button type="button" onClick={onClose} aria-label="关闭实际提示词">×</button></div>
+    <div className={css.quickFollowUpDialog} role="dialog" aria-modal="true" aria-labelledby="quick-follow-up-dialog-title" data-testid="quick-follow-up-dialog" onClick={(event) => event.stopPropagation()}>
+      <div className={css.quickFollowUpDialogHeader}><strong id="quick-follow-up-dialog-title">{metadata.labelSnapshot}</strong><button ref={closeRef} type="button" onClick={onClose} aria-label="关闭实际提示词">×</button></div>
       <p>发送时使用的实际提示词</p>
       <pre>{metadata.promptSnapshot}</pre>
       <button type="button" className={css.quickFollowUpClose} onClick={onClose}>关闭</button>
@@ -533,7 +545,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
         <input ref={imageInputRef} data-testid="composer-images-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
         <input ref={pdfInputRef} data-testid="composer-pdf-input" type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
         <input ref={materialsInputRef} data-testid="composer-materials-input" type="file" accept=".pdf,application/pdf,.jpg,.jpeg,.png,.gif,.webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onMaterialsSelected(e.target.files); e.target.value = '' }} />
-        <textarea className={css.composerText} value={text} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
+        <textarea className={css.composerText} value={text} aria-label="输入消息" placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
           onChange={e => setDraftText(key, e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }} />
         <button className={css.sendBtn} onClick={send} disabled={busy}>{busy ? '生成中' : '发送'}</button>

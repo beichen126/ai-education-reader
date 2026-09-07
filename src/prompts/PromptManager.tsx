@@ -113,6 +113,11 @@ export function PromptManager() {
   const [mobileStep, setMobileStep] = useState<MobileStep>(() => requestedCategory ? 'list' : window.innerWidth <= 720 ? 'categories' : 'detail')
   const [narrow, setNarrow] = useState(() => window.innerWidth <= 720)
 
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    return () => { if (opener?.isConnected) opener.focus() }
+  }, [])
+
   const loadCatalog = useCallback(async (preferredId?: StableId) => {
     setLoading(true)
     try {
@@ -310,7 +315,7 @@ export function PromptManager() {
         <aside className={css.categoryPane} aria-label="提示词分类">
           <div className={css.paneTitle}>分类</div>
           {categories.map((item) => (
-            <button type="button" key={item.id} className={css.categoryBtn} data-testid={'prompt-category-' + item.id} data-active={category === item.id} onClick={() => chooseCategory(item.id)}>
+            <button type="button" key={item.id} className={css.categoryBtn} data-testid={'prompt-category-' + item.id} data-active={category === item.id} aria-current={category === item.id ? 'page' : undefined} onClick={() => chooseCategory(item.id)}>
               <span>{item.label}</span><small>{item.description}</small>
             </button>
           ))}
@@ -330,7 +335,7 @@ export function PromptManager() {
           <div className={css.promptList}>
             {!loading && filtered.length === 0 && <div className={css.emptyList}>没有匹配的提示词。</div>}
             {filtered.map((item) => (
-              <button type="button" key={item.id} className={css.promptRow} data-testid="prompt-row" data-id={item.id} data-source={item.source} data-active={selectedId === item.id && editorMode === 'edit'} onClick={() => openDefinition(item)}>
+              <button type="button" key={item.id} className={css.promptRow} data-testid="prompt-row" data-id={item.id} data-source={item.source} data-active={selectedId === item.id && editorMode === 'edit'} aria-current={selectedId === item.id && editorMode === 'edit' ? 'true' : undefined} onClick={() => openDefinition(item)}>
                 <span className={css.promptRowMain}><strong>{item.name}</strong><small>{item.description || '无描述'}</small></span>
                 <span className={css.promptRowMeta}><em data-source={item.source}>{sourceLabel(item.source)}</em><em>{kindLabels[item.kind]}</em>{!item.enabled && <em>已停用</em>}</span>
               </button>

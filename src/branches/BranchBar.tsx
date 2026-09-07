@@ -189,7 +189,7 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
 
   return (
     <div className={css.bar} role="navigation" aria-label="会话上下文">
-      <div className={css.contextRow}>
+      <div className={css.contextRow} data-testid="conversation-context-row">
         <span className={css.contextLabel}>当前路线</span>
         <span className={css.crumb}>
           <button type="button" className={css.branchItem + (!activeBranchId ? ' ' + css.active : '')} onClick={() => void go(undefined)} aria-label="切换到主线">主线</button>
@@ -215,7 +215,7 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
         </div>}
       </div>
 
-      <div className={css.contextRow}>
+      <div className={css.contextRow} data-testid="conversation-context-row">
         <span className={css.contextLabel}>模式</span>
         <span className={css.activeMode} data-testid="active-conversation-mode" aria-live="polite">{activeModeName}</span>
         {legacy && <span className={css.legacyHint} data-testid="legacy-mode-hint">模式未记录</span>}
