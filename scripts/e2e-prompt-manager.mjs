@@ -124,6 +124,16 @@ assert(await manager.getAttribute('data-mobile-step') === 'detail', 'mobile list
 const dimensions = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }))
 assert(dimensions.scrollWidth <= dimensions.width + 1, 'mobile Prompt Manager has no horizontal overflow')
 
+for (const size of [
+  { width: 375, height: 812 },
+  { width: 390, height: 844 },
+  { width: 412, height: 915 },
+]) {
+  await page.setViewportSize(size)
+  const measure = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }))
+  assert(measure.scrollWidth <= measure.width + 1, 'Prompt Manager ' + size.width + 'px has no horizontal overflow')
+}
+
 await browser.close()
 for (const line of results) console.log(line)
 console.log('PAGEERRORS: ' + (errors.length ? errors.join(' | ') : '(none)'))
