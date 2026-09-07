@@ -3,6 +3,7 @@
 import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary, normalizeTitle, normalizeTocLevels,
+  describeTocStructureFailure,
 } from '../src/documents/ai-toc.ts'
 import {
   exactLabelToPage, labelsArePlainNumeric, buildInitialMapping, numericOffsetFromAnchor,
@@ -61,6 +62,11 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   assert(r.ok === true && r.ok && r.proposals.length === 2, 'structure JSONL parses');
   const bad = parseTocStructure('{"id":"r0001","level":1}\ngarbage');
   assert(bad.ok === false, 'structure malformed line -> invalid');
+  if (!bad.ok) assert(bad.diagnostics.some(d => d.code === 'MALFORMED_OUTPUT'), 'malformed output diagnostic is explicit');
+  const empty = parseTocStructure('  ');
+  assert(empty.ok === false && !empty.ok && empty.diagnostics.some(d => d.code === 'EMPTY_OUTPUT'), 'empty structure output diagnostic is explicit');
+  const invalidLevel = parseTocStructure('{"id":"r0001","level":0}');
+  assert(invalidLevel.ok === false && !invalidLevel.ok && invalidLevel.diagnostics.some(d => d.code === 'INVALID_LEVEL'), 'invalid level diagnostic is explicit');
 }
 // --- structure validation: valid global levels ---
 {
@@ -71,14 +77,24 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
 // --- missing / unknown / duplicate id rejected ---
 {
   const rows2 = assignLocalRowIds(parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":1}').ok ? parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":1}').rows : [])
-  assert(validateTocStructure(rows2, [{id:'r0001',level:1}]).ok === false, 'missing id rejected');
-  assert(validateTocStructure(rows2, [{id:'r0001',level:1},{id:'r0002',level:2},{id:'r9999',level:3}]).ok === false, 'unknown id rejected');
-  assert(validateTocStructure(rows2, [{id:'r0001',level:1},{id:'r0001',level:2}]).ok === false, 'duplicate id rejected');
+  const missing = validateTocStructure(rows2, [{id:'r0001',level:1}]);
+  assert(missing.ok === false && missing.diagnostics.some(d => d.code === 'MISSING_ID'), 'missing id rejected with diagnostic');
+  assert(missing.diagnostics.some(d => d.code === 'LEVEL_COUNT_MISMATCH'), 'level count mismatch diagnostic is explicit');
+  const unknown = validateTocStructure(rows2, [{id:'r0001',level:1},{id:'r0002',level:2},{id:'r9999',level:3}]);
+  assert(unknown.ok === false && unknown.diagnostics.some(d => d.code === 'UNKNOWN_ID'), 'unknown id rejected with diagnostic');
+  const duplicate = validateTocStructure(rows2, [{id:'r0001',level:1},{id:'r0001',level:2}]);
+  assert(duplicate.ok === false && duplicate.diagnostics.some(d => d.code === 'DUPLICATE_ID'), 'duplicate id rejected with diagnostic');
 }
 // --- level jump rejected ---
 {
   const rows3 = assignLocalRowIds(parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":1}\n{"title":"C","pageLabel":"3","sourceImageIndex":1}').ok ? parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":1}\n{"title":"C","pageLabel":"3","sourceImageIndex":1}').rows : [])
-  assert(validateTocStructure(rows3, [{id:'r0001',level:1},{id:'r0002',level:2},{id:'r0003',level:4}]).ok === false, 'level jump 2->4 rejected');
+  const jumped = validateTocStructure(rows3, [{id:'r0001',level:1},{id:'r0002',level:2},{id:'r0003',level:4}]);
+  assert(jumped.ok === false && jumped.diagnostics.some(d => d.code === 'LEVEL_JUMP'), 'level jump rejected with diagnostic');
+}
+// --- user-facing messages stay actionable while diagnostics remain structured ---
+{
+  const msg = describeTocStructureFailure([{ code: 'LEVEL_COUNT_MISMATCH', message: 'test', expectedRows: 3, actualLevels: 2 }]);
+  assert(msg.includes('层级数量') && !msg.includes('expectedRows'), 'count mismatch gets a concise user message');
 }
 // --- normalization: pure min->1 shift, deterministic, no semantic reorder ---
 { assert(normalizeTocLevels([3,4,5]).join(',') === '1,2,3', 'levels 3,4,5 -> 1,2,3') }

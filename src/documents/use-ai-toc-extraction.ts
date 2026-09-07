@@ -14,14 +14,24 @@ import { sendTextChat, type ApiChatMessage } from '../api/deepseek'
 import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary,
-  TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT,
+  TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT, describeTocStructureFailure,
   type TocTranscriptionRow, type TocLocalRow, type TocTranscriptionLine,
+  type TocStructureDiagnostic,
 } from './ai-toc'
 import { buildInitialMapping, labelsArePlainNumeric, type MappedTocItem } from './toc-mapping'
 
 export type AiTocExtractionResult =
   | { ok: true; items: MappedTocItem[]; labels: string[] | null; labelsPlainNumeric: boolean }
-  | { ok: false; error: string }
+  | { ok: false; error: string; diagnostics?: AiTocFailureDiagnostics }
+
+/** Developer-facing, non-sensitive runtime diagnostics. The UI uses `error`,
+ * while callers/tests can inspect the reason, attempt, and row counts without
+ * logging prompts, PDF contents, or API failures. */
+export type AiTocFailureDiagnostics = {
+  stage: 'rendering' | 'transcribing' | 'structuring'
+  attempt?: number
+  diagnostics: TocStructureDiagnostic[]
+}
 
 // Finding 9.4D.2-0.6.8: real, phase-based progress reported by the orchestrator at actual
 // stage boundaries (never guessed from a timeout). The UI renders this verbatim.
@@ -38,6 +48,10 @@ export type AiTocProgress =
 const PREV_TAIL_SIZE = 4
 const LARGE_TOC_WINDOW = 8
 const SMALL_TOC_MAX = 8
+
+function abortedAiTocResult(stage: AiTocFailureDiagnostics['stage']): AiTocExtractionResult {
+  return { ok: false, error: '已取消', diagnostics: { stage, diagnostics: [{ code: 'ABORTED', message: '用户取消目录识别' }] } }
+}
 
 function buildTailContext(prevRows: TocTranscriptionRow[]): string {
   if (prevRows.length === 0) return ''
@@ -82,7 +96,7 @@ export async function extractAiToc(opts: {
   const pageDataUrls: Record<number, string> = {}
   for (let ri = 0; ri < selectedPages.length; ri++) {
     const n = selectedPages[ri]
-    if (signal?.aborted) return { ok: false, error: '已取消' }
+    if (signal?.aborted) return abortedAiTocResult('rendering')
     onProgress?.({ phase: 'rendering', completed: ri, total: selectedPages.length, currentPage: n })
     try {
       const r = await renderSessionPage(session, n)
@@ -100,12 +114,12 @@ export async function extractAiToc(opts: {
   let allRows: TocTranscriptionRow[] = []
   let tail: TocTranscriptionRow[] = []
   for (let w = 0; w < windows.length; w++) {
-    if (signal?.aborted) return { ok: false, error: '已取消' }
+    if (signal?.aborted) return abortedAiTocResult('transcribing')
     const batch = windows[w];
     onProgress?.({ phase: 'transcribing', windowIndex: w, windowCount: windows.length })
     let transcription: TocTranscriptionRow[] | null = null;
     for (let attempt = 0; attempt < 2; attempt++) {
-      if (signal?.aborted) return { ok: false, error: '已取消' }
+      if (signal?.aborted) return abortedAiTocResult('transcribing')
       try {
         const lines3 = await transcribeBatch({ batch, pageDataUrls, apiKey, baseUrl, model, tail, isMock, mock, signal });
         const mapped = mapTocSourcePages(lines3, batch);
@@ -116,7 +130,7 @@ export async function extractAiToc(opts: {
         transcription = mapped.rows;
         break;
       } catch (e) {
-        if (signal?.aborted) return { ok: false, error: '已取消' }
+        if (signal?.aborted) return abortedAiTocResult('transcribing')
         if (attempt === 0) { continue } // retry once
         return { ok: false, error: (e instanceof Error && e.message) ? e.message : '目录页面转录失败，请重试。' };
       }
@@ -135,9 +149,11 @@ export async function extractAiToc(opts: {
 
   // ---- GLOBAL structure pass: text-only, proposes {id, level} per row ----
   onProgress?.({ phase: 'structuring' })
-  let structureRaw: string | undefined;
+  let structureRaw: string | undefined
+  let lastStructureDiagnostics: TocStructureDiagnostic[] = []
+  let lastStructureAttempt = 0
   for (let attempt = 0; attempt < 2; attempt++) {
-    if (signal?.aborted) return { ok: false, error: '已取消' }
+    if (signal?.aborted) return abortedAiTocResult('structuring')
     try {
       if (isMock) { structureRaw = mock({ pages: [], phase: 'structure' }); }
       else {
@@ -147,21 +163,35 @@ export async function extractAiToc(opts: {
         structureRaw = res.content;
       }
       const sp = parseTocStructure(structureRaw || '');
-      if (!sp.ok) throw new Error('结构格式异常');
+      if (sp.ok === false) {
+        lastStructureDiagnostics = sp.diagnostics
+        lastStructureAttempt = attempt + 1
+        continue
+      }
       const sv = validateTocStructure(allRows, sp.proposals);
-      if (!sv.ok) throw new Error('结构校验失败');
+      if (!sv.ok) {
+        lastStructureDiagnostics = sv.diagnostics
+        lastStructureAttempt = attempt + 1
+        continue
+      }
       const leveled = allRows.map((r, i) => ({ title: r.title, level: sv.levels[i], pageLabel: r.pageLabel, tocPage: r.tocPage }));
       onProgress?.({ phase: 'mapping' })
       const items = buildInitialMapping(leveled, labels);
       onProgress?.({ phase: 'done' })
       return { ok: true, items, labels, labelsPlainNumeric: labelsArePlainNumeric(labels) };
     } catch (e) {
-      if (signal?.aborted) return { ok: false, error: '已取消' }
-      if (attempt === 0) { continue } // retry once
-      return { ok: false, error: '目录结构分析失败，请重试或进入手动编辑。' };
+      if (signal?.aborted) return abortedAiTocResult('structuring')
+      // Keep raw transport/provider errors out of the UI and console: they can
+      // contain endpoint or provider details. The stable code remains actionable.
+      lastStructureDiagnostics = [{ code: 'API_ERROR', message: '结构分析请求失败' }]
+      lastStructureAttempt = attempt + 1
     }
   }
-  return { ok: false, error: '目录结构分析失败，请重试或进入手动编辑。' };
+  return {
+    ok: false,
+    error: describeTocStructureFailure(lastStructureDiagnostics),
+    diagnostics: { stage: 'structuring', attempt: lastStructureAttempt, diagnostics: lastStructureDiagnostics },
+  }
 }
 
 async function transcribeBatch(opts: {

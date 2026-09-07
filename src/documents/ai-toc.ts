@@ -141,9 +141,35 @@ export function mapTocSourcePages(rows: TocLocalRow[], pageBatch: number[]): Toc
 
 export type TocStructureProposal = { id: string; level: number }
 
+/** Stable, non-sensitive reason codes for an untrusted structure response. These
+ * are intentionally separate from the Chinese message: code drives retry/UI
+ * behaviour while message is only useful for local development diagnostics. */
+export type TocStructureDiagnosticCode =
+  | 'EMPTY_OUTPUT'
+  | 'MALFORMED_OUTPUT'
+  | 'LEVEL_COUNT_MISMATCH'
+  | 'MISSING_ID'
+  | 'DUPLICATE_ID'
+  | 'UNKNOWN_ID'
+  | 'INVALID_LEVEL'
+  | 'FIRST_ROW_NOT_ROOT'
+  | 'LEVEL_JUMP'
+  | 'API_ERROR'
+  | 'ABORTED'
+
+export type TocStructureDiagnostic = {
+  code: TocStructureDiagnosticCode
+  message: string
+  line?: number
+  rowIndex?: number
+  id?: string
+  expectedRows?: number
+  actualLevels?: number
+}
+
 export type TocStructureParseResult =
   | { ok: true; proposals: TocStructureProposal[] }
-  | { ok: false; line: number; diagnostics: string[] }
+  | { ok: false; line: number; diagnostics: TocStructureDiagnostic[] }
 
 /** STRICT parse of the GLOBAL structure pass output (JSONL of {id, level}).
  *  Any malformed non-blank line invalidates the whole result (no partial). */
@@ -151,22 +177,22 @@ export function parseTocStructure(text: string): TocStructureParseResult {
   let body = String(text ?? '').trim()
   const fence = /^```(?:jsonl)?\s*([\s\S]*?)\s*```$/i.exec(body)
   if (fence) body = fence[1].trim()
-  if (body === '') return { ok: false, line: 0, diagnostics: ['空响应'] }
+  if (body === '') return { ok: false, line: 0, diagnostics: [{ code: 'EMPTY_OUTPUT', message: '结构分析无输出' }] }
   const lines = body.split(/\r?\n/)
   const proposals: TocStructureProposal[] = []
-  const diags: string[] = []
+  const diags: TocStructureDiagnostic[] = []
   for (let i = 0; i < lines.length; i++) {
     const raw = lines[i].trim()
     if (raw === '') continue
     let json: unknown
-    try { json = JSON.parse(raw) } catch { diags.push('第 ' + (i + 1) + ' 行非 JSON'); continue }
-    if (!isRecord(json) || typeof json.id !== 'string' || json.id === '' || !Number.isInteger(json.level) || (json.level as number) < 1) {
-      diags.push('第 ' + (i + 1) + ' 行缺少合法 id/level'); continue
-    }
+    try { json = JSON.parse(raw) } catch { diags.push({ code: 'MALFORMED_OUTPUT', message: '第 ' + (i + 1) + ' 行不是合法 JSON', line: i + 1 }); continue }
+    if (!isRecord(json)) { diags.push({ code: 'MALFORMED_OUTPUT', message: '第 ' + (i + 1) + ' 行不是对象', line: i + 1 }); continue }
+    if (typeof json.id !== 'string' || json.id === '') { diags.push({ code: 'MALFORMED_OUTPUT', message: '第 ' + (i + 1) + ' 行缺少合法 id', line: i + 1 }); continue }
+    if (!Number.isInteger(json.level) || (json.level as number) < 1) { diags.push({ code: 'INVALID_LEVEL', message: '第 ' + (i + 1) + ' 行 level 必须是正整数', line: i + 1, id: json.id }); continue }
     proposals.push({ id: json.id, level: json.level as number })
   }
   if (diags.length > 0) return { ok: false, line: 0, diagnostics: diags }
-  if (proposals.length === 0) return { ok: false, line: 0, diagnostics: ['结构分析无输出'] }
+  if (proposals.length === 0) return { ok: false, line: 0, diagnostics: [{ code: 'EMPTY_OUTPUT', message: '结构分析无输出' }] }
   return { ok: true, proposals }
 }
 
@@ -182,6 +208,7 @@ export function normalizeTocLevels(levels: number[]): number[] {
 export type TocStructureValidation = {
   ok: boolean
   issues: string[]
+  diagnostics: TocStructureDiagnostic[]
   /** Proposed levels normalized to start at 1, in row order. */
   levels: number[]
 }
@@ -195,25 +222,50 @@ export type TocStructureValidation = {
  * Returns normalized levels aligned to rows, or issues. Never partially persists.
  */
 export function validateTocStructure(rows: TocTranscriptionRow[], proposals: TocStructureProposal[]): TocStructureValidation {
-  const issues: string[] = []
+  const diagnostics: TocStructureDiagnostic[] = []
+  if (proposals.length !== rows.length) {
+    diagnostics.push({
+      code: 'LEVEL_COUNT_MISMATCH',
+      message: '目录条目数 ' + rows.length + '，实际层级数 ' + proposals.length,
+      expectedRows: rows.length,
+      actualLevels: proposals.length,
+    })
+  }
   const byId = new Map<string, number>()
   for (const p of proposals) {
-    if (byId.has(p.id)) { issues.push('重复 id ' + p.id) } else { byId.set(p.id, p.level) }
+    if (byId.has(p.id)) {
+      diagnostics.push({ code: 'DUPLICATE_ID', message: '重复 id ' + p.id, id: p.id })
+    } else { byId.set(p.id, p.level) }
   }
   for (const r of rows) {
-    if (!byId.has(r.id)) { issues.push('缺少 id ' + r.id); continue }
+    if (!byId.has(r.id)) { diagnostics.push({ code: 'MISSING_ID', message: '缺少 id ' + r.id, id: r.id }); continue }
     const lvl = byId.get(r.id) as number
-    if (!Number.isInteger(lvl) || lvl < 1) issues.push('非法 level for ' + r.id)
+    if (!Number.isInteger(lvl) || lvl < 1) diagnostics.push({ code: 'INVALID_LEVEL', message: '非法 level for ' + r.id, id: r.id })
   }
-  for (const p of proposals) { if (!rows.some(r => r.id === p.id)) issues.push('未知 id ' + p.id) }
-  if (issues.length > 0) return { ok: false, issues, levels: [] }
+  const expectedIds = new Set(rows.map(r => r.id))
+  for (const p of proposals) { if (!expectedIds.has(p.id)) diagnostics.push({ code: 'UNKNOWN_ID', message: '未知 id ' + p.id, id: p.id }) }
+  if (diagnostics.length > 0) return { ok: false, issues: diagnostics.map(d => d.message), diagnostics, levels: [] }
   const orderedLevels = rows.map(r => byId.get(r.id) as number)
   const levels = normalizeTocLevels(orderedLevels)
-  if (levels[0] !== 1) issues.push('首项归一化后不是层级 1')
+  if (levels[0] !== 1) diagnostics.push({ code: 'FIRST_ROW_NOT_ROOT', message: '首项归一化后不是层级 1', rowIndex: 0 })
   for (let i = 1; i < levels.length; i++) {
-    if (levels[i] > levels[i - 1] + 1) { issues.push('第 ' + (i + 1) + ' 项层级跳变'); break }
+    if (levels[i] > levels[i - 1] + 1) { diagnostics.push({ code: 'LEVEL_JUMP', message: '第 ' + (i + 1) + ' 项层级跳变', rowIndex: i }); break }
   }
-  return { ok: issues.length === 0, issues, levels }
+  return { ok: diagnostics.length === 0, issues: diagnostics.map(d => d.message), diagnostics, levels }
+}
+
+/** Convert structured diagnostics into a concise, actionable user message. Never
+ * include raw API responses, prompts, PDF text, or secret-bearing error details. */
+export function describeTocStructureFailure(diagnostics: TocStructureDiagnostic[]): string {
+  const codes = new Set(diagnostics.map(d => d.code))
+  if (codes.has('ABORTED')) return '已取消目录识别。'
+  if (codes.has('API_ERROR')) return '目录结构分析失败：AI 服务请求失败。你可以重新识别或进入手动编辑。'
+  if (codes.has('EMPTY_OUTPUT')) return '目录结构分析失败：AI 未返回目录层级。你可以重新识别或进入手动编辑。'
+  if (codes.has('MALFORMED_OUTPUT')) return '目录结构分析失败：AI 返回的结构格式不正确。你可以重新识别或进入手动编辑。'
+  if (codes.has('LEVEL_COUNT_MISMATCH')) return '目录结构分析失败：AI 返回的层级数量与目录条目不一致。你可以重新识别或进入手动编辑。'
+  if (codes.has('MISSING_ID') || codes.has('DUPLICATE_ID') || codes.has('UNKNOWN_ID')) return '目录结构分析失败：AI 返回的结构不完整。你可以重新识别或进入手动编辑。'
+  if (codes.has('INVALID_LEVEL') || codes.has('FIRST_ROW_NOT_ROOT') || codes.has('LEVEL_JUMP')) return '目录结构分析失败：AI 返回的目录层级无效。你可以重新识别或进入手动编辑。'
+  return '目录结构分析失败，请重试或进入手动编辑。'
 }
 
 /** Normalized identity used ONLY for EXACT boundary-duplicate detection
