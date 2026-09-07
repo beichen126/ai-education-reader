@@ -111,6 +111,27 @@ const failedAllCalls = await page.evaluate(() => (globalThis).__dshAllCalls)
 assert(failedAllCalls.filter(c => c.phase === 'transcribe').length === 1, 'F: failed repair does not rerun Vision transcription')
 assert(await page.locator('[data-testid^="reader-chapter-"]').count() === 2, 'F: failed repair leaves the previously saved TOC unchanged')
 
+// --- G: abort stops extraction without retry or opening a partial review ---
+await page.locator('[data-testid="ai-toc-progress-close"]').click()
+await page.evaluate(() => { (globalThis).__dshAllCalls = []; (globalThis).__dshMockAiToc = (req) => {
+  (globalThis).__dshAllCalls.push({ phase: req.phase, attempt: req.attempt, repair: req.repair })
+  if (req.phase === 'structure') return '{"levels":[1,1]}'
+  return '{"title":"第一章 自然地理","pageLabel":"1","sourceImageIndex":1}\n' +
+    '{"title":"第二章 地球","pageLabel":"2","sourceImageIndex":2}'
+} })
+await page.locator('[data-testid="reader-toc-ai"]').click()
+await page.locator('[data-testid="toc-picker"]').waitFor({ state: 'visible', timeout: 10000 })
+const abortThumbs = page.locator('[data-testid^="toc-thumb-"]')
+const abortThumbCount = await abortThumbs.count()
+for (let i = 0; i < abortThumbCount; i++) await abortThumbs.nth(i).click()
+await page.locator('[data-testid="toc-picker-start"]').click()
+await page.locator('[data-testid="ai-toc-progress-cancel"]').click({ timeout: 20000 })
+await page.locator('[data-testid="ai-toc-progress-error"]').waitFor({ state: 'visible', timeout: 10000 })
+assert((await page.locator('[data-testid="ai-toc-progress-error"]').textContent()).includes('已取消'), 'G: abort reports cancellation')
+assert(await page.locator('[data-testid="toc-review"]').count() === 0, 'G: abort opens no review draft')
+const abortedCalls = await page.evaluate(() => (globalThis).__dshAllCalls)
+assert(abortedCalls.filter(c => c.repair === true).length === 0, 'G: abort never starts a repair attempt')
+
 await browser.close()
 const pageErrors = errors.length ? errors.join(' | ') : '(none)'
 const passCount = results.filter(r => r.startsWith('PASS')).length
