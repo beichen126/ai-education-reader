@@ -1,5 +1,5 @@
 
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
@@ -40,10 +40,12 @@ import { runBranchReply } from '../engine/branch-thread'
 import { branchThreadKey, getBranchDraft, setBranchDraftText, addBranchDraftImages, removeBranchDraftImage, clearBranchDraftMemory } from '../engine/draft-store'
 import { useBranchChat } from './use-branch-chat'
 import { buildEffectivePromptPath } from '../prompts/effective-prompt-path'
+import { ConversationPromptInspector } from '../prompts/ConversationPromptInspector'
 import { resolveMessageNavigation } from './message-navigation'
 import { sendTextChat } from '../api/deepseek'
 import type { ArtifactKind, StudyArtifact, QuizDocument } from '../artifacts/artifact-types'
 import type { Message as TMessage } from '../engine/types'
+import type { PromptTransition } from '../prompts/prompt-types'
 import css from './cockpit.module.css'
 
 export function Conversation() {
@@ -101,6 +103,7 @@ export function Conversation() {
   const [artView, setArtView] = useState<'library' | null>(null)
   const [openArtifact, setOpenArtifact] = useState<StudyArtifact | null>(null)
   const [libArtifacts, setLibArtifacts] = useState<StudyArtifact[]>([])
+  const [inspectedTransition, setInspectedTransition] = useState<PromptTransition | null>(null)
   const promptPath = session ? buildEffectivePromptPath(session, branchChat.branches, branchChat.activeBranchId) : undefined
   const activeThread = session ? (branchChat.activeBranchId ? { type: 'branch' as const, conversationId: session.id, branchId: branchChat.activeBranchId } : { type: 'root' as const, conversationId: session.id }) : undefined
   async function refreshPromptContext() {
@@ -171,16 +174,31 @@ export function Conversation() {
               </div>
               {!hasKey && <div className={css.emptyHint}>开始前，需要配置你自己的 DeepSeek API Key。</div>}
             </div>
-          ) : messages.map(m => <MessageRow key={m.id} m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} />)}
+          ) : messages.map((m, index) => {
+            const previous = messages[index - 1]
+            const transition = previous ? promptPath?.transitions.find((item) => item.afterMessageId === previous.id) : undefined
+            return <Fragment key={m.id}>
+              {transition && <PromptTransitionDivider transition={transition} onOpen={() => setInspectedTransition(transition)} />}
+              <MessageRow m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} />
+            </Fragment>
+          })}
         </div>
         <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" onClick={openLibrary}>学习成果</Button></div>
         <Composer sessionId={session?.id} busy={busy} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
       </div>
       {creating && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', padding: '1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}><ArtifactCreateDialog sourceLabel={creatingSourceLabel(session, branchChat.activeBranchId, creating.messageId)} initialKind={creating.kind} busy={creatingBusy} error={creatingError} onSubmit={(i) => void onCreateArtifact(i)} onCancel={() => setCreating(null)} /></div></div>)}
+      {inspectedTransition && <ConversationPromptInspector transition={inspectedTransition} positionLabel={inspectedTransition.afterMessageId ? '从下一条消息开始' : '会话开始'} onClose={() => setInspectedTransition(null)} />}
       {artView === 'library' && <ArtifactLibraryOverlay artifacts={libArtifacts} onOpen={(a) => { setOpenArtifact(a); setArtView(null) }} onClose={() => setArtView(null)} />}
       {openArtifact && <ArtifactViewerOverlay artifact={openArtifact} onOpen={setOpenArtifact} onClose={() => setOpenArtifact(null)} onChanged={() => void branchChat.refresh()} />}
     </div>
   )
+}
+
+function PromptTransitionDivider({ transition, onOpen }: { transition: PromptTransition; onOpen: () => void }) {
+  return <div className={css.modeDivider} data-testid="mode-transition-divider" data-transition-id={transition.id}>
+    <span>模式：{transition.snapshot.name}</span>
+    <button type="button" onClick={onOpen} aria-label={'查看「' + transition.snapshot.name + '」当时提示词'}>查看当时提示词</button>
+  </div>
 }
 
 function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu, onBranch, onArtifact }: { m: any; streamingId?: string; convId?: string; imgOffset: number; menuOpen?: boolean; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: ArtifactKind, messageId: string) => void }) {

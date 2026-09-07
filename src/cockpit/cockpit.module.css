@@ -19,6 +19,11 @@
 .conversation { height: 100%; display: flex; flex-direction: column; background: var(--dsw-alias-bg-base); }
 .messages { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .messagesInner { flex: 1 0 auto; min-height: 0; padding: 20px 24px; display: flex; flex-direction: column; gap: 14px; }
+.modeDivider { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 26px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.modeDivider::before, .modeDivider::after { content: ''; flex: 1; height: 1px; background: var(--dsw-alias-border-l1); }
+.modeDivider button { appearance: none; border: 0; background: transparent; color: var(--dsw-alias-label-link, #2b7bd8); cursor: pointer; font: inherit; padding: 2px 4px; border-radius: 4px; white-space: nowrap; }
+.modeDivider button:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.modeDivider button:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
 .emptyHero { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; color: var(--dsw-alias-label-secondary); }
 .emptyTitle { font-size: 18px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .emptyHint { font-size: 13px; color: var(--dsw-alias-label-tertiary); }
