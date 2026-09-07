@@ -50,20 +50,20 @@ await markArtifactReady(quizArt.id, { quiz: quizDoc, generatedText: '[...]' }, q
 await setAppearance('dark')
 await setSetting('apiKey', 'sk-secret')
 
-// ---- build V4 backup ----
+// ---- build current backup schema ----
 const backup = await buildBackup()
 assert(backup.version === 5, 'backup version is 5 (got ' + backup.version + ')')
-const v4 = backup as any
-assert(v4.branches.length === 2, 'backup includes both branches')
-assert(v4.branchDrafts.length === 1 && v4.branchDrafts[0].branchId === bB.id, 'backup includes branch draft')
-assert(v4.artifacts.length === 2, 'backup includes both artifacts')
-const active = v4.activeBranches.find((x: any) => x.conversationId === cv)
+const current = backup as any
+assert(current.branches.length === 2, 'backup includes both branches')
+assert(current.branchDrafts.length === 1 && current.branchDrafts[0].branchId === bB.id, 'backup includes branch draft')
+assert(current.artifacts.length === 2, 'backup includes both artifacts')
+const active = current.activeBranches.find((x: any) => x.conversationId === cv)
 assert(active && active.branchId === bB.id, 'backup includes active branch')
-assert(v4.appearance === 'dark', 'backup appearance dark')
-assert(!('apiKey' in v4.settings), 'backup settings EXCLUDE apiKey')
-const attIds = (v4.attachments as any[]).map((a) => a.id)
+assert(current.appearance === 'dark', 'backup appearance dark')
+assert(!('apiKey' in current.settings), 'backup settings EXCLUDE apiKey')
+const attIds = (current.attachments as any[]).map((a) => a.id)
 assert(attIds.includes(pdfImg) && attIds.includes(branchImg) && attIds.includes(bDraftImg), 'attachment union includes root + branch message + branch draft refs')
-const quizBackup = v4.artifacts.find((a: any) => a.kind === 'quiz')
+const quizBackup = current.artifacts.find((a: any) => a.kind === 'quiz')
 assert(quizBackup && quizBackup.quiz && quizBackup.quiz.questions.length === 1, 'backup preserves structured quiz data')
 parseAndValidate(backup)
 console.log('  ok: built backup passes parseAndValidate')
