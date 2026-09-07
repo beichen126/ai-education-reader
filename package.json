@@ -86,6 +86,7 @@
     "test:e2e-chapter-builder": "node scripts/e2e-chapter-builder.mjs",
     "test:e2e-chapter-level": "node scripts/e2e-chapter-level.mjs",
     "test:e2e-chapter-bulk-level": "node scripts/e2e-chapter-bulk-level.mjs",
+    "test:e2e-chapter-search-range": "node scripts/e2e-chapter-search-range.mjs",
     "test:pdf-codec": "node scripts/test-pdf-codec.mjs",
     "test:pdf-runtime-assets": "npx tsx scripts/test-pdf-runtime-assets.ts",
     "test:native-toc": "npx tsx scripts/test-native-toc.ts",
