@@ -9,6 +9,7 @@ import { validateArtifact, validateQuizDocument } from '../artifacts/artifact-va
 import type { ConversationBranch } from '../branches/branch-types'
 import type { StudyArtifact } from '../artifacts/artifact-types'
 import { normalizeConversationPdfContexts, normalizeMessagePdfContexts } from '../engine/types'
+import { sanitizeBookmarkRangePreferences, isBookmarkRangeEndMode } from '../documents/bookmark-range-preferences'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -86,6 +87,12 @@ function validateDocuments(input: Record<string, any>): void {
     }
     const chapterIds = new Set<string>()
     if (!Array.isArray(m.chapters) || !m.chapters.every((c: unknown) => validateChapterTree(c, m.pageCount, 0, chapterIds))) throw new BackupError('document.chapters 非法（章节页码/层级/结构/id 不合法）')
+    if (m.bookmarkRangePreferences !== undefined) {
+      if (!isObj(m.bookmarkRangePreferences)) throw new BackupError('document.bookmarkRangePreferences 非法')
+      for (const [chapterId, mode] of Object.entries(m.bookmarkRangePreferences)) {
+        if (!isNonEmptyStr(chapterId) || !isBookmarkRangeEndMode(mode)) throw new BackupError('document.bookmarkRangePreferences 内容非法')
+      }
+    }
     if (d.mimeType !== 'application/pdf') throw new BackupError('document 的 mimeType 必须是 application/pdf')
     if (!isBase64(d.data)) throw new BackupError('document.data 不是合法的 base64')
   }
@@ -351,7 +358,8 @@ export async function restoreBackup(backup: Backup): Promise<void> {
       if (ref.storage === 'opfs') staged.push({ ref, path: ref.path });
       // recordVersion 3 + lastReadAt backfill (old backups lack the field).
       const lastReadAt = (typeof d.meta.lastReadAt === 'number') ? d.meta.lastReadAt : (typeof d.meta.updatedAt === 'number' ? d.meta.updatedAt : (typeof d.meta.createdAt === 'number' ? d.meta.createdAt : 0));
-      documentRows.push({ ...d.meta, lastReadAt, source: ref, recordVersion: 3 });
+      const bookmarkRangePreferences = sanitizeBookmarkRangePreferences(d.meta.chapters, d.meta.bookmarkRangePreferences)
+      documentRows.push({ ...d.meta, ...(bookmarkRangePreferences ? { bookmarkRangePreferences } : {}), lastReadAt, source: ref, recordVersion: 3 });
     }
     // C. Build replacement metadata records pointing at the NEW binary refs.
     const settings = [

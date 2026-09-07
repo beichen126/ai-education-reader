@@ -5,6 +5,8 @@
 //      └─ Chapter  (bookmark / AI TOC / manual structure)
 //           └─ Context  (the page set actually sent to the AI)
 
+import type { BookmarkRangePreferences } from './bookmark-range-preferences'
+
 /** Structural chapter of a document. Persistent business model — NOT the raw
  * pdfjs PdfOutlineItem (that stays a parse artifact in src/pdf). */
 export type ChapterNode = {
@@ -33,6 +35,8 @@ export type LearningDocument = {
   sourceBlob: Blob
   chapters: ChapterNode[]
   chapterSource: DocumentChapterSource
+  /** Per-stable-chapter PDF range end semantics. Missing entries default to exclusive. */
+  bookmarkRangePreferences?: BookmarkRangePreferences
   /** Last page the user actually read. 0 = never read (metadata only, no binary read). */
   lastReadPage: number
   /** Most recent READING activity (page turn / Reader open). Semantically distinct from
