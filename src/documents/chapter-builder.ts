@@ -46,6 +46,47 @@ export type ChapterDraftValidation = {
   issues: ChapterDraftIssue[]
 }
 
+type ChapterDraftSelection = ReadonlySet<string> | readonly string[]
+
+function selectionSet(selectedIds: ChapterDraftSelection): Set<string> {
+  return selectedIds instanceof Set ? new Set(selectedIds) : new Set(selectedIds)
+}
+
+/**
+ * Set the level of every selected draft item by stable id. This operation only
+ * changes level fields; callers still run the canonical draft validator before
+ * building or saving a tree. The input draft and its row order are untouched.
+ */
+export function setDraftItemsLevel(items: ChapterDraftItem[], selectedIds: ChapterDraftSelection, targetLevel: number): ChapterDraftItem[] {
+  if (!Number.isInteger(targetLevel) || targetLevel < 1 || targetLevel > MAX_CHAPTER_LEVEL) return items
+  const ids = selectionSet(selectedIds)
+  if (ids.size === 0) return items
+  return items.map(item => ids.has(item.id) ? { ...item, level: targetLevel } : { ...item })
+}
+
+export type ChapterDraftLevelShiftResult =
+  | { ok: true; items: ChapterDraftItem[] }
+  | { ok: false; itemId: string; fromLevel: number; toLevel: number }
+
+/**
+ * Shift selected levels as one atomic operation. If one selected item would
+ * cross the domain level boundary, no item is changed and the caller can show
+ * one clear error instead of partially applying the batch.
+ */
+export function shiftDraftItemsLevel(items: ChapterDraftItem[], selectedIds: ChapterDraftSelection, delta: number): ChapterDraftLevelShiftResult {
+  const ids = selectionSet(selectedIds)
+  if (ids.size === 0 || !Number.isInteger(delta) || delta === 0) return { ok: true, items }
+  for (const item of items) {
+    if (!ids.has(item.id)) continue
+    const toLevel = item.level + delta
+    if (toLevel < 1 || toLevel > MAX_CHAPTER_LEVEL) return { ok: false, itemId: item.id, fromLevel: item.level, toLevel }
+  }
+  return {
+    ok: true,
+    items: items.map(item => ids.has(item.id) ? { ...item, level: item.level + delta } : { ...item }),
+  }
+}
+
 /**
  * Set one draft item's explicit level without changing its identity, metadata,
  * or position. Structural validity remains the responsibility of the canonical
@@ -53,7 +94,7 @@ export type ChapterDraftValidation = {
  */
 export function setDraftItemLevel(items: ChapterDraftItem[], index: number, level: number): ChapterDraftItem[] {
   if (index < 0 || index >= items.length) return items
-  return items.map((item, i) => i === index ? { ...item, level } : item)
+  return setDraftItemsLevel(items, [items[index].id], level)
 }
 
 /** True when a parent/child relationship (deeper level) is allowed at index i

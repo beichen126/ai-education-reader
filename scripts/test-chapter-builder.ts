@@ -17,6 +17,8 @@ import {
   insertChapterByPage,
   canApplyChapterDraftOperation,
   setDraftItemLevel,
+  setDraftItemsLevel,
+  shiftDraftItemsLevel,
   deriveChapterEndPages,
   MAX_CHAPTER_LEVEL,
   type ChapterDraftItem,
@@ -341,6 +343,30 @@ const base: ChapterDraftItem[] = [
   const invalid = setDraftItemLevel(base, 0, 3)
   assert(!validateChapterDraft(invalid, 10).ok, 'direct level edit remains subject to canonical validation')
   assert(setDraftItemLevel(base, -1, 4) === base && setDraftItemLevel(base, 99, 4) === base, 'out-of-range direct level edit is a no-op')
+}
+
+// ===================== bulk level editing (Stage G2) =====================
+{
+  const base = [item('root', 'Root', 1, 1), item('b', 'B', 2, 2), item('c', 'C', 3, 3)]
+  const changed = setDraftItemsLevel(base, new Set(['b', 'c']), 2)
+  assert(changed.map(i => i.id).join(',') === 'root,b,c', 'bulk level edit uses stable ids and keeps row order')
+  assert(changed[0].level === 1 && changed[1].level === 2 && changed[2].level === 2, 'bulk level edit changes every selected item')
+  assert(changed[1].title === 'B' && changed[1].startPage === 2, 'bulk level edit preserves title and startPage')
+  assert(base[1].level === 2 && base[2].level === 3, 'bulk level edit does not mutate the source draft')
+  const parentOnly = setDraftItemsLevel(base, ['root'], 2)
+  assert(parentOnly.map(i => i.id).join(',') === 'root,b,c' && !validateChapterDraft(parentOnly, 10).ok, 'selecting only a parent may be invalid but never silently reorders its subtree')
+  assert(setDraftItemsLevel(base, ['missing'], 2) !== base, 'unknown stable ids do not alter item fields')
+  assert(setDraftItemsLevel(base, ['b'], 0) === base && setDraftItemsLevel(base, ['b'], MAX_CHAPTER_LEVEL + 1) === base, 'bulk target outside domain is a no-op')
+}
+{
+  const base = [item('a', 'A', 1, 1), item('b', 'B', 2, 2), item('c', 'C', 3, 3)]
+  const raised = shiftDraftItemsLevel(base, ['b', 'c'], 1)
+  assert(raised.ok && raised.items[1].level === 3 && raised.items[2].level === 4, 'bulk increase shifts every selected level')
+  const lowered = shiftDraftItemsLevel(base, ['b', 'c'], -1)
+  assert(lowered.ok && lowered.items[1].level === 1 && lowered.items[2].level === 2, 'bulk decrease shifts every selected level')
+  const blocked = shiftDraftItemsLevel([item('a', 'A', 1, 1), item('b', 'B', 2, 2)], ['a', 'b'], -1)
+  assert(!blocked.ok && blocked.itemId === 'a' && blocked.fromLevel === 1 && blocked.toLevel === 0, 'bulk boundary failure rejects the whole operation')
+  if (!blocked.ok) assert(blocked.toLevel === 0, 'bulk boundary failure returns the rejected target level')
 }
 
 // ===================== top-level insertion never reparents (Stage 9.4C.1 §13) =====================

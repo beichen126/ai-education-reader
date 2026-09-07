@@ -13,7 +13,7 @@ import {
   deleteDraftSubtree, draftHasChildren, indentSubtree, outdentSubtree,
   moveUp, moveDown,
   insertChapterByPage, canApplyChapterDraftOperation,
-  setDraftItemLevel, MAX_CHAPTER_LEVEL,
+  setDraftItemLevel, setDraftItemsLevel, shiftDraftItemsLevel, MAX_CHAPTER_LEVEL,
   type ChapterDraftItem, type ChapterDraftValidation,
 } from './chapter-builder'
 import css from './chapter-builder.module.css'
@@ -65,6 +65,8 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [insertError, setInsertError] = useState<string | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  const [bulkError, setBulkError] = useState<string | null>(null)
 
   // Dirty = any item differs from the persisted draft (baseline matches the seed).
   const originalRef = useRef<ChapterDraftItem[]>(draftSeed ? cloneChapterDraft(draftSeed) : flattenManualChapters(initialChapters))
@@ -80,13 +82,56 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
   useEffect(() => { setValidation(validateChapterDraft(items, pageCount)) }, [items, pageCount])
 
   const updateItem = (index: number, patch: Partial<ChapterDraftItem>) => {
+    setBulkError(null)
     setItems(prev => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)))
   }
 
   const updateLevel = (index: number, raw: string) => {
     const level = Number(raw)
     if (!Number.isInteger(level)) return
+    setBulkError(null)
     setItems(prev => setDraftItemLevel(prev, index, level))
+  }
+
+  const toggleSelection = (id: string, checked: boolean) => {
+    setBulkError(null)
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (checked) next.add(id)
+      else next.delete(id)
+      return next
+    })
+  }
+
+  const selectAll = () => {
+    setBulkError(null)
+    setSelectedIds(new Set(items.map(item => item.id)))
+  }
+
+  const selectCurrentLevel = (level: number) => {
+    setBulkError(null)
+    setSelectedIds(new Set(items.filter(item => item.level === level).map(item => item.id)))
+  }
+
+  const clearSelection = () => {
+    setSelectedIds(new Set())
+    setBulkError(null)
+  }
+
+  const applyBulkLevel = (level: number) => {
+    setBulkError(null)
+    setItems(setDraftItemsLevel(items, selectedIds, level))
+  }
+
+  const applyBulkShift = (delta: number) => {
+    const result = shiftDraftItemsLevel(items, selectedIds, delta)
+    if (result.ok === false) {
+      const item = items.find(candidate => candidate.id === result.itemId)
+      setBulkError('批量操作未执行：「' + (item?.title || '未命名章节') + '」不能调整到 L' + result.toLevel + '，本批次未修改。')
+      return
+    }
+    setBulkError(null)
+    setItems(result.items)
   }
 
   // Both add entrances funnel through the SAME page-aware insertion helper (§9).
@@ -106,7 +151,21 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
     setPendingDelete(index)
   }
   const applyOp = (fn: (items: ChapterDraftItem[], index: number) => ChapterDraftItem[], index: number) => {
+    setBulkError(null)
     setItems(prev => fn(cloneChapterDraft(prev), index))
+  }
+
+  const confirmDeleteDraft = (index: number) => {
+    const level = items[index]?.level
+    if (level == null) return
+    const removedIds = new Set<string>()
+    for (let i = index; i < items.length && (i === index || items[i].level > level); i++) removedIds.add(items[i].id)
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      for (const id of removedIds) next.delete(id)
+      return next
+    })
+    setItems(prev => deleteDraftSubtree(prev, index))
   }
 
   const save = async () => {
@@ -149,12 +208,13 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
       if (saving) return
       if (confirmDiscard) { setConfirmDiscard(false); return }
       if (pendingDelete != null) { setPendingDelete(null); return }
+      if (selectedIds.size > 0) { setSelectedIds(new Set()); setBulkError(null); return }
       if (dirty) { setConfirmDiscard(true); return }
       onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [confirmDiscard, pendingDelete, onClose, saving])
+  }, [confirmDiscard, pendingDelete, onClose, saving, selectedIds])
 
   const delIndex = pendingDelete
   const delItem = delIndex != null ? items[delIndex] : null
@@ -177,17 +237,43 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
         {hint && <div className={css.hint} data-testid="cb-hint">{hint}</div>}
         {skippedUnresolved > 0 && <div className={css.warn} data-testid="cb-skipped">原目录中有 {skippedUnresolved} 项无法定位页码，未自动加入编辑结果。</div>}
         <div className={css.list} data-testid="cb-list">
+          <div className={css.bulkToolbar} data-testid="cb-bulk-toolbar">
+            <div className={css.bulkSummary}>
+              <span data-testid="cb-selected-count">已选 {selectedIds.size} 项</span>
+              <button type="button" className={css.bulkBtn} data-testid="cb-clear-selection" onClick={clearSelection}>清除选择</button>
+            </div>
+            <div className={css.bulkGroup}>
+              <span className={css.bulkLabel}>选择当前：</span>
+              <button type="button" className={css.bulkBtn} data-testid="cb-select-all" onClick={selectAll}>全部</button>
+              {Array.from({ length: MAX_CHAPTER_LEVEL }, (_, level) => (
+                <button type="button" className={css.bulkBtn} data-testid={'cb-select-level-' + (level + 1)} key={level + 1} onClick={() => selectCurrentLevel(level + 1)}>L{level + 1}</button>
+              ))}
+            </div>
+            <div className={css.bulkGroup}>
+              <span className={css.bulkLabel}>设为：</span>
+              {Array.from({ length: MAX_CHAPTER_LEVEL }, (_, level) => (
+                <button type="button" className={css.bulkBtn} data-testid={'cb-bulk-set-' + (level + 1)} key={level + 1} disabled={selectedIds.size === 0} onClick={() => applyBulkLevel(level + 1)}>L{level + 1}</button>
+              ))}
+            </div>
+            <div className={css.bulkGroup}>
+              <button type="button" className={css.bulkBtn} data-testid="cb-bulk-outdent" disabled={selectedIds.size === 0} onClick={() => applyBulkShift(-1)}>减少一级</button>
+              <button type="button" className={css.bulkBtn} data-testid="cb-bulk-indent" disabled={selectedIds.size === 0} onClick={() => applyBulkShift(1)}>增加一级</button>
+            </div>
+            {bulkError && <div className={css.bulkError} data-testid="cb-bulk-error">{bulkError}</div>}
+          </div>
           {items.length === 0 && <div className={css.empty} data-testid="cb-empty">尚无章节，点击下方“从 PDF 第 {currentPage || 1} 页新建章节”开始。</div>}
           {items.map((it, i) => (
             <BuilderRow
               key={it.id}
               item={it}
               index={i}
+              selected={selectedIds.has(it.id)}
               canUp={canApplyChapterDraftOperation(items, pageCount, moveUp, i)}
               canDown={canApplyChapterDraftOperation(items, pageCount, moveDown, i)}
               canIndent={canApplyChapterDraftOperation(items, pageCount, indentSubtree, i)}
               canOutdent={canApplyChapterDraftOperation(items, pageCount, outdentSubtree, i)}
               error={rowErrors[i]}
+              onSelect={checked => toggleSelection(it.id, checked)}
               onTitle={v => updateItem(i, { title: v })}
               onPage={v => updateItem(i, { startPage: pageFromInput(v) })}
               onLevel={v => updateLevel(i, v)}
@@ -211,7 +297,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
             <div>{delHasChildren ? '确认删除「' + delTitle + '」及其 ' + delCount + ' 个子章节？' : '确认删除「' + delTitle + '」？'}</div>
             <div className={css.confirmBtns}>
               <button type="button" className={css.btn} data-testid="cb-confirm-no" onClick={() => setPendingDelete(null)}>取消</button>
-              <button type="button" className={css.btnPrimary} data-testid="cb-confirm-yes" onClick={() => { const idx = pendingDelete; setPendingDelete(null); setItems(prev => deleteDraftSubtree(prev, idx)); }}>确认删除</button>
+              <button type="button" className={css.btnPrimary} data-testid="cb-confirm-yes" onClick={() => { const idx = pendingDelete; setPendingDelete(null); confirmDeleteDraft(idx) }}>确认删除</button>
             </div>
           </div>
         </div>
@@ -248,17 +334,18 @@ function subtreeCount(items: ChapterDraftItem[], index: number): number {
 }
 
 function BuilderRow(props: {
-  item: ChapterDraftItem; index: number
+  item: ChapterDraftItem; index: number; selected: boolean
   canUp: boolean; canDown: boolean; canIndent: boolean; canOutdent: boolean; error?: string
-  onTitle: (v: string) => void; onPage: (v: string) => void; onLevel: (v: string) => void
+  onSelect: (checked: boolean) => void; onTitle: (v: string) => void; onPage: (v: string) => void; onLevel: (v: string) => void
   onUp: () => void; onDown: () => void; onIndent: () => void; onOutdent: () => void; onDelete: () => void
 }) {
-  const { item, index, canUp, canDown, canIndent, canOutdent, error, onTitle, onPage, onLevel, onUp, onDown, onIndent, onOutdent, onDelete } = props
+  const { item, index, selected, canUp, canDown, canIndent, canOutdent, error, onSelect, onTitle, onPage, onLevel, onUp, onDown, onIndent, onOutdent, onDelete } = props
   const pad = (item.level - 1) * 14
   return (
     <div className={css.row + (error ? ' ' + css.rowErr : '')} data-testid="cb-row">
       <div className={css.indentSpacer} style={{ width: pad }} aria-hidden />
       <div className={css.rowTop}>
+        <input type="checkbox" className={css.selectionCheckbox} data-testid={'cb-select-' + index} aria-label={'选择第 ' + (index + 1) + ' 项'} checked={selected} onChange={e => onSelect(e.target.checked)} />
         <select
           className={css.levelSelect}
           data-testid={'cb-level-' + index}
