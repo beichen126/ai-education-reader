@@ -22,6 +22,7 @@ const CORE_E2E = [
   'e2e-artifacts',
   'e2e-document-reader',
   'e2e-document-context',
+  'e2e-bookmark-range',
   'e2e-document-notes',
   'e2e-pdf-page-conversations',
   'e2e-ai-toc',

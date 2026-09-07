@@ -2,7 +2,7 @@
 // Document -> Context domain tests (Stage 9.5 / v1.0.0, Part 0.7).
 import { findCurrentChapterPath, findChapterPathById, buildChapterNodesSelection, selectableChapterRange } from '../src/documents/document-context.ts'
 import { findCurrentChapter } from '../src/documents/reader-context.ts'
-import { countPdfRangePages, MAX_PDF_CONTEXT_PAGES } from '../src/pdf/pdf-types.ts'
+import { countPdfRangePages, exceedsPdfContextHardLimit, MAX_PDF_CONTEXT_PAGES } from '../src/pdf/pdf-types.ts'
 
 let pass = 0, fail = 0
 const assert = (c: boolean, m: string) => { if (c) { pass++; console.log('  ok: ' + m) } else { fail++; console.log('  FAIL: ' + m) } }
@@ -53,6 +53,8 @@ assert(modeInclusive.ranges[0].startPage === 10 && modeInclusive.ranges[0].endPa
 assert(selectableChapterRange({ ...(tree as any)[0], startPage: null }) === null, 'unresolvable node -> null range')
 
 assert(MAX_PDF_CONTEXT_PAGES === 120, 'MAX_PDF_CONTEXT_PAGES = 120')
+assert(!exceedsPdfContextHardLimit(120), '120 pages remains within the hard limit')
+assert(exceedsPdfContextHardLimit(121), '121 pages exceeds the hard limit')
 
 console.log('RESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)
