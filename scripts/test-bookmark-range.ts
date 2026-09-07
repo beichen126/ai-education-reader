@@ -1,5 +1,5 @@
 // Stage A: bookmark end-mode range semantics (PURE, no React/storage/UI).
-import { exclusiveEndPageOfChapter, resolveBookmarkChapterPdfRange, resolveBookmarkPdfRange, type BookmarkRangeEndMode } from '../src/pdf/bookmark-range.ts'
+import { bookmarkRangePresentation, exclusiveEndPageOfChapter, resolveBookmarkChapterPdfRange, resolveBookmarkPdfRange, type BookmarkRangeEndMode } from '../src/pdf/bookmark-range.ts'
 
 let pass = 0
 let fail = 0
@@ -55,6 +55,25 @@ for (const mode of ['exclusive', 'inclusive'] as const) {
   assert(exclusiveEndPageOfChapter(30, 30) === 31, 'last chapter boundary is pageCount + 1')
 }
 
+{
+  const presentation = bookmarkRangePresentation({ startPage: 10, endPage: 19, pageCount: 40 })
+  assert(presentation.exclusive.boundaryEnd === 20 && presentation.exclusive.actualEnd === 19, 'presentation exclusive keeps canonical boundary and actual end separate')
+  assert(presentation.inclusive.boundaryEnd === 20 && presentation.inclusive.actualEnd === 20, 'presentation inclusive uses the same canonical boundary')
+  assert(presentation.exclusive.label === '[10,20)', 'presentation exclusive label is mode-independent')
+  assert(presentation.inclusive.label === '[10,20]', 'presentation inclusive label is mode-independent')
+}
+
+{
+  const last = bookmarkRangePresentation({ startPage: 7, endPage: 10, pageCount: 10 })
+  assert(last.exclusive.label === '[7,11)' && last.exclusive.actualEnd === 10, 'last-page exclusive presentation stays within actual PDF pages')
+  assert(last.inclusive.label === '[7,10]' && last.inclusive.actualEnd === 10, 'last-page inclusive presentation is capped at pageCount')
+}
+
+{
+  const single = bookmarkRangePresentation({ startPage: 10, endPage: 10, pageCount: 10 })
+  assert(single.exclusive.label === '[10,11)' && single.inclusive.label === '[10,10]', 'single-page presentation has two equivalent labels')
+}
+
 const throws = (input: Parameters<typeof resolveBookmarkPdfRange>[0]) => {
   try { resolveBookmarkPdfRange(input); return false }
   catch (error) { return error instanceof RangeError }
@@ -65,6 +84,14 @@ assert(throws({ startPage: 10, exclusiveEndPage: 12, pageCount: 10, endMode: 'ex
 assert(throws({ startPage: 1, exclusiveEndPage: 2, pageCount: 0, endMode: 'exclusive' }), 'non-positive pageCount is rejected')
 assert(throws({ startPage: 1, exclusiveEndPage: 2, pageCount: 10, endMode: 'invalid' as BookmarkRangeEndMode }), 'unknown end mode is rejected')
 assert(throws({ startPage: 1.5, exclusiveEndPage: 2, pageCount: 10, endMode: 'exclusive' }), 'fractional start page is rejected')
+
+const presentationThrows = (input: Parameters<typeof bookmarkRangePresentation>[0]) => {
+  try { bookmarkRangePresentation(input); return false }
+  catch (error) { return error instanceof RangeError }
+}
+assert(presentationThrows({ startPage: 0, endPage: 2, pageCount: 10 }), 'presentation rejects start page 0')
+assert(presentationThrows({ startPage: 1, endPage: 0, pageCount: 10 }), 'presentation rejects end page 0')
+assert(presentationThrows({ startPage: 1, endPage: 2, pageCount: 0 }), 'presentation rejects non-positive pageCount')
 
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)

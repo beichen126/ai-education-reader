@@ -6,7 +6,7 @@ import { buildChapterNodesSelection, selectableChapterRange } from './document-c
 import { normalizePdfRanges, countPdfRangePages, pdfRangesText, needsPdfContextSoftConfirm, exceedsPdfContextHardLimit, validatePdfRange, MAX_PDF_CONTEXT_PAGES, type PdfRange, type PdfSelection } from '../pdf/pdf-types'
 import type { ChapterNode } from './document-types'
 import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
-import { exclusiveEndPageOfChapter, resolveBookmarkChapterPdfRange, type BookmarkRangeEndMode } from '../pdf/bookmark-range'
+import { bookmarkRangePresentation, type BookmarkRangeEndMode } from '../pdf/bookmark-range'
 import css from './document-context-picker.module.css'
 
 type Props = {
@@ -236,19 +236,18 @@ function ChapterTreeCheck({ nodes, checked, pageCount, bookmarkRangePreferences,
         const range = selectableChapterRange(n)
         const disabled = !range
         const mode = bookmarkRangeEndModeOf(bookmarkRangePreferences, n.id)
-        const resolved = range ? resolveBookmarkChapterPdfRange({ startPage: range.startPage, endPage: range.endPage, pageCount, endMode: mode }) : null
-        const exclusiveEndPage = range ? exclusiveEndPageOfChapter(range.endPage, pageCount) : null
+        const presentation = range ? bookmarkRangePresentation({ startPage: range.startPage, endPage: range.endPage, pageCount }) : null
         return (
           <div key={n.id}>
             <div className={css.treeRow} data-depth={n.level} data-testid={'doc-context-node-' + n.id} style={{ paddingLeft: (Math.max(n.level, 1) - 1) * 16 + 4 }}>
               <input type="checkbox" data-testid={'doc-context-check-' + n.id} checked={checked.has(n.id)} disabled={disabled} onChange={() => onToggle(n.id)} />
               <span className={css.treeTitle} title={n.title}>{n.title}</span>
-              {resolved ? (
+              {presentation ? (
                 <span className={css.treeDetails}>
-                  <span className={css.treeRange} data-testid={'doc-context-actual-' + n.id}>实际发送：{pdfRangesText([resolved])}</span>
+                  <span className={css.treeRange} data-testid={'doc-context-actual-' + n.id}>{presentation[mode].label}</span>
                   <select className={css.rangeMode} data-testid={'doc-context-mode-' + n.id} aria-label={n.title + ' 范围语义'} value={mode} onChange={e => onModeChange(n.id, e.target.value as BookmarkRangeEndMode)}>
-                    <option value="exclusive">左闭右开 [{resolved.startPage}, {exclusiveEndPage})</option>
-                    <option value="inclusive">左闭右闭 [{resolved.startPage}, {resolved.endPage}]</option>
+                    <option value="exclusive">左闭右开 {presentation.exclusive.label}</option>
+                    <option value="inclusive">左闭右闭 {presentation.inclusive.label}</option>
                   </select>
                 </span>
               ) : <span className={css.treeRange}>无法定位页码</span>}

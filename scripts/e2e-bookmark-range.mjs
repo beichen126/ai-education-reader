@@ -139,12 +139,19 @@ const addSelectedChapter = async (target, mode, expectedPages) => {
   await openPicker()
   const selector = modeSelector(target)
   await selector.waitFor({ state: 'visible', timeout: 5000 })
+  const optionTexts = await selector.locator('option').allTextContents()
+  const exclusiveLabel = '[' + target.startPage + ',' + (target.endPage + 1) + ')'
+  const inclusiveLabel = '[' + target.startPage + ',' + Math.min(target.endPage + 1, doc.pageCount) + ']'
+  assert(optionTexts.some(text => text.includes('左闭右开 ' + exclusiveLabel)), target.title + ': exclusive option uses canonical boundary before selection')
+  assert(optionTexts.some(text => text.includes('左闭右闭 ' + inclusiveLabel)), target.title + ': inclusive option uses canonical boundary before selection')
   await selector.selectOption(mode)
   assert(await selector.inputValue() === mode, mode + ': selector shows selected mode')
   await waitForPreference(target, mode)
   const actual = await actualLabel(target).textContent()
   const expectedEnd = mode === 'inclusive' ? Math.min(target.endPage + 1, doc.pageCount) : target.endPage
-  assert((actual || '').includes('实际发送：PDF ' + (target.startPage === expectedEnd ? '第 ' + target.startPage + ' 页' : target.startPage + '–' + expectedEnd)), target.title + ' ' + mode + ': UI actual-page preview matches resolved range')
+  const expectedLabel = mode === 'inclusive' ? '[' + target.startPage + ',' + expectedEnd + ']' : '[' + target.startPage + ',' + (target.endPage + 1) + ')'
+  assert((actual || '').trim() === expectedLabel, target.title + ' ' + mode + ': UI preview uses bracket notation only (' + expectedLabel + ')')
+  assert(!(actual || '').includes('实际发送') && !(actual || '').includes('左闭右开') && !(actual || '').includes('左闭右闭'), target.title + ' ' + mode + ': UI preview omits verbose mode text')
   await page.locator('[data-testid="doc-context-check-' + target.id + '"]').click()
   const before = await readPdfPageAttachments()
   await page.locator('[data-testid="doc-context-add"]').click()

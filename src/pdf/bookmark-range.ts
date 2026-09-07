@@ -84,3 +84,49 @@ export function exclusiveEndPageOfChapter(endPage: number, pageCount: number): n
   }
   return endPage + 1
 }
+
+export type BookmarkRangePresentationPart = {
+  boundaryEnd: number
+  actualEnd: number
+  label: string
+}
+
+export type BookmarkRangePresentation = {
+  exclusive: BookmarkRangePresentationPart
+  inclusive: BookmarkRangePresentationPart
+}
+
+export type BookmarkRangePresentationInput = {
+  startPage: number
+  endPage: number
+  pageCount: number
+}
+
+/**
+ * Build both user-visible range labels from the same canonical bookmark
+ * boundary. This intentionally does not expand the range into a page array.
+ */
+export function bookmarkRangePresentation({ startPage, endPage, pageCount }: BookmarkRangePresentationInput): BookmarkRangePresentation {
+  if (!Number.isInteger(pageCount) || pageCount < 1) {
+    throw new RangeError('pageCount must be a positive integer')
+  }
+  if (!Number.isInteger(startPage) || startPage < 1 || startPage > pageCount) {
+    throw new RangeError('startPage must be an integer within the PDF page count')
+  }
+
+  const exclusiveBoundaryEnd = exclusiveEndPageOfChapter(endPage, pageCount)
+  const exclusiveActualEnd = exclusiveBoundaryEnd - 1
+  const inclusiveActualEnd = Math.min(exclusiveBoundaryEnd, pageCount)
+  return {
+    exclusive: {
+      boundaryEnd: exclusiveBoundaryEnd,
+      actualEnd: exclusiveActualEnd,
+      label: '[' + startPage + ',' + exclusiveBoundaryEnd + ')',
+    },
+    inclusive: {
+      boundaryEnd: inclusiveActualEnd,
+      actualEnd: inclusiveActualEnd,
+      label: '[' + startPage + ',' + inclusiveActualEnd + ']',
+    },
+  }
+}
