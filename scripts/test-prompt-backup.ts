@@ -98,6 +98,7 @@ assert((parsed as any).promptPreferences.activeProtocolOverrideByDomain['ai-toc-
 assert((parsed as any).conversations[0].promptTransitions[0].snapshot.profileId === 'deleted-profile', 'deleted profile reference is allowed when snapshot is complete')
 
 mustReject({ ...full, prompts: [{ ...mode, source: 'builtin' }] }, 'persisted builtin prompt definition')
+mustReject({ ...full, prompts: [{ ...mode, id: 'builtin-conversation-default' }] }, 'custom prompt definition shadowing a built-in ID')
 const badTransition = JSON.parse(JSON.stringify(full))
 badTransition.conversations[0].promptTransitions[0].afterMessageId = 'not-on-path'
 mustReject(badTransition, 'transition after an unrelated message')

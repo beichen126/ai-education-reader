@@ -5,10 +5,11 @@ import { saveSettings, DEFAULT_SETTINGS } from '../src/engine/settings-store.ts'
 import { sessionsActions } from '../src/engine/sessions-store.ts'
 import { createBranchFromMessage } from '../src/branches/branch-service.ts'
 import { getBranch } from '../src/branches/branch-store.ts'
-import { prepareAcceptedSendContext } from '../src/prompts/prompt-send.ts'
+import { prepareAcceptedSendContext, resolveCurrentConversationMode } from '../src/prompts/prompt-send.ts'
 import { projectLogicalPromptContext } from '../src/prompts/prompt-compile-strategies.ts'
 import { savePromptRecord, deletePromptRecord } from '../src/prompts/prompt-store.ts'
-import { setDefaultConversationModeId } from '../src/prompts/prompt-preferences.ts'
+import { setBuiltinPromptHidden, setDefaultConversationModeId } from '../src/prompts/prompt-preferences.ts'
+import { BUILTIN_PROMPT_IDS } from '../src/prompts/prompt-registry.ts'
 import { newStableId, type Conversation, type Message } from '../src/engine/types.ts'
 import type { PromptSnapshot } from '../src/prompts/prompt-types.ts'
 import type { ConversationBranch } from '../src/branches/branch-types.ts'
@@ -119,6 +120,21 @@ try {
 } catch { rejected = true }
 assert(rejected, 'invalid prompt timeline fails before message acceptance')
 assert((await getConversation('bad'))?.messages.length === 1, 'compile failure leaves the durable conversation unchanged')
+
+const emptyDefault = await prepareAcceptedSendContext({
+  threadRef: { type: 'root', conversationId: 'empty-default' },
+  messagesBeforeAcceptance: [], candidateMessages: [msg('empty-default-user', 'user', '默认问题')],
+  effectiveTransitions: [], localTransitions: [], acceptedMessageId: 'empty-default-user',
+  currentModeSnapshot: { profileId: BUILTIN_PROMPT_IDS.conversationDefault, kind: 'conversation-mode', name: '默认', content: '', source: 'builtin', revision: 1, capturedAt: 1 },
+})
+const emptyDefaultTransport = await projectLogicalPromptContext(emptyDefault.context.logical, 'flattened')
+assert(!emptyDefaultTransport.some((item) => item.role === 'system'), 'all-empty default timeline does not inject a transport system message')
+
+await setDefaultConversationModeId(BUILTIN_PROMPT_IDS.conversationSocratic)
+await setBuiltinPromptHidden(BUILTIN_PROMPT_IDS.conversationSocratic, true)
+const hiddenMode = await resolveCurrentConversationMode(100)
+assert(hiddenMode.profileId === BUILTIN_PROMPT_IDS.conversationDefault && hiddenMode.content === '', 'hidden non-empty built-in mode falls back to the canonical empty default')
+await setBuiltinPromptHidden(BUILTIN_PROMPT_IDS.conversationSocratic, false)
 
 await deletePromptRecord(modeA.id)
 await deletePromptRecord(modeB.id)

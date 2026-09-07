@@ -15,7 +15,7 @@ import {
   updatePromptDefinition,
   PromptServiceError,
 } from '../src/prompts/prompt-service.ts'
-import { getPromptPreferences, setBuiltinPromptHidden, setDefaultConversationModeId } from '../src/prompts/prompt-preferences.ts'
+import { getPromptPreferences, setBuiltinPromptHidden, setDefaultConversationModeId, updatePromptPreferences } from '../src/prompts/prompt-preferences.ts'
 import { getPromptRecord, listPromptRecordsByKind, savePromptRecord } from '../src/prompts/prompt-store.ts'
 import type { PromptDefinition } from '../src/prompts/prompt-types.ts'
 
@@ -51,6 +51,9 @@ assert(warningSave.warnings.length === 1 && warningSave.warnings[0].code === 'du
 assert((await getPromptRecord(sameName.id))?.id === sameName.id, 'same-name warning does not block persistence')
 
 const builtIn = getBuiltinPrompt(BUILTIN_PROMPT_IDS.conversationSocratic)!
+let collidingRowRejected = false
+try { await savePromptRecord({ ...builtIn, source: 'custom' }) } catch { collidingRowRejected = true }
+assert(collidingRowRejected, 'prompt store rejects a custom row that shadows a built-in stable ID')
 let rejected = false
 try { await savePromptDefinition(builtIn, deps) } catch (error) { rejected = isServiceError(error, 'builtin-immutable') }
 assert(rejected, 'direct built-in update/save is rejected by service')
@@ -91,6 +94,13 @@ await setPromptSortPreference('updatedAt-desc')
 const prefs = await setDefaultConversationModeId(BUILTIN_PROMPT_IDS.conversationExamCoaching)
 assert(prefs.defaultConversationModeId === BUILTIN_PROMPT_IDS.conversationExamCoaching, 'prompt preferences persist default mode as one record')
 assert((await getPromptPreferences()).defaultConversationModeId === BUILTIN_PROMPT_IDS.conversationExamCoaching, 'prompt preferences survive reload')
+
+await Promise.all([
+  updatePromptPreferences({ sortPreference: 'name-asc' }),
+  updatePromptPreferences({ hiddenBuiltinPromptIds: [BUILTIN_PROMPT_IDS.conversationSocratic] }),
+])
+const concurrentPreferences = await getPromptPreferences()
+assert(concurrentPreferences.sortPreference === 'name-asc' && concurrentPreferences.hiddenBuiltinPromptIds.includes(BUILTIN_PROMPT_IDS.conversationSocratic), 'concurrent unrelated preference patches preserve both fields')
 
 const snapshot = capturePromptSnapshot(changed.definition, 999)
 await deletePromptDefinition(first.id)

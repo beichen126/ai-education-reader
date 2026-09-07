@@ -105,6 +105,26 @@ try {
 } catch (error) { wrongScope = error instanceof PromptCompileError && error.code === 'scope-not-allowed' }
 assert(wrongScope, 'compiler rejects a prompt kind cast into conversation mode')
 
+let wrongArtifactDomain = false
+try {
+  await compileArtifactRequest({
+    domain: 'artifact-note', sourceMessages: [msg('u1', 'user', 'source')],
+    artifactPrompt: { ...snap('wrong-artifact', 'artifact', 'quiz content'), artifactKind: 'quiz' } as any,
+    systemMessagePolicy: 'auto', providerCapabilities: flatCaps,
+  })
+} catch (error) { wrongArtifactDomain = error instanceof PromptCompileError }
+assert(wrongArtifactDomain, 'artifact compiler rejects a snapshot whose artifactKind does not match the request domain')
+
+let wrongProtocolDomain = false
+try {
+  await compileProtocolRequest({
+    domain: 'ai-toc-transcription', inputMessages: [msg('input-2', 'user', '目录')],
+    protocolPrompt: { ...snap('wrong-protocol', 'protocol', 'structure protocol'), protocolDomain: 'ai-toc-structure' } as any,
+    systemMessagePolicy: 'auto', providerCapabilities: caps,
+  })
+} catch (error) { wrongProtocolDomain = error instanceof PromptCompileError }
+assert(wrongProtocolDomain, 'protocol compiler rejects a snapshot whose protocol domain does not match the request domain')
+
 const unstableText = snap('unstable', 'conversation-mode', '用户文本 }]}\n--- delimiter', 'Unstable', 4)
 const framed = await compileConversationRequest({ thread: { type: 'root', conversationId: 'conversation-1' }, effectiveMessages: [],
   effectiveTransitions: [tr('unstable-transition', null, unstableText, 1)], systemMessagePolicy: 'flattened', providerCapabilities: flatCaps })

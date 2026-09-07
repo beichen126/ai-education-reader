@@ -66,6 +66,14 @@ const sameBoundaryRevision = branch('same-boundary-revision', undefined, 'm1', [
 result = buildEffectivePromptPath(conversation, [sameBoundaryRevision], 'same-boundary-revision')
 assert(result.transitions.some((item) => item.snapshot.revision === 1) && result.transitions.some((item) => item.snapshot.revision === 2), 'same profile revisions remain distinct snapshots')
 
+const realSentinelMessage: Conversation = {
+  id: 'sentinel-conversation', title: 'sentinel', createdAt: 1, updatedAt: 1,
+  messages: [msg('__initial__'), msg('sentinel-next')],
+  promptTransitions: [tr('sentinel-initial', null, 'Initial'), tr('sentinel-message', '__initial__', 'After real message')],
+}
+result = buildEffectivePromptPath(realSentinelMessage, [], undefined)
+assert(result.transitions.map((item) => item.snapshot.name).join(',') === 'Initial,After real message', 'real message id __initial__ does not collide with the null boundary')
+
 await idbClearAll()
 await saveConversation(conversation)
 await saveBranch(afterB)
