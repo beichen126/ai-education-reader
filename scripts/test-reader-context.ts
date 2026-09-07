@@ -40,6 +40,8 @@ const cp = buildCurrentPageSelection(126)
 assert(cp.kind === 'manual' && cp.ranges.length === 1 && cp.ranges[0].startPage === 126 && cp.ranges[0].endPage === 126, 'current page -> manual single page')
 const cch = buildChapterSelection(findCurrentChapter(book, 128)!)
 assert(cch.kind === 'outline' && cch.title === '4.2.3 快速重传' && cch.ranges[0].startPage === 126 && cch.ranges[0].endPage === 132 && cch.selectedChapterIds?.[0] === 'c4.2.3', 'chapter selection metadata (title/ranges/selectedChapterIds)')
+const cchInclusive = buildChapterSelection(findCurrentChapter(book, 128)!, { pageCount: 300, bookmarkRangePreferences: { 'c4.2.3': 'inclusive' } })
+assert(cchInclusive.ranges[0].startPage === 126 && cchInclusive.ranges[0].endPage === 133, 'reader chapter selection applies inclusive preference to actual range')
 const mr = buildManualRangeSelection(120, 135)
 assert(mr.kind === 'manual' && mr.ranges[0].startPage === 120 && mr.ranges[0].endPage === 135, 'manual range selection')
 

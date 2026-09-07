@@ -17,6 +17,8 @@ import { renderPdfContextRanges, PdfContextRenderError, type ContextRenderProgre
 import { validatePdfRange, countPdfRangePages, needsPdfContextSoftConfirm, MAX_PDF_CONTEXT_PAGES, type PdfRange, type PdfSelection } from '../pdf/pdf-types'
 import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, buildManualRangeSelection } from './reader-context'
 import { findCurrentChapterPath } from './document-context'
+import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
+import { resolveBookmarkChapterPdfRange } from '../pdf/bookmark-range'
 import { DocumentContextPicker } from './DocumentContextPicker'
 import { executeDocumentContext } from './document-context-service'
 import { useDocumentUi, documentUiActions } from './document-ui-store'
@@ -814,11 +816,17 @@ export function DocumentReader() {
             当前页<span className={css.menuMeta}>第 {page} 页</span>
           </button>
           {currentChapterPath.length > 0 && <div className={css.ctxMenuTitle2}>所在章节</div>}
-          {[...currentChapterPath].reverse().map(n => (
-            <button key={n.id} type="button" className={css.menuItem} data-testid={'reader-ctx-ancestor-' + n.id} disabled={!n.selectable || n.startPage == null} onClick={() => { const s = buildChapterSelection(n); void requestContext(s, s.ranges) }}>
-              <span className={css.menuLevel}>L{n.level}</span>{n.title}<span className={css.menuMeta}>PDF {n.startPage}–{n.endPage}</span>
-            </button>
-          ))}
+          {[...currentChapterPath].reverse().map(n => {
+            const mode = bookmarkRangeEndModeOf(doc?.bookmarkRangePreferences, n.id)
+            const range = n.startPage != null && n.endPage != null
+              ? resolveBookmarkChapterPdfRange({ startPage: n.startPage, endPage: n.endPage, pageCount, endMode: mode })
+              : null
+            return (
+              <button key={n.id} type="button" className={css.menuItem} data-testid={'reader-ctx-ancestor-' + n.id} disabled={!n.selectable || n.startPage == null} onClick={() => { const s = buildChapterSelection(n, { pageCount, bookmarkRangePreferences: doc?.bookmarkRangePreferences }); void requestContext(s, s.ranges) }}>
+                <span className={css.menuLevel}>L{n.level}</span>{n.title}<span className={css.menuMeta}>{range ? '实际发送 PDF ' + range.startPage + '–' + range.endPage : '无法定位页码'} · {mode === 'inclusive' ? '左闭右闭' : '左闭右开'}</span>
+              </button>
+            )
+          })}
           {doc && currentChapterPath.length === 0 && <div className={css.ctxHint}>当前页不属于可识别章节</div>}
           <button type="button" className={css.menuItem} data-testid="reader-ctx-picker" onClick={() => { setCtxMenuOpen(false); setCtxPickerOpen(true) }}>选择其他章节 / 多章节…</button>
           <button type="button" className={css.menuItem} data-testid="reader-ctx-manual" onClick={() => { setCtxMode('manual'); setManualError(null) }}>自定义页码…</button>

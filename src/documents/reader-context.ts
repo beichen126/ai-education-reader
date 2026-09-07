@@ -2,6 +2,8 @@
 // DocumentReader only orchestrates; these helpers own the rules.
 import type { ChapterNode } from './document-types'
 import type { PdfRange, PdfSelection } from '../pdf/pdf-types'
+import { resolveBookmarkChapterPdfRange } from '../pdf/bookmark-range'
+import { bookmarkRangeEndModeOf, type BookmarkRangePreferences } from './bookmark-range-preferences'
 
 /**
  * Deepest containing selectable chapter for a page — deterministic:
@@ -40,11 +42,14 @@ export function buildCurrentPageSelection(page: number): PdfSelection {
   return { kind: 'manual', ranges: [{ startPage: page, endPage: page }] }
 }
 
-export function buildChapterSelection(chapter: ChapterNode): PdfSelection {
+export function buildChapterSelection(chapter: ChapterNode, options?: { pageCount?: number; bookmarkRangePreferences?: BookmarkRangePreferences }): PdfSelection {
+  const range = options?.pageCount !== undefined
+    ? resolveBookmarkChapterPdfRange({ startPage: chapter.startPage!, endPage: chapter.endPage!, pageCount: options.pageCount, endMode: bookmarkRangeEndModeOf(options.bookmarkRangePreferences, chapter.id) })
+    : { startPage: chapter.startPage!, endPage: chapter.endPage! }
   return {
     kind: 'outline',
     title: chapter.title,
-    ranges: [{ startPage: chapter.startPage!, endPage: chapter.endPage! }],
+    ranges: [{ startPage: range.startPage, endPage: range.endPage }],
     selectedChapterIds: [chapter.id],
   }
 }

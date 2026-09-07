@@ -90,6 +90,7 @@
     "test:e2e-chapter-bulk-level": "node scripts/e2e-chapter-bulk-level.mjs",
     "test:e2e-chapter-search-range": "node scripts/e2e-chapter-search-range.mjs",
     "test:e2e-chapter-editor-gate": "node scripts/e2e-chapter-editor-gate.mjs",
+    "test:e2e-bookmark-range": "node scripts/e2e-bookmark-range.mjs",
     "test:pdf-codec": "node scripts/test-pdf-codec.mjs",
     "test:pdf-runtime-assets": "npx tsx scripts/test-pdf-runtime-assets.ts",
     "test:native-toc": "npx tsx scripts/test-native-toc.ts",

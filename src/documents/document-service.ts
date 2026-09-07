@@ -159,6 +159,7 @@ export type DocumentContextDescriptor = {
   pageCount: number
   chapters: ChapterNode[]
   chapterSource: DocumentChapterSource
+  bookmarkRangePreferences?: BookmarkRangePreferences
   importSource?: { kind: 'pdf' | 'ppt' | 'pptx'; originalFileName: string }
 }
 
@@ -168,6 +169,7 @@ export async function getDocumentContextDescriptor(id: string): Promise<Document
   return {
     id: row.id, fileName: row.fileName, pageCount: row.pageCount,
     chapters: (row.chapters ?? []) as ChapterNode[], chapterSource: row.chapterSource ?? 'none',
+    ...(sanitizeBookmarkRangePreferences((row.chapters ?? []) as ChapterNode[], row.bookmarkRangePreferences) ? { bookmarkRangePreferences: sanitizeBookmarkRangePreferences((row.chapters ?? []) as ChapterNode[], row.bookmarkRangePreferences) } : {}),
     ...(row.importSource ? { importSource: row.importSource } : {}),
   }
 }

@@ -44,6 +44,11 @@ const selNC = buildChapterNodesSelection([(tree as any)[0].children[0], (tree as
 assert(selNC.ranges.length === 2, 'non-contiguous -> 2 ranges')
 assert(countPdfRangePages(selNC.ranges) === 41 + 21, 'non-contiguous count = 62')
 
+const modeExclusive = buildChapterNodesSelection([(tree as any)[0].children[0]], { pageCount: 120, bookmarkRangePreferences: { A1: 'exclusive' } })
+assert(modeExclusive.ranges[0].startPage === 10 && modeExclusive.ranges[0].endPage === 50, 'bookmark exclusive uses current canonical last page')
+const modeInclusive = buildChapterNodesSelection([(tree as any)[0].children[0]], { pageCount: 120, bookmarkRangePreferences: { A1: 'inclusive' } })
+assert(modeInclusive.ranges[0].startPage === 10 && modeInclusive.ranges[0].endPage === 51, 'bookmark inclusive extends one page beyond current canonical last page')
+
 // selectableChapterRange: unresolvable node -> null
 assert(selectableChapterRange({ ...(tree as any)[0], startPage: null }) === null, 'unresolvable node -> null range')
 

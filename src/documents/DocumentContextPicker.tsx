@@ -1,10 +1,12 @@
 
 
-import { useEffect, useMemo, useState } from 'react'
-import { listDocumentSummaries, getDocumentContextDescriptor, type DocumentContextDescriptor, type DocumentSummary } from './document-service'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { listDocumentSummaries, getDocumentContextDescriptor, setDocumentBookmarkRangePreference, type DocumentContextDescriptor, type DocumentSummary } from './document-service'
 import { buildChapterNodesSelection, selectableChapterRange } from './document-context'
 import { normalizePdfRanges, countPdfRangePages, pdfRangesText, needsPdfContextSoftConfirm, exceedsPdfContextHardLimit, validatePdfRange, MAX_PDF_CONTEXT_PAGES, type PdfRange, type PdfSelection } from '../pdf/pdf-types'
 import type { ChapterNode } from './document-types'
+import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
+import { exclusiveEndPageOfChapter, resolveBookmarkChapterPdfRange, type BookmarkRangeEndMode } from '../pdf/bookmark-range'
 import css from './document-context-picker.module.css'
 
 type Props = {
@@ -33,6 +35,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
   const [manualSel, setManualSel] = useState<PdfSelection | null>(null)
   const [blockMsg, setBlockMsg] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<PdfSelection | null>(null)
+  const preferenceWritesRef = useRef(new Map<string, { chain: Promise<void> }>())
 
   // Load the document list only for the unscoped (document) stage.
   useEffect(() => { if (stage === 'document' && !scoped) { void listDocumentSummaries().then(setDocs).catch(() => setDocs([])) } }, [stage, scoped])
@@ -71,6 +74,36 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
     setChecked(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   }
 
+  const changeBookmarkRangeMode = (chapterId: string, endMode: BookmarkRangeEndMode) => {
+    if (!doc) return
+    const targetDoc = doc
+    const key = targetDoc.id + ':' + chapterId
+    const previousPreferences = targetDoc.bookmarkRangePreferences
+    const previousMode = bookmarkRangeEndModeOf(previousPreferences, chapterId)
+    const previousWasExplicit = previousPreferences?.[chapterId] !== undefined
+    setDoc(current => {
+      if (!current || current.id !== targetDoc.id) return current
+      return { ...current, bookmarkRangePreferences: { ...(current.bookmarkRangePreferences ?? {}), [chapterId]: endMode } }
+    })
+    const previous = preferenceWritesRef.current.get(key)?.chain ?? Promise.resolve()
+    const chain = previous.catch(() => {}).then(() => setDocumentBookmarkRangePreference(targetDoc.id, chapterId, endMode))
+    const entry = { chain }
+    preferenceWritesRef.current.set(key, entry)
+    void chain.catch(() => {
+      if (preferenceWritesRef.current.get(key) !== entry) return
+      setDoc(current => {
+        if (!current || current.id !== targetDoc.id) return current
+        const restored = { ...(current.bookmarkRangePreferences ?? {}) }
+        if (previousWasExplicit) restored[chapterId] = previousMode
+        else delete restored[chapterId]
+        return Object.keys(restored).length > 0 ? { ...current, bookmarkRangePreferences: restored } : { ...current, bookmarkRangePreferences: undefined }
+      })
+      setBlockMsg('范围语义保存失败，请重试。')
+    }).finally(() => {
+      if (preferenceWritesRef.current.get(key) === entry) preferenceWritesRef.current.delete(key)
+    })
+  }
+
   // Selected chapter nodes (in TOC order) from the checked set.
   const selectedNodes = useMemo(() => {
     if (!doc) return []
@@ -84,7 +117,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
   const selection: PdfSelection = useMemo(() => {
     if (wholeChecked && doc) return { kind: 'manual', title: doc.fileName, ranges: [{ startPage: 1, endPage: doc.pageCount }] }
     if (manualSel) return manualSel
-    if (selectedNodes.length) return buildChapterNodesSelection(selectedNodes)
+    if (selectedNodes.length) return buildChapterNodesSelection(selectedNodes, { pageCount: doc?.pageCount, bookmarkRangePreferences: doc?.bookmarkRangePreferences })
     return { kind: 'manual', ranges: [] }
   }, [wholeChecked, manualSel, selectedNodes, doc])
 
@@ -155,7 +188,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
                 {doc.chapters.length === 0 ? (
                   <div className={css.empty}>这份文档还没有目录。可使用「页码」或「整份文档」（&le;120 页）。</div>
                 ) : (
-                  <ChapterTreeCheck nodes={doc.chapters} checked={checked} onToggle={toggle} />
+                  <ChapterTreeCheck nodes={doc.chapters} checked={checked} bookmarkRangePreferences={doc.bookmarkRangePreferences} pageCount={doc.pageCount} onToggle={toggle} onModeChange={changeBookmarkRangeMode} />
                 )}
               </div>
             ) : (
@@ -196,20 +229,31 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
   )
 }
 
-function ChapterTreeCheck({ nodes, checked, onToggle }: { nodes: ChapterNode[]; checked: Set<string>; onToggle: (id: string) => void }) {
+function ChapterTreeCheck({ nodes, checked, pageCount, bookmarkRangePreferences, onToggle, onModeChange }: { nodes: ChapterNode[]; checked: Set<string>; pageCount: number; bookmarkRangePreferences?: Record<string, BookmarkRangeEndMode>; onToggle: (id: string) => void; onModeChange: (id: string, mode: BookmarkRangeEndMode) => void }) {
   return (
     <div className={css.tree}>
       {nodes.map(n => {
         const range = selectableChapterRange(n)
         const disabled = !range
+        const mode = bookmarkRangeEndModeOf(bookmarkRangePreferences, n.id)
+        const resolved = range ? resolveBookmarkChapterPdfRange({ startPage: range.startPage, endPage: range.endPage, pageCount, endMode: mode }) : null
+        const exclusiveEndPage = range ? exclusiveEndPageOfChapter(range.endPage, pageCount) : null
         return (
           <div key={n.id}>
-            <label className={css.treeRow} data-depth={n.level} data-testid={'doc-context-node-' + n.id} style={{ paddingLeft: (Math.max(n.level, 1) - 1) * 16 + 4 }}>
+            <div className={css.treeRow} data-depth={n.level} data-testid={'doc-context-node-' + n.id} style={{ paddingLeft: (Math.max(n.level, 1) - 1) * 16 + 4 }}>
               <input type="checkbox" data-testid={'doc-context-check-' + n.id} checked={checked.has(n.id)} disabled={disabled} onChange={() => onToggle(n.id)} />
               <span className={css.treeTitle} title={n.title}>{n.title}</span>
-              {range ? <span className={css.treeRange}>PDF {range.startPage}–{range.endPage}</span> : <span className={css.treeRange}>无法定位页码</span>}
-            </label>
-            {n.children.length > 0 && <ChapterTreeCheck nodes={n.children} checked={checked} onToggle={onToggle} />}
+              {resolved ? (
+                <span className={css.treeDetails}>
+                  <span className={css.treeRange} data-testid={'doc-context-actual-' + n.id}>实际发送：{pdfRangesText([resolved])}</span>
+                  <select className={css.rangeMode} data-testid={'doc-context-mode-' + n.id} aria-label={n.title + ' 范围语义'} value={mode} onChange={e => onModeChange(n.id, e.target.value as BookmarkRangeEndMode)}>
+                    <option value="exclusive">左闭右开 [{resolved.startPage}, {exclusiveEndPage})</option>
+                    <option value="inclusive">左闭右闭 [{resolved.startPage}, {resolved.endPage}]</option>
+                  </select>
+                </span>
+              ) : <span className={css.treeRange}>无法定位页码</span>}
+            </div>
+            {n.children.length > 0 && <ChapterTreeCheck nodes={n.children} checked={checked} pageCount={pageCount} bookmarkRangePreferences={bookmarkRangePreferences} onToggle={onToggle} onModeChange={onModeChange} />}
           </div>
         )
       })}

@@ -1,5 +1,5 @@
 // Stage A: bookmark end-mode range semantics (PURE, no React/storage/UI).
-import { resolveBookmarkPdfRange, type BookmarkRangeEndMode } from '../src/pdf/bookmark-range.ts'
+import { exclusiveEndPageOfChapter, resolveBookmarkChapterPdfRange, resolveBookmarkPdfRange, type BookmarkRangeEndMode } from '../src/pdf/bookmark-range.ts'
 
 let pass = 0
 let fail = 0
@@ -45,6 +45,14 @@ for (const mode of ['exclusive', 'inclusive'] as const) {
   const inclusive = resolve('inclusive', 9, 10, 10)
   assert(JSON.stringify(exclusive.pages) === JSON.stringify([9]), 'boundary at pageCount excludes the boundary in exclusive mode')
   assert(JSON.stringify(inclusive.pages) === JSON.stringify([9, 10]), 'boundary at pageCount includes the boundary in inclusive mode')
+}
+
+{
+  const exclusive = resolveBookmarkChapterPdfRange({ startPage: 10, endPage: 19, pageCount: 30, endMode: 'exclusive' })
+  const inclusive = resolveBookmarkChapterPdfRange({ startPage: 10, endPage: 19, pageCount: 30, endMode: 'inclusive' })
+  assert(exclusive.endPage === 19 && exclusive.pages.length === 10, 'ChapterNode endPage 19 -> exclusive sends pages 10-19')
+  assert(inclusive.endPage === 20 && inclusive.pages.length === 11, 'ChapterNode endPage 19 -> inclusive extends to page 20')
+  assert(exclusiveEndPageOfChapter(30, 30) === 31, 'last chapter boundary is pageCount + 1')
 }
 
 const throws = (input: Parameters<typeof resolveBookmarkPdfRange>[0]) => {

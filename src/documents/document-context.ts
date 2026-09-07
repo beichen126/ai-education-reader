@@ -7,6 +7,8 @@ import type { ChapterNode } from './document-types'
 import type { PdfRange, PdfSelection } from '../pdf/pdf-types'
 import { normalizePdfRanges, pdfSelectionTitle, countPdfRangePages } from '../pdf/pdf-types'
 import { findCurrentChapter } from './reader-context'
+import { resolveBookmarkChapterPdfRange } from '../pdf/bookmark-range'
+import { bookmarkRangeEndModeOf, type BookmarkRangePreferences } from './bookmark-range-preferences'
 
 /** Find the node with the given id, or null. */
 export function findChapterById(chapters: ChapterNode[], id: string): ChapterNode | null {
@@ -49,11 +51,26 @@ export function selectableChapterRange(node: ChapterNode): PdfRange | null {
  *  - parent+child overlap deduped to the union (never double-renders a page)
  *  - titles kept in TOC (tree) order, not click order
  *  - selectedChapterIds keeps the user's original choices as provenance. */
-export function buildChapterNodesSelection(nodes: ChapterNode[]): PdfSelection {
+export type ChapterSelectionOptions = {
+  pageCount?: number
+  bookmarkRangePreferences?: BookmarkRangePreferences
+}
+
+export function buildChapterNodesSelection(nodes: ChapterNode[], options: ChapterSelectionOptions = {}): PdfSelection {
   // `nodes` arrive in TOC (tree) order from the picker; they are the SELECTED chapters
   // (a parent and/or its children may both be chosen). Keep that order, drop unresolvable.
   const ordered = nodes.filter(selectable)
-  const ranges = normalizePdfRanges(ordered.map(n => ({ startPage: n.startPage as number, endPage: n.endPage as number })))
+  const ranges = normalizePdfRanges(ordered.map(n => {
+    if (options.pageCount !== undefined) {
+      return resolveBookmarkChapterPdfRange({
+        startPage: n.startPage as number,
+        endPage: n.endPage as number,
+        pageCount: options.pageCount,
+        endMode: bookmarkRangeEndModeOf(options.bookmarkRangePreferences, n.id),
+      })
+    }
+    return { startPage: n.startPage as number, endPage: n.endPage as number }
+  }))
   const titles = ordered.map(n => n.title)
   const out: PdfSelection = { kind: 'outline', ranges }
   if (titles.length) out.title = pdfSelectionTitle(titles)
