@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Button } from '../dsh/primitives/Button'
 import { listPromptCatalog, getPromptDefinition, saveAsArtifactPromptDefinition } from '../prompts/prompt-service'
 import { capturePromptSnapshot } from '../prompts/prompt-resolution'
+import { getBuiltinArtifactPrompt } from '../prompts/prompt-registry'
 import type { ArtifactPrompt, ArtifactPromptSnapshot, ProtocolPrompt, ProtocolPromptSnapshot, PromptDefinition } from '../prompts/prompt-types'
 import type { ArtifactKind } from './artifact-types'
 import css from './artifact.module.css'
@@ -27,11 +28,14 @@ function preferredTemplate(candidates: ArtifactPrompt[], kind: ArtifactKind): Ar
 
 export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, initialKind, error: genError }: Props) {
   const initKind: ArtifactKind = MODE_KINDS.includes(initialKind!) && initialKind ? initialKind : 'note'
+  const initialBuiltin = getBuiltinArtifactPrompt(initKind)
   const [kind, setKind] = useState<ArtifactKind>(initKind)
   const [catalog, setCatalog] = useState<PromptDefinition[]>([])
   const [protocols, setProtocols] = useState<PromptDefinition[]>([])
-  const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
-  const [prompt, setPrompt] = useState('')
+  const [selectedId, setSelectedId] = useState<string | undefined>(initialBuiltin?.id)
+  // The catalog is durable/async, but opening the established dialog should not
+  // briefly erase its canonical prompt while IndexedDB is loading.
+  const [prompt, setPrompt] = useState(initialBuiltin?.userPrompt ?? '')
   const [saveAsName, setSaveAsName] = useState('')
   const [error, setError] = useState<string | undefined>(undefined)
   const [notice, setNotice] = useState<string | undefined>(undefined)
@@ -64,7 +68,8 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
   }, [selectedTemplate, selectedId])
 
   function selectKind(next: ArtifactKind) {
-    setKind(next); setSelectedId(undefined); setPrompt(''); setSaveAsName(''); setError(undefined); setNotice(undefined)
+    const builtin = getBuiltinArtifactPrompt(next)
+    setKind(next); setSelectedId(builtin?.id); setPrompt(builtin?.userPrompt ?? ''); setSaveAsName(''); setError(undefined); setNotice(undefined)
   }
 
   function selectTemplate(template: ArtifactPrompt) {
