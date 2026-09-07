@@ -63,6 +63,19 @@ export function buildFlattenedPromptSummary(segments: readonly LogicalPromptSegm
   return 'Prompt Timeline\n' + JSON.stringify(frame)
 }
 
+/** Deterministic transport frame for ending a previously non-empty mode. */
+export function buildEmptyDefaultModeFrame(snapshot: PromptSnapshot): string {
+  return 'Prompt Timeline\n' + JSON.stringify({
+    format: 'ai-education-reader.prompt-timeline.v1',
+    event: 'current-mode-reset',
+    currentMode: {
+      name: snapshot.name,
+      revision: snapshot.revision ?? null,
+      content: '',
+    },
+  })
+}
+
 async function historyMessages(messages: readonly Message[], toDataUrl: PromptImageResolver): Promise<ApiChatMessage[]> {
   return buildApiMessages(messages.map((message) => ({ ...message, images: [...message.images] })), toDataUrl)
 }
@@ -76,8 +89,9 @@ export async function projectLogicalPromptContext(
   const history = await historyMessages(context.messages, toDataUrl)
 
   if (context.domain === 'conversation') {
+    const hasNonEmptyMode = context.segments.some((segment) => segment.snapshot.content.length > 0)
     if (policy === 'flattened') {
-      return context.segments.length > 0
+      return hasNonEmptyMode
         ? [{ role: 'system', content: buildFlattenedPromptSummary(context.segments) }, ...history]
         : history
     }
@@ -91,9 +105,15 @@ export async function projectLogicalPromptContext(
       byStart.set(start, list)
     }
     const out: ApiChatMessage[] = []
+    let hasSeenNonEmptyMode = false
     for (let index = 0; index <= history.length; index++) {
       for (const segment of byStart.get(index) ?? []) {
-        if (segment.snapshot.content) out.push(systemMessage(segment.snapshot))
+        if (segment.snapshot.content) {
+          out.push(systemMessage(segment.snapshot))
+          hasSeenNonEmptyMode = true
+        } else if (hasNonEmptyMode && hasSeenNonEmptyMode) {
+          out.push({ role: 'system', content: buildEmptyDefaultModeFrame(segment.snapshot) })
+        }
       }
       if (index < history.length) out.push(history[index])
     }

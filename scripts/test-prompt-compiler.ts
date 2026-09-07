@@ -65,6 +65,32 @@ const noTimeline = await compileConversationRequest({
 }, { toDataUrl: resolveImage })
 assert(noTimeline.messages[0].role === 'user', 'empty timeline does not fabricate a system message')
 
+const emptyDefault = snap(BUILTIN_PROMPT_IDS.conversationDefault, 'conversation-mode', '', '默认')
+const allEmptyTimeline = await compileConversationRequest({
+  thread: { type: 'root', conversationId: 'conversation-empty-default' },
+  effectiveMessages: [msg('empty-u1', 'user', 'U1'), msg('empty-a1', 'assistant', 'A1'), msg('empty-u2', 'user', 'U2', ['empty-img'])],
+  effectiveTransitions: [tr('empty-t1', null, emptyDefault, 1), tr('empty-t2', 'empty-a1', { ...emptyDefault, capturedAt: 2 }, 2)],
+  systemMessagePolicy: 'interleaved', providerCapabilities: caps,
+}, { toDataUrl: resolveImage })
+assert(!allEmptyTimeline.messages.some((message) => message.role === 'system'), 'multiple all-empty default transitions do not fabricate a system message')
+const emptyImage = allEmptyTimeline.messages.find((message) => message.role === 'user' && Array.isArray(message.content))
+assert(Array.isArray(emptyImage?.content) && emptyImage.content.filter((part) => part.type === 'image_url').length === 1 && emptyImage.content.filter((part) => part.type === 'image_url').every((part) => part.type === 'image_url' && part.image_url.url.includes('empty-img')), 'empty default preserves attachment presence and order without a system frame')
+
+const resetTimeline = await compileConversationRequest({
+  thread: { type: 'root', conversationId: 'conversation-reset' },
+  effectiveMessages: [msg('reset-u1', 'user', 'U1'), msg('reset-a1', 'assistant', 'A1'), msg('reset-u2', 'user', 'U2')],
+  effectiveTransitions: [tr('reset-a', null, modeA, 1), tr('reset-default', 'reset-a1', emptyDefault, 2)],
+  systemMessagePolicy: 'interleaved', providerCapabilities: caps,
+})
+assert(resetTimeline.messages.some((message) => message.role === 'system' && String(message.content).includes('current-mode-reset')), 'non-empty to empty default emits a deterministic interleaved reset frame')
+const resetFlattened = await compileConversationRequest({
+  thread: { type: 'root', conversationId: 'conversation-reset' },
+  effectiveMessages: [msg('reset-u1', 'user', 'U1'), msg('reset-a1', 'assistant', 'A1'), msg('reset-u2', 'user', 'U2')],
+  effectiveTransitions: [tr('reset-a', null, modeA, 1), tr('reset-default', 'reset-a1', emptyDefault, 2)],
+  systemMessagePolicy: 'flattened', providerCapabilities: flatCaps,
+})
+assert(resetFlattened.messages[0].role === 'system' && String(resetFlattened.messages[0].content).includes('"content":""'), 'non-empty history keeps a deterministic flattened summary when current mode is empty')
+
 const artifact = await compileArtifactRequest({
   domain: 'artifact-note', sourceMessages: [msg('u1', 'user', 'source')], artifactPrompt: snap('artifact', 'artifact', '整理为笔记'),
   systemMessagePolicy: 'flattened', providerCapabilities: flatCaps,

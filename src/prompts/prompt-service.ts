@@ -1,8 +1,9 @@
 import { newStableId, type StableId } from '../engine/types'
-import { BUILTIN_PROMPT_REGISTRY, getBuiltinPrompt } from './prompt-registry'
+import { getBuiltinPrompt } from './prompt-registry'
 import { getPromptPreferences, setBuiltinPromptHidden } from './prompt-preferences'
 import type { PromptDefinition, PromptKind } from './prompt-types'
-import { getPromptRecord, listPromptRecords, deletePromptRecord, savePromptRecord } from './prompt-store'
+import { getPromptRecord, deletePromptRecord, savePromptRecord } from './prompt-store'
+import { listEffectivePromptDefinitions } from './prompt-resolution'
 import { getPromptDefinitionIssues, validatePromptDefinition } from './prompt-validation'
 
 export type PromptServiceDependencies = {
@@ -86,10 +87,7 @@ function sortCatalog(items: PromptDefinition[], preference: 'updatedAt-desc' | '
 
 /** Merge source-code built-ins with durable custom/experimental definitions. */
 export async function listPromptCatalog(kind?: PromptKind): Promise<PromptDefinition[]> {
-  const [preferences, custom] = await Promise.all([getPromptPreferences(), listPromptRecords()])
-  const hidden = new Set(preferences.hiddenBuiltinPromptIds)
-  const builtins = BUILTIN_PROMPT_REGISTRY.map((definition) => ({ ...definition, enabled: definition.enabled && !hidden.has(definition.id) }))
-  const all = [...builtins, ...custom]
+  const [preferences, all] = await Promise.all([getPromptPreferences(), listEffectivePromptDefinitions()])
   return sortCatalog(kind ? all.filter((definition) => definition.kind === kind) : all, preferences.sortPreference ?? 'updatedAt-desc')
 }
 

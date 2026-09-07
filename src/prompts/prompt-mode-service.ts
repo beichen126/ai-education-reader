@@ -4,8 +4,7 @@ import { buildEffectiveMessageIds } from '../branches/branch-path'
 import { buildEffectivePromptPath } from './effective-prompt-path'
 import { getPromptTransitionIssues } from './prompt-validation'
 import { appendPromptTransition } from './prompt-timeline'
-import { BUILTIN_CONVERSATION_MODES } from './prompt-registry'
-import { listPromptRecordsByKind } from './prompt-store'
+import { listEffectivePromptDefinitions } from './prompt-resolution'
 import { capturePromptSnapshot } from './prompt-resolution'
 import { tryWithConversationMutationLock } from './prompt-mode-lock'
 import { generationRegistry } from '../engine/generation-registry'
@@ -41,8 +40,8 @@ export function promptSnapshotNeedsApply(snapshot: PromptSnapshot | undefined, d
 }
 
 export async function listConversationModeDefinitions(): Promise<ConversationModePrompt[]> {
-  const custom = await listPromptRecordsByKind('conversation-mode')
-  return [...BUILTIN_CONVERSATION_MODES, ...custom].filter((definition): definition is ConversationModePrompt => definition.kind === 'conversation-mode' && definition.enabled)
+  const definitions = await listEffectivePromptDefinitions('conversation-mode')
+  return definitions.filter((definition): definition is ConversationModePrompt => definition.kind === 'conversation-mode' && definition.enabled)
 }
 
 function assertTimeline(transitions: PromptTransition[], boundaryIds: readonly StableId[]): void {

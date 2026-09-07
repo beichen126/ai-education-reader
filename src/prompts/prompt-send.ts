@@ -4,10 +4,9 @@ import type { ChatThreadRef } from '../branches/branch-types'
 import { buildContextMessages } from '../api/deepseek'
 import type { Message, StableId } from '../engine/types'
 import { newStableId } from '../engine/types'
-import { BUILTIN_CONVERSATION_MODES } from './prompt-registry'
+import { BUILTIN_PROMPT_IDS } from './prompt-registry'
 import { getPromptPreferences } from './prompt-preferences'
-import { listPromptRecordsByKind } from './prompt-store'
-import { capturePromptSnapshot, resolvePromptDefinition } from './prompt-resolution'
+import { capturePromptSnapshot, listEffectivePromptDefinitions, resolvePromptDefinition, type PromptResolutionDiagnostic } from './prompt-resolution'
 import { appendPromptTransition } from './prompt-timeline'
 import { compileConversationLogicalContext, type LogicalPromptContext } from './prompt-compiler'
 import type { PromptSnapshot, PromptTransition } from './prompt-types'
@@ -26,6 +25,8 @@ export type AcceptedSendContext = {
   compilePolicy: CompilePolicySnapshot
   /** Frozen logical messages include the accepted user message and the route path. */
   logical: LogicalPromptContext
+  /** Send-time fallback/disabled diagnostics for Inspector and context surfaces. */
+  modeResolutionDiagnostics: PromptResolutionDiagnostic[]
 }
 
 export type PreparedSendContext = {
@@ -55,19 +56,40 @@ function sameSnapshot(a: PromptSnapshot, b: PromptSnapshot): boolean {
     && a.source === b.source
 }
 
-/** Resolve the current conversation mode from the canonical v2 prompt registry. */
-export async function resolveCurrentConversationMode(now = Date.now()): Promise<PromptSnapshot> {
+export type ConversationModeResolution = {
+  snapshot?: PromptSnapshot
+  definition: import('./prompt-types').ConversationModePrompt | undefined
+  diagnostics: PromptResolutionDiagnostic[]
+  usedFallback: boolean
+}
+
+/** Resolve the current conversation mode from the shared effective catalog. */
+export async function resolveCurrentConversationModeResult(now = Date.now()): Promise<ConversationModeResolution> {
   const preferences = await getPromptPreferences()
-  const custom = await listPromptRecordsByKind('conversation-mode')
+  // Keep all kinds in the resolver input so a requested artifact/protocol id is
+  // reported as kind-mismatch rather than being misreported as merely missing.
+  const catalog = await listEffectivePromptDefinitions()
   const resolved = resolvePromptDefinition(
     preferences.defaultConversationModeId,
-    [...BUILTIN_CONVERSATION_MODES, ...custom],
-    { expectedKind: 'conversation-mode' },
+    catalog,
+    { expectedKind: 'conversation-mode', fallbackId: BUILTIN_PROMPT_IDS.conversationDefault, fallbackSource: 'builtin' },
   )
   if (!resolved.definition || resolved.definition.kind !== 'conversation-mode') {
-    throw new Error('当前 conversation mode 不可用')
+    return { definition: undefined, diagnostics: resolved.diagnostics, usedFallback: resolved.usedFallback }
   }
-  return capturePromptSnapshot(resolved.definition, now)
+  return {
+    definition: resolved.definition,
+    diagnostics: resolved.diagnostics,
+    usedFallback: resolved.usedFallback,
+    snapshot: capturePromptSnapshot(resolved.definition, now),
+  }
+}
+
+/** Backward-compatible snapshot-only API for existing send callers. */
+export async function resolveCurrentConversationMode(now = Date.now()): Promise<PromptSnapshot> {
+  const resolved = await resolveCurrentConversationModeResult(now)
+  if (!resolved.snapshot) throw new Error('当前 conversation mode 不可用：' + resolved.diagnostics.map((item) => item.code).join(', '))
+  return resolved.snapshot
 }
 
 function freezeTransition(transition: PromptTransition): PromptTransition {
@@ -114,7 +136,11 @@ function transitionForSend(
  */
 export async function prepareAcceptedSendContext(input: PrepareSendContextInput): Promise<PreparedSendContext> {
   const now = input.now ?? Date.now()
-  const currentMode = input.currentModeSnapshot ?? await resolveCurrentConversationMode(now)
+  const resolution = input.currentModeSnapshot
+    ? { snapshot: input.currentModeSnapshot, diagnostics: [] as PromptResolutionDiagnostic[] }
+    : await resolveCurrentConversationModeResult(now)
+  if (!resolution.snapshot) throw new Error('当前 conversation mode 不可用：' + resolution.diagnostics.map((item) => item.code).join(', '))
+  const currentMode = resolution.snapshot
   const selected = transitionForSend(input.messagesBeforeAcceptance, input.effectiveTransitions, currentMode, input.id ?? newStableId, now)
   const providerCapabilities = { ...DEFAULT_PROVIDER_CAPABILITIES }
   const compiled = compileConversationLogicalContext({
@@ -132,6 +158,7 @@ export async function prepareAcceptedSendContext(input: PrepareSendContextInput)
       effectivePromptTimeline: freezeTransitions(selected.effectiveTransitions),
       compilePolicy: { systemMessagePolicy: compiled.systemMessagePolicy, providerCapabilities },
       logical: compiled.logical,
+      modeResolutionDiagnostics: [...resolution.diagnostics],
     },
     nextLocalTransitions: added
       ? freezeTransitions(appendPromptTransition(input.localTransitions, added))

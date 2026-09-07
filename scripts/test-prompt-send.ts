@@ -5,11 +5,14 @@ import { saveSettings, DEFAULT_SETTINGS } from '../src/engine/settings-store.ts'
 import { sessionsActions } from '../src/engine/sessions-store.ts'
 import { createBranchFromMessage } from '../src/branches/branch-service.ts'
 import { getBranch } from '../src/branches/branch-store.ts'
-import { prepareAcceptedSendContext, resolveCurrentConversationMode } from '../src/prompts/prompt-send.ts'
+import { prepareAcceptedSendContext, resolveCurrentConversationModeResult } from '../src/prompts/prompt-send.ts'
 import { projectLogicalPromptContext } from '../src/prompts/prompt-compile-strategies.ts'
 import { savePromptRecord, deletePromptRecord } from '../src/prompts/prompt-store.ts'
 import { setBuiltinPromptHidden, setDefaultConversationModeId } from '../src/prompts/prompt-preferences.ts'
 import { BUILTIN_PROMPT_IDS } from '../src/prompts/prompt-registry.ts'
+import { listEffectivePromptDefinitions, resolvePromptDefinition } from '../src/prompts/prompt-resolution.ts'
+import { listPromptCatalog } from '../src/prompts/prompt-service.ts'
+import { listConversationModeDefinitions } from '../src/prompts/prompt-mode-service.ts'
 import { newStableId, type Conversation, type Message } from '../src/engine/types.ts'
 import type { PromptSnapshot } from '../src/prompts/prompt-types.ts'
 import type { ConversationBranch } from '../src/branches/branch-types.ts'
@@ -132,8 +135,52 @@ assert(!emptyDefaultTransport.some((item) => item.role === 'system'), 'all-empty
 
 await setDefaultConversationModeId(BUILTIN_PROMPT_IDS.conversationSocratic)
 await setBuiltinPromptHidden(BUILTIN_PROMPT_IDS.conversationSocratic, true)
-const hiddenMode = await resolveCurrentConversationMode(100)
-assert(hiddenMode.profileId === BUILTIN_PROMPT_IDS.conversationDefault && hiddenMode.content === '', 'hidden non-empty built-in mode falls back to the canonical empty default')
+const hiddenModeResult = await resolveCurrentConversationModeResult(100)
+assert(hiddenModeResult.snapshot?.profileId === BUILTIN_PROMPT_IDS.conversationDefault && hiddenModeResult.snapshot.content === '' && hiddenModeResult.diagnostics.some((item) => item.code === 'disabled'), 'hidden non-empty built-in mode falls back to the canonical empty default with a diagnostic')
+const effectiveConversationModes = await listEffectivePromptDefinitions('conversation-mode')
+const catalogConversationModes = await listPromptCatalog('conversation-mode')
+const pickerConversationModes = await listConversationModeDefinitions()
+assert(effectiveConversationModes.find((item) => item.id === BUILTIN_PROMPT_IDS.conversationSocratic)?.enabled === false, 'effective catalog projects hidden built-in to enabled=false')
+assert(catalogConversationModes.find((item) => item.id === BUILTIN_PROMPT_IDS.conversationSocratic)?.enabled === false && !pickerConversationModes.some((item) => item.id === BUILTIN_PROMPT_IDS.conversationSocratic), 'catalog, mode picker, and send resolver share hidden mode state')
+
+await setBuiltinPromptHidden(BUILTIN_PROMPT_IDS.conversationSocratic, false)
+const disabledMode = definition('disabled-mode', '禁用模式', 'should not send')
+await savePromptRecord({ ...disabledMode, enabled: false })
+await setDefaultConversationModeId(disabledMode.id)
+const disabledModeResult = await resolveCurrentConversationModeResult(101)
+assert(disabledModeResult.snapshot?.profileId === BUILTIN_PROMPT_IDS.conversationDefault && disabledModeResult.diagnostics.some((item) => item.code === 'disabled'), 'disabled custom mode falls back to the canonical empty default')
+
+await setDefaultConversationModeId('missing-mode-id')
+const missingModeResult = await resolveCurrentConversationModeResult(102)
+assert(missingModeResult.snapshot?.profileId === BUILTIN_PROMPT_IDS.conversationDefault && missingModeResult.diagnostics.some((item) => item.code === 'missing'), 'missing mode id falls back with a structured diagnostic')
+
+await setDefaultConversationModeId(BUILTIN_PROMPT_IDS.artifactNote)
+const wrongKindModeResult = await resolveCurrentConversationModeResult(103)
+assert(wrongKindModeResult.snapshot?.profileId === BUILTIN_PROMPT_IDS.conversationDefault && wrongKindModeResult.diagnostics.some((item) => item.code === 'kind-mismatch'), 'wrong-kind mode id falls back without sending an artifact prompt')
+const wrongFallback = resolvePromptDefinition('missing', [
+  { ...definition('fallback-artifact', 'artifact fallback', 'wrong'), kind: 'artifact', artifactKind: 'note', userPrompt: 'wrong' },
+], { expectedKind: 'conversation-mode', fallbackId: 'fallback-artifact' })
+assert(!wrongFallback.definition && wrongFallback.diagnostics.some((item) => item.code === 'fallback-kind-mismatch'), 'fallback kind mismatch is rejected instead of returning a wrong-scope prompt')
+
+const resetNow = Date.now() + 1000
+await setDefaultConversationModeId(modeB.id)
+const resetContext = await prepareAcceptedSendContext({
+  threadRef: { type: 'root', conversationId },
+  messagesBeforeAcceptance: conversation.messages,
+  candidateMessages: [...conversation.messages, msg('reset-user', 'user', 'reset')],
+  effectiveTransitions: conversation.promptTransitions ?? [],
+  localTransitions: conversation.promptTransitions ?? [],
+  acceptedMessageId: 'reset-user',
+  currentModeSnapshot: { profileId: BUILTIN_PROMPT_IDS.conversationDefault, kind: 'conversation-mode', name: '默认', content: '', source: 'builtin', revision: 1, capturedAt: resetNow },
+  now: resetNow,
+})
+const resetInterleaved = await projectLogicalPromptContext(resetContext.context.logical, 'interleaved')
+assert(resetInterleaved.some((item) => item.role === 'system' && String(item.content).includes('current-mode-reset')), 'switching from a non-empty mode to empty default emits a deterministic reset frame')
+const resetFlattened = await projectLogicalPromptContext(resetContext.context.logical, 'flattened')
+assert(resetFlattened.some((item) => item.role === 'system' && String(item.content).includes('currentMode') && String(item.content).includes('"content":""')), 'flattened history keeps a deterministic summary when current mode is empty')
+
+await setDefaultConversationModeId(BUILTIN_PROMPT_IDS.conversationDefault)
+await deletePromptRecord(disabledMode.id)
 await setBuiltinPromptHidden(BUILTIN_PROMPT_IDS.conversationSocratic, false)
 
 await deletePromptRecord(modeA.id)
