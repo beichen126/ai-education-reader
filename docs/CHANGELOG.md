@@ -4,6 +4,29 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。开发中的改动先进入 `Unreleased`，正式发布 tag 时再移动到对应版本。
 
+## [1.3.1] - 2026-09-07
+
+### Added
+
+- Reader 页面新增按文档 + 页码归属的页面笔记，支持 debounce 自动保存、切页/关闭时 flush、备份恢复和删除文档时级联清理。
+- PDF provenance 支持多文档消息，并建立 Reader 页面 ↔ 对话消息的双向来源导航，支持主线与分支的精确定位。
+- 代码块进入文本标注管线，支持单行、多行和整段代码选择，刷新后保持高亮。
+- 移动端保留原有收起 rail，展开时使用历史会话 drawer；桌面端恢复页面笔记入口。
+
+### Fixed
+
+- 修复页面笔记连续输入、异步保存、切页/关闭和删除文档之间的竞态，避免旧写入覆盖新内容或复活已删除笔记。
+- 修复 PDF 多文档 provenance 被单一来源覆盖的问题。
+- 修复 Reader 与 Conversation 之间的分支消息导航需要等待分支准备完成的问题。
+
+### Changed
+
+- 发布门禁纳入关键 Reader、PDF provenance、笔记、代码标注和移动端历史会话 browser E2E，并由 GitHub Pages deploy gate 验证。
+- Backup 测试命名改为版本中性；当前 Backup V5 继续兼容导入 V1–V4 数据。
+- README 重构为以“PDF 是一等对象”为核心的产品说明，并更新为当前界面截图。
+
+---
+
 ## [1.3.0] - 2026-09-07
 
 ### Added
