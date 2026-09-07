@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { newStableId, type StableId } from '../engine/types'
 import type { ArtifactKind } from '../artifacts/artifact-types'
 import { uiActions, useUi } from '../engine/ui-store'
-import { getPromptPreferences, setDefaultConversationModeId, setPromptSortPreference } from './prompt-preferences'
+import { getPromptPreferences, setActiveProtocolOverride, setDefaultConversationModeId, setPromptSortPreference } from './prompt-preferences'
 import {
   copyPromptDefinition,
   deletePromptDefinition,
@@ -244,6 +244,29 @@ export function PromptManager() {
     } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
   }
 
+  const restoreProtocolCanonical = async () => {
+    const definition = selected
+    if (!definition || definition.kind !== 'protocol' || definition.source !== 'experimental') return
+    setBusy(true); setError(null); setNotice(null)
+    try {
+      const committed = await setActiveProtocolOverride(definition.domain, undefined)
+      setPreferences(committed)
+      setNotice('已恢复内置协议；实验版本和历史快照仍保留。')
+    } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+  }
+
+  const activateProtocolOverride = async () => {
+    const definition = selected
+    if (!definition || definition.kind !== 'protocol' || definition.source !== 'experimental' || dirty) return
+    if (!window.confirm('启用实验协议后，后续对应请求会使用它的 Prompt；解析器和 validator 代码仍保持内置版本。确定启用吗？')) return
+    setBusy(true); setError(null); setNotice(null)
+    try {
+      const committed = await setActiveProtocolOverride(definition.domain, definition.id)
+      setPreferences(committed)
+      setNotice('实验协议已启用。新请求开始前会冻结当前版本。')
+    } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
+  }
+
   const remove = async () => {
     const definition = selected
     if (!definition || definition.source === 'builtin') return
@@ -323,6 +346,7 @@ export function PromptManager() {
               creating={editorMode === 'create'}
               busy={busy}
               preferences={preferences}
+              dirty={dirty}
               error={error}
               notice={notice}
               onChange={updateDraft}
@@ -331,6 +355,8 @@ export function PromptManager() {
               onDelete={() => void remove()}
               onToggle={() => void toggleEnabled()}
               onRestore={() => void restoreCanonical()}
+              onActivateOverride={() => void activateProtocolOverride()}
+              onRestoreProtocol={() => void restoreProtocolCanonical()}
               onSetDefault={() => void setDefault()}
               onCancel={() => { setDraft(null); setDirty(false); setEditorMode('edit'); if (narrow) setMobileStep('list') }}
             />
@@ -349,6 +375,7 @@ function PromptEditor(props: {
   creating: boolean
   busy: boolean
   preferences: PromptUserPreferences | null
+  dirty: boolean
   error: string | null
   notice: string | null
   onChange: (definition: PromptDefinition) => void
@@ -357,6 +384,8 @@ function PromptEditor(props: {
   onDelete: () => void
   onToggle: () => void
   onRestore: () => void
+  onActivateOverride: () => void
+  onRestoreProtocol: () => void
   onSetDefault: () => void
   onCancel: () => void
 }) {
@@ -364,6 +393,7 @@ function PromptEditor(props: {
   const change = (patch: Partial<PromptDefinition>) => props.onChange({ ...definition, ...patch } as PromptDefinition)
   const changeContent = (value: string) => props.onChange(withContent(definition, value))
   const usage = preferences ? usageText(definition, preferences) : '正在读取使用情况…'
+  const activeProtocol = definition.kind === 'protocol' && preferences?.activeProtocolOverrideByDomain[definition.domain] === definition.id
 
   return (
     <div className={css.editor}>
@@ -384,6 +414,19 @@ function PromptEditor(props: {
         {definition.kind === 'protocol' && <>
           <label className={css.editorField}><span>协议 domain</span><input value={definition.domain} disabled={readonly || busy} onChange={(event) => change({ domain: event.target.value })} /></label>
           <label className={css.editorField}><span>输出契约</span><input value={definition.outputContract ?? ''} disabled={readonly || busy} onChange={(event) => change({ outputContract: event.target.value })} /></label>
+          <section className={css.protocolInspector} data-testid="protocol-inspector" aria-label="协议详情">
+            <div className={css.protocolInspectorTitle}>协议详情</div>
+            <dl className={css.protocolMeta}>
+              <div><dt>作用位置</dt><dd>{definition.domain === 'ai-toc-transcription' ? 'AI TOC · 文字转录' : definition.domain === 'ai-toc-structure' ? 'AI TOC · 结构分析' : definition.domain === 'quiz-output' ? 'Quiz · 输出校验' : '自定义协议域'}</dd></div>
+              <div><dt>模型职责</dt><dd>{definition.description || '由协议 Prompt 约束结构化模型输出。'}</dd></div>
+              <div><dt>来源</dt><dd>{definition.source === 'builtin' ? 'canonical / 内置' : definition.source + ' / experimental'}</dd></div>
+              <div><dt>revision</dt><dd>v{definition.revision}</dd></div>
+              <div><dt>validator</dt><dd>{definition.validator?.name || '未声明'}</dd></div>
+              <div><dt>validator 说明</dt><dd>{definition.validator?.description || '由对应 domain 的内置校验器负责。'}</dd></div>
+            </dl>
+            <div className={css.protocolContract}><span>output contract</span><strong>{definition.outputContract || '未声明'}</strong></div>
+            <div className={css.protocolNote}>完整实际 system prompt 已在下方显示。validator 仅展示元数据，不能从界面修改执行代码。</div>
+          </section>
         </>}
         <label className={css.editorField}><span>{definition.kind === 'artifact' || definition.kind === 'quick-follow-up' ? '模板内容' : definition.kind === 'protocol' ? '协议提示词' : '系统提示词'}</span><textarea data-testid="prompt-editor-content" value={contentOf(definition)} readOnly={readonly} disabled={busy} onChange={(event) => changeContent(event.target.value)} /></label>
         {!creating && <div className={css.metaGrid}><div><span>作用范围</span><strong>{kindLabels[definition.kind]}</strong></div><div><span>版本</span><strong>revision {definition.revision}</strong></div><div><span>当前使用情况</span><strong>{usage}</strong></div></div>}
@@ -396,9 +439,15 @@ function PromptEditor(props: {
           : <>
             {readonly ? <button type="button" className={css.primaryAction} data-testid="prompt-copy" disabled={busy} onClick={props.onCopy}>复制 / 另存为</button> : <button type="button" className={css.primaryAction} data-testid="prompt-save" disabled={busy} onClick={props.onSave}>保存</button>}
             {definition.kind === 'conversation-mode' && <button type="button" className={css.secondaryAction} disabled={busy || !definition.enabled || preferences?.defaultConversationModeId === definition.id} onClick={props.onSetDefault}>{preferences?.defaultConversationModeId === definition.id ? '当前默认' : '设为默认'}</button>}
-            <button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onToggle}>{definition.enabled ? '停用' : '启用'}</button>
-            {readonly && <button type="button" className={css.secondaryAction} data-testid="prompt-restore-canonical" disabled={busy} onClick={props.onRestore}>恢复 canonical</button>}
-            {!readonly && <><button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onCopy}>复制</button><button type="button" className={css.dangerAction} data-testid="prompt-delete" disabled={busy} onClick={props.onDelete}>删除</button></>}
+            {definition.kind === 'protocol' ? <>
+              {!readonly && <button type="button" className={css.secondaryAction} data-testid="protocol-activate" disabled={busy || props.dirty || activeProtocol} onClick={props.onActivateOverride}>{activeProtocol ? '当前实验协议' : '启用实验协议'}</button>}
+              {!readonly && <button type="button" className={css.secondaryAction} data-testid="protocol-restore" disabled={busy || !activeProtocol} onClick={props.onRestoreProtocol}>恢复内置协议</button>}
+              {!readonly && <><button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onCopy}>复制</button><button type="button" className={css.dangerAction} data-testid="prompt-delete" disabled={busy} onClick={props.onDelete}>删除</button></>}
+            </> : <>
+              <button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onToggle}>{definition.enabled ? '停用' : '启用'}</button>
+              {readonly && <button type="button" className={css.secondaryAction} data-testid="prompt-restore-canonical" disabled={busy} onClick={props.onRestore}>恢复 canonical</button>}
+              {!readonly && <><button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onCopy}>复制</button><button type="button" className={css.dangerAction} data-testid="prompt-delete" disabled={busy} onClick={props.onDelete}>删除</button></>}
+            </>}
           </>}
       </div>
     </div>

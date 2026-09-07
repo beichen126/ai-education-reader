@@ -64,6 +64,15 @@
 .metaGrid > div { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding: 9px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 7px; }
 .metaGrid span { color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .metaGrid strong { overflow-wrap: anywhere; color: var(--dsw-alias-label-primary); font-size: 12px; font-weight: 500; }
+.protocolInspector { margin: 2px 0 14px; padding: 12px; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }
+.protocolInspectorTitle { margin-bottom: 9px; color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 600; }
+.protocolMeta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.protocolMeta > div { min-width: 0; }
+.protocolMeta dt, .protocolContract span { color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.protocolMeta dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 17px; }
+.protocolContract { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; }
+.protocolContract strong { overflow-wrap: anywhere; color: var(--dsw-alias-label-secondary); font-size: 12px; font-weight: 500; line-height: 17px; }
+.protocolNote { margin-top: 10px; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 17px; }
 .editorError, .editorNotice { margin: 8px 0; padding: 8px 10px; border-radius: 7px; font-size: 12px; }
 .editorError { color: var(--dsw-alias-state-error-primary); background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent); }
 .editorNotice { color: var(--dsw-alias-state-success-primary); background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 8%, transparent); }
@@ -87,5 +96,6 @@
   .editorHeader { padding: 14px 16px 10px; }
   .editorScroll { padding: 14px 16px; }
   .editorActions { padding: 10px 16px 14px; }
-  .metaGrid { grid-template-columns: 1fr; }
+.metaGrid { grid-template-columns: 1fr; }
+  .protocolMeta { grid-template-columns: 1fr; }
 }

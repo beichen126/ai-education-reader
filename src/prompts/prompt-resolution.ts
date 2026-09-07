@@ -1,7 +1,7 @@
 import type { StableId } from '../engine/types'
-import type { PromptDefinition, PromptKind, PromptSnapshot } from './prompt-types'
+import type { ProtocolDomain, ProtocolPrompt, ProtocolPromptSnapshot, PromptDefinition, PromptKind, PromptSnapshot } from './prompt-types'
 import { promptContent } from './prompt-validation'
-import { BUILTIN_PROMPT_REGISTRY, BUILTIN_PROMPT_IDS, clonePromptDefinition } from './prompt-registry'
+import { BUILTIN_PROMPT_REGISTRY, BUILTIN_PROMPT_IDS, clonePromptDefinition, getBuiltinProtocol } from './prompt-registry'
 import { getPromptPreferences } from './prompt-preferences'
 import { listPromptRecords } from './prompt-store'
 
@@ -16,6 +16,20 @@ export type PromptResolutionResult = {
   definition: PromptDefinition | undefined
   diagnostics: PromptResolutionDiagnostic[]
   usedFallback: boolean
+}
+
+export type ProtocolResolutionDiagnostic = {
+  code: 'missing-canonical' | 'invalid-override' | 'override-missing' | 'override-disabled' | 'override-domain-mismatch' | 'override-lineage-mismatch'
+  domain: ProtocolDomain
+  overrideId?: StableId
+  message: string
+}
+
+export type ProtocolResolutionResult = {
+  definition: ProtocolPrompt | undefined
+  snapshot: ProtocolPromptSnapshot | undefined
+  diagnostics: ProtocolResolutionDiagnostic[]
+  usedOverride: boolean
 }
 
 export type ResolvePromptOptions = {
@@ -42,6 +56,84 @@ export async function listEffectivePromptDefinitions(kind?: PromptKind): Promise
   for (const definition of custom) if (!byId.has(definition.id)) byId.set(definition.id, definition)
   const all = [...byId.values()]
   return kind ? all.filter((definition) => definition.kind === kind) : all
+}
+
+/**
+ * Resolve one machine protocol once for a request. The returned snapshot is
+ * detached from the catalog so later edits, deletes, or preference changes
+ * cannot drift an in-flight multi-request AI TOC extraction.
+ */
+export async function resolveCurrentProtocolResult(
+  domain: ProtocolDomain,
+  now = Date.now(),
+): Promise<ProtocolResolutionResult> {
+  const canonical = getBuiltinProtocol(domain)
+  if (!canonical) {
+    return {
+      definition: undefined,
+      snapshot: undefined,
+      diagnostics: [{ code: 'missing-canonical', domain, message: '没有可用的 canonical protocol' }],
+      usedOverride: false,
+    }
+  }
+
+  const [preferences, catalog] = await Promise.all([getPromptPreferences(), listEffectivePromptDefinitions('protocol')])
+  const overrideId = preferences.activeProtocolOverrideByDomain[domain]
+  if (!overrideId) {
+    return {
+      definition: canonical,
+      snapshot: capturePromptSnapshot(canonical, now) as ProtocolPromptSnapshot,
+      diagnostics: [],
+      usedOverride: false,
+    }
+  }
+
+  const candidate = catalog.find((item) => item.id === overrideId)
+  if (!candidate) {
+    return {
+      definition: canonical,
+      snapshot: capturePromptSnapshot(canonical, now) as ProtocolPromptSnapshot,
+      diagnostics: [{ code: 'override-missing', domain, overrideId, message: 'active protocol override 不存在，已回退 canonical' }],
+      usedOverride: false,
+    }
+  }
+  if (candidate.kind !== 'protocol' || candidate.source !== 'experimental' || !candidate.enabled || candidate.overridePolicy !== 'experimental') {
+    return {
+      definition: canonical,
+      snapshot: capturePromptSnapshot(canonical, now) as ProtocolPromptSnapshot,
+      diagnostics: [{ code: 'invalid-override', domain, overrideId, message: 'active protocol override 不是可启用的 experimental protocol，已回退 canonical' }],
+      usedOverride: false,
+    }
+  }
+  if (candidate.domain !== domain) {
+    return {
+      definition: canonical,
+      snapshot: capturePromptSnapshot(canonical, now) as ProtocolPromptSnapshot,
+      diagnostics: [{ code: 'override-domain-mismatch', domain, overrideId, message: 'active protocol override domain 不匹配，已回退 canonical' }],
+      usedOverride: false,
+    }
+  }
+  if (candidate.baseProtocolId !== canonical.id) {
+    return {
+      definition: canonical,
+      snapshot: capturePromptSnapshot(canonical, now) as ProtocolPromptSnapshot,
+      diagnostics: [{ code: 'override-lineage-mismatch', domain, overrideId, message: 'active protocol override lineage 不匹配，已回退 canonical' }],
+      usedOverride: false,
+    }
+  }
+  const definition = candidate as ProtocolPrompt
+  return {
+    definition,
+    snapshot: capturePromptSnapshot(definition, now) as ProtocolPromptSnapshot,
+    diagnostics: [],
+    usedOverride: true,
+  }
+}
+
+export async function resolveCurrentProtocol(domain: ProtocolDomain, now = Date.now()): Promise<ProtocolPromptSnapshot> {
+  const result = await resolveCurrentProtocolResult(domain, now)
+  if (!result.snapshot) throw new Error('当前 protocol 不可用：' + result.diagnostics.map((item) => item.code).join(', '))
+  return result.snapshot
 }
 
 /** Resolve a definition without ever fabricating a prompt from its id. */

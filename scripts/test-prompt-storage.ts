@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { closeDb, idbClearAll, idbGet, idbReplaceAll } from '../src/storage/idb.ts'
 import { setSetting } from '../src/storage/storage.ts'
 import { BUILTIN_PROMPT_IDS, BUILTIN_PROMPT_REGISTRY, getBuiltinPrompt } from '../src/prompts/prompt-registry.ts'
-import { capturePromptSnapshot } from '../src/prompts/prompt-resolution.ts'
+import { capturePromptSnapshot, resolveCurrentProtocolResult } from '../src/prompts/prompt-resolution.ts'
 import {
   copyPromptDefinition,
   deletePromptDefinition,
@@ -75,9 +75,14 @@ const protocolCopy = await copyPromptDefinition(BUILTIN_PROMPT_IDS.protocolAiToc
 assert(protocolCopy.definition.source === 'experimental' && protocolCopy.definition.kind === 'protocol' && protocolCopy.definition.baseProtocolId === BUILTIN_PROMPT_IDS.protocolAiTocStructure, 'protocol copy becomes an experimental override with lineage')
 const activeOverride = await setActiveProtocolOverride('ai-toc-structure', protocolCopy.definition.id)
 assert(activeOverride.activeProtocolOverrideByDomain['ai-toc-structure'] === protocolCopy.definition.id, 'active protocol override validates experimental lineage and persists atomically')
+const resolvedOverride = await resolveCurrentProtocolResult('ai-toc-structure', 777)
+assert(protocolCopy.definition.kind === 'protocol' && resolvedOverride.usedOverride && resolvedOverride.snapshot?.content === protocolCopy.definition.systemPrompt && resolvedOverride.snapshot?.capturedAt === 777, 'protocol resolver freezes the active experimental snapshot before a request')
 let invalidOverride = false
 try { await setActiveProtocolOverride('ai-toc-structure', BUILTIN_PROMPT_IDS.protocolAiTocStructure) } catch { invalidOverride = true }
 assert(invalidOverride, 'active protocol override rejects a built-in protocol')
+await setActiveProtocolOverride('ai-toc-structure', undefined)
+const canonicalResolution = await resolveCurrentProtocolResult('ai-toc-structure', 778)
+assert(!canonicalResolution.usedOverride && canonicalResolution.snapshot?.profileId === BUILTIN_PROMPT_IDS.protocolAiTocStructure, 'clearing the override resolves the canonical protocol without deleting the copy')
 
 const unchanged = await updatePromptDefinition(first.id, { name: '我的模式改名', description: '新描述' }, deps)
 assert(unchanged.definition.revision === 1, 'metadata-only edit does not bump behavior revision')
