@@ -135,9 +135,15 @@ const waitForPreference = async (target, mode) => page.waitForFunction(({ docume
   })
 }, { documentId: doc.id, chapterId: target.id, mode }, { timeout: 10000 })
 
+const waitForPreferences = async (targets, mode) => {
+  for (const target of targets) await waitForPreference(target, mode)
+}
+
 const addSelectedChapter = async (target, mode, expectedPages) => {
   await openPicker()
   const selector = modeSelector(target)
+  const sameLevelTargets = allChapters.filter(item => item.level === target.level && item.selectable && item.startPage != null && item.endPage != null)
+  assert(sameLevelTargets.length >= 2, target.title + ': fixture has multiple selectable chapters at the same level')
   await selector.waitFor({ state: 'visible', timeout: 5000 })
   const row = page.locator('[data-testid="doc-context-node-' + target.id + '"]')
   const checkbox = row.getByRole('checkbox', { name: target.title })
@@ -157,7 +163,8 @@ const addSelectedChapter = async (target, mode, expectedPages) => {
   await selector.selectOption(mode)
   assert(await selector.inputValue() === mode, mode + ': selector shows selected mode')
   assert(await checkbox.isChecked(), target.title + ': changing mode leaves checkbox selected')
-  await waitForPreference(target, mode)
+  await waitForPreferences(sameLevelTargets, mode)
+  for (const sibling of sameLevelTargets) assert(await modeSelector(sibling).inputValue() === mode, sibling.title + ': same-level selector follows batch mode')
   const actual = await actualLabel(target).textContent()
   const expectedEnd = mode === 'inclusive' ? Math.min(target.endPage + 1, doc.pageCount) : target.endPage
   const expectedLabel = mode === 'inclusive' ? '[' + target.startPage + ',' + expectedEnd + ']' : '[' + target.startPage + ',' + (target.endPage + 1) + ')'
@@ -180,6 +187,36 @@ const addSelectedChapter = async (target, mode, expectedPages) => {
   assert(JSON.stringify(pages) === JSON.stringify(expected), target.title + ' ' + mode + ': actual PDF pages match UI preview (' + pages.join(',') + ')')
 }
 
+const testRapidPreferenceWrites = async target => {
+  await openPicker()
+  const selector = modeSelector(target)
+  await selector.selectOption('inclusive')
+  await selector.selectOption('exclusive')
+  const sameLevelTargets = allChapters.filter(item => item.level === target.level && item.selectable && item.startPage != null && item.endPage != null)
+  await waitForPreferences(sameLevelTargets, 'exclusive')
+  assert(await selector.inputValue() === 'exclusive', target.title + ': rapid inclusive -> exclusive ends exclusive')
+  await page.locator('[data-testid="doc-context-cancel"]').click()
+}
+
+const testFailedPreferenceWrite = async target => {
+  await openPicker()
+  const selector = modeSelector(target)
+  const before = await selector.inputValue()
+  const next = before === 'inclusive' ? 'exclusive' : 'inclusive'
+  await page.evaluate(() => { window.__dshFailNextBookmarkRangePreferenceWrite = true })
+  await selector.selectOption(next)
+  await page.locator('[data-testid="doc-context-block"]').waitFor({ state: 'visible', timeout: 10000 })
+  assert(await page.locator('[data-testid="doc-context-picker"]').count() === 1, target.title + ': failed preference keeps Picker open')
+  assert(await selector.inputValue() === before, target.title + ': failed preference rolls back to confirmed mode')
+  await page.locator('[data-testid="doc-context-cancel"]').click()
+  await page.waitForTimeout(150)
+  assert(await page.locator('[data-testid="doc-context-picker"]').count() === 1, target.title + ': cancel does not unmount after durable failure')
+  await selector.selectOption(next)
+  await waitForPreferences(allChapters.filter(item => item.level === target.level && item.selectable && item.startPage != null && item.endPage != null), next)
+  assert((await page.locator('[data-testid="doc-context-block"]').count()) === 0, target.title + ': successful retry clears the failure message')
+  await page.locator('[data-testid="doc-context-cancel"]').click()
+}
+
 const exclusiveExpectedEnd = chapter.endPage
 await addSelectedChapter(chapter, 'exclusive', exclusiveExpectedEnd - chapter.startPage + 1)
 
@@ -199,6 +236,9 @@ await addSelectedChapter(lastChapter, 'inclusive', lastChapter.endPage - lastCha
 // Single-page boundary: both modes remain exactly one physical page.
 await addSelectedChapter(singleChapter, 'exclusive', 1)
 await addSelectedChapter(singleChapter, 'inclusive', 1)
+
+await testRapidPreferenceWrites(chapter)
+await testFailedPreferenceWrite(chapter)
 
 // Mobile layout gate: all requested widths keep the selector and actual-page
 // preview inside the viewport with no document/picker horizontal overflow.

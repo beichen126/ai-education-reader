@@ -8,6 +8,7 @@ import {
   getDocument,
   getDocumentBookmarkRangePreference,
   setDocumentBookmarkRangePreference,
+  setDocumentBookmarkRangePreferences,
   updateDocumentChapters,
 } from '../src/documents/document-service.ts'
 import { idbClearAll, idbGet, closeDb } from '../src/storage/idb.ts'
@@ -55,6 +56,33 @@ await setDocumentBookmarkRangePreference('doc-b', 'shared', 'exclusive')
 assert(await getDocumentBookmarkRangePreference('doc-a', 'shared') === 'inclusive', 'doc-a shared chapter stores inclusive')
 assert(await getDocumentBookmarkRangePreference('doc-a', 'leaf') === 'exclusive', 'doc-a leaf stores its own mode')
 assert(await getDocumentBookmarkRangePreference('doc-b', 'shared') === 'exclusive', 'same chapter id in doc-b does not inherit doc-a')
+
+// Same-level UI changes use one atomic document-owned batch, not one durable write per row.
+await setDocumentBookmarkRangePreferences('doc-a', [
+  { chapterId: 'shared', endMode: 'inclusive' },
+  { chapterId: 'leaf', endMode: 'inclusive' },
+])
+assert(await getDocumentBookmarkRangePreference('doc-a', 'shared') === 'inclusive', 'same-level batch stores shared chapter')
+assert(await getDocumentBookmarkRangePreference('doc-a', 'leaf') === 'inclusive', 'same-level batch stores leaf chapter')
+await mustReject(
+  () => setDocumentBookmarkRangePreferences('doc-a', [
+    { chapterId: 'shared', endMode: 'exclusive' },
+    { chapterId: 'missing', endMode: 'exclusive' },
+  ]),
+  'batch with an unknown chapter is rejected atomically',
+  BookmarkChapterNotFoundError,
+)
+assert(await getDocumentBookmarkRangePreference('doc-a', 'shared') === 'inclusive', 'rejected batch does not partially change shared chapter')
+;(globalThis as any).__dshFailNextBookmarkRangePreferenceWrite = true
+await mustReject(
+  () => setDocumentBookmarkRangePreferences('doc-a', [
+    { chapterId: 'shared', endMode: 'exclusive' },
+    { chapterId: 'leaf', endMode: 'exclusive' },
+  ]),
+  'test failure seam rejects the whole preference batch',
+)
+assert(await getDocumentBookmarkRangePreference('doc-a', 'shared') === 'inclusive', 'failed batch keeps shared chapter durable value')
+assert(await getDocumentBookmarkRangePreference('doc-a', 'leaf') === 'inclusive', 'failed batch keeps leaf chapter durable value')
 
 // Close/reopen proves the value is durable, not just held in a caller or component.
 await closeDb()

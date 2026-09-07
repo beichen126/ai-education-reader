@@ -1,8 +1,8 @@
 
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { listDocumentSummaries, getDocumentContextDescriptor, setDocumentBookmarkRangePreference, type DocumentContextDescriptor, type DocumentSummary } from './document-service'
-import { buildChapterNodesSelection, selectableChapterRange } from './document-context'
+import { listDocumentSummaries, getDocumentContextDescriptor, setDocumentBookmarkRangePreferences, type DocumentContextDescriptor, type DocumentSummary, type BookmarkRangePreferenceUpdate } from './document-service'
+import { buildChapterNodesSelection, findChapterById, selectableChapterRange } from './document-context'
 import { normalizePdfRanges, countPdfRangePages, pdfRangesText, needsPdfContextSoftConfirm, exceedsPdfContextHardLimit, validatePdfRange, MAX_PDF_CONTEXT_PAGES, type PdfRange, type PdfSelection } from '../pdf/pdf-types'
 import type { ChapterNode } from './document-types'
 import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
@@ -13,6 +13,21 @@ type Props = {
   documentId?: string
   onCancel: () => void
   onAdd: (selection: PdfSelection, documentId: string, fileName: string) => void
+}
+
+type PreferenceKeyState = {
+  confirmed: BookmarkRangeEndMode
+  desired: BookmarkRangeEndMode
+  generation: number
+  pending: Promise<void> | null
+  error: string | null
+}
+
+type PreferenceWriteEntry = {
+  documentId: string
+  updates: BookmarkRangePreferenceUpdate[]
+  generations: Map<string, number>
+  chain: Promise<void>
 }
 
 // One consistent mental model: 选择范围 -> 查看汇总 -> 加入当前对话.
@@ -35,7 +50,11 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
   const [manualSel, setManualSel] = useState<PdfSelection | null>(null)
   const [blockMsg, setBlockMsg] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<PdfSelection | null>(null)
-  const preferenceWritesRef = useRef(new Map<string, { chain: Promise<void> }>())
+  const preferenceStatesRef = useRef(new Map<string, PreferenceKeyState>())
+  const preferenceQueuesRef = useRef(new Map<string, Promise<void>>())
+  const mountedRef = useRef(true)
+
+  useEffect(() => () => { mountedRef.current = false }, [])
 
   // Load the document list only for the unscoped (document) stage.
   useEffect(() => { if (stage === 'document' && !scoped) { void listDocumentSummaries().then(setDocs).catch(() => setDocs([])) } }, [stage, scoped])
@@ -74,34 +93,113 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
     setChecked(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   }
 
+  const sameLevelSelectableChapterIds = (chapterId: string): string[] => {
+    if (!doc) return []
+    const target = findChapterById(doc.chapters, chapterId)
+    if (!target) return []
+    const ids: string[] = []
+    const walk = (nodes: ChapterNode[]) => {
+      for (const node of nodes) {
+        if (node.level === target.level && selectableChapterRange(node)) ids.push(node.id)
+        walk(node.children)
+      }
+    }
+    walk(doc.chapters)
+    return ids
+  }
+
+  const preferenceKey = (documentId: string, chapterId: string) => documentId + ':' + chapterId
+
+  const ensurePreferenceState = (targetDoc: DocumentContextDescriptor, chapterId: string): PreferenceKeyState => {
+    const key = preferenceKey(targetDoc.id, chapterId)
+    const existing = preferenceStatesRef.current.get(key)
+    if (existing) return existing
+    const mode = bookmarkRangeEndModeOf(targetDoc.bookmarkRangePreferences, chapterId)
+    const created: PreferenceKeyState = { confirmed: mode, desired: mode, generation: 0, pending: null, error: null }
+    preferenceStatesRef.current.set(key, created)
+    return created
+  }
+
+  const applyPreferenceRollback = (documentId: string, entry: PreferenceWriteEntry) => {
+    if (!mountedRef.current) return
+    setDoc(current => {
+      if (!current || current.id !== documentId) return current
+      const restored = { ...(current.bookmarkRangePreferences ?? {}) }
+      for (const update of entry.updates) {
+        const key = preferenceKey(documentId, update.chapterId)
+        const state = preferenceStatesRef.current.get(key)
+        if (!state || state.generation !== entry.generations.get(key)) continue
+        restored[update.chapterId] = state.desired
+      }
+      return Object.keys(restored).length > 0 ? { ...current, bookmarkRangePreferences: restored } : { ...current, bookmarkRangePreferences: undefined }
+    })
+  }
+
+  const enqueuePreferenceWrite = (targetDoc: DocumentContextDescriptor, updates: BookmarkRangePreferenceUpdate[]) => {
+    const generations = new Map<string, number>()
+    for (const update of updates) {
+      const state = ensurePreferenceState(targetDoc, update.chapterId)
+      state.desired = update.endMode
+      state.error = null
+      state.generation += 1
+      generations.set(preferenceKey(targetDoc.id, update.chapterId), state.generation)
+    }
+    const previous = preferenceQueuesRef.current.get(targetDoc.id) ?? Promise.resolve()
+    const chain = previous.catch(() => {}).then(() => setDocumentBookmarkRangePreferences(targetDoc.id, updates))
+    const entry: PreferenceWriteEntry = { documentId: targetDoc.id, updates, generations, chain }
+    for (const update of updates) ensurePreferenceState(targetDoc, update.chapterId).pending = chain
+    preferenceQueuesRef.current.set(targetDoc.id, chain)
+    void chain.then(() => {
+      for (const update of entry.updates) {
+        const key = preferenceKey(entry.documentId, update.chapterId)
+        const state = preferenceStatesRef.current.get(key)
+        if (!state) continue
+        state.confirmed = update.endMode
+        if (state.generation === entry.generations.get(key)) { state.pending = null; state.error = null }
+      }
+    }).catch(() => {
+      let currentFailure = false
+      for (const update of entry.updates) {
+        const key = preferenceKey(entry.documentId, update.chapterId)
+        const state = preferenceStatesRef.current.get(key)
+        if (!state || state.generation !== entry.generations.get(key)) continue
+        state.desired = state.confirmed
+        state.pending = null
+        state.error = '范围语义保存失败，请重试。'
+        currentFailure = true
+      }
+      if (currentFailure) {
+        applyPreferenceRollback(entry.documentId, entry)
+        if (mountedRef.current) setBlockMsg('范围语义保存失败，请重试。')
+      }
+    }).finally(() => {
+      if (preferenceQueuesRef.current.get(entry.documentId) === entry.chain) preferenceQueuesRef.current.delete(entry.documentId)
+    })
+  }
+
+  const flushPreferenceWrites = async (documentId?: string): Promise<boolean> => {
+    if (!documentId) return true
+    while (true) {
+      const pending = preferenceQueuesRef.current.get(documentId)
+      if (!pending) break
+      await pending.catch(() => {})
+    }
+    return !Array.from(preferenceStatesRef.current.entries()).some(([key, state]) => key.startsWith(documentId + ':') && state.error !== null)
+  }
+
   const changeBookmarkRangeMode = (chapterId: string, endMode: BookmarkRangeEndMode) => {
     if (!doc) return
     const targetDoc = doc
-    const key = targetDoc.id + ':' + chapterId
-    const previousPreferences = targetDoc.bookmarkRangePreferences
-    const previousMode = bookmarkRangeEndModeOf(previousPreferences, chapterId)
-    const previousWasExplicit = previousPreferences?.[chapterId] !== undefined
+    const ids = sameLevelSelectableChapterIds(chapterId)
+    const updates = (ids.length > 0 ? ids : [chapterId]).map(id => ({ chapterId: id, endMode }))
+    setBlockMsg(null)
     setDoc(current => {
       if (!current || current.id !== targetDoc.id) return current
-      return { ...current, bookmarkRangePreferences: { ...(current.bookmarkRangePreferences ?? {}), [chapterId]: endMode } }
+      const preferences = { ...(current.bookmarkRangePreferences ?? {}) }
+      for (const update of updates) preferences[update.chapterId] = update.endMode
+      return { ...current, bookmarkRangePreferences: preferences }
     })
-    const previous = preferenceWritesRef.current.get(key)?.chain ?? Promise.resolve()
-    const chain = previous.catch(() => {}).then(() => setDocumentBookmarkRangePreference(targetDoc.id, chapterId, endMode))
-    const entry = { chain }
-    preferenceWritesRef.current.set(key, entry)
-    void chain.catch(() => {
-      if (preferenceWritesRef.current.get(key) !== entry) return
-      setDoc(current => {
-        if (!current || current.id !== targetDoc.id) return current
-        const restored = { ...(current.bookmarkRangePreferences ?? {}) }
-        if (previousWasExplicit) restored[chapterId] = previousMode
-        else delete restored[chapterId]
-        return Object.keys(restored).length > 0 ? { ...current, bookmarkRangePreferences: restored } : { ...current, bookmarkRangePreferences: undefined }
-      })
-      setBlockMsg('范围语义保存失败，请重试。')
-    }).finally(() => {
-      if (preferenceWritesRef.current.get(key) === entry) preferenceWritesRef.current.delete(key)
-    })
+    enqueuePreferenceWrite(targetDoc, updates)
   }
 
   // Selected chapter nodes (in TOC order) from the checked set.
@@ -120,6 +218,8 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
     if (selectedNodes.length) return buildChapterNodesSelection(selectedNodes, { pageCount: doc?.pageCount, bookmarkRangePreferences: doc?.bookmarkRangePreferences })
     return { kind: 'manual', ranges: [] }
   }, [wholeChecked, manualSel, selectedNodes, doc])
+  const selectionRef = useRef(selection)
+  selectionRef.current = selection
 
   const selectionCount = countPdfRangePages(selection.ranges)
   const wholeCount = doc ? countPdfRangePages([{ startPage: 1, endPage: doc.pageCount }]) : 0
@@ -140,12 +240,22 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
     setManualSel({ kind: 'manual', title: pdfRangesText([{ startPage: s, endPage: e }]), ranges: [{ startPage: s, endPage: e }] })
   }
 
-  const commit = () => {
-    if (!hasScope) { setBlockMsg('请先选择要加入的章节或页码范围。'); return }
-    const count = countPdfRangePages(selection.ranges)
+  const requestCancel = async () => {
+    if (await flushPreferenceWrites(doc?.id)) onCancel()
+  }
+
+  const requestBackToDocs = async () => {
+    if (await flushPreferenceWrites(doc?.id)) backToDocs()
+  }
+
+  const commit = async () => {
+    if (!(await flushPreferenceWrites(doc?.id))) return
+    const currentSelection = selectionRef.current
+    if (currentSelection.ranges.length === 0) { setBlockMsg('请先选择要加入的章节或页码范围。'); return }
+    const count = countPdfRangePages(currentSelection.ranges)
     if (exceedsPdfContextHardLimit(count)) { setBlockMsg('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页，请缩小章节或页码范围。'); return }
-    if (needsPdfContextSoftConfirm(count)) { setConfirming(selection); return }
-    finishAdd(selection)
+    if (needsPdfContextSoftConfirm(count)) { setConfirming(currentSelection); return }
+    finishAdd(currentSelection)
   }
   const finishAdd = (sel: PdfSelection) => { if (doc) onAdd(sel, doc.id, doc.fileName) }
 
@@ -154,11 +264,11 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
       <div className={css.panel}>
         <div className={css.header}>
           {stage === 'context' && !scoped && (
-            <button type="button" className={css.back} data-testid="doc-context-back" onClick={backToDocs}>←</button>
+            <button type="button" className={css.back} data-testid="doc-context-back" onClick={() => void requestBackToDocs()}>←</button>
           )}
           <span className={css.title}>{stage === 'document' ? '从文件资料库加入对话' : (doc ? doc.fileName : '')}</span>
           <span className={css.subTitle}>{stage === 'context' && doc ? doc.pageCount + ' 页' : ''}</span>
-          <button type="button" className={css.btn} data-testid="doc-context-cancel" onClick={onCancel}>取消</button>
+          <button type="button" className={css.btn} data-testid="doc-context-cancel" onClick={() => void requestCancel()}>取消</button>
         </div>
         {stage === 'document' ? (
           <div className={css.docPick}>
@@ -208,8 +318,8 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
                 )}
               </div>
               <div className={css.footerBtns}>
-                <button type="button" className={css.btn} data-testid="doc-context-cancel2" onClick={onCancel}>取消</button>
-                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" onClick={commit}>加入当前对话</button>
+                <button type="button" className={css.btn} data-testid="doc-context-cancel2" onClick={() => void requestCancel()}>取消</button>
+                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" onClick={() => void commit()}>加入当前对话</button>
               </div>
             </div>
           </>

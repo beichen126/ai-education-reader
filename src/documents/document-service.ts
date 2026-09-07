@@ -204,21 +204,47 @@ export async function getDocumentBookmarkRangePreference(documentId: string, cha
   return bookmarkRangeEndModeOf(preferences, chapterId)
 }
 
-/** Atomically save one stable ChapterNode.id preference inside its document row. */
-export async function setDocumentBookmarkRangePreference(documentId: string, chapterId: string, endMode: BookmarkRangeEndMode): Promise<void> {
-  if (!isBookmarkRangeEndMode(endMode)) throw new RangeError('invalid bookmark range end mode: ' + String(endMode))
+export type BookmarkRangePreferenceUpdate = { chapterId: string; endMode: BookmarkRangeEndMode }
+
+function consumeBookmarkRangePreferenceFailureSeam(): void {
+  const runtime = globalThis as typeof globalThis & { __dshFailNextBookmarkRangePreferenceWrite?: boolean }
+  if (!runtime.__dshFailNextBookmarkRangePreferenceWrite) return
+  runtime.__dshFailNextBookmarkRangePreferenceWrite = false
+  throw new Error('simulated bookmark range preference write failure')
+}
+
+/** Atomically save a document-owned batch of stable ChapterNode preferences. */
+export async function setDocumentBookmarkRangePreferences(documentId: string, updates: BookmarkRangePreferenceUpdate[]): Promise<void> {
+  if (updates.length === 0) return
+  const byChapter = new Map<string, BookmarkRangeEndMode>()
+  for (const update of updates) {
+    if (!isBookmarkRangeEndMode(update.endMode)) throw new RangeError('invalid bookmark range end mode: ' + String(update.endMode))
+    const previous = byChapter.get(update.chapterId)
+    if (previous !== undefined && previous !== update.endMode) throw new RangeError('conflicting bookmark range modes for chapter: ' + update.chapterId)
+    byChapter.set(update.chapterId, update.endMode)
+  }
+  consumeBookmarkRangePreferenceFailureSeam()
   try {
     await idbUpdate('documents', documentId, (cur: any) => {
       const chapters = (cur.chapters ?? []) as ChapterNode[]
-      if (!hasChapterId(chapters, chapterId)) throw new BookmarkChapterNotFoundError(documentId, chapterId)
+      for (const chapterId of byChapter.keys()) {
+        if (!hasChapterId(chapters, chapterId)) throw new BookmarkChapterNotFoundError(documentId, chapterId)
+      }
       const current = sanitizeBookmarkRangePreferences(chapters, cur.bookmarkRangePreferences) ?? {}
-      return { ...cur, bookmarkRangePreferences: { ...current, [chapterId]: endMode }, updatedAt: Date.now(), recordVersion: 3 }
+      const next = { ...current }
+      for (const [chapterId, endMode] of byChapter) next[chapterId] = endMode
+      return { ...cur, bookmarkRangePreferences: next, updatedAt: Date.now(), recordVersion: 3 }
     })
   }
   catch (e) {
     if (isRowMissing(e)) throw new DocumentNotFoundError(documentId)
     throw e
   }
+}
+
+/** Atomically save one stable ChapterNode.id preference inside its document row. */
+export async function setDocumentBookmarkRangePreference(documentId: string, chapterId: string, endMode: BookmarkRangeEndMode): Promise<void> {
+  return setDocumentBookmarkRangePreferences(documentId, [{ chapterId, endMode }])
 }
 
 export function assertValidLastReadPage(page: number, pageCount: number): void {
