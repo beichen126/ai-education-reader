@@ -15,6 +15,7 @@ import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary,
   TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT, describeTocStructureFailure, buildTocStructureRepairPrompt,
+  buildTocStructureInput,
   type TocTranscriptionRow, type TocLocalRow, type TocTranscriptionLine,
   type TocStructureDiagnostic,
 } from './ai-toc'
@@ -76,10 +77,6 @@ function buildTailContext(prevRows: TocTranscriptionRow[]): string {
   const tail = prevRows.slice(-PREV_TAIL_SIZE)
   const lines2 = tail.map(r => r.id + ' | ' + r.title + ' | p' + r.pageLabel).join('\n')
   return '上一批最后几条目录转录，仅用于理解跨页连续性：\n' + lines2 + '\n请只转录当前图片中新出现的目录行。不要重新输出以上内容。';
-}
-
-function buildSequentialText(rows: TocTranscriptionRow[]): string {
-  return rows.map((r, i) => 'row ' + (i + 1) + ' | ' + r.title + ' | indent ' + (r.visualIndent ?? '-') + ' | ' + (r.numbering ?? '-') + ' | p' + r.pageLabel).join('\n');
 }
 
 /**
@@ -182,6 +179,9 @@ export async function extractAiToc(opts: {
   if (allRows.length === 0) return timedAiTocResult({ ok: false, error: '未识别到目录条目。' }, timing, totalStartMs)
 
   // ---- GLOBAL structure pass: text-only, proposes one compact level sequence ----
+  // This input is immutable across the optional repair attempt. Serialize it
+  // once so a repair only adds diagnostics instead of rebuilding every row.
+  const structureInput = buildTocStructureInput(allRows)
   let structureRaw: string | undefined
   let lastStructureDiagnostics: TocStructureDiagnostic[] = []
   let lastStructureAttempt = 0
@@ -203,8 +203,7 @@ export async function extractAiToc(opts: {
         structureRaw = mock({ pages: [], phase: 'structure', attempt: attempt + 1, repair, diagnostics: repair ? lastStructureDiagnostics : [] });
       }
       else {
-        const seq = buildSequentialText(allRows);
-        const userContent = repair ? seq + '\n\n' + repairPrompt : seq
+        const userContent = repair ? structureInput + '\n\n' + repairPrompt : structureInput
         const messages: ApiChatMessage[] = [{ role: 'system', content: TOC_STRUCTURE_PROMPT }, { role: 'user', content: userContent }];
         const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal });
         structureRaw = res.content;

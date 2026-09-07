@@ -311,6 +311,15 @@ export function reindexRows(rows: TocTranscriptionRow[]): TocTranscriptionRow[] 
   return rows.map((r, i) => ({ ...r, id: 'r' + String(i + 1).padStart(4, '0'), rowOrder: i }))
 }
 
+/**
+ * Serialize the stable, local structure input once per extraction.
+ * The optional repair request reuses this exact string instead of rebuilding
+ * the same row representation, while all provenance-only fields remain local.
+ */
+export function buildTocStructureInput(rows: TocTranscriptionRow[]): string {
+  return rows.map((r, i) => 'row ' + (i + 1) + ' | ' + r.title + ' | indent ' + (r.visualIndent ?? '-') + ' | ' + (r.numbering ?? '-') + ' | p' + r.pageLabel).join('\n');
+}
+
 export { newStableId }
 
 // ---- production prompt constants (Stage 9.4C.1) ----

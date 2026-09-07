@@ -3,7 +3,7 @@
 import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary, normalizeTitle, normalizeTocLevels,
-  describeTocStructureFailure, buildTocStructureRepairPrompt,
+  describeTocStructureFailure, buildTocStructureRepairPrompt, buildTocStructureInput,
 } from '../src/documents/ai-toc.ts'
 import {
   exactLabelToPage, labelsArePlainNumeric, buildInitialMapping, numericOffsetFromAnchor,
@@ -71,6 +71,15 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   assert(invalidLevel.ok === false && !invalidLevel.ok && invalidLevel.diagnostics.some(d => d.code === 'INVALID_LEVEL'), 'invalid level diagnostic is explicit');
   const old = parseTocStructure('{"id":"r0001","level":1}');
   assert(old.ok === false, 'legacy per-row id/level output is rejected');
+}
+// --- structure input is stable and excludes local provenance metadata ---
+{
+  const input = buildTocStructureInput([
+    { id: 'r0001', title: '第一章 绪论', pageLabel: '1', tocPage: 7, sourceImageIndex: 2, rowOrder: 0, visualIndent: 0, numbering: '第一章' },
+    { id: 'r0002', title: '第一节 对象', pageLabel: '3', tocPage: 8, sourceImageIndex: 2, rowOrder: 1 },
+  ])
+  assert(input === 'row 1 | 第一章 绪论 | indent 0 | 第一章 | p1\nrow 2 | 第一节 对象 | indent - | - | p3', 'structure input preserves order and hierarchy cues')
+  assert(!input.includes('r0001') && !input.includes('tocPage') && !input.includes('sourceImageIndex'), 'structure input excludes local provenance fields')
 }
 // --- structure validation: valid global levels ---
 {
