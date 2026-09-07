@@ -45,6 +45,7 @@ const note = await createArtifactDraft({
 const storedNote = await getArtifact(note.id)
 assert(storedNote?.promptBundle?.template?.profileId === noteDefinition.id, 'new Artifact persists the selected template snapshot')
 assert(storedNote?.promptBundle?.userPrompt === noteUserPrompt && storedNote.prompt === noteUserPrompt, 'run-local user intent is persisted independently of the template')
+assert(storedNote?.promptBundle?.template?.content === noteDefinition.userPrompt && storedNote.promptBundle.userPrompt !== storedNote.promptBundle.template.content, 'run-local editing does not overwrite the selected template snapshot')
 
 let noteRequest: any[] = []
 await generateArtifact(note.id, { call: async (args) => { noteRequest = args.messages; return 'generated note' } })
