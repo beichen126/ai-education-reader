@@ -97,7 +97,24 @@ export function conversationMarkdown(conv: Conversation, anns: Annotation[]): st
   const byMsg = new Map<string, Annotation[]>()
   for (const a of anns) { const l = byMsg.get(a.messageId) || []; l.push(a); byMsg.set(a.messageId, l) }
   const out: string[] = ['# ' + (conv.title || '未命名会话'), '']
-  for (const m of conv.messages) {
+  const markers = new Map<number, string[]>()
+  const messageIndex = new Map(conv.messages.map((message, index) => [message.id, index]))
+  for (const transition of conv.promptTransitions ?? []) {
+    if (transition.snapshot.kind !== 'conversation-mode') continue
+    const position = transition.afterMessageId === null
+      ? 0
+      : (messageIndex.get(transition.afterMessageId) === undefined ? undefined : messageIndex.get(transition.afterMessageId)! + 1)
+    if (position === undefined) continue
+    const name = transition.snapshot.name.trim().replace(/\s+/g, ' ') || '默认'
+    const line = (transition.afterMessageId === null ? '> 模式：' : '> 模式切换：') + name
+    const existing = markers.get(position) ?? []
+    existing.push(line)
+    markers.set(position, existing)
+  }
+  for (let index = 0; index <= conv.messages.length; index++) {
+    for (const marker of markers.get(index) ?? []) out.push(marker, '')
+    const m = conv.messages[index]
+    if (!m) continue
     const label = m.role === 'assistant' ? 'AI' : '用户'
     const mark = byMsg.get(m.id)
     const body = mark && mark.length ? annotateMessageSource(m.content, m.id, mark) : m.content

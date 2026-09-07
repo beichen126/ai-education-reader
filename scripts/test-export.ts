@@ -105,6 +105,26 @@ assert(mo2.includes('## AI'), 'marked-only role context AI')
 const math = '公式 $$E=mc^2$$ 保留。'
 assert(conversationMarkdown(makeConv('c9','数学',[{ id:'m9', role:'assistant', content:math, images:[], createdAt:1, updatedAt:1 }]), []).includes('$$E=mc^2$$'), 'LaTeX source preserved, no KaTeX HTML')
 
+// 13) Conversation mode history is readable without exporting the full system prompt.
+const modeConv: Conversation = {
+  ...makeConv('c10', '模式历史', [
+    { id: 'mode-m1', role: 'user', content: '第一个问题', images: [], createdAt: 1, updatedAt: 1 },
+    { id: 'mode-m2', role: 'assistant', content: '第一个回答', images: [], createdAt: 2, updatedAt: 2 },
+    { id: 'mode-m3', role: 'user', content: '第二个问题', images: [], createdAt: 3, updatedAt: 3 },
+  ]),
+  promptTransitions: [
+    { id: 'mode-t1', afterMessageId: null, createdAt: 1, snapshot: { kind: 'conversation-mode', profileId: 'default', name: '默认', content: 'SECRET_DEFAULT_SYSTEM_PROMPT', revision: 1, source: 'builtin', capturedAt: 1 } },
+    { id: 'mode-t2', afterMessageId: 'mode-m2', createdAt: 2, snapshot: { kind: 'conversation-mode', profileId: 'socratic', name: '苏格拉底式学习', content: 'SECRET_SOCRATIC_SYSTEM_PROMPT', revision: 2, source: 'custom', capturedAt: 2 } },
+  ],
+}
+const modeMd = conversationMarkdown(modeConv, [])
+assert(modeMd.includes('> 模式：默认'), 'conversation export includes the initial mode marker')
+assert(modeMd.includes('> 模式切换：苏格拉底式学习'), 'conversation export includes the mode switch marker')
+assert(modeMd.indexOf('> 模式切换：苏格拉底式学习') < modeMd.indexOf('## 用户\n\n第二个问题'), 'mode switch marker precedes the next message')
+assert(!modeMd.includes('SECRET_DEFAULT_SYSTEM_PROMPT') && !modeMd.includes('SECRET_SOCRATIC_SYSTEM_PROMPT'), 'conversation export does not expose full system prompt content')
+const trailingModeMd = conversationMarkdown({ ...modeConv, promptTransitions: [{ ...modeConv.promptTransitions![0], afterMessageId: 'mode-m3', snapshot: { ...modeConv.promptTransitions![0].snapshot, name: '复习模式' } }] }, [])
+assert(trailingModeMd.trimEnd().endsWith('> 模式切换：复习模式'), 'a transition after the final message remains readable')
+
 console.log('=== Backup ===')
 const proto = newStableId()
 const bAid = 'conv-backup'
