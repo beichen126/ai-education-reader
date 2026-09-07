@@ -11,6 +11,7 @@ import { initStore } from '../engine/sessions-store'
 import { initSettings } from '../engine/settings-store'
 import { clearAnnotationCache } from '../annotations/annotation-store'
 import { resetDrafts } from '../engine/draft-store'
+import { migrateLegacyPrompts } from '../prompts/prompt-migration'
 
 export { BackupError, PdfOutlineError, ConversationBundleError }
 export type { BackupV1, BackupAttachment } from './backup-types'
@@ -52,6 +53,7 @@ export async function importBackupText(text: string): Promise<void> {
   // A restore replaces all local data (including draft:<id> settings rows), so drop
   // the in-memory draft cache before initStore reloads from the restored settings.
   resetDrafts()
+  await migrateLegacyPrompts()
   await initSettings()
   await initStore()
   clearAnnotationCache()
