@@ -10,7 +10,11 @@
 // model can only report which image a row came from.
 import { renderSessionPage } from '../pdf/pdf-session'
 import type { PdfSession } from '../pdf/pdf-session'
-import { sendTextChat, type ApiChatMessage } from '../api/deepseek'
+import { sendTextChat } from '../api/deepseek'
+import { resolveCurrentProtocol } from '../prompts/prompt-resolution'
+import { compileMachineProtocolMessages } from '../prompts/protocol-request'
+import type { StableId } from '../engine/types'
+import type { ProtocolPromptSnapshot } from '../prompts/prompt-types'
 import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary,
@@ -103,6 +107,13 @@ export async function extractAiToc(opts: {
   const totalStartMs = aiTocNowMs()
   const timing = createAiTocTiming()
 
+  // Freeze both machine protocols before rendering or making the first model
+  // request. Every window and retry reuses these detached snapshots.
+  const [transcriptionProtocol, structureProtocol] = await Promise.all([
+    resolveCurrentProtocol('ai-toc-transcription', totalStartMs),
+    resolveCurrentProtocol('ai-toc-structure', totalStartMs),
+  ])
+
   const labels = await getPageLabels()
 
   const mock = (globalThis as any).__dshMockAiToc as ((request: AiTocMockRequest) => string | undefined) | undefined
@@ -150,7 +161,7 @@ export async function extractAiToc(opts: {
     for (let attempt = 0; attempt < 2; attempt++) {
       if (signal?.aborted) { finishTranscription(); return abortedAiTocResult('transcribing', timing, totalStartMs) }
       try {
-        const lines3 = await transcribeBatch({ batch, pageDataUrls, apiKey, baseUrl, model, tail, isMock, mock, signal });
+        const lines3 = await transcribeBatch({ batch, pageDataUrls, apiKey, baseUrl, model, tail, protocol: transcriptionProtocol, isMock, mock, signal });
         const mapped = mapTocSourcePages(lines3, batch);
         if (!mapped.ok) {
           const d = (mapped as { diagnostics: string[] }).diagnostics;
@@ -204,7 +215,7 @@ export async function extractAiToc(opts: {
       }
       else {
         const userContent = repair ? structureInput + '\n\n' + repairPrompt : structureInput
-        const messages: ApiChatMessage[] = [{ role: 'system', content: TOC_STRUCTURE_PROMPT }, { role: 'user', content: userContent }];
+        const messages = await compileMachineProtocolMessages({ domain: 'ai-toc-structure', protocol: structureProtocol, content: userContent })
         const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal });
         structureRaw = res.content;
       }
@@ -251,11 +262,12 @@ async function transcribeBatch(opts: {
   pageDataUrls: Record<number, string>;
   apiKey: string; baseUrl: string; model: string;
   tail: TocTranscriptionRow[];
+  protocol: ProtocolPromptSnapshot;
   isMock: boolean;
   mock: ((request: AiTocMockRequest) => string | undefined) | undefined;
   signal?: AbortSignal;
 }): Promise<TocLocalRow[]> {
-  const { batch, pageDataUrls, apiKey, baseUrl, model, tail, isMock, mock, signal } = opts;
+  const { batch, pageDataUrls, apiKey, baseUrl, model, tail, protocol, isMock, mock, signal } = opts;
   if (isMock) {
     const raw = mock!({ pages: batch, phase: 'transcribe' });
     if (typeof raw !== 'string') return [];
@@ -264,14 +276,15 @@ async function transcribeBatch(opts: {
     // Mock rows use a pageBatch-appropriate sourceImageIndex; assign local ids.
     return pr.rows.map((r: TocTranscriptionLine, i: number) => ({ ...r, id: 'r' + String(i + 1).padStart(4, '0'), rowOrder: i }));
   }
-  const parts: import('../api/deepseek').ChatContentPart[] = [];
-  if (tail.length > 0) { parts.push({ type: 'text', text: buildTailContext(tail) } as const); }
+  const contentLines: string[] = []
+  if (tail.length > 0) contentLines.push(buildTailContext(tail))
+  const images: { id: StableId; dataUrl: string }[] = []
   for (let k = 0; k < batch.length; k++) {
     const physicalPage = batch[k];
-    parts.push({ type: 'text', text: '【图片 ' + (k + 1) + ' / ' + batch.length + ' · PDF physical page ' + physicalPage + '】' } as const);
-    parts.push({ type: 'image_url', image_url: { url: pageDataUrls[physicalPage] } } as const);
+    contentLines.push('【图片 ' + (k + 1) + ' / ' + batch.length + ' · PDF physical page ' + physicalPage + '】')
+    images.push({ id: 'ai-toc-page-' + physicalPage + '-' + k, dataUrl: pageDataUrls[physicalPage] })
   }
-  const messages: ApiChatMessage[] = [{ role: 'system', content: TOC_TRANSCRIPTION_SYSTEM_PROMPT }, { role: 'user', content: parts }];
+  const messages = await compileMachineProtocolMessages({ domain: 'ai-toc-transcription', protocol, content: contentLines.join('\n'), images })
   const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal });
   const pr = parseTocJsonl(res.content);
   if (!pr.ok) { const d = (pr as { diagnostics: string[] }).diagnostics; throw new Error(d.length ? d[0] : '目录识别结果格式异常，请重试。'); }
