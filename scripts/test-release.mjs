@@ -6,6 +6,7 @@
 // block — so a failure never leaves a stray 5299/5320 server behind (a regression the
 // earlier agents introduced). Set RELEASE_PORT / RELEASE_HOST to move the server.
 import { spawn, spawnSync } from 'node:child_process'
+import path from 'node:path'
 
 // Windows-first: npm resolves to npm.cmd; spawn without a shell cannot find the bare
 // 'npm' shim on Windows, so use the platform-appropriate command name.
@@ -33,6 +34,7 @@ const CORE_E2E = [
   'e2e-branch-stop',
   'e2e-root-stop',
   'e2e-backup',
+  'e2e-chapter-editor-gate',
 ]
 const OPTIONAL_E2E = [
   'e2e-opfs-storage',
@@ -63,8 +65,11 @@ function startServer() {
   // --strictPort (Agent H, H6): if the port is already taken, vite preview FAILS instead of
   // silently moving to the next free port — so the E2E never tests a stale server that is not
   // the one the release gate just started (a previous 5299 leak would otherwise pass silently).
-  const child = spawn(NPM, ['run', 'preview', '--', '--port', String(PORT), '--host', HOST, '--strictPort'], {
-    cwd: process.cwd(), stdio: 'ignore', detached: true, shell: true,
+  // Start Vite directly instead of nesting npm inside the release npm process. This keeps the
+  // detached process tree stable on Windows as well as POSIX runners.
+  const viteBin = path.join(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js')
+  const child = spawn(process.execPath, [viteBin, 'preview', '--port', String(PORT), '--host', HOST, '--strictPort'], {
+    cwd: process.cwd(), stdio: 'ignore', detached: true, shell: false,
   })
   child.unref()
   return child.pid
