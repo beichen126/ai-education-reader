@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core'
 import { mkdirSync } from 'fs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const OUT = 'docs/assets/readme'
-const PREFIX = 'v133-'
+const PREFIX = 'v200-'
 mkdirSync(OUT, { recursive: true })
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 const FILES = '[data-testid="sidebar-entry-files"], [data-testid="rail-files"]'
@@ -18,6 +18,12 @@ await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
 await page.waitForTimeout(500)
 await shot(page, '00-app-shell.webp')
+await page.locator('[data-testid="sidebar-entry-prompts"]').first().click()
+await page.locator('[data-testid="prompt-manager"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.waitForTimeout(500)
+await shot(page, '11-prompt-manager.webp')
+await page.locator('[data-testid="prompt-manager-close"]').click()
+await page.waitForTimeout(400)
 await openLibrary(page)
 await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/outline-sample.pdf')
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })

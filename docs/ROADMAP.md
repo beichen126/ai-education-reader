@@ -1,65 +1,40 @@
 # Product Roadmap
 
-Long-term direction. Planning only — items here are NOT scheduled or implemented yet.
-Short, user-facing release notes live in CHANGELOG.md, not here.
+这里记录面向用户的产品方向；已经交付的能力见 [CHANGELOG.md](CHANGELOG.md)，不把已完成事项伪装成未来计划。
 
-## 1. OPFS storage — foundation implemented
+## 当前版本：v2.0.0
 
-Large binary items (original PDFs, larger attachments) are stored OPFS-first where the
-browser supports it, with an automatic IndexedDB-inline fallback. IndexedDB keeps
-metadata, ids, relations, settings, chapter trees and binary references. A background
-migration moves legacy IndexedDB blobs into OPFS. Reserved follow-up work:
+AI Education Reader 现在是一套以 PDF 为中心的本地学习工作区：资料、章节、阅读进度、页面笔记、会话、分支和学习成果可以沿着同一份原文持续积累。
 
-- better orphan GC (listReferencedOpfsPaths + cleanupUnreferencedOpfs exist; graceful 24h runtime GC not enabled)
-- future PPTX / conversion binary assets in the same binary layer
-- streaming backup/export (Backup V2 remains base64 JSON)
+v2.0.0 的 Prompt-native 工作方式也已经交付：
 
-## 2. PPTX material library — Planned
+- **会话模式**：选择 AI 讲解方式，模式变化从下一条消息开始，历史回答仍保留当时的学习方式；
+- **学习成果**：把当前 PDF 上下文加工成笔记、题目、总结、学习指南或自定义成果；
+- **快捷追问**：把常见的下一步问题变成真正的用户消息，主线和分支都能继续使用；
+- **系统协议**：查看目录识别、题目结构等机器输出规则及其校验说明；
+- **可恢复学习数据**：Prompt 配置、模式历史、分支、成果和 PDF 关系一起进入 Backup V6，旧 V1–V5 backup 仍可导入。
 
-Goal: accept PPT/PPTX as an import format for the material library. The canonical
-internal reading format stays PDF: PPTX → local conversion/render → canonical PDF
-document, then reuse Document / Chapter / Reader / Context. No separate PPT reader.
+## 接下来
 
-## 3. Export expansion — Planned
+### 更大的本地资料库
 
-At least:
-- Document → PDF with bookmarks
-- Conversation → Markdown + images ZIP
-- Annotated/study-material bundle
+继续降低大型 PDF、图片和 Backup 在浏览器内的峰值内存占用，完善 OPFS 垃圾回收、失败恢复和流式导出。当前 OPFS-first 与 IndexedDB fallback 已经是基础能力。
 
-To be designed separately.
+### 更顺手的复习工作流
 
-## 4. Dark mode — Planned
+围绕页面笔记、学习成果和快捷追问增加复习组织能力，但仍保持“先回到原文，再加工内容”的 PDF 一等对象原则。
 
-Based on the existing design tokens / CSS variables; system / light / dark. Never by
-hard-coding black CSS per component.
+### 浏览器离线与安装体验
 
-## 5. PDF compatibility — evidence-triggered future item
+评估 PWA、离线启动和本地资源缓存，前提是不会把 API Key 或学习资料引入不必要的云端同步。
 
-Continue the real fixture corpus under test/fixtures/pdf-compat. If a stable class of
-PDFs fails on a complete PDF.js runtime while PDFium/MuPDF succeeds, evaluate a
-secondary renderer backend then.
+### PPTX 资料导入
 
-## 6. v1.0.0 shipped status
+仍然是计划项：PPT/PPTX 需要先在浏览器本地转换为规范 PDF，再复用现有 Document / Chapter / Reader / Context 链路；不会建设第二套 PPT 阅读器。只有完成真实格式保真度门禁后才会开启。
 
-The following v1.0.0 items are SHIPPED and implemented (see CHANGELOG):
+## 明确不做
 
-- Document Library → Context picker (reusable, three entry points; parent /
-  multi-chapter / manual range / whole-document; metadata-only loading).
-- Reader "加入对话" current-chapter ancestry + 选择其他章节 / 多章节.
-- Export: Document → bookmarked PDF; Conversation → Markdown + images ZIP.
-- Dark mode (system / light / dark, design tokens, persisted).
-
-## 7. PPTX import — NOT SHIPPED (planned)
-
-PPTX import is NOT shipped: v1.0.0 did not validate a browser-local
-PPTX → canonical-PDF renderer against the project's fidelity gate, so the
-feature is not enabled. The material library accepts PDF only.
-
-Background: the browser OOXML → PDF renderer ecosystem is fragmented
-(pptx-preview / pptx-kit-preview / reamkit), and the alternate routes
-(LibreOffice server, WASM office suite, cloud conversion) are explicitly out
-of scope / forbidden. No comparative fixture gate was committed this release.
-The canonical-PDF philosophy (import → convert locally → reuse Document /
-Chapter / Reader / Context, with no separate PPT reader) remains the future
-plan. This does NOT block v1.0.0.
+- 不把 PDF 降级成某条会话的临时附件；
+- 不用云端账户或项目后端默默同步本地教材；
+- 不让内部 Prompt 类型、实现细节替代用户可以理解的学习入口；
+- 不为 PPTX 建立与 PDF 分裂的第二套目录、阅读和 Context 系统。

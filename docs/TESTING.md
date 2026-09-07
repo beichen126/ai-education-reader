@@ -1,6 +1,6 @@
 # Testing — AI Education Reader
 
-本文档说明 v1.0.0 的测试分层与如何运行。所有测试默认本地、离线（除标注的 paid smoke）。
+本文档说明 v2.0.0 的测试分层与如何运行。所有测试默认本地、离线（除标注的 paid smoke）。
 
 ## 快速运行
 
@@ -41,10 +41,17 @@ OPFS / IndexedDB / 迁移 / 诊断：`test:opfs-storage`, `test:document-migrati
 用 Playwright-core + Microsoft Edge 对 production preview 跑真实交互。
 运行前：`npm run build` + `npm run preview -- --port 5299`。
 
+发布门禁 `npm run test:release` 会在自己的 production preview 上先执行类型检查、完整离线测试、构建，再执行同一份 critical E2E 列表；GitHub Pages 的 browser-e2e job 复用这份门禁，避免本地和 Pages 测的不是同一套行为。
+
 脚本在 `scripts/e2e-*.mjs`。关键 E2E：
 
 - `e2e-document-context`：Composer 入口 → 选 PDF → 章节选择 → 加入 Draft（断言**实际** Draft 输出与 provenance，非仅状态消息）。
 - `e2e-document-reader`：Reader 生命周期、加入对话祖先/手动、取消。
+- `e2e-prompt-manager`：Prompt 分类、搜索、复制、编辑、删除、失败提示和移动端导航。
+- `e2e-conversation-modes`：模式确认、持久化、reload 后恢复，以及下一条消息实际使用所选模式。
+- `e2e-branch-prompt-timeline`：分支继承根路线模式 → 分支本地切换 → 模式快照落库 → 下一条分支消息使用新模式。
+- `e2e-quick-follow-up`、`e2e-protocol-overrides`、`e2e-backup`：快捷追问真实消息链、协议查看/覆盖、Backup V6 round-trip。
+- `e2e-mobile-prompt-navigation`：375 / 390 / 412px 的 Prompt 入口、无障碍、键盘和无横向溢出门禁。
 - `e2e-theme` + `e2e-theme-computed`：system/light/dark 切换、刷新持久化、计算样式非 light 值。
 - `e2e-ai-toc` / `e2e-toc-review-layout` / `e2e-toc-thumbnails` / `e2e-native-toc` / `e2e-toc-layout`。
 - `e2e-chapter-builder`、`e2e-settings-byok`、`e2e-viewer-edge`、`e2e-opfs-storage`、`e2e-opfs-migration`、`e2e-stage*`、`e2e-responsive`。
@@ -72,4 +79,3 @@ OPFS / IndexedDB / 迁移 / 诊断：`test:opfs-storage`, `test:document-migrati
 ## 截图（文档工具，非测试）
 
 `npm run docs:screenshots` 由 production build 生成 `docs/assets/readme/*.webp`，仅用于 README，不进 `npm test`。
-

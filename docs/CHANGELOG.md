@@ -4,6 +4,34 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。开发中的改动先进入 `Unreleased`，正式发布 tag 时再移动到对应版本。
 
+## [2.0.0] - 2026-09-08
+
+### Added
+
+- 交付 Prompt-native 学习工作区：用「会话模式、学习成果、快捷追问、系统协议」四个用户入口组织 AI 学习行为。
+- 会话模式支持从下一条消息开始切换，主线与分支各自保留可追溯的模式历史；分支继承父路线的有效学习方式后，可以追加自己的方式。
+- 提示词管理支持按类别搜索、查看、复制、编辑和恢复内置定义；内置协议可查看用途、输出约束和校验说明。
+- 快捷追问支持根路线与分支路线，并作为真实用户消息写入历史；学习成果保存模板与结构化输出协议的来源快照。
+- 新增分支 Prompt timeline browser gate，发布门禁覆盖根路线继承、分支本地切换与下一条消息编译。
+
+### Changed
+
+- 导出会话时保留模式切换、快捷追问和学习成果所需的用户可读来源信息。
+- README、Roadmap 和隐私说明改用用户心智模型描述 Prompt 能力，并刷新为 v2.0.0 当前界面截图。
+- GitHub Pages 的 critical browser suite 与本地 `test:release` 共用同一组 E2E source of truth，包含 Prompt Manager、会话模式、分支 Prompt timeline、快捷追问、协议覆盖、Backup V6 和移动端 Prompt 导航。
+
+### Compatibility
+
+- 旧会话没有模式历史时显示为“模式未记录”，不会伪造历史 Prompt；旧 v1.x 的固定系统提示词和自定义操作仍通过迁移进入新的 Prompt 工作区。
+- IndexedDB v6 继续读取旧记录；Prompt 相关字段采用可选增量结构，新写入使用规范化数据。
+- Backup V6 保存 Prompt 定义、偏好、模式历史、快捷追问、Artifact bundle 和旧 PDF 学习关系；V1–V5 Backup 继续可导入，缺失的新字段使用安全默认值。
+- API Key 仍不进入 Backup；PDF、章节、页面笔记、来源回链和原有 v1.3.4 学习路径保持兼容。
+
+### Release evidence
+
+- Final gate: `npm ci`、`npm run typecheck`、`npm test`、`npm run build`、`npm run test:release`、`git diff --check`。
+- 发布前必须同时满足 CI quality gate、critical browser E2E、GitHub Pages deploy success、`origin/main` 与 `v2.0.0` tag 指向同一 release SHA。
+
 ## [1.3.4] - 2026-09-07
 
 ### Fixed
