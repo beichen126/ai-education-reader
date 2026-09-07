@@ -30,6 +30,7 @@ const CORE_E2E = [
   'e2e-mobile-history',
   'e2e-code-annotation',
   'e2e-branching',
+  'e2e-prompt-keyboard',
   'e2e-branching-graph',
   'e2e-branch-stream',
   'e2e-branch-stop',

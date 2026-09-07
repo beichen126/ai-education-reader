@@ -43,17 +43,22 @@ function userMessage(snapshot: PromptSnapshot): ApiChatMessage {
 /** JSON framing makes prompt content safe even when it contains delimiter-looking text. */
 export function buildFlattenedPromptSummary(segments: readonly LogicalPromptSegment[]): string {
   const current = segments.length > 0 ? segments[segments.length - 1].snapshot : undefined
+  let messageCursor = 0
   const frame = {
     format: 'ai-education-reader.prompt-timeline.v1',
     instruction: '历史 assistant 回复应理解为在各自 segment 的模式下生成；当前回复遵守 currentMode。',
-    segments: segments.map((segment) => ({
-      transitionId: segment.transitionId,
-      afterMessageId: segment.afterMessageId,
-      messageIds: segment.messageIds,
-      name: segment.snapshot.name,
-      revision: segment.snapshot.revision ?? null,
-      content: segment.snapshot.content,
-    })),
+    segments: segments.map((segment, index) => {
+      const startInclusive = messageCursor
+      const endExclusive = startInclusive + segment.messageIds.length
+      messageCursor = endExclusive
+      return {
+        ordinal: index + 1,
+        messageRange: { startInclusive, endExclusive },
+        name: segment.snapshot.name,
+        revision: segment.snapshot.revision ?? null,
+        content: segment.snapshot.content,
+      }
+    }),
     currentMode: current ? {
       name: current.name,
       revision: current.revision ?? null,

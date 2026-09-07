@@ -33,9 +33,13 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
   const [defaultModeId, setDefaultModeId] = useState('builtin-conversation-default')
   const [switchingId, setSwitchingId] = useState<string | null>(null)
   const [modeError, setModeError] = useState<string | null>(null)
+  const routeTriggerRef = useRef<HTMLButtonElement | null>(null)
   const modeTriggerRef = useRef<HTMLButtonElement | null>(null)
-  const modeItemRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const focusFrameRef = useRef<number | null>(null)
   const draft = useDraft(activeBranchId ? branchThreadKey(activeBranchId) : conversationId)
+  const routeMenuId = 'conversation-route-menu-' + conversationId
+  const modeMenuId = 'conversation-mode-menu-' + conversationId
+  const initialMenuFocus = useRef<'selected' | 'first' | 'last'>('selected')
 
   useEffect(() => {
     let cancelled = false
@@ -49,15 +53,19 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
 
   useEffect(() => {
     if (!openMenu) { setEditId(null); return }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      setOpenMenu(null)
-      if (openMenu === 'mode') modeTriggerRef.current?.focus()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [openMenu])
+    const menuId = openMenu === 'mode' ? modeMenuId : routeMenuId
+    const menu = document.getElementById(menuId)
+    const items = menu ? Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')).filter((item) => !(item as HTMLButtonElement).disabled) : []
+    if (items.length === 0) return
+    const selected = items.findIndex((item) => item.getAttribute('aria-checked') === 'true' || item.getAttribute('data-selected') === 'true')
+    const focusIndex = initialMenuFocus.current === 'first'
+      ? 0
+      : initialMenuFocus.current === 'last'
+        ? items.length - 1
+        : selected >= 0 ? selected : 0
+    initialMenuFocus.current = 'selected'
+    items[focusIndex]?.focus()
+  }, [openMenu, modeMenuId, routeMenuId, modes, branches, activeBranchId, defaultModeId])
 
   const lineage = activeBranchId ? resolveBranchLineage(branches, activeBranchId) : null
   const activeTransition = effectiveTransitions[effectiveTransitions.length - 1]
@@ -69,9 +77,72 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
   const draftNonEmpty = draft.text.trim().length > 0 || draft.imageIds.length > 0
   const disabledReason = busy ? '发送或生成中，停止后才能切换模式' : switchingId ? '正在应用会话模式' : undefined
 
-  async function go(branchId: string | undefined) {
+  function focusTrigger(kind: OpenMenu): void {
+    if (focusFrameRef.current !== null) window.cancelAnimationFrame(focusFrameRef.current)
+    focusFrameRef.current = window.requestAnimationFrame(() => {
+      focusFrameRef.current = null
+      const trigger = kind === 'mode' ? modeTriggerRef.current : routeTriggerRef.current
+      trigger?.focus()
+    })
+  }
+
+  function cancelPendingFocus(): void {
+    if (focusFrameRef.current === null) return
+    window.cancelAnimationFrame(focusFrameRef.current)
+    focusFrameRef.current = null
+  }
+
+  function closeMenu(kind: OpenMenu, returnFocus = true): void {
     setOpenMenu(null)
-    await onSwitch(branchId)
+    if (returnFocus && kind) focusTrigger(kind)
+  }
+
+  function toggleMenu(kind: Exclude<OpenMenu, null>): void {
+    if (openMenu === kind) closeMenu(kind)
+    else {
+      cancelPendingFocus()
+      initialMenuFocus.current = 'selected'
+      setOpenMenu(kind)
+    }
+  }
+
+  function openMenuFromTrigger(kind: Exclude<OpenMenu, null>, direction: 'first' | 'last'): void {
+    cancelPendingFocus()
+    initialMenuFocus.current = direction
+    setOpenMenu(kind)
+  }
+
+  function handleTriggerKeyDown(kind: Exclude<OpenMenu, null>, event: React.KeyboardEvent<HTMLButtonElement>): void {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    event.preventDefault()
+    openMenuFromTrigger(kind, event.key === 'ArrowDown' ? 'first' : 'last')
+  }
+
+  function handleMenuKeyDown(kind: Exclude<OpenMenu, null>, event: React.KeyboardEvent<HTMLDivElement>): void {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      closeMenu(kind)
+      return
+    }
+    if (event.key === 'Tab') {
+      // Let the browser move focus out of the menu; do not create a focus trap.
+      setOpenMenu(null)
+      return
+    }
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    const menuId = kind === 'mode' ? modeMenuId : routeMenuId
+    const menu = document.getElementById(menuId)
+    const items = menu ? Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')).filter((item) => !(item as HTMLButtonElement).disabled) : []
+    if (items.length === 0) return
+    event.preventDefault()
+    const current = items.indexOf(document.activeElement as HTMLElement)
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
+    items[next]?.focus()
+  }
+
+  async function go(branchId: string | undefined) {
+    closeMenu('route')
+    try { await onSwitch(branchId) } finally { focusTrigger('route') }
   }
 
   async function saveRename() {
@@ -87,7 +158,7 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
     const message = '删除该分支及其所有子分支？' + (descendants > 0 ? '（含 ' + descendants + ' 个子分支）' : '')
     if (!globalThis.confirm(message)) return
     await deleteBranchSubtree(branchId)
-    setOpenMenu(null)
+    closeMenu('route')
     onChanged()
     if (activeBranchId === branchId) await onSwitch(undefined)
   }
@@ -96,7 +167,7 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
     if (busy || switchingId) return
     const snapshotAtBoundary = activeSnapshot
     const exact = snapshotAtBoundary && samePromptSnapshot(snapshotAtBoundary, capturePromptSnapshot(definition, snapshotAtBoundary.capturedAt))
-    if (exact) { setOpenMenu(null); return }
+    if (exact) { closeMenu('mode'); return }
     const history = effectiveMessageCount > 0
     const draftNote = draftNonEmpty ? '\n当前草稿将在新模式下发送。' : ''
     const confirmation = history ? `从下一条消息开始使用「${definition.name}」？${draftNote}` : `使用「${definition.name}」作为当前模式？`
@@ -105,23 +176,15 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
     setModeError(null)
     try {
       await switchConversationMode({ conversationId, branchId: activeBranchId, modeId: definition.id })
-      setOpenMenu(null)
+      closeMenu('mode')
       await onModeChanged()
+      focusTrigger('mode')
     } catch (error) {
       setModeError(error instanceof Error ? error.message : '无法切换会话模式。')
+      closeMenu('mode')
     } finally {
       setSwitchingId(null)
     }
-  }
-
-  function handleModeMenuKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    const items = modeItemRefs.current.filter((item): item is HTMLButtonElement => !!item && !item.disabled)
-    if (event.key === 'Escape') { event.preventDefault(); setOpenMenu(null); modeTriggerRef.current?.focus(); return }
-    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key) || items.length === 0) return
-    event.preventDefault()
-    const current = items.indexOf(document.activeElement as HTMLButtonElement)
-    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (current + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length
-    items[next]?.focus()
   }
 
   return (
@@ -136,11 +199,11 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
           }) : null}
         </span>
         {branches.length > 0 && <div className={css.switcher}>
-          <Button size="sm" variant="outline" aria-haspopup="menu" aria-expanded={openMenu === 'route'} aria-label="切换路线" onClick={() => setOpenMenu(openMenu === 'route' ? null : 'route')}>切换 ▾</Button>
-          {openMenu === 'route' && <div className={css.menu} role="menu" aria-label="路线">
-            <button type="button" className={css.menuItem + (!activeBranchId ? ' ' + css.active : '')} role="menuitem" onClick={() => void go(undefined)}>主线</button>
+          <Button ref={routeTriggerRef} size="sm" variant="outline" aria-haspopup="menu" aria-expanded={openMenu === 'route'} aria-controls={routeMenuId} aria-label="切换路线" onKeyDown={(event) => handleTriggerKeyDown('route', event)} onClick={() => toggleMenu('route')}>切换 ▾</Button>
+          {openMenu === 'route' && <div id={routeMenuId} className={css.menu} role="menu" aria-label="路线" onKeyDown={(event) => handleMenuKeyDown('route', event)}>
+            <button type="button" className={css.menuItem + (!activeBranchId ? ' ' + css.active : '')} role="menuitem" data-selected={!activeBranchId ? 'true' : undefined} onClick={() => void go(undefined)}>主线</button>
             {branches.map((branch) => <div key={branch.id}>
-              <div className={css.menuLine}><button type="button" className={css.menuItem + (branch.id === activeBranchId ? ' ' + css.active : '')} role="menuitem" onClick={() => void go(branch.id)}>{branch.title}</button></div>
+              <div className={css.menuLine}><button type="button" className={css.menuItem + (branch.id === activeBranchId ? ' ' + css.active : '')} role="menuitem" data-selected={branch.id === activeBranchId ? 'true' : undefined} onClick={() => void go(branch.id)}>{branch.title}</button></div>
               <div className={css.menuActions}>
                 {editId === branch.id ? <input className={css.editInput} value={editTitle} autoFocus aria-label="分支名称" onChange={(event) => setEditTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void saveRename(); if (event.key === 'Escape') setEditId(null) }} /> : <>
                   <button type="button" className={css.menuItem} role="menuitem" aria-label={'重命名 ' + branch.title} onClick={() => { setEditId(branch.id); setEditTitle(branch.title) }}>✎ 重命名</button>
@@ -158,12 +221,12 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
         {legacy && <span className={css.legacyHint} data-testid="legacy-mode-hint">模式未记录</span>}
         {hasNewRevision && selectedDefinition && <><span className={css.revisionHint}>有新版本</span><button type="button" className={css.applyButton} disabled={!!disabledReason} onClick={() => void applyMode(selectedDefinition)}>应用新版本</button></>}
         <div className={css.switcher}>
-          <Button ref={modeTriggerRef} size="sm" variant="outline" disabled={!!disabledReason} aria-haspopup="menu" aria-expanded={openMenu === 'mode'} aria-label="切换对话模式" title={disabledReason} onClick={() => setOpenMenu(openMenu === 'mode' ? null : 'mode')}>切换 ▾</Button>
-          {openMenu === 'mode' && <div className={css.menu + ' ' + css.modeMenu} role="menu" aria-label="模式" onKeyDown={handleModeMenuKeyDown}>
+          <Button ref={modeTriggerRef} size="sm" variant="outline" disabled={!!disabledReason} aria-haspopup="menu" aria-expanded={openMenu === 'mode'} aria-controls={modeMenuId} aria-label="切换对话模式" title={disabledReason} onKeyDown={(event) => handleTriggerKeyDown('mode', event)} onClick={() => toggleMenu('mode')}>切换 ▾</Button>
+          {openMenu === 'mode' && <div id={modeMenuId} className={css.menu + ' ' + css.modeMenu} role="menu" aria-label="模式" onKeyDown={(event) => handleMenuKeyDown('mode', event)}>
             <div className={css.menuHeading}>模式</div>
-            {modes.map((mode, index) => {
+            {modes.map((mode) => {
               const selected = mode.id === activeSnapshot?.profileId || (!activeSnapshot && mode.id === defaultModeId)
-              return <button key={mode.id} ref={(node) => { modeItemRefs.current[index] = node }} type="button" className={css.menuItem + (selected ? ' ' + css.active : '')} role="menuitemradio" aria-checked={selected} disabled={!!disabledReason} onClick={() => void applyMode(mode)}>{mode.name}{selected ? ' · 当前' : ''}</button>
+              return <button key={mode.id} type="button" className={css.menuItem + (selected ? ' ' + css.active : '')} role="menuitemradio" aria-checked={selected} disabled={!!disabledReason} onClick={() => void applyMode(mode)}>{mode.name}{selected ? ' · 当前' : ''}</button>
             })}
             {disabledReason && <div className={css.disabledHint} role="status">{disabledReason}</div>}
           </div>}

@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto'
 import { BUILTIN_PROMPT_IDS, getBuiltinPrompt } from '../src/prompts/prompt-registry.ts'
 import { PROMPT_SCOPE_MATRIX, getPromptScopeSelectionIssues } from '../src/prompts/prompt-validation.ts'
 import { PromptCompileError, compileArtifactRequest, compileConversationRequest, compileProtocolRequest } from '../src/prompts/prompt-compiler.ts'
+import { buildFlattenedPromptSummary } from '../src/prompts/prompt-compile-strategies.ts'
 import type { PromptSnapshot, PromptTransition } from '../src/prompts/prompt-types.ts'
 import type { Message } from '../src/engine/types.ts'
 import { closeDb } from '../src/storage/idb.ts'
@@ -64,7 +65,23 @@ assert(flattened.messages[0].role === 'system', 'flattened projection has one le
 const summary = String(flattened.messages[0].content)
 assert(summary.includes('Prompt Timeline') && summary.includes('Prompt A') && summary.includes('Prompt B') && summary.includes('Prompt C'), 'flattened summary contains every historical segment and current mode')
 assert(summary.includes('ai-education-reader.prompt-timeline.v1'), 'flattened summary uses explicit versioned framing')
+const summaryFrame = JSON.parse(summary.slice(summary.indexOf('\n') + 1))
+assert(!summary.includes('tA') && !summary.includes('a2') && !summary.includes('u1'), 'flattened transport omits transition and message UUIDs')
+assert(summaryFrame.segments[0].ordinal === 1 && summaryFrame.segments[0].messageRange.startInclusive === 0 && summaryFrame.segments[0].messageRange.endExclusive === 4 && summaryFrame.segments[1].messageRange.startInclusive === 4 && summaryFrame.segments[1].messageRange.endExclusive === 5, 'flattened transport keeps deterministic segment ordinals and message ranges')
 assert(flattened.messages.slice(1).map((message) => message.role).join(',') === 'user,assistant,user,assistant,user', 'flattened projection keeps all messages and order')
+
+const largeSegments = Array.from({ length: 100 }, (_, segmentIndex) => ({
+  transitionId: 'transition-' + segmentIndex,
+  afterMessageId: 'boundary-' + segmentIndex,
+  messageIds: Array.from({ length: 10 }, (_, messageIndex) => 'message-' + (segmentIndex * 10 + messageIndex)),
+  snapshot: { ...modeA, profileId: 'mode-' + segmentIndex, name: 'Mode ' + segmentIndex, content: 'prompt-' + segmentIndex },
+}))
+const largeFrameStart = performance.now()
+const largeSummary = buildFlattenedPromptSummary(largeSegments)
+const largeFrameElapsed = performance.now() - largeFrameStart
+assert(largeSummary.length < 25000, '100-transition flattened transport stays below the size budget (got ' + largeSummary.length + ' chars)')
+assert(!largeSummary.includes('transition-') && !largeSummary.includes('message-'), 'large flattened transport contains no message UUID payload')
+assert(largeFrameElapsed < 1000, '100-transition flattened transport completes within the time budget (got ' + Math.round(largeFrameElapsed) + ' ms)')
 
 const noTimeline = await compileConversationRequest({
   thread: { type: 'branch', conversationId: 'conversation-1', branchId: 'branch-1' }, effectiveMessages: messages,

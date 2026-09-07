@@ -137,6 +137,7 @@
     "test:e2e-pdf-page-conversations": "node scripts/e2e-pdf-page-conversations.mjs",
     "test:e2e-document-notes": "node scripts/e2e-document-notes.mjs",
     "test:e2e-mobile-history": "node scripts/e2e-mobile-history.mjs",
+    "test:e2e-prompt-keyboard": "node scripts/e2e-prompt-keyboard.mjs",
     "test:e2e-code-annotation": "node scripts/e2e-code-annotation.mjs",
     "test:e2e-theme": "node scripts/e2e-theme.mjs",
     "test:branch-path": "npx tsx scripts/test-branch-path.ts",

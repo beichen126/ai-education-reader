@@ -32,4 +32,3 @@ export function appendPromptTransition(
 export function promptTransitionBoundaries(transitions: readonly PromptTransition[]): (string | null)[] {
   return transitions.map((transition) => transition.afterMessageId)
 }
-

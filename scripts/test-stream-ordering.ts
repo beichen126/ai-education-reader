@@ -10,10 +10,13 @@ const assert = (c, m) => { if (c) { pass++; console.log('  ok: ' + m) } else { f
 {
   const id = newStableId()
   const order: string[] = []
+  let resolveOldStarted!: () => void
+  const oldStarted = new Promise<void>((resolve) => { resolveOldStarted = resolve })
   let releaseOld: (() => void) | null = null
   // Enqueue an OLD (stale partial) write that will be held open (delayed).
   const oldWrite = enqueueWrite(id, async () => {
     order.push('old-start')
+    resolveOldStarted()
     await new Promise<void>((r) => { releaseOld = r })
     order.push('old-end')
     await saveConversation({ id, title: 'c', createdAt: 1, updatedAt: 1, messages: [{ id: 'm', role: 'assistant', content: 'STALE', createdAt: 2, updatedAt: 2 }] })
@@ -24,8 +27,8 @@ const assert = (c, m) => { if (c) { pass++; console.log('  ok: ' + m) } else { f
     await saveConversation({ id, title: 'c', createdAt: 1, updatedAt: 1, messages: [{ id: 'm', role: 'assistant', content: 'FINAL', createdAt: 3, updatedAt: 3 }] })
     order.push('new-end')
   })
-  // Give the engine a tick: new must NOT have started while old is held.
-  await new Promise(r => setTimeout(r, 20))
+  // The old write explicitly signals that it owns the queue before we inspect the newer one.
+  await oldStarted
   assert(!order.includes('new-start'), 'A: newer write does NOT start before old completes (ordered)')
   assert(order.includes('old-start'), 'A: old write started')
   // Release the old write; both settle. New must run after old-end.

@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { idbClearAll, closeDb } from '../src/storage/idb.ts'
 import { getConversation, saveConversation, setSetting } from '../src/storage/storage.ts'
 import { saveSettings, DEFAULT_SETTINGS } from '../src/engine/settings-store.ts'
-import { sessionsActions } from '../src/engine/sessions-store.ts'
+import { getSessionsStatus, sessionsActions } from '../src/engine/sessions-store.ts'
 import { createBranchFromMessage } from '../src/branches/branch-service.ts'
 import { getBranch, saveBranch } from '../src/branches/branch-store.ts'
 import { prepareAcceptedSendContext, resolveCurrentConversationModeResult } from '../src/prompts/prompt-send.ts'
@@ -34,6 +34,23 @@ function msg(id: string, role: 'user' | 'assistant', content: string): Message {
 }
 function deltaDone(): string { return 'data: [DONE]\n\n' }
 
+const backgroundRejections: unknown[] = []
+const onUnhandledRejection = (reason: unknown) => { backgroundRejections.push(reason) }
+process.on('unhandledRejection', onUnhandledRejection)
+
+async function waitForSettled<T>(label: string, read: () => Promise<T>, done: (value: T, status: string) => boolean, timeoutMs = 2000): Promise<T> {
+  const deadline = Date.now() + timeoutMs
+  let last: T | undefined
+  let lastStatus = getSessionsStatus()
+  while (Date.now() <= deadline) {
+    last = await read()
+    lastStatus = getSessionsStatus()
+    if (done(last, lastStatus)) return last
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  }
+  throw new Error(label + ' timed out after ' + timeoutMs + 'ms; status=' + lastStatus + '; durable=' + JSON.stringify(last))
+}
+
 let requests: any[] = []
 globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
   requests.push(JSON.parse(String(init?.body || '{}')))
@@ -54,8 +71,7 @@ await setDefaultConversationModeId(modeA.id)
 const conversationId = await sessionsActions.newChat()
 requests = []
 assert(await sessionsActions.sendUserMessage(conversationId, 'first', []), 'root send accepts through the canonical path')
-await new Promise((resolve) => setTimeout(resolve, 50))
-let conversation = await getConversation(conversationId) as Conversation
+let conversation = await waitForSettled('root first send', () => getConversation(conversationId) as Promise<Conversation | undefined>, (value, status) => !!value && value.messages.length === 2 && (status === 'idle' || status === 'error')) as Conversation
 assert(conversation.messages.length === 2, 'root acceptance stores user plus streamed assistant')
 assert(conversation.promptTransitions?.length === 1 && conversation.promptTransitions[0].snapshot.content === 'A prompt', 'root acceptance stores the mode transition with the user message')
 assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('A prompt'), 'request uses the accepted frozen mode snapshot')
@@ -64,8 +80,7 @@ assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messa
 await setDefaultConversationModeId(modeB.id)
 requests = []
 assert(await sessionsActions.sendUserMessage(conversationId, 'second', []), 'mode B send accepts')
-await new Promise((resolve) => setTimeout(resolve, 50))
-conversation = await getConversation(conversationId) as Conversation
+conversation = await waitForSettled('root second send', () => getConversation(conversationId) as Promise<Conversation | undefined>, (value, status) => !!value && value.messages.length === 4 && (status === 'idle' || status === 'error')) as Conversation
 assert(conversation.promptTransitions?.map((item) => item.snapshot.content).join('|') === 'A prompt|B prompt', 'A to B creates a second ordered transition')
 assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('B prompt'), 'mode B request uses B without changing A history')
 
@@ -92,8 +107,7 @@ await setDefaultConversationModeId(modeC.id)
 requests = []
 // The branch path is read before acceptance and becomes the sole input to compile + stream.
 assert(await (await import('../src/engine/branch-thread.ts')).runBranchReply(conversationId, branch.id, 'branch', []), 'branch send accepts through the same semantic pipeline')
-await new Promise((resolve) => setTimeout(resolve, 50))
-const branchAfter = await getBranch(branch.id) as ConversationBranch
+const branchAfter = await waitForSettled('branch send', () => getBranch(branch.id) as Promise<ConversationBranch | undefined>, (value, status) => !!value && value.messages.length === 2 && (status === 'idle' || status === 'error')) as ConversationBranch
 const rootAfterBranch = await getConversation(conversationId) as Conversation
 assert(branchAfter.promptTransitions?.some((item) => item.snapshot.content === 'C prompt') === true, 'branch stores its local mode transition')
 assert(rootAfterBranch.promptTransitions?.map((item) => item.snapshot.content).join('|') === 'A prompt|B prompt', 'branch send does not mutate root timeline')
@@ -230,5 +244,8 @@ await deletePromptRecord(modeA.id)
 await deletePromptRecord(modeB.id)
 await deletePromptRecord(modeC.id)
 await closeDb()
+await new Promise<void>((resolve) => setImmediate(resolve))
+process.off('unhandledRejection', onUnhandledRejection)
+assert(backgroundRejections.length === 0, 'background send tasks settle without unhandled rejection')
 console.log('RESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)
