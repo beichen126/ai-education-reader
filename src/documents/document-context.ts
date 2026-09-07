@@ -7,7 +7,7 @@ import type { ChapterNode } from './document-types'
 import type { PdfRange, PdfSelection } from '../pdf/pdf-types'
 import { normalizePdfRanges, pdfSelectionTitle, countPdfRangePages } from '../pdf/pdf-types'
 import { findCurrentChapter } from './reader-context'
-import { resolveBookmarkChapterPdfRange } from '../pdf/bookmark-range'
+import { resolveBookmarkChapterPdfRangeBounds } from '../pdf/bookmark-range'
 import { bookmarkRangeEndModeOf, type BookmarkRangePreferences } from './bookmark-range-preferences'
 
 /** Find the node with the given id, or null. */
@@ -62,7 +62,7 @@ export function buildChapterNodesSelection(nodes: ChapterNode[], options: Chapte
   const ordered = nodes.filter(selectable)
   const ranges = normalizePdfRanges(ordered.map(n => {
     if (options.pageCount !== undefined) {
-      return resolveBookmarkChapterPdfRange({
+      return resolveBookmarkChapterPdfRangeBounds({
         startPage: n.startPage as number,
         endPage: n.endPage as number,
         pageCount: options.pageCount,

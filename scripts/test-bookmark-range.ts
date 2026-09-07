@@ -1,5 +1,5 @@
 // Stage A: bookmark end-mode range semantics (PURE, no React/storage/UI).
-import { bookmarkRangePresentation, exclusiveEndPageOfChapter, resolveBookmarkChapterPdfRange, resolveBookmarkPdfRange, type BookmarkRangeEndMode } from '../src/pdf/bookmark-range.ts'
+import { bookmarkRangePresentation, exclusiveEndPageOfChapter, resolveBookmarkChapterPdfRange, resolveBookmarkChapterPdfRangeBounds, resolveBookmarkPdfRange, resolveBookmarkPdfRangeBounds, type BookmarkRangeEndMode } from '../src/pdf/bookmark-range.ts'
 
 let pass = 0
 let fail = 0
@@ -53,6 +53,13 @@ for (const mode of ['exclusive', 'inclusive'] as const) {
   assert(exclusive.endPage === 19 && exclusive.pages.length === 10, 'ChapterNode endPage 19 -> exclusive sends pages 10-19')
   assert(inclusive.endPage === 20 && inclusive.pages.length === 11, 'ChapterNode endPage 19 -> inclusive extends to page 20')
   assert(exclusiveEndPageOfChapter(30, 30) === 31, 'last chapter boundary is pageCount + 1')
+}
+
+{
+  const direct = resolveBookmarkPdfRangeBounds({ startPage: 10, exclusiveEndPage: 20, pageCount: 40, endMode: 'inclusive' })
+  const chapter = resolveBookmarkChapterPdfRangeBounds({ startPage: 10, endPage: 19, pageCount: 40, endMode: 'inclusive' })
+  assert(direct.endPage === 20 && !Object.prototype.hasOwnProperty.call(direct, 'pages'), 'direct bounds resolver returns PdfRange without pages')
+  assert(chapter.endPage === 20 && !Object.prototype.hasOwnProperty.call(chapter, 'pages'), 'chapter bounds resolver returns PdfRange without pages')
 }
 
 {

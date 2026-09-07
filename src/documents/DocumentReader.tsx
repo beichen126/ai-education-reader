@@ -18,7 +18,7 @@ import { validatePdfRange, countPdfRangePages, needsPdfContextSoftConfirm, MAX_P
 import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, buildManualRangeSelection } from './reader-context'
 import { findCurrentChapterPath } from './document-context'
 import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
-import { resolveBookmarkChapterPdfRange } from '../pdf/bookmark-range'
+import { bookmarkRangePresentation } from '../pdf/bookmark-range'
 import { DocumentContextPicker } from './DocumentContextPicker'
 import { executeDocumentContext } from './document-context-service'
 import { useDocumentUi, documentUiActions } from './document-ui-store'
@@ -819,11 +819,11 @@ export function DocumentReader() {
           {[...currentChapterPath].reverse().map(n => {
             const mode = bookmarkRangeEndModeOf(doc?.bookmarkRangePreferences, n.id)
             const range = n.startPage != null && n.endPage != null
-              ? resolveBookmarkChapterPdfRange({ startPage: n.startPage, endPage: n.endPage, pageCount, endMode: mode })
+              ? bookmarkRangePresentation({ startPage: n.startPage, endPage: n.endPage, pageCount })[mode]
               : null
             return (
               <button key={n.id} type="button" className={css.menuItem} data-testid={'reader-ctx-ancestor-' + n.id} disabled={!n.selectable || n.startPage == null} onClick={() => { const s = buildChapterSelection(n, { pageCount, bookmarkRangePreferences: doc?.bookmarkRangePreferences }); void requestContext(s, s.ranges) }}>
-                <span className={css.menuLevel}>L{n.level}</span>{n.title}<span className={css.menuMeta}>{range ? '实际发送 PDF ' + range.startPage + '–' + range.endPage : '无法定位页码'} · {mode === 'inclusive' ? '左闭右闭' : '左闭右开'}</span>
+                <span className={css.menuLevel}>L{n.level}</span>{n.title}<span className={css.menuMeta}>{range ? range.label : '无法定位页码'}</span>
               </button>
             )
           })}

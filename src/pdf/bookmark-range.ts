@@ -26,6 +26,11 @@ export type ResolveBookmarkChapterPdfRangeInput = {
   endMode: BookmarkRangeEndMode
 }
 
+export type BookmarkPdfRangeBounds = {
+  startPage: number
+  endPage: number
+}
+
 /**
  * Resolve the physical pages selected by one bookmark.
  *
@@ -39,6 +44,21 @@ export function resolveBookmarkPdfRange({
   pageCount,
   endMode,
 }: ResolveBookmarkPdfRangeInput): BookmarkPdfRange {
+  const bounds = resolveBookmarkPdfRangeBounds({ startPage, exclusiveEndPage, pageCount, endMode })
+  const pages = Array.from({ length: bounds.endPage - bounds.startPage + 1 }, (_, index) => bounds.startPage + index)
+  return { ...bounds, pages }
+}
+
+/**
+ * Resolve only the inclusive physical bounds of a bookmark range. This is the
+ * render-safe path: callers that only need a PdfRange must not allocate pages.
+ */
+export function resolveBookmarkPdfRangeBounds({
+  startPage,
+  exclusiveEndPage,
+  pageCount,
+  endMode,
+}: ResolveBookmarkPdfRangeInput): BookmarkPdfRangeBounds {
   if (!Number.isInteger(pageCount) || pageCount < 1) {
     throw new RangeError('pageCount must be a positive integer')
   }
@@ -58,9 +78,7 @@ export function resolveBookmarkPdfRange({
   if (endPage < startPage || endPage > pageCount) {
     throw new RangeError('resolved bookmark range is outside the PDF page count')
   }
-
-  const pages = Array.from({ length: endPage - startPage + 1 }, (_, index) => startPage + index)
-  return { startPage, endPage, pages }
+  return { startPage, endPage }
 }
 
 /**
@@ -75,7 +93,18 @@ export function resolveBookmarkChapterPdfRange({
   pageCount,
   endMode,
 }: ResolveBookmarkChapterPdfRangeInput): BookmarkPdfRange {
-  return resolveBookmarkPdfRange({ startPage, exclusiveEndPage: exclusiveEndPageOfChapter(endPage, pageCount), pageCount, endMode })
+  const bounds = resolveBookmarkChapterPdfRangeBounds({ startPage, endPage, pageCount, endMode })
+  const pages = Array.from({ length: bounds.endPage - bounds.startPage + 1 }, (_, index) => bounds.startPage + index)
+  return { ...bounds, pages }
+}
+
+export function resolveBookmarkChapterPdfRangeBounds({
+  startPage,
+  endPage,
+  pageCount,
+  endMode,
+}: ResolveBookmarkChapterPdfRangeInput): BookmarkPdfRangeBounds {
+  return resolveBookmarkPdfRangeBounds({ startPage, exclusiveEndPage: exclusiveEndPageOfChapter(endPage, pageCount), pageCount, endMode })
 }
 
 export function exclusiveEndPageOfChapter(endPage: number, pageCount: number): number {

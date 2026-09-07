@@ -2,7 +2,7 @@
 // DocumentReader only orchestrates; these helpers own the rules.
 import type { ChapterNode } from './document-types'
 import type { PdfRange, PdfSelection } from '../pdf/pdf-types'
-import { resolveBookmarkChapterPdfRange } from '../pdf/bookmark-range'
+import { resolveBookmarkChapterPdfRangeBounds } from '../pdf/bookmark-range'
 import { bookmarkRangeEndModeOf, type BookmarkRangePreferences } from './bookmark-range-preferences'
 
 /**
@@ -44,7 +44,7 @@ export function buildCurrentPageSelection(page: number): PdfSelection {
 
 export function buildChapterSelection(chapter: ChapterNode, options?: { pageCount?: number; bookmarkRangePreferences?: BookmarkRangePreferences }): PdfSelection {
   const range = options?.pageCount !== undefined
-    ? resolveBookmarkChapterPdfRange({ startPage: chapter.startPage!, endPage: chapter.endPage!, pageCount: options.pageCount, endMode: bookmarkRangeEndModeOf(options.bookmarkRangePreferences, chapter.id) })
+    ? resolveBookmarkChapterPdfRangeBounds({ startPage: chapter.startPage!, endPage: chapter.endPage!, pageCount: options.pageCount, endMode: bookmarkRangeEndModeOf(options.bookmarkRangePreferences, chapter.id) })
     : { startPage: chapter.startPage!, endPage: chapter.endPage! }
   return {
     kind: 'outline',
