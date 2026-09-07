@@ -33,6 +33,7 @@ const CORE_E2E = [
   'e2e-prompt-context',
   'e2e-prompt-keyboard',
   'e2e-prompt-manager',
+  'e2e-quick-follow-up',
   'e2e-branching-graph',
   'e2e-branch-stream',
   'e2e-branch-stop',
