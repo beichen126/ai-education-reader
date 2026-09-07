@@ -16,8 +16,8 @@ export function AiTocProgressDialog({ progress, selectedCount, error, onClose, o
     if (!progress) return '正在启动目录识别…'
     switch (progress.phase) {
       case 'rendering': return '正在准备目录页面 ' + (progress.completed + 1) + ' / ' + progress.total
-      case 'transcribing': return '正在识别目录文字 ' + (progress.windowIndex + 1) + ' / ' + progress.windowCount
-      case 'structuring': return '正在分析整本目录层级'
+      case 'transcribing': return '正在识别目录文字 · 第 ' + (progress.windowIndex + 1) + ' / ' + progress.windowCount + ' 批'
+      case 'structuring': return progress.repair ? '正在校正目录层级结构' : '正在分析整本目录层级'
       case 'mapping': return '正在建立 PDF 页码映射'
       case 'done': return '目录识别完成，正在打开检查目录…'
       default: return '正在识别目录…'
