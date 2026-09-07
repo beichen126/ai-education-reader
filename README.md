@@ -21,7 +21,7 @@
 
 ---
 
-<img src="docs/assets/readme/01-reader-context.webp" alt="AI Education Reader 当前 PDF Reader 界面" width="100%" />
+<img src="docs/assets/readme/v131-00-app-shell.webp" alt="AI Education Reader 当前主界面，保留完整侧栏与资料入口" width="100%" />
 
 ## 这是什么
 
@@ -85,7 +85,7 @@ flowchart LR
 
 导入后的 PDF 会进入本地资料库，拥有自己的名称、页数、目录来源、阅读进度和文档 ID。资料库只读取元数据，打开时才按需读取二进制；同一份资料可以被多个对话复用。
 
-<img src="docs/assets/readme/02-document-library.webp" alt="本地 PDF 资料库，支持阅读、加入对话和更多操作" width="100%" />
+<img src="docs/assets/readme/v131-02-document-library.webp" alt="本地 PDF 资料库，支持阅读、加入对话和更多操作" width="100%" />
 
 Reader 支持目录导航、页码跳转、阅读位置恢复、深色模式和响应式布局。读到某一页时，可以从当前页继续创建章节、选择 Context 或打开页面笔记。
 
@@ -93,11 +93,11 @@ Reader 支持目录导航、页码跳转、阅读位置恢复、深色模式和�
 
 项目同时支持 PDF 原生书签、无目录 PDF 的手动章节，以及 AI 辅助目录。AI 目录不是黑盒地“猜一个目录”：它先忠实转录目录页，再做全局结构识别，保留原始 printed page label，最后由你逐项检查、调整和保存。
 
-<img src="docs/assets/readme/04-ai-toc-review.webp" alt="AI 目录检查：逐项确认标题、层级和页码映射" width="100%" />
+<img src="docs/assets/readme/v131-04-ai-toc-review.webp" alt="AI 目录检查：逐项确认标题、层级和页码映射" width="100%" />
 
 没有原生目录时，也可以在 Reader 内直接编辑章节树；章节结构保存后即可用于导航和 Context 选择。
 
-<img src="docs/assets/readme/05-chapter-editor.webp" alt="在 Reader 内编辑 PDF 章节树" width="100%" />
+<img src="docs/assets/readme/v131-05-chapter-editor.webp" alt="在 Reader 内编辑 PDF 章节树" width="100%" />
 
 目录相关的页码映射遵循“能证明才映射”的原则：优先使用 PDF PageLabels；没有 PageLabels 时，可以用明确的单一锚点校准数字页码；非数字或不确定的页码保持待确认，不擅自猜测。
 
@@ -112,7 +112,7 @@ Reader 支持目录导航、页码跳转、阅读位置恢复、深色模式和�
 
 选择器会把范围规范化、去重并显示实际页数。选中的页面才会被渲染为发送给模型的上下文，完整 PDF 不会因为打开 Reader 而上传。
 
-<img src="docs/assets/readme/03-document-context-picker.webp" alt="从资料库选择章节或页码加入当前对话" width="100%" />
+<img src="docs/assets/readme/v131-03-document-context-picker.webp" alt="从资料库选择章节或页码加入当前对话" width="100%" />
 
 ### 4. 对话、页面和来源可以双向返回
 
@@ -141,17 +141,21 @@ PDF provenance 不是展示用的标签，而是可操作的导航关系：
 
 侧栏收起后保留原来的 rail 入口；展开时才显示完整侧栏或移动端 drawer。桌面端、窄屏端和移动端不会因为换了 viewport 就改变“资料库、Reader、会话”的基本语义。
 
-<img src="docs/assets/readme/07-mobile.webp" alt="390px 移动端 PDF Reader，保留返回、加入对话、目录、笔记和关闭入口" width="45%" />
+<img src="docs/assets/readme/v131-07-mobile.webp" alt="390px 移动端 PDF Reader，保留返回、加入对话、目录、笔记和关闭入口" width="45%" />
+
+<img src="docs/assets/readme/v131-09-mobile-history-drawer.webp" alt="390px 移动端展开后的历史会话 drawer，收起时仍保留原 rail 入口" width="45%" />
+
+<img src="docs/assets/readme/v131-10-mobile-rail.webp" alt="390px 移动端收起后的原 rail，历史、新会话、图片、文件、全屏和设置仍可直接访问" width="45%" />
 
 界面提供系统、浅色和深色三档外观，使用设计 token 控制颜色和交互状态，避免深色模式把正文变成刺眼的纯白。
 
-<img src="docs/assets/readme/08-dark-mode.webp" alt="深色模式下的 PDF Reader" width="100%" />
+<img src="docs/assets/readme/v131-08-dark-mode.webp" alt="深色模式下的 PDF Reader" width="100%" />
 
 ### 7. Local-first、BYOK 和可恢复数据
 
 浏览器本地保存元数据、会话、分支、设置、文档关系和页面笔记；原始 PDF 与图片优先保存到 OPFS，不支持或写入失败时回退到 IndexedDB。完整 Backup V5 JSON 不包含 API Key，并兼容导入 V1–V4 备份。
 
-<img src="docs/assets/readme/06-settings-byok.webp" alt="BYOK 设置和本地数据导出入口" width="100%" />
+<img src="docs/assets/readme/v131-06-settings-byok.webp" alt="BYOK 设置和本地数据导出入口" width="100%" />
 
 ## 快速开始
 

@@ -9,12 +9,14 @@ mkdirSync(OUT, { recursive: true })
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 const FILES = '[data-testid="sidebar-entry-files"], [data-testid="rail-files"]'
 const openLibrary = async (page) => { if (await page.locator('[data-testid="document-library"]').count()) return; await page.locator(FILES).first().click(); await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 }) }
-const shot = async (page, name) => { await page.screenshot({ path: OUT + '/' + name, type: 'webp' }); console.log('shot ' + name) }
+const shot = async (page, name) => { const file = 'v131-' + name; await page.screenshot({ path: OUT + '/' + file, type: 'webp' }); console.log('shot ' + file) }
 
 // Import two fixture PDFs so the library has real, deterministic content.
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
 await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
+await page.waitForTimeout(500)
+await shot(page, '00-app-shell.webp')
 await openLibrary(page)
 await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/outline-sample.pdf')
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
@@ -159,6 +161,14 @@ await page.waitForTimeout(300)
 const mpage = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage()
 await mpage.goto(BASE, { waitUntil: 'networkidle' })
 await mpage.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
+await mpage.waitForTimeout(500)
+await mpage.locator('[data-testid="rail-history"]').click()
+await mpage.locator('[data-testid="mobile-history-drawer"]').waitFor({ state: 'visible', timeout: 10000 })
+await mpage.waitForTimeout(300)
+await shot(mpage, '09-mobile-history-drawer.webp')
+await mpage.locator('[data-testid="mobile-history-drawer"] [data-testid="sidebar-collapse"]').click()
+await mpage.waitForTimeout(300)
+await shot(mpage, '10-mobile-rail.webp')
 await openLibrary(mpage)
 // Mobile has its own empty store; import a doc so the reader has content.
 await mpage.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/outline-sample.pdf')
