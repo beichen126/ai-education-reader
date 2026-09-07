@@ -1,0 +1,191 @@
+import type {
+  PromptDefinition,
+  PromptKind,
+  PromptRequestDomain,
+  PromptScope,
+  PromptScopeMatrix,
+} from './prompt-types'
+
+const PROMPT_KINDS = new Set<PromptKind>(['conversation-mode', 'artifact', 'quick-follow-up', 'protocol'])
+const PROMPT_SOURCES = new Set(['builtin', 'custom', 'experimental'])
+const ARTIFACT_KINDS = new Set(['note', 'quiz', 'summary', 'study-guide', 'custom'])
+const PROTOCOL_POLICIES = new Set(['read-only', 'experimental'])
+
+export type PromptValidationIssue = {
+  code: string
+  path: string
+  message: string
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function add(issues: PromptValidationIssue[], code: string, path: string, message: string): void {
+  issues.push({ code, path, message })
+}
+
+function validateBase(value: Record<string, unknown>, issues: PromptValidationIssue[]): void {
+  if (!isNonEmptyString(value.id)) add(issues, 'INVALID_ID', 'id', 'id must be a non-empty string')
+  if (typeof value.name !== 'string') add(issues, 'INVALID_NAME', 'name', 'name must be a string')
+  if (typeof value.description !== 'string') add(issues, 'INVALID_DESCRIPTION', 'description', 'description must be a string')
+  if (typeof value.source !== 'string' || !PROMPT_SOURCES.has(value.source)) add(issues, 'INVALID_SOURCE', 'source', 'source is not a supported prompt source')
+  if (typeof value.enabled !== 'boolean') add(issues, 'INVALID_ENABLED', 'enabled', 'enabled must be boolean')
+  if (!isFiniteNumber(value.createdAt)) add(issues, 'INVALID_CREATED_AT', 'createdAt', 'createdAt must be finite')
+  if (!isFiniteNumber(value.updatedAt)) add(issues, 'INVALID_UPDATED_AT', 'updatedAt', 'updatedAt must be finite')
+  if (!isFiniteNumber(value.revision) || !Number.isInteger(value.revision) || value.revision < 1) add(issues, 'INVALID_REVISION', 'revision', 'revision must be a positive integer')
+}
+
+/** Return every structural issue without mutating the supplied value. */
+export function getPromptDefinitionIssues(value: unknown): PromptValidationIssue[] {
+  const issues: PromptValidationIssue[] = []
+  if (!isObject(value)) return [{ code: 'NOT_OBJECT', path: '', message: 'prompt definition must be an object' }]
+  validateBase(value, issues)
+  if (typeof value.kind !== 'string' || !PROMPT_KINDS.has(value.kind as PromptKind)) {
+    add(issues, 'INVALID_KIND', 'kind', 'kind is not a supported prompt kind')
+    return issues
+  }
+
+  switch (value.kind) {
+    case 'conversation-mode':
+      if (typeof value.systemPrompt !== 'string') add(issues, 'INVALID_SYSTEM_PROMPT', 'systemPrompt', 'systemPrompt must be a string')
+      break
+    case 'artifact':
+      if (typeof value.artifactKind !== 'string' || !ARTIFACT_KINDS.has(value.artifactKind)) add(issues, 'INVALID_ARTIFACT_KIND', 'artifactKind', 'artifactKind is not supported')
+      if (typeof value.userPrompt !== 'string') add(issues, 'INVALID_USER_PROMPT', 'userPrompt', 'userPrompt must be a string')
+      if (value.protocolId !== undefined && !isNonEmptyString(value.protocolId)) add(issues, 'INVALID_PROTOCOL_ID', 'protocolId', 'protocolId must be a non-empty string when present')
+      break
+    case 'quick-follow-up':
+      if (!isNonEmptyString(value.label)) add(issues, 'INVALID_LABEL', 'label', 'label must be a non-empty string')
+      if (typeof value.userPrompt !== 'string') add(issues, 'INVALID_USER_PROMPT', 'userPrompt', 'userPrompt must be a string')
+      if (typeof value.pinned !== 'boolean') add(issues, 'INVALID_PINNED', 'pinned', 'pinned must be boolean')
+      if (!isFiniteNumber(value.sortOrder) || !Number.isInteger(value.sortOrder) || value.sortOrder < 0) add(issues, 'INVALID_SORT_ORDER', 'sortOrder', 'sortOrder must be a non-negative integer')
+      break
+    case 'protocol':
+      if (!isNonEmptyString(value.domain)) add(issues, 'INVALID_DOMAIN', 'domain', 'domain must be a non-empty string')
+      if (typeof value.systemPrompt !== 'string') add(issues, 'INVALID_SYSTEM_PROMPT', 'systemPrompt', 'systemPrompt must be a string')
+      if (value.outputContract !== undefined && typeof value.outputContract !== 'string') add(issues, 'INVALID_OUTPUT_CONTRACT', 'outputContract', 'outputContract must be a string when present')
+      if (value.validator !== undefined) {
+        if (!isObject(value.validator) || !isNonEmptyString(value.validator.name) || typeof value.validator.description !== 'string') add(issues, 'INVALID_VALIDATOR', 'validator', 'validator metadata is invalid')
+      }
+      if (typeof value.overridePolicy !== 'string' || !PROTOCOL_POLICIES.has(value.overridePolicy)) add(issues, 'INVALID_OVERRIDE_POLICY', 'overridePolicy', 'overridePolicy is not supported')
+      if (value.baseProtocolId !== undefined && !isNonEmptyString(value.baseProtocolId)) add(issues, 'INVALID_BASE_PROTOCOL_ID', 'baseProtocolId', 'baseProtocolId must be a non-empty string when present')
+      break
+    default:
+      return assertNever(value.kind as never)
+  }
+  return issues
+}
+
+/** Validate and return a typed definition, or null for untrusted input. */
+export function validatePromptDefinition(value: unknown): PromptDefinition | null {
+  return getPromptDefinitionIssues(value).length === 0 ? value as PromptDefinition : null
+}
+
+export function isPromptDefinition(value: unknown): value is PromptDefinition {
+  return validatePromptDefinition(value) !== null
+}
+
+export const isValidPromptDefinition = isPromptDefinition
+
+export function assertPromptDefinition(value: unknown): PromptDefinition {
+  const definition = validatePromptDefinition(value)
+  if (!definition) throw new Error(getPromptDefinitionIssues(value).map((issue) => issue.path + ': ' + issue.message).join('; '))
+  return definition
+}
+
+function assertNever(value: never): never {
+  throw new Error('Unhandled prompt kind: ' + String(value))
+}
+
+/** Return the exact content that belongs to a definition's own scope. */
+export function promptContent(definition: PromptDefinition): string {
+  switch (definition.kind) {
+    case 'conversation-mode': return definition.systemPrompt
+    case 'artifact': return definition.userPrompt
+    case 'quick-follow-up': return definition.userPrompt
+    case 'protocol': return definition.systemPrompt
+    default: return assertNever(definition)
+  }
+}
+
+export function promptScopeOfKind(kind: PromptKind): PromptScope {
+  switch (kind) {
+    case 'conversation-mode': return 'conversation-mode'
+    case 'artifact': return 'artifact'
+    case 'quick-follow-up': return 'quick-follow-up'
+    case 'protocol': return 'protocol'
+    default: return assertNever(kind)
+  }
+}
+
+export const PROMPT_SCOPE_MATRIX: PromptScopeMatrix = {
+  conversation: { allowed: ['conversation-mode'], required: ['conversation-mode'] },
+  'conversation-quick-follow-up': { allowed: ['conversation-mode', 'quick-follow-up'], required: ['conversation-mode', 'quick-follow-up'] },
+  'artifact-note': { allowed: ['artifact', 'protocol'], required: ['artifact'] },
+  'artifact-quiz': { allowed: ['artifact', 'protocol'], required: ['artifact', 'protocol'] },
+  'artifact-summary': { allowed: ['artifact', 'protocol'], required: ['artifact'] },
+  'artifact-study-guide': { allowed: ['artifact', 'protocol'], required: ['artifact'] },
+  'artifact-custom': { allowed: ['artifact', 'protocol'], required: ['artifact'] },
+  'ai-toc-transcription': { allowed: ['protocol'], required: ['protocol'] },
+  'ai-toc-structure': { allowed: ['protocol'], required: ['protocol'] },
+}
+
+export type PromptScopeIssue = {
+  code: string
+  domain: PromptRequestDomain
+  scope?: PromptScope
+  message: string
+}
+
+/** Validate the table itself so request-domain policy cannot silently drift. */
+export function getPromptScopeMatrixIssues(matrix: PromptScopeMatrix = PROMPT_SCOPE_MATRIX): PromptScopeIssue[] {
+  const issues: PromptScopeIssue[] = []
+  const domains = Object.keys(PROMPT_SCOPE_MATRIX) as PromptRequestDomain[]
+  for (const domain of domains) {
+    const entry = matrix[domain]
+    if (!entry) {
+      issues.push({ code: 'MISSING_DOMAIN', domain, message: 'scope matrix is missing ' + domain })
+      continue
+    }
+    const allowed = new Set(entry.allowed)
+    const required = new Set(entry.required)
+    for (const scope of required) {
+      if (!allowed.has(scope)) issues.push({ code: 'REQUIRED_NOT_ALLOWED', domain, scope, message: 'required scope is not allowed' })
+    }
+    for (const scope of entry.allowed) {
+      if (!['conversation-mode', 'artifact', 'quick-follow-up', 'protocol'].includes(scope)) issues.push({ code: 'UNKNOWN_SCOPE', domain, scope, message: 'unknown scope in matrix' })
+    }
+  }
+  return issues
+}
+
+export function validatePromptScopeMatrix(matrix: PromptScopeMatrix = PROMPT_SCOPE_MATRIX): boolean {
+  return getPromptScopeMatrixIssues(matrix).length === 0
+}
+
+export function getPromptScopeSelectionIssues(domain: PromptRequestDomain, scopes: readonly PromptScope[]): PromptScopeIssue[] {
+  const entry = PROMPT_SCOPE_MATRIX[domain]
+  if (!entry) return [{ code: 'UNKNOWN_DOMAIN', domain, message: 'unknown request domain' }]
+  const requested = new Set(scopes)
+  const issues: PromptScopeIssue[] = []
+  for (const scope of requested) {
+    if (!entry.allowed.includes(scope)) issues.push({ code: 'SCOPE_NOT_ALLOWED', domain, scope, message: scope + ' is not allowed for ' + domain })
+  }
+  for (const scope of entry.required) {
+    if (!requested.has(scope)) issues.push({ code: 'REQUIRED_SCOPE_MISSING', domain, scope, message: scope + ' is required for ' + domain })
+  }
+  return issues
+}
+
+export function isPromptScopeSelectionValid(domain: PromptRequestDomain, scopes: readonly PromptScope[]): boolean {
+  return getPromptScopeSelectionIssues(domain, scopes).length === 0
+}
