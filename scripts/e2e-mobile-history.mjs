@@ -85,8 +85,8 @@ for (const size of [
   await noHorizontalOverflow(label + ' open')
   assert(await page.locator('[data-testid="conversation"]').count() > 0, label + ': conversation remains mounted')
   assert(await composer.inputValue() === draft, label + ': draft remains while drawer is open')
-  assert(await drawer.getAttribute('role') === 'dialog', label + ': drawer exposes role=dialog')
-  assert(await drawer.getAttribute('aria-label') === '历史会话', label + ': drawer exposes aria-label=历史会话')
+  assert(await drawer.getAttribute('role') === 'navigation', label + ': drawer exposes role=navigation')
+  assert(await drawer.getAttribute('aria-label') === '主导航', label + ': drawer exposes aria-label=主导航')
 
   await page.locator('[data-testid="mobile-history-backdrop"]').click({ position: { x: 20, y: 20 } })
   await page.locator('[data-testid="mobile-history-drawer"]').waitFor({ state: 'hidden' })

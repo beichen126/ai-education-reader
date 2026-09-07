@@ -16,6 +16,7 @@ import { t } from './engine/locale'
 import { Sidebar } from './cockpit/Sidebar'
 import { Conversation } from './cockpit/Conversation'
 import { SettingsDialog } from './cockpit/SettingsDialog'
+import { PromptManager } from './prompts/PromptManager'
 import { Gallery } from './gallery/Gallery'
 import { DocumentLibrary } from './documents/DocumentLibrary'
 import { DocumentReader } from './documents/DocumentReader'
@@ -33,6 +34,7 @@ export function App() {
   useTheme()
   const persistRequestedRef = useRef(false)
   const settingsOpen = useUi(s => s.settingsOpen)
+  const promptManagerOpen = useUi(s => s.promptManagerOpen)
   const [boot, setBoot] = useState<BootState>('loading')
   const bootFn = useCallback(async () => {
     setBoot('loading')
@@ -86,6 +88,7 @@ export function App() {
         t={t as any}
       />
       {settingsOpen && <SettingsDialog />}
+      {promptManagerOpen && <PromptManager />}
       <Gallery />
       <DocumentLibrary />
       <DocumentReader />

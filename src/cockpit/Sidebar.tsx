@@ -7,7 +7,7 @@ import { documentUiActions } from '../documents/document-ui-store'
 import { layoutStore, useLayoutStore } from '../engine/layout-store'
 import { NEW_TITLE } from '../engine/types'
 import { displayTitle, sanitizeTitle, MAX_TITLE_LEN } from '../engine/session-title'
-import { IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, IconClockOutline16, IconFullscreenOutline16, IconFolderOpenOutline16, Input } from '../dsh/primitives'
+import { IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, IconClockOutline16, IconFullscreenOutline16, IconFolderOpenOutline16, IconListPenOutline16, Input } from '../dsh/primitives'
 import { IconPhoto16 } from './composer-icons'
 import css from './cockpit.module.css'
 
@@ -47,7 +47,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
     )
   }
   return (
-    <div className={css.sidebar} style={{ width }} data-testid={narrow ? 'mobile-history-drawer' : undefined} role={narrow ? 'dialog' : undefined} aria-label={narrow ? '历史会话' : undefined}>
+    <div className={css.sidebar} style={{ width }} data-testid={narrow ? 'mobile-history-drawer' : undefined} role={narrow ? 'navigation' : undefined} aria-label={narrow ? '主导航' : undefined}>
       <div className={css.sidebarHead}>
         <div className={css.sidebarTitle}>AI 学习阅读器</div>
         <div className={css.sidebarHeadBtns}>
@@ -66,6 +66,12 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         </button>
         <button type="button" className={css.entryBtn} data-testid="sidebar-entry-files" onClick={() => documentUiActions.openLibrary()}>
           <IconFolderOpenOutline16 /> <span>文件</span>
+        </button>
+      </div>
+      <div className={css.sidebarSection}>工具</div>
+      <div className={css.sidebarEntries}>
+        <button type="button" className={css.entryBtn} data-testid="sidebar-entry-prompts" onClick={() => uiActions.openPromptManager()}>
+          <IconListPenOutline16 /> <span>提示词</span>
         </button>
       </div>
       <div className={css.sidebarSection}>会话</div>
