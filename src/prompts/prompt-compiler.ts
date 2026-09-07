@@ -159,12 +159,24 @@ function resolverOrThrow(requested: SystemMessagePolicy, capabilities: ProviderC
   return resolveSystemMessagePolicy(requested, capabilities)
 }
 
+/**
+ * Validate and materialize the provider-neutral conversation context without
+ * touching attachment bytes. Send acceptance uses this before its durable
+ * transaction so a malformed timeline can never accept a user message.
+ */
+export function compileConversationLogicalContext(
+  input: ConversationPromptCompileInput,
+): { logical: LogicalPromptContext; systemMessagePolicy: ResolvedSystemMessagePolicy } {
+  const logical = conversationLogical(input)
+  const systemMessagePolicy = resolverOrThrow(input.systemMessagePolicy, input.providerCapabilities)
+  return { logical, systemMessagePolicy }
+}
+
 export async function compileConversationRequest(
   input: ConversationPromptCompileInput,
   options: { toDataUrl?: PromptImageResolver } = {},
 ): Promise<CompiledPromptRequest> {
-  const logical = conversationLogical(input)
-  const systemMessagePolicy = resolverOrThrow(input.systemMessagePolicy, input.providerCapabilities)
+  const { logical, systemMessagePolicy } = compileConversationLogicalContext(input)
   const messages = await projectLogicalPromptContext(logical, systemMessagePolicy, options.toDataUrl)
   return { logical, systemMessagePolicy, messages }
 }

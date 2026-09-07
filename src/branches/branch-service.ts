@@ -5,6 +5,7 @@ import { canonicalForkOwner, descendantBranchIds } from './branch-path'
 import { getBranch, saveBranchAndActive, listBranchesByConversation, getActiveBranch, setActiveBranch, deleteBranches } from './branch-store'
 import { branchDraftSettingKey, deleteBranchDraft, clearBranchDraftMemory } from '../engine/draft-store'
 import type { ConversationBranch } from './branch-types'
+import type { PromptTransition } from '../prompts/prompt-types'
 
 export class BranchError extends Error { readonly code: string; constructor(code: string, message: string) { super(message); this.code = code; this.name = 'BranchError' } }
 
@@ -80,14 +81,14 @@ export async function getActiveBranchForConversation(conversationId: StableId): 
 /**
  * Atomically ACCEPT a user message into a branch: in ONE readwrite txn across
  * ['conversationBranches','settings'] commit the updated branch record AND delete the
- * branch draft row. Never a partial state: either (message accepted + draft cleared)
+ * branch draft row (including any prompt transition snapshot). Never a partial state: either (message accepted + transition + draft cleared)
  * or (message absent + draft intact). Returning true means accepted & durable.
  */
-export async function acceptBranchUserMessage(branchId: StableId, message: Message): Promise<boolean> {
+export async function acceptBranchUserMessage(branchId: StableId, message: Message, promptTransitions?: PromptTransition[]): Promise<boolean> {
   const branch = await getBranch(branchId)
   if (!branch) return false
   const now = Date.now()
-  const updated: ConversationBranch = { ...branch, updatedAt: now, messages: [...branch.messages, message] }
+  const updated: ConversationBranch = { ...branch, updatedAt: now, messages: [...branch.messages, message], ...(promptTransitions ? { promptTransitions } : {}) }
   await idbRunTxn(['conversationBranches', 'settings'], (txn) => {
     txn.objectStore('conversationBranches').put(updated)
     txn.objectStore('settings').delete(branchDraftSettingKey(branchId))

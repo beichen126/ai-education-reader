@@ -7,6 +7,8 @@ import { getBranch, saveBranch, listBranchesByConversation } from '../branches/b
 import { acceptBranchUserMessage } from '../branches/branch-service'
 import { buildEffectiveConversationPath } from '../branches/branch-path'
 import { attachPdfContexts } from '../pdf/pdf-message-context'
+import { buildEffectivePromptPath } from '../prompts/effective-prompt-path'
+import { prepareAcceptedSendContext } from '../prompts/prompt-send'
 
 // Per-branch ordered durable-write queue (mirrors the root writeChains). A stale checkpoint
 // can never overwrite a newer revision of a branch record.
@@ -89,9 +91,23 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
   const key = genBranchKey(conversationId, branchId)
   if (!generationRegistry.begin(key, controller, 'sending')) return false
   try {
-    if (!(await acceptBranchUserMessage(branchId, msg))) return false
+    const conversation = await getConversation(conversationId)
+    const branches = await listBranchesByConversation(conversationId)
+    if (!conversation) return false
+    const effectiveMessagesBefore = buildEffectiveConversationPath(conversation, branches, branchId)
+    const effectivePromptPath = buildEffectivePromptPath(conversation, branches, branchId)
+    if (!effectivePromptPath.resolved) return false
+    const prepared = await prepareAcceptedSendContext({
+      threadRef: { type: 'branch', conversationId, branchId },
+      messagesBeforeAcceptance: effectiveMessagesBefore,
+      candidateMessages: [...effectiveMessagesBefore, msg],
+      effectiveTransitions: effectivePromptPath.transitions,
+      localTransitions: branch.promptTransitions ?? [],
+      acceptedMessageId: msg.id,
+    })
+    if (!(await acceptBranchUserMessage(branchId, msg, prepared.nextLocalTransitions))) return false
     const thread = new BranchReplyThread(conversationId, branchId)
-    await runThreadReply(thread, settings, controller)
+    await runThreadReply(thread, settings, controller, undefined, prepared.context)
     return true
   } finally {
     generationRegistry.end(key)

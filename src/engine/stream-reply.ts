@@ -1,8 +1,10 @@
 import { newStableId, type Message, type StableId } from './types'
 import type { Settings } from './settings-store'
-import { buildContextMessages, buildApiMessages, buildRequestMessages, streamTextChat, countImageParts, isVisionModel, exceedsVisionImageCount, DeepSeekError, errorKindLabel } from '../api/deepseek'
+import { buildContextMessages, buildApiMessages, streamTextChat, countImageParts, isVisionModel, exceedsVisionImageCount, DeepSeekError, errorKindLabel } from '../api/deepseek'
 import { toDataUrl, AttachmentError, attachmentErrorLabel, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
 import { generationRegistry } from './generation-registry'
+import { projectLogicalPromptContext } from '../prompts/prompt-compile-strategies'
+import type { AcceptedSendContext } from '../prompts/prompt-send'
 
 /**
  * Thread-agnostic streaming reply engine. ONE generation pipeline is shared by the ROOT
@@ -35,7 +37,7 @@ const DURABLE_CHECKPOINT_MS = 1500
  * failure never leaves a ghost placeholder. Deletion during generation, abort and error all
  * settle deterministically.
  */
-export async function runThreadReply(thread: ReplyThread, settings: Settings, controller: AbortController, onStreamStart?: (controller: AbortController, assistantId: StableId) => void): Promise<{ content: string; aborted: boolean }> {
+export async function runThreadReply(thread: ReplyThread, settings: Settings, controller: AbortController, onStreamStart?: (controller: AbortController, assistantId: StableId) => void, acceptedSendContext?: AcceptedSendContext): Promise<{ content: string; aborted: boolean }> {
   const assistantId = newStableId()
   let received = ''
   let lastRender = 0
@@ -47,7 +49,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
   const onDelta = (d: string) => { received += d; const t = Date.now(); if (t - lastRender >= STREAM_RENDER_INTERVAL_MS) { lastRender = t; update(received, false) } }
 
   try {
-    const contextMessages = buildContextMessages(await thread.getContextMessages())
+    const contextMessages = acceptedSendContext?.logical.messages ?? buildContextMessages(await thread.getContextMessages())
     const hasImages = contextMessages.some((x) => x.images.length > 0)
     if (hasImages && !isVisionModel(settings.model, settings.visionCapability)) { thread.setError(attachmentErrorLabel('vision-unsupported')); return { content: '', aborted: false } }
     const retainedImageIds = contextMessages.flatMap((x) => x.images)
@@ -57,8 +59,9 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       const retainedImages = contextMessages.reduce((sum, mm) => sum + mm.images.length, 0)
       if (exceedsVisionImageCount(retainedImages)) { thread.setError('当前对话需要发送的图片数量过多。请减少本次 PDF 页面或图片后重试。'); return { content: '', aborted: false } }
     }
-    const apiMessages = await buildApiMessages(contextMessages, toDataUrl)
-    const reqMessages = buildRequestMessages(apiMessages, settings)
+    const reqMessages = acceptedSendContext
+      ? await projectLogicalPromptContext(acceptedSendContext.logical, acceptedSendContext.compilePolicy.systemMessagePolicy, toDataUrl)
+      : await buildApiMessages(contextMessages, toDataUrl)
     const expectedImages = contextMessages.reduce((sum, mm) => sum + mm.images.length, 0)
     const encodedImages = countImageParts(reqMessages)
     if (encodedImages !== expectedImages) { thread.setError('图片准备失败：已选择 ' + expectedImages + ' 张，实际仅准备成功 ' + encodedImages + ' 张。请检查附件后重试。'); return { content: '', aborted: false } }

@@ -11,6 +11,7 @@ import { runThreadReply, type ReplyThread } from './stream-reply'
 import { generationRegistry, genRootKey } from './generation-registry'
 import { attachPdfContexts } from '../pdf/pdf-message-context'
 import { getBranch } from '../branches/branch-store'
+import { prepareAcceptedSendContext, type AcceptedSendContext } from '../prompts/prompt-send'
 
 export type { Conversation as ChatSession, Message as ChatMsg, Attachment as ChatImage }
 export const uid = (_p?: string) => newStableId()
@@ -129,13 +130,27 @@ export const sessionsActions = {
     const conv = state.byId[id]; if (!conv) return false
     if (!content.trim() && imageIds.length === 0) return false
     const now = Date.now()
+    const settings = getSettingsSnapshot()
     const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now }, imageIds, now)
     const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
-    const afterUser: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
+    const candidate: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
     // Optimistically show 'sending' and block concurrent sends; revert on failure.
-    upsertState(afterUser, { status: 'sending', sendError: undefined })
+    upsertState(candidate, { status: 'sending', sendError: undefined })
     acceptingRef.current = id
+    let acceptedSend: AcceptedSendContext
+    let afterUser: Conversation
     try {
+      const prepared = await prepareAcceptedSendContext({
+        threadRef: { type: 'root', conversationId: id },
+        messagesBeforeAcceptance: conv.messages,
+        candidateMessages: candidate.messages,
+        effectiveTransitions: conv.promptTransitions ?? [],
+        localTransitions: conv.promptTransitions ?? [],
+        acceptedMessageId: m.id,
+      })
+      acceptedSend = prepared.context
+      afterUser = { ...candidate, promptTransitions: prepared.nextLocalTransitions }
+      upsertState(afterUser, { status: 'sending', sendError: undefined })
       // ONE durable transaction: put conversation + put lastConversationId + delete the
       // draft row. The user message is ACCEPTED only if this transaction commits. On
       // failure nothing commits, the Draft stays intact and no reply stream starts.
@@ -154,7 +169,7 @@ export const sessionsActions = {
     clearDraftMemory(id)
     // Run the reply stream in the BACKGROUND so the caller can transfer attachment
     // ownership immediately, without blocking on the network.
-    void runReplyStream(id, afterUser)
+    void runReplyStream(id, afterUser, settings, acceptedSend)
     return true
   },
   async addAssistant(id: string, content: string) {
@@ -251,15 +266,14 @@ class RootReplyThread implements ReplyThread {
 }
 
 /** Fire-and-forget reply stream: runs AFTER the user message is accepted & persisted. */
-async function runReplyStream(id: string, afterUser: Conversation): Promise<void> {
-  const settings = getSettingsSnapshot()
+async function runReplyStream(id: string, afterUser: Conversation, settings: ReturnType<typeof getSettingsSnapshot>, acceptedSend: AcceptedSendContext): Promise<void> {
   if (!settings.apiKey) { setState({ ...state, status: 'error', sendError: errorKindLabel('no-api-key') }); return }
   const controller = new AbortController()
   const thread = new RootReplyThread(id)
   await runThreadReply(thread, settings, controller, (c, assistantId) => {
     abortControllerRef = c
     activeGeneration = { conversationId: id, assistantId, controller: c }
-  })
+  }, acceptedSend)
   // The engine already flushed + drained + set status; clear ownership deterministically.
   activeGeneration = null
   abortControllerRef = null

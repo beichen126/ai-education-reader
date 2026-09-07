@@ -37,7 +37,8 @@ export const LAST_CONVERSATION_ID_KEY = 'lastConversationId'
 /**
  * Atomically ACCEPT a user message into a conversation: in ONE IndexedDB
  * readwrite transaction spanning the conversations + settings stores we:
- *   1. put the updated Conversation (with the new user message);
+ *   1. put the updated Conversation (with the new user message and any frozen
+ *      prompt transition);
  *   2. put lastConversationId;
  *   3. delete the draft:<conversationId> setting row (the accepted content must no
  *      longer be considered unsent).
