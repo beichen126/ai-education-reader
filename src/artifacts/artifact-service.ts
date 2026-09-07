@@ -6,6 +6,9 @@ import { listBranchesByConversation } from '../branches/branch-store'
 import { getArtifact, saveArtifact, deleteArtifact } from './artifact-store'
 import { validateArtifact } from './artifact-validation'
 import type { ArtifactKind, ArtifactSource, ArtifactSourceSnapshot, SourceCitation, StudyArtifact } from './artifact-types'
+import type { ArtifactPromptBundleSnapshot } from '../prompts/prompt-types'
+import { getPromptSnapshotIssues } from '../prompts/prompt-validation'
+import type { PromptSnapshot } from '../prompts/prompt-types'
 
 export class ArtifactError extends Error { readonly code: string; constructor(code: string, message: string) { super(message); this.code = code; this.name = 'ArtifactError' } }
 
@@ -120,6 +123,42 @@ export async function filterLiveArtifactSources(artifacts: StudyArtifact[]): Pro
 const KIND_TITLE: Record<ArtifactKind, string> = { note: '笔记', quiz: '题目', summary: '总结', 'study-guide': '学习指南', custom: '自定义结果' }
 function defaultTitle(kind: ArtifactKind): string { return KIND_TITLE[kind] }
 
+function clonePromptSnapshot(snapshot: PromptSnapshot): PromptSnapshot {
+  return snapshot.kind === 'protocol'
+    ? { ...snapshot, ...(snapshot.validator ? { validator: { ...snapshot.validator } } : {}) }
+    : { ...snapshot }
+}
+
+function normalizeArtifactPromptBundle(bundle: ArtifactPromptBundleSnapshot, kind: ArtifactKind): ArtifactPromptBundleSnapshot {
+  if (!bundle || typeof bundle.userPrompt !== 'string' || !bundle.userPrompt.trim() || !Number.isFinite(bundle.resolvedAt) || !bundle.template) {
+    throw new ArtifactError('invalid-prompt-bundle', 'Artifact 提示词 bundle 不完整')
+  }
+  const templateIssues = getPromptSnapshotIssues(bundle.template)
+  if (templateIssues.length > 0 || bundle.template.kind !== 'artifact' || bundle.template.artifactKind !== kind) {
+    throw new ArtifactError('invalid-prompt-bundle', 'Artifact 模板与成果类型不匹配')
+  }
+  if (bundle.protocol) {
+    const protocolIssues = getPromptSnapshotIssues(bundle.protocol)
+    if (protocolIssues.length > 0 || bundle.protocol.kind !== 'protocol') throw new ArtifactError('invalid-prompt-bundle', 'Artifact protocol snapshot 非法')
+  }
+  const protocolDomain = bundle.protocol?.kind === 'protocol' ? bundle.protocol.protocolDomain : undefined
+  if (kind === 'quiz' && protocolDomain !== 'quiz-output') {
+    throw new ArtifactError('invalid-prompt-bundle', 'Quiz Artifact 必须绑定 quiz-output protocol')
+  }
+  if (kind !== 'quiz' && protocolDomain === 'quiz-output') {
+    throw new ArtifactError('invalid-prompt-bundle', 'quiz-output protocol 只能绑定 Quiz Artifact')
+  }
+  if (bundle.template.protocolId && bundle.protocol?.profileId !== bundle.template.protocolId) {
+    throw new ArtifactError('invalid-prompt-bundle', 'Artifact 模板与 protocol snapshot 绑定不一致')
+  }
+  return {
+    template: clonePromptSnapshot(bundle.template),
+    userPrompt: bundle.userPrompt,
+    ...(bundle.protocol ? { protocol: clonePromptSnapshot(bundle.protocol) } : {}),
+    resolvedAt: bundle.resolvedAt,
+  }
+}
+
 /**
  * Create the artifact draft record. The source snapshot is FROZEN here (before any model
  * call), so a generation that starts at Branch B / M12 never later includes M13/M14.
@@ -132,8 +171,10 @@ export async function createArtifactDraft(input: {
   throughMessageId: StableId
   prompt: string
   presetId?: string
+  promptBundle?: ArtifactPromptBundleSnapshot
 }): Promise<StudyArtifact> {
   if (!input.prompt || !input.prompt.trim()) throw new ArtifactError('prompt-empty', '提示词不能为空')
+  if (input.promptBundle && input.promptBundle.userPrompt !== input.prompt) throw new ArtifactError('prompt-bundle-mismatch', 'run-local userPrompt 与 Artifact prompt 不一致')
   const snapshot = await buildSourceSnapshot(input.conversationId, input.branchId, input.throughMessageId)
   const now = Date.now()
   const artifact: StudyArtifact = {
@@ -143,6 +184,7 @@ export async function createArtifactDraft(input: {
     source: { conversationId: input.conversationId, branchId: input.branchId, throughMessageId: input.throughMessageId, snapshot },
     presetId: input.presetId,
     prompt: input.prompt,
+    ...(input.promptBundle ? { promptBundle: normalizeArtifactPromptBundle(input.promptBundle, input.kind) } : {}),
     createdAt: now,
     updatedAt: now,
     // A NEW artifact starts as a DRAFT. It must NOT be 'generating' until it actually

@@ -1,17 +1,55 @@
 import { type StableId, type Message } from '../engine/types'
 import { getSettingsSnapshot } from '../engine/settings-store'
-import { buildContextMessages, buildApiMessages, buildRequestMessages, type ApiChatMessage } from '../api/deepseek'
+import { type ApiChatMessage } from '../api/deepseek'
+import { DEFAULT_PROVIDER_CAPABILITIES } from '../api/provider-capabilities'
 import { toDataUrl, AttachmentError } from '../engine/attachment-service'
 import { globalGenerationLock } from '../engine/chat-generation-service'
 import { getArtifact } from './artifact-store'
 import { markArtifactReady, markArtifactError, markArtifactGenerating, materializeSourceMessages } from './artifact-service'
 import { parseQuizDocument, QuizValidationError } from './artifact-validation'
-import type { StudyArtifact } from './artifact-types'
+import type { ArtifactKind, StudyArtifact } from './artifact-types'
+import type { ArtifactPromptBundleSnapshot } from '../prompts/prompt-types'
+import { capturePromptSnapshot } from '../prompts/prompt-resolution'
+import { getBuiltinArtifactPrompt, getBuiltinProtocol } from '../prompts/prompt-registry'
+import type { ArtifactPromptSnapshot, ProtocolPromptSnapshot } from '../prompts/prompt-types'
+import { compileArtifactRequest } from '../prompts/prompt-compiler'
 
 export class ArtifactGenerationError extends Error { readonly code: string; constructor(code: string, message: string) { super(message); this.code = code; this.name = 'ArtifactGenerationError' } }
 
 /** Injectable model-call seam so generation is unit-testable without a network. */
 export type ArtifactModelCall = (args: { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal: AbortSignal }) => Promise<string>
+
+function artifactDomain(kind: ArtifactKind): 'artifact-note' | 'artifact-quiz' | 'artifact-summary' | 'artifact-study-guide' | 'artifact-custom' {
+  return 'artifact-' + kind as ReturnType<typeof artifactDomain>
+}
+
+function legacyPromptBundle(a: StudyArtifact): { artifactPrompt: ArtifactPromptSnapshot; protocolPrompt?: ProtocolPromptSnapshot } {
+  const artifactPrompt: ArtifactPromptSnapshot = {
+    kind: 'artifact',
+    name: 'Legacy Artifact Prompt',
+    content: a.prompt,
+    source: 'legacy',
+    capturedAt: a.createdAt,
+    artifactKind: a.kind,
+  }
+  if (a.kind !== 'quiz') return { artifactPrompt }
+  const protocol = getBuiltinProtocol('quiz-output')
+  if (!protocol) return { artifactPrompt }
+  return { artifactPrompt, protocolPrompt: capturePromptSnapshot(protocol, a.createdAt) as ProtocolPromptSnapshot }
+}
+
+function resolveArtifactPromptBundle(a: StudyArtifact): { artifactPrompt: ArtifactPromptSnapshot; protocolPrompt?: ProtocolPromptSnapshot } {
+  const bundle: ArtifactPromptBundleSnapshot | undefined = a.promptBundle
+  if (bundle?.template?.kind === 'artifact') {
+    return {
+      // The durable template remains canonical provenance; only this run's userPrompt
+      // becomes the artifact user binding sent to the model.
+      artifactPrompt: { ...bundle.template, content: bundle.userPrompt },
+      protocolPrompt: bundle.protocol?.kind === 'protocol' ? { ...bundle.protocol, ...(bundle.protocol.validator ? { validator: { ...bundle.protocol.validator } } : {}) } : undefined,
+    }
+  }
+  return legacyPromptBundle(a)
+}
 
 /**
  * Generate a Study Artifact from its frozen source. One global model generation (the lock
@@ -43,18 +81,25 @@ export async function generateArtifact(artifactId: StableId, opts: { call: Artif
     if (!settings.apiKey) { await markArtifactError(artifactId, '未配置 API Key'); throw new ArtifactGenerationError('no-api-key', '未配置 API Key') }
     // Frozen source: never re-read the live conversation, never include later messages.
     const sourceMsgs = materializeSourceMessages(a.source)
-    const contextMsgs = buildContextMessages(sourceMsgs)
-    let apiMsgs: ApiChatMessage[]
-    try { apiMsgs = await buildApiMessages(contextMsgs, toDataUrl) }
-    catch (e) {
+    const selected = resolveArtifactPromptBundle(a)
+    let compiled
+    try {
+      compiled = await compileArtifactRequest({
+        domain: artifactDomain(a.kind),
+        sourceMessages: sourceMsgs,
+        artifactPrompt: selected.artifactPrompt,
+        ...(selected.protocolPrompt ? { protocolPrompt: selected.protocolPrompt } : {}),
+        systemMessagePolicy: 'auto',
+        providerCapabilities: DEFAULT_PROVIDER_CAPABILITIES,
+      }, { toDataUrl })
+    } catch (e) {
       if (e instanceof AttachmentError) {
         await markArtifactError(artifactId, '原始资料已不可用，无法按原上下文重新生成。')
         throw new ArtifactGenerationError('source-unavailable', '原始资料已不可用，无法按原上下文重新生成。')
       }
       throw e
     }
-    const reqMsgs = buildRequestMessages(apiMsgs, settings)
-    reqMsgs.push({ role: 'user', content: a.prompt })
+    const reqMsgs = compiled.messages
     // ---- NOW claim generation ownership. The artifact may be 'generating' from here on ----
     const claimed = await markArtifactGenerating(artifactId, preClaimUpdatedAt)
     if (!claimed) throw new ArtifactGenerationError('stale', '学习成果已更新，本次生成已丢弃')

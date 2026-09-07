@@ -1,5 +1,26 @@
 import type { ArtifactKind, TransformationPreset } from './artifact-types'
 
+/** Run-local Quiz intent. Machine output rules live in the protocol prompt below. */
+export const QUIZ_USER_INTENT_PROMPT = '请根据下面的学习内容生成一份练习题目，覆盖关键概念、易错点和需要主动回忆的知识。'
+
+/** Canonical Quiz output protocol. It must not contain user intent or Conversation Mode. */
+export const QUIZ_OUTPUT_PROTOCOL_PROMPT = [
+  '你负责把上文学习材料和用户要求转换为 QuizDocument。',
+  '只输出一个合法的 JSON 对象，不要 Markdown 代码围栏，不要附加任何解释文字。',
+  '唯一允许的结构是：',
+  '{"questions":[{"id":"q1","type":"single-choice","question":"...","options":["...","..."],"answer":1}]}',
+  '',
+  '类型与字段规则：',
+  '- single-choice：字段为 options(string[]) 与 answer(number)。answer 为正确选项下标，从 0 开始。',
+  '- multiple-choice：字段为 options(string[]) 与 answers(number[])。answers 为所有正确选项下标。',
+  '- true-false：字段为 answer(boolean)。',
+  '- short-answer：字段为 answer(string)，作为参考答案。',
+  '',
+  '每条 question 必须包含唯一 id 和 question；options 至少 2 个、至多 26 个。',
+  '题目数量建议 4~8 道，覆盖所给内容的关键概念。',
+  '不要输出结构之外的任何字段；不要输出任何解释性文字。',
+].join('\n')
+
 /**
  * Transformation prompt presets. Default prompts MUST live here, never scattered
  * through JSX. Users may edit / replace them before generation; the ACTUAL prompt
@@ -18,22 +39,7 @@ export const TRANSFORMATION_PRESETS: readonly TransformationPreset[] = [
     kind: 'quiz',
     label: '生成题目',
     description: '基于截至当前点的内容生成一份练习题目（单选/多选/判断/简答）。',
-    defaultPrompt: [
-      '请根据下面的学习内容生成一份练习题目。',
-      '只输出一个合法的 JSON 对象，不要 Markdown 代码围栏，不要附加任何解释文字。',
-      '唯一允许的结构是：',
-      '{"questions":[{"id":"q1","type":"single-choice","question":"...","options":["...","...","...","..."],"answer":1}]}',
-      '',
-      '类型与字段规则：',
-      '- single-choice：字段为 options(string[]) 与 answer(number)。answer 为正确选项下标，从 0 开始。',
-      '- multiple-choice：字段为 options(string[]) 与 answers(number[])。answers 为所有正确选项下标（请用冒号分隔的数组，如 [0,2]）。',
-      '- true-false：字段为 answer(boolean)。',
-      '- short-answer：字段为 answer(string)，作为参考答案。',
-      '',
-      '每条 question 必须包含 id（每道题唯一）、question；option 下标一律从 0 开始。',
-      '题目数量建议 4~8 道，覆盖所给内容的关键概念；options 至少 2 个、至多 26 个。',
-      '不要输出结构之外的任何字段；不要输出任何解释性文字。',
-    ].join('\n'),
+    defaultPrompt: QUIZ_USER_INTENT_PROMPT,
   },
   {
     id: 'summary',

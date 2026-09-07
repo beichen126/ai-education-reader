@@ -1,7 +1,7 @@
 import { newStableId, type StableId } from '../engine/types'
 import { getBuiltinPrompt } from './prompt-registry'
 import { getPromptPreferences, setBuiltinPromptHidden } from './prompt-preferences'
-import type { PromptDefinition, PromptKind } from './prompt-types'
+import type { ArtifactPrompt, PromptDefinition, PromptKind } from './prompt-types'
 import { allocateAvailablePromptId, getPromptRecord, deletePromptRecord, updatePromptRecordAtomic } from './prompt-store'
 import { listEffectivePromptDefinitions } from './prompt-resolution'
 import { getPromptDefinitionIssues, validatePromptDefinition } from './prompt-validation'
@@ -140,6 +140,31 @@ export async function copyPromptDefinition(id: StableId, options: { name?: strin
     updatedAt: now,
     revision: 1,
     ...(original.kind === 'protocol' ? { overridePolicy: 'experimental' as const, baseProtocolId: original.id } : {}),
+  }
+  return savePromptDefinition(copy, dependencies)
+}
+
+/** Save a run-local Artifact edit as one new catalog definition without writing raw store data. */
+export async function saveAsArtifactPromptDefinition(
+  id: StableId,
+  options: { name?: string; userPrompt: string },
+  dependencies?: PromptServiceDependencies,
+): Promise<PromptMutationResult> {
+  const original = await getPromptDefinition(id)
+  if (!original) throw new PromptServiceError('not-found', '提示词不存在。')
+  if (original.kind !== 'artifact') throw new PromptServiceError('invalid', '只有 Artifact 模板可以另存为。')
+  const d = deps(dependencies)
+  const now = d.now()
+  const copy: ArtifactPrompt = {
+    ...original,
+    id: await allocateAvailablePromptId(d.id),
+    name: options.name?.trim() || original.name + ' 副本',
+    source: 'custom',
+    enabled: true,
+    createdAt: now,
+    updatedAt: now,
+    revision: 1,
+    userPrompt: options.userPrompt,
   }
   return savePromptDefinition(copy, dependencies)
 }

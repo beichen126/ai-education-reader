@@ -1,5 +1,5 @@
 import type { ArtifactKind, TransformationPreset } from '../artifacts/artifact-types'
-import { presetForKind, TRANSFORMATION_PRESETS } from '../artifacts/artifact-prompts'
+import { presetForKind, QUIZ_OUTPUT_PROTOCOL_PROMPT, TRANSFORMATION_PRESETS } from '../artifacts/artifact-prompts'
 import { parseQuizDocument } from '../artifacts/artifact-validation'
 import { TOC_STRUCTURE_PROMPT, TOC_TRANSCRIPTION_SYSTEM_PROMPT, parseTocJsonl, parseTocStructure } from '../documents/ai-toc'
 import type { ArtifactPrompt, ConversationModePrompt, PromptDefinition, ProtocolDomain, ProtocolPrompt, PromptValidatorMetadata } from './prompt-types'
@@ -93,7 +93,7 @@ export const PROTOCOL_METADATA_ADAPTERS: readonly ProtocolAdapter[] = [
     name: 'Quiz · 输出协议',
     description: '约束题目生成结果为可验证的 QuizDocument。',
     domain: 'quiz-output',
-    getSystemPrompt: () => presetForKind('quiz')?.defaultPrompt ?? '',
+    getSystemPrompt: () => QUIZ_OUTPUT_PROTOCOL_PROMPT,
     outputContract: 'QuizDocument validated by parseQuizDocument()',
     validator: { name: 'parseQuizDocument', description: '解析并严格校验 QuizDocument 及答案索引。' },
   },
