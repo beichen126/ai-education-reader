@@ -17,7 +17,7 @@
 .rowOps { display: flex; align-items: center; gap: 2px; }
 .empty { padding: 16px 8px; font-size: 13px; color: var(--dsw-alias-label-tertiary); }
 .indentSpacer { flex: none; }
-.levelDim { flex: none; width: 52px; font-size: 12px; color: var(--dsw-alias-label-tertiary); text-align: right; }
+.levelSelect { flex: none; width: 58px; min-height: 30px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 3px 4px; font-size: 12px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); cursor: pointer; }
 .titleInput { flex: 1; min-width: 0; min-height: 30px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 3px 8px; font-size: 13px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
 .pageInput { flex: none; width: 64px; min-height: 30px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 3px 6px; text-align: center; font-size: 13px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
 .op { width: 26px; height: 26px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }

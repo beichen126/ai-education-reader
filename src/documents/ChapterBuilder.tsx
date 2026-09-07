@@ -13,6 +13,7 @@ import {
   deleteDraftSubtree, draftHasChildren, indentSubtree, outdentSubtree,
   moveUp, moveDown,
   insertChapterByPage, canApplyChapterDraftOperation,
+  setDraftItemLevel, MAX_CHAPTER_LEVEL,
   type ChapterDraftItem, type ChapterDraftValidation,
 } from './chapter-builder'
 import css from './chapter-builder.module.css'
@@ -80,6 +81,12 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
 
   const updateItem = (index: number, patch: Partial<ChapterDraftItem>) => {
     setItems(prev => prev.map((it, i) => (i === index ? { ...it, ...patch } : it)))
+  }
+
+  const updateLevel = (index: number, raw: string) => {
+    const level = Number(raw)
+    if (!Number.isInteger(level)) return
+    setItems(prev => setDraftItemLevel(prev, index, level))
   }
 
   // Both add entrances funnel through the SAME page-aware insertion helper (§9).
@@ -183,6 +190,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFr
               error={rowErrors[i]}
               onTitle={v => updateItem(i, { title: v })}
               onPage={v => updateItem(i, { startPage: pageFromInput(v) })}
+              onLevel={v => updateLevel(i, v)}
               onUp={() => applyOp(moveUp, i)}
               onDown={() => applyOp(moveDown, i)}
               onIndent={() => applyOp(indentSubtree, i)}
@@ -242,16 +250,27 @@ function subtreeCount(items: ChapterDraftItem[], index: number): number {
 function BuilderRow(props: {
   item: ChapterDraftItem; index: number
   canUp: boolean; canDown: boolean; canIndent: boolean; canOutdent: boolean; error?: string
-  onTitle: (v: string) => void; onPage: (v: string) => void
+  onTitle: (v: string) => void; onPage: (v: string) => void; onLevel: (v: string) => void
   onUp: () => void; onDown: () => void; onIndent: () => void; onOutdent: () => void; onDelete: () => void
 }) {
-  const { item, index, canUp, canDown, canIndent, canOutdent, error, onTitle, onPage, onUp, onDown, onIndent, onOutdent, onDelete } = props
+  const { item, index, canUp, canDown, canIndent, canOutdent, error, onTitle, onPage, onLevel, onUp, onDown, onIndent, onOutdent, onDelete } = props
   const pad = (item.level - 1) * 14
   return (
     <div className={css.row + (error ? ' ' + css.rowErr : '')} data-testid="cb-row">
       <div className={css.indentSpacer} style={{ width: pad }} aria-hidden />
       <div className={css.rowTop}>
-        <span className={css.levelDim} data-testid="cb-level">L{item.level}</span>
+        <select
+          className={css.levelSelect}
+          data-testid={'cb-level-' + index}
+          aria-label={'第 ' + (index + 1) + ' 项层级'}
+          title="选择章节层级"
+          value={String(item.level)}
+          onChange={e => onLevel(e.target.value)}
+        >
+          {Array.from({ length: MAX_CHAPTER_LEVEL }, (_, level) => (
+            <option key={level + 1} value={String(level + 1)}>L{level + 1}</option>
+          ))}
+        </select>
         <input className={css.titleInput} data-testid={'cb-title-' + index} value={item.title} placeholder="章节标题" onChange={e => onTitle(e.target.value)} />
         <input className={css.pageInput} data-testid={'cb-page-' + index} inputMode="numeric" value={String(item.startPage)} onChange={e => onPage(e.target.value)} />
       </div>

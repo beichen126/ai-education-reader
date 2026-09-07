@@ -46,6 +46,16 @@ export type ChapterDraftValidation = {
   issues: ChapterDraftIssue[]
 }
 
+/**
+ * Set one draft item's explicit level without changing its identity, metadata,
+ * or position. Structural validity remains the responsibility of the canonical
+ * validateChapterDraft() pass used by the Builder before save.
+ */
+export function setDraftItemLevel(items: ChapterDraftItem[], index: number, level: number): ChapterDraftItem[] {
+  if (index < 0 || index >= items.length) return items
+  return items.map((item, i) => i === index ? { ...item, level } : item)
+}
+
 /** True when a parent/child relationship (deeper level) is allowed at index i
  *  given the previous item. Used by both validation and the derivations. */
 function isLevelTransitionAllowed(prevLevel: number, nextLevel: number): boolean {

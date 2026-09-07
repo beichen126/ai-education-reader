@@ -16,6 +16,7 @@ import {
   insertItem,
   insertChapterByPage,
   canApplyChapterDraftOperation,
+  setDraftItemLevel,
   deriveChapterEndPages,
   MAX_CHAPTER_LEVEL,
   type ChapterDraftItem,
@@ -327,6 +328,19 @@ const base: ChapterDraftItem[] = [
 { // different-page swap produces an invalid draft (never built)
   const swapped = [item('b', 'B', 1, 5), item('a', 'A', 1, 2)]
   assert(!validateChapterDraft(swapped, 10).ok, 'A p2 / B p5 swapped -> page decreases invalid')
+}
+
+// ===================== direct level editing (Stage G1) =====================
+{
+  const base = [item('a', 'A', 1, 1), item('b', 'B', 2, 2), item('c', 'C', 2, 3)]
+  const changed = setDraftItemLevel(base, 1, 3)
+  assert(changed !== base, 'direct level edit returns a new draft array')
+  assert(changed.map(i => i.id).join(',') === 'a,b,c', 'direct level edit keeps row order and ids')
+  assert(changed[1].level === 3 && changed[1].title === 'B' && changed[1].startPage === 2, 'direct level edit changes only the target level')
+  assert(base[1].level === 2, 'direct level edit does not mutate the source draft')
+  const invalid = setDraftItemLevel(base, 0, 3)
+  assert(!validateChapterDraft(invalid, 10).ok, 'direct level edit remains subject to canonical validation')
+  assert(setDraftItemLevel(base, -1, 4) === base && setDraftItemLevel(base, 99, 4) === base, 'out-of-range direct level edit is a no-op')
 }
 
 // ===================== top-level insertion never reparents (Stage 9.4C.1 §13) =====================
