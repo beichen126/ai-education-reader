@@ -4,7 +4,7 @@
 // The UI never touches raw IndexedDB — it only uses list/create/update/delete below.
 import { getSetting, setSetting } from '../storage/storage'
 import { newStableId } from '../engine/types'
-import { getPromptRecord, listPromptRecordsByKind, savePromptRecord, deletePromptRecord } from '../prompts/prompt-store'
+import { allocateAvailablePromptId, getPromptRecord, listPromptRecordsByKind, savePromptRecord, deletePromptRecord } from '../prompts/prompt-store'
 import { hasLegacyPromptMigrationMarker } from '../prompts/prompt-migration'
 import type { ArtifactPrompt } from '../prompts/prompt-types'
 import type { CustomArtifactAction } from './artifact-types'
@@ -51,7 +51,7 @@ export async function createCustomAction(input: { name: string; prompt: string }
   const now = Date.now()
   if (await usePromptStore()) {
     const definition: ArtifactPrompt = {
-      id: newStableId(), kind: 'artifact', artifactKind: 'custom', name, description: '用户自定义学习成果操作。',
+      id: await allocateAvailablePromptId(newStableId), kind: 'artifact', artifactKind: 'custom', name, description: '用户自定义学习成果操作。',
       source: 'custom', enabled: true, createdAt: now, updatedAt: now, revision: 1, userPrompt: prompt,
     }
     await savePromptRecord(definition)

@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import { idbClearAll, closeDb } from '../src/storage/idb.ts'
-import { getConversation, saveConversation } from '../src/storage/storage.ts'
+import { getConversation, saveConversation, setSetting } from '../src/storage/storage.ts'
 import { saveSettings, DEFAULT_SETTINGS } from '../src/engine/settings-store.ts'
 import { sessionsActions } from '../src/engine/sessions-store.ts'
 import { createBranchFromMessage } from '../src/branches/branch-service.ts'
@@ -8,7 +8,7 @@ import { getBranch, saveBranch } from '../src/branches/branch-store.ts'
 import { prepareAcceptedSendContext, resolveCurrentConversationModeResult } from '../src/prompts/prompt-send.ts'
 import { projectLogicalPromptContext } from '../src/prompts/prompt-compile-strategies.ts'
 import { savePromptRecord, deletePromptRecord } from '../src/prompts/prompt-store.ts'
-import { setBuiltinPromptHidden, setDefaultConversationModeId } from '../src/prompts/prompt-preferences.ts'
+import { getPromptPreferences, setBuiltinPromptHidden, setDefaultConversationModeId } from '../src/prompts/prompt-preferences.ts'
 import { BUILTIN_PROMPT_IDS } from '../src/prompts/prompt-registry.ts'
 import { listEffectivePromptDefinitions, resolvePromptDefinition } from '../src/prompts/prompt-resolution.ts'
 import { listPromptCatalog } from '../src/prompts/prompt-service.ts'
@@ -187,11 +187,17 @@ await setDefaultConversationModeId(disabledMode.id)
 const disabledModeResult = await resolveCurrentConversationModeResult(101)
 assert(disabledModeResult.snapshot?.profileId === BUILTIN_PROMPT_IDS.conversationDefault && disabledModeResult.diagnostics.some((item) => item.code === 'disabled'), 'disabled custom mode falls back to the canonical empty default')
 
-await setDefaultConversationModeId('missing-mode-id')
+let invalidDefaultRejected = false
+try { await setDefaultConversationModeId('missing-mode-id') } catch (error) { invalidDefaultRejected = (error as any)?.code === 'invalid-default-mode' }
+assert(invalidDefaultRejected, 'preference setter rejects a missing default mode id')
+await setSetting('promptPreferences', { ...(await getPromptPreferences()), defaultConversationModeId: 'missing-mode-id' })
 const missingModeResult = await resolveCurrentConversationModeResult(102)
 assert(missingModeResult.snapshot?.profileId === BUILTIN_PROMPT_IDS.conversationDefault && missingModeResult.diagnostics.some((item) => item.code === 'missing'), 'missing mode id falls back with a structured diagnostic')
 
-await setDefaultConversationModeId(BUILTIN_PROMPT_IDS.artifactNote)
+let wrongDefaultRejected = false
+try { await setDefaultConversationModeId(BUILTIN_PROMPT_IDS.artifactNote) } catch (error) { wrongDefaultRejected = (error as any)?.code === 'invalid-default-mode' }
+assert(wrongDefaultRejected, 'preference setter rejects a non-conversation default mode')
+await setSetting('promptPreferences', { ...(await getPromptPreferences()), defaultConversationModeId: BUILTIN_PROMPT_IDS.artifactNote })
 const wrongKindModeResult = await resolveCurrentConversationModeResult(103)
 assert(wrongKindModeResult.snapshot?.profileId === BUILTIN_PROMPT_IDS.conversationDefault && wrongKindModeResult.diagnostics.some((item) => item.code === 'kind-mismatch'), 'wrong-kind mode id falls back without sending an artifact prompt')
 const wrongFallback = resolvePromptDefinition('missing', [

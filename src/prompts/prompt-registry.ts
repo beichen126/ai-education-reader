@@ -7,6 +7,14 @@ import type { ArtifactPrompt, ConversationModePrompt, PromptDefinition, Protocol
 const BUILTIN_TIME = 0
 const BUILTIN_REVISION = 1
 
+function deepFreeze<T>(value: T): T {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value)
+    for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child)
+  }
+  return value
+}
+
 export const BUILTIN_PROMPT_IDS = {
   conversationDefault: 'builtin-conversation-default',
   conversationSocratic: 'builtin-conversation-socratic',
@@ -105,28 +113,50 @@ function protocolPromptFromAdapter(adapter: ProtocolAdapter): ProtocolPrompt {
 
 export const BUILTIN_PROTOCOL_PROMPTS: readonly ProtocolPrompt[] = PROTOCOL_METADATA_ADAPTERS.map(protocolPromptFromAdapter)
 
-export const BUILTIN_PROMPT_REGISTRY: readonly PromptDefinition[] = [
+export const BUILTIN_PROMPT_REGISTRY: readonly PromptDefinition[] = Object.freeze([
   ...BUILTIN_CONVERSATION_MODES,
   ...BUILTIN_ARTIFACT_PROMPTS,
   ...BUILTIN_PROTOCOL_PROMPTS,
-]
+].map((definition) => deepFreeze(definition)))
 
 export const BUILTIN_PROMPTS = BUILTIN_PROMPT_REGISTRY
 
+Object.freeze(BUILTIN_CONVERSATION_MODES)
+Object.freeze(BUILTIN_ARTIFACT_PROMPTS)
+Object.freeze(BUILTIN_PROTOCOL_PROMPTS)
+
+/** Public callers receive a detached definition, including nested validator metadata. */
+export function clonePromptDefinition(definition: PromptDefinition): PromptDefinition {
+  switch (definition.kind) {
+    case 'conversation-mode': return { ...definition }
+    case 'artifact': return { ...definition }
+    case 'quick-follow-up': return { ...definition }
+    case 'protocol': return { ...definition, ...(definition.validator ? { validator: { ...definition.validator } } : {}) }
+    default: return assertNever(definition)
+  }
+}
+
 export function getBuiltinPrompt(id: string): PromptDefinition | undefined {
-  return BUILTIN_PROMPT_REGISTRY.find((definition) => definition.id === id)
+  const definition = BUILTIN_PROMPT_REGISTRY.find((item) => item.id === id)
+  return definition ? clonePromptDefinition(definition) : undefined
 }
 
 export function listBuiltinPrompts(kind?: PromptDefinition['kind']): PromptDefinition[] {
-  return BUILTIN_PROMPT_REGISTRY.filter((definition) => !kind || definition.kind === kind)
+  return BUILTIN_PROMPT_REGISTRY.filter((definition) => !kind || definition.kind === kind).map(clonePromptDefinition)
 }
 
 export function getBuiltinProtocol(domain: ProtocolDomain): ProtocolPrompt | undefined {
-  return BUILTIN_PROTOCOL_PROMPTS.find((definition) => definition.domain === domain)
+  const definition = BUILTIN_PROTOCOL_PROMPTS.find((item) => item.domain === domain)
+  return definition ? clonePromptDefinition(definition) as ProtocolPrompt : undefined
 }
 
 export function getBuiltinArtifactPrompt(kind: ArtifactKind): ArtifactPrompt | undefined {
-  return BUILTIN_ARTIFACT_PROMPTS.find((definition) => definition.artifactKind === kind)
+  const definition = BUILTIN_ARTIFACT_PROMPTS.find((item) => item.artifactKind === kind)
+  return definition ? clonePromptDefinition(definition) as ArtifactPrompt : undefined
+}
+
+function assertNever(value: never): never {
+  throw new Error('Unhandled prompt kind: ' + String(value))
 }
 
 // Keep these imports observable to the adapter contract without executing the validators.

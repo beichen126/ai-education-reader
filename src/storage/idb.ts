@@ -219,6 +219,47 @@ export async function idbUpdate(store: string, key: any, updater: (current: any)
     txn.onabort = () => fail(new Error('transaction aborted'))
   })
 }
+
+/**
+ * Atomic read-modify-write that also creates a missing row. The updater runs
+ * while the readwrite transaction is still active, and the returned value is
+ * released only after that transaction commits.
+ */
+export async function idbUpdateOrInsert<T>(store: string, key: any, defaultValue: T, updater: (current: T) => T): Promise<T> {
+  const db = await openDb()
+  const txn = db.transaction(store, 'readwrite')
+  const os = txn.objectStore(store)
+  const req = os.get(key)
+  let committed: T | undefined
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    const fail = (error: unknown) => {
+      if (settled) return
+      settled = true
+      try { txn.abort() } catch { /* already aborting */ }
+      reject(error instanceof Error ? error : new Error(String(error)))
+    }
+    req.onsuccess = () => {
+      try {
+        const current = (req.result === undefined ? defaultValue : req.result) as T
+        const next = updater(current)
+        os.put(next)
+        committed = next
+      } catch (error) {
+        fail(error)
+      }
+    }
+    req.onerror = () => fail(req.error)
+    txn.oncomplete = () => {
+      if (!settled) {
+        settled = true
+        resolve(committed as T)
+      }
+    }
+    txn.onerror = () => fail(txn.error)
+    txn.onabort = () => fail(new Error('transaction aborted'))
+  })
+}
 /**
  * Run a multi-store readwrite transaction atomically. `fn(txn)` issues all requests;
  * the returned promise resolves only when the transaction COMMITS and rejects on

@@ -1,7 +1,7 @@
 import type { StableId } from '../engine/types'
 import type { PromptDefinition, PromptKind, PromptSnapshot } from './prompt-types'
 import { promptContent } from './prompt-validation'
-import { BUILTIN_PROMPT_REGISTRY, BUILTIN_PROMPT_IDS } from './prompt-registry'
+import { BUILTIN_PROMPT_REGISTRY, BUILTIN_PROMPT_IDS, clonePromptDefinition } from './prompt-registry'
 import { getPromptPreferences } from './prompt-preferences'
 import { listPromptRecords } from './prompt-store'
 
@@ -35,7 +35,7 @@ export async function listEffectivePromptDefinitions(kind?: PromptKind): Promise
   const hidden = new Set(preferences.hiddenBuiltinPromptIds)
   const byId = new Map<StableId, PromptDefinition>()
   for (const definition of BUILTIN_PROMPT_REGISTRY) {
-    byId.set(definition.id, { ...definition, enabled: definition.enabled && !hidden.has(definition.id) } as PromptDefinition)
+    byId.set(definition.id, { ...clonePromptDefinition(definition), enabled: definition.enabled && !hidden.has(definition.id) } as PromptDefinition)
   }
   // Built-ins own their stable IDs. A malformed legacy/custom shadow row cannot
   // replace a canonical definition; Stage 4 separately rejects such rows at storage.

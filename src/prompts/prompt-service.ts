@@ -2,7 +2,7 @@ import { newStableId, type StableId } from '../engine/types'
 import { getBuiltinPrompt } from './prompt-registry'
 import { getPromptPreferences, setBuiltinPromptHidden } from './prompt-preferences'
 import type { PromptDefinition, PromptKind } from './prompt-types'
-import { getPromptRecord, deletePromptRecord, savePromptRecord } from './prompt-store'
+import { allocateAvailablePromptId, getPromptRecord, deletePromptRecord, updatePromptRecordAtomic } from './prompt-store'
 import { listEffectivePromptDefinitions } from './prompt-resolution'
 import { getPromptDefinitionIssues, validatePromptDefinition } from './prompt-validation'
 
@@ -104,15 +104,14 @@ export async function savePromptDefinition(input: PromptDefinition, dependencies
   const candidate = assertServiceDefinition(input)
   assertMutable(candidate)
   if (getBuiltinPrompt(candidate.id)) throw new PromptServiceError('id-conflict', '自定义提示词不能占用内置提示词 ID。')
-  const [previous, catalog] = await Promise.all([getPromptRecord(candidate.id), listPromptCatalog()])
   const d = deps(dependencies)
-  const saved: PromptDefinition = {
+  const saved = await updatePromptRecordAtomic(candidate.id, (previous) => ({
     ...candidate,
     createdAt: previous?.createdAt ?? candidate.createdAt,
     updatedAt: d.now(),
     revision: nextPromptRevision(previous, candidate),
-  }
-  await savePromptRecord(saved)
+  }))
+  const catalog = await listPromptCatalog()
   return { definition: saved, warnings: getPromptNameWarnings(saved, catalog) }
 }
 
@@ -130,9 +129,10 @@ export async function copyPromptDefinition(id: StableId, options: { name?: strin
   if (!original) throw new PromptServiceError('not-found', '提示词不存在。')
   const d = deps(dependencies)
   const now = d.now()
+  const copyId = await allocateAvailablePromptId(d.id)
   const copy: PromptDefinition = {
     ...original,
-    id: d.id(),
+    id: copyId,
     name: options.name?.trim() || original.name + ' 副本',
     source: original.kind === 'protocol' ? 'experimental' : 'custom',
     enabled: true,
