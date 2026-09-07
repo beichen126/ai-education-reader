@@ -98,4 +98,7 @@ export type PromptUserPreferences = {
   defaultConversationModeId: StableId
   hiddenBuiltinPromptIds: StableId[]
   activeProtocolOverrideByDomain: Record<string, StableId>
+  sortPreference?: PromptSortPreference
 }
+
+export type PromptSortPreference = 'updatedAt-desc' | 'name-asc'

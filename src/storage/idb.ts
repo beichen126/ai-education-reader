@@ -1,6 +1,6 @@
-const DB_NAME = 'ai-education-reader'
-const DB_VERSION = 6
-const STORES = ['settings', 'conversations', 'attachments', 'annotations', 'documents', 'documentNotes', 'conversationBranches', 'artifacts'] as const
+export const DB_NAME = 'ai-education-reader'
+export const DB_VERSION = 7
+export const STORES = ['settings', 'conversations', 'attachments', 'annotations', 'documents', 'documentNotes', 'conversationBranches', 'artifacts', 'prompts'] as const
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -46,6 +46,10 @@ function openDb(): Promise<IDBDatabase> {
       if (!art.indexNames.contains('by_kind')) art.createIndex('by_kind', 'kind')
       if (!art.indexNames.contains('by_updatedAt')) art.createIndex('by_updatedAt', 'updatedAt')
       if (!art.indexNames.contains('by_source_conversation')) art.createIndex('by_source_conversation', 'source.conversationId')
+      if (!db.objectStoreNames.contains('prompts')) db.createObjectStore('prompts', { keyPath: 'id' })
+      const prompts = req.transaction!.objectStore('prompts')
+      if (!prompts.indexNames.contains('by_kind')) prompts.createIndex('by_kind', 'kind')
+      if (!prompts.indexNames.contains('by_updatedAt')) prompts.createIndex('by_updatedAt', 'updatedAt')
     }
     req.onsuccess = () => {
       const db = req.result
@@ -252,10 +256,10 @@ export async function idbClearAll(): Promise<void> {
 }
 
 export async function closeDb(): Promise<void> { if (dbPromise) { const db = await dbPromise; try { db.close() } catch { /* ignore */ } dbPromise = null } }
-export async function idbReplaceAll(records: { settings: any[]; conversations: any[]; attachments: any[]; annotations: any[]; documents?: any[]; documentNotes?: any[]; conversationBranches?: any[]; artifacts?: any[] }): Promise<void> {
+export async function idbReplaceAll(records: { settings: any[]; conversations: any[]; attachments: any[]; annotations: any[]; documents?: any[]; documentNotes?: any[]; conversationBranches?: any[]; artifacts?: any[]; prompts?: any[] }): Promise<void> {
   const db = await openDb()
-  const txn = db.transaction(['settings', 'conversations', 'attachments', 'annotations', 'documents', 'documentNotes', 'conversationBranches', 'artifacts'], 'readwrite')
-  const stores = ['settings', 'conversations', 'attachments', 'annotations', 'documents', 'documentNotes', 'conversationBranches', 'artifacts'] as const
+  const txn = db.transaction(STORES, 'readwrite')
+  const stores = STORES
   for (const s of stores) txn.objectStore(s).clear()
   const put = (store: string, vals: any[]) => { const os = txn.objectStore(store); for (const v of vals) os.put(v) }
   put('settings', records.settings)
@@ -266,5 +270,6 @@ export async function idbReplaceAll(records: { settings: any[]; conversations: a
   if (records.documentNotes) put('documentNotes', records.documentNotes)
   if (records.conversationBranches) put('conversationBranches', records.conversationBranches)
   if (records.artifacts) put('artifacts', records.artifacts)
+  if (records.prompts) put('prompts', records.prompts)
   await txnDone(txn)
 }
