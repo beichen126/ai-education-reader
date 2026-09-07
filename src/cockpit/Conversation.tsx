@@ -39,6 +39,7 @@ import { exportQuizJson, exportQuizMarkdown } from '../artifacts/artifact-export
 import { runBranchReply } from '../engine/branch-thread'
 import { branchThreadKey, getBranchDraft, setBranchDraftText, addBranchDraftImages, removeBranchDraftImage, clearBranchDraftMemory } from '../engine/draft-store'
 import { useBranchChat } from './use-branch-chat'
+import { buildEffectivePromptPath } from '../prompts/effective-prompt-path'
 import { resolveMessageNavigation } from './message-navigation'
 import { sendTextChat } from '../api/deepseek'
 import type { ArtifactKind, StudyArtifact, QuizDocument } from '../artifacts/artifact-types'
@@ -100,8 +101,12 @@ export function Conversation() {
   const [artView, setArtView] = useState<'library' | null>(null)
   const [openArtifact, setOpenArtifact] = useState<StudyArtifact | null>(null)
   const [libArtifacts, setLibArtifacts] = useState<StudyArtifact[]>([])
-  const hasBranches = branchChat.branches.length > 0
+  const promptPath = session ? buildEffectivePromptPath(session, branchChat.branches, branchChat.activeBranchId) : undefined
   const activeThread = session ? (branchChat.activeBranchId ? { type: 'branch' as const, conversationId: session.id, branchId: branchChat.activeBranchId } : { type: 'root' as const, conversationId: session.id }) : undefined
+  async function refreshPromptContext() {
+    if (session) await sessionsActions.reload(session.id)
+    await branchChat.refresh()
+  }
   async function onCreateArtifact(input: { kind: ArtifactKind; prompt: string; presetId?: string }) {
     if (!session || !creating || creatingBusy) return
     setCreatingBusy(true); setCreatingError(undefined)
@@ -140,7 +145,17 @@ export function Conversation() {
         </div>
       )}
       {sendError && !busy && <div className={css.errorBanner}>{sendError}</div>}
-      {hasBranches && (<BranchBar conversationId={session?.id} activeBranchId={branchChat.activeBranchId} onSwitch={(id) => { void branchChat.switchBranch(id); setMenuMsgId(null) }} onChanged={() => void branchChat.refresh()} />)}
+      {session && promptPath && (<BranchBar
+        conversationId={session.id}
+        branches={branchChat.branches}
+        activeBranchId={branchChat.activeBranchId}
+        effectiveMessageCount={messages.length}
+        effectiveTransitions={promptPath.transitions}
+        busy={busy}
+        onSwitch={async (id) => { await branchChat.switchBranch(id); setMenuMsgId(null) }}
+        onChanged={() => void branchChat.refresh()}
+        onModeChanged={refreshPromptContext}
+      />)}
       {/* Composer sits inside the scroll body, position:sticky bottom:0 (as in DSH), so the
           mobile browser's native focus scroll lifts it above the on-screen keyboard. */}
       <div className={css.messages} ref={listRef} onScroll={onScroll}>

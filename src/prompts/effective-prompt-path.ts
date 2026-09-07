@@ -37,6 +37,26 @@ type Source = {
   routeMessageIds: StableId[]
 }
 
+/**
+ * A child route may intentionally switch mode at the same message boundary as
+ * an inherited transition. The child snapshot is the effective one for that
+ * route; keeping both candidates would make the compiler see two modes at one
+ * boundary. This also preserves the audit trail in the owning row while
+ * materializing one unambiguous effective timeline.
+ */
+function materializeCandidates(candidates: Candidate[]): PromptTransition[] {
+  const ordered = [...candidates].sort((a, b) => a.position - b.position || a.sourceDepth - b.sourceDepth || a.sourceIndex - b.sourceIndex)
+  const winnerByBoundary = new Map<string, Candidate>()
+  for (const candidate of ordered) {
+    const key = candidate.transition.afterMessageId ?? '__initial__'
+    const previous = winnerByBoundary.get(key)
+    if (!previous || candidate.sourceDepth >= previous.sourceDepth) winnerByBoundary.set(key, candidate)
+  }
+  return [...winnerByBoundary.values()]
+    .sort((a, b) => a.position - b.position || a.sourceDepth - b.sourceDepth || a.sourceIndex - b.sourceIndex)
+    .map((candidate) => candidate.transition)
+}
+
 function transitionIndex(path: string): number | undefined {
   const match = /^promptTransitions\[(\d+)\]/.exec(path)
   return match ? Number(match[1]) : undefined
@@ -110,8 +130,7 @@ function rootResult(conversation: Conversation, diagnostics: EffectivePromptPath
   const messageIds = conversation.messages.map((message) => message.id)
   const candidates: Candidate[] = []
   collectSource({ owner: 'root', sourceDepth: 0, transitions: conversation.promptTransitions, routeMessageIds: messageIds }, messageIds, new Set(), candidates, diagnostics)
-  candidates.sort((a, b) => a.position - b.position || a.sourceDepth - b.sourceDepth || a.sourceIndex - b.sourceIndex)
-  return { transitions: candidates.map((candidate) => candidate.transition), messageIds, diagnostics, resolved: true }
+  return { transitions: materializeCandidates(candidates), messageIds, diagnostics, resolved: true }
 }
 
 /**
@@ -150,9 +169,7 @@ export function buildEffectivePromptPath(
   const candidates: Candidate[] = []
   const seenTransitionIds = new Set<StableId>()
   for (const source of sources) collectSource(source, effectiveIds, seenTransitionIds, candidates, diagnostics)
-  candidates.sort((a, b) => a.position - b.position || a.sourceDepth - b.sourceDepth || a.sourceIndex - b.sourceIndex)
-  return { transitions: candidates.map((candidate) => candidate.transition), messageIds: effectiveIds, diagnostics, resolved: true }
+  return { transitions: materializeCandidates(candidates), messageIds: effectiveIds, diagnostics, resolved: true }
 }
 
 export const buildEffectivePromptTimeline = buildEffectivePromptPath
-

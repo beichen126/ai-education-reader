@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { type Conversation, type Message, type Attachment, type StableId, newStableId, NEW_TITLE } from './types'
 import { sanitizeTitle } from './session-title'
-import { getSetting, setSetting, saveConversation, deleteConversation, listConversations, commitAcceptedUserMessage } from '../storage/storage'
+import { getSetting, setSetting, getConversation, saveConversation, deleteConversation, listConversations, commitAcceptedUserMessage } from '../storage/storage'
 import { getSettingsSnapshot } from './settings-store'
 import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, isVisionModel, exceedsVisionImageCount } from '../api/deepseek'
 import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
@@ -12,6 +12,7 @@ import { generationRegistry, genRootKey } from './generation-registry'
 import { attachPdfContexts } from '../pdf/pdf-message-context'
 import { getBranch } from '../branches/branch-store'
 import { prepareAcceptedSendContext, type AcceptedSendContext } from '../prompts/prompt-send'
+import { isPromptModeLocked } from '../prompts/prompt-mode-lock'
 
 export type { Conversation as ChatSession, Message as ChatMsg, Attachment as ChatImage }
 export const uid = (_p?: string) => newStableId()
@@ -97,6 +98,11 @@ export const sessionsActions = {
     setState({ ...toState(state.list, id, state.ready, state.status, state.sendError), focusMessage: undefined })
     await setSetting(LAST_CONV, id)
   },
+  /** Refresh the current in-memory row after a prompt transition was persisted by a domain service. */
+  async reload(id: string): Promise<void> {
+    const conversation = await getConversation(id) as Conversation | undefined
+    if (conversation && state.byId[id]) upsertState(conversation)
+  },
   /** Open a conversation and request a post-render scroll to one concrete message. */
   async openAtMessage(id: string, messageId: string, branchId?: string): Promise<boolean> {
     if (state.status === 'sending' || state.status === 'streaming') return false
@@ -125,6 +131,7 @@ export const sessionsActions = {
    */
   async sendUserMessage(id: string, content: string, imageIds: StableId[] = []): Promise<boolean> {
     if (state.status === 'sending' || state.status === 'streaming') return false
+    if (isPromptModeLocked(id)) return false
     // Double-submit guard while the acceptance transaction is in progress.
     if (acceptingRef.current === id) return false
     const conv = state.byId[id]; if (!conv) return false

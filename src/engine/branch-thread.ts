@@ -9,6 +9,7 @@ import { buildEffectiveConversationPath } from '../branches/branch-path'
 import { attachPdfContexts } from '../pdf/pdf-message-context'
 import { buildEffectivePromptPath } from '../prompts/effective-prompt-path'
 import { prepareAcceptedSendContext } from '../prompts/prompt-send'
+import { isPromptModeLocked } from '../prompts/prompt-mode-lock'
 
 // Per-branch ordered durable-write queue (mirrors the root writeChains). A stale checkpoint
 // can never overwrite a newer revision of a branch record.
@@ -80,6 +81,7 @@ export class BranchReplyThread implements ReplyThread {
  * Returns true when the branch accepted + streamed (or is streaming).
  */
 export async function runBranchReply(conversationId: StableId, branchId: StableId, content: string, imageIds: StableId[] = []): Promise<boolean> {
+  if (isPromptModeLocked(conversationId)) return false
   const branch = await getBranch(branchId)
   if (!branch) return false
   const settings = getSettingsSnapshot()
