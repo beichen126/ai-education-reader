@@ -108,6 +108,7 @@
     "test:toc-prompt": "npx tsx scripts/test-toc-prompt.ts",
     "test:prompt-domain": "npx tsx scripts/test-prompt-domain.ts",
     "test:prompt-registry": "npx tsx scripts/test-prompt-registry.ts",
+    "test:protocol-registry": "npm run test:prompt-registry",
     "test:protocol-overrides": "npx tsx scripts/test-protocol-overrides.ts",
     "test:prompt-storage": "npx tsx scripts/test-prompt-storage.ts",
     "test:prompt-backup": "npx tsx scripts/test-prompt-backup.ts",
