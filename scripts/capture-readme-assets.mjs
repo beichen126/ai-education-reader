@@ -5,11 +5,12 @@ import { chromium } from 'playwright-core'
 import { mkdirSync } from 'fs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const OUT = 'docs/assets/readme'
+const PREFIX = 'v132-'
 mkdirSync(OUT, { recursive: true })
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 const FILES = '[data-testid="sidebar-entry-files"], [data-testid="rail-files"]'
 const openLibrary = async (page) => { if (await page.locator('[data-testid="document-library"]').count()) return; await page.locator(FILES).first().click(); await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 }) }
-const shot = async (page, name) => { const file = 'v131-' + name; await page.screenshot({ path: OUT + '/' + file, type: 'webp' }); console.log('shot ' + file) }
+const shot = async (page, name) => { const file = PREFIX + name; await page.screenshot({ path: OUT + '/' + file, type: 'webp' }); console.log('shot ' + file) }
 
 // Import two fixture PDFs so the library has real, deterministic content.
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
@@ -112,6 +113,15 @@ const buildBtn = page.locator('[data-testid="reader-build"]')
 if (await buildBtn.count()) await buildBtn.click()
 else await page.locator('[data-testid="reader-toc-create"]').click()
 await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+for (let index = 0; index < 8; index++) {
+  await page.locator('[data-testid="cb-add"]').click()
+  await page.locator('[data-testid="cb-title-' + index + '"]').fill('章节 ' + String(index + 1).padStart(2, '0'))
+}
+await page.locator('[data-testid="cb-select-1"]').check()
+await page.keyboard.down('Shift')
+await page.locator('[data-testid="cb-select-4"]').click()
+await page.keyboard.up('Shift')
+await page.locator('[data-testid="cb-bulk-set-2"]').click()
 await page.waitForTimeout(300)
 await shot(page, '05-chapter-editor.webp')
 await page.locator('[data-testid="cb-cancel"]').click()
