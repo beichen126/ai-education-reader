@@ -60,6 +60,9 @@ await page.reload({ waitUntil: 'networkidle' })
 await page.locator('[data-testid="composer-materials-input"]').waitFor({ state: 'attached', timeout: 25000 })
 await openFromSidebar()
 await manager.waitFor({ state: 'visible', timeout: 10000 })
+// Prompt catalog hydration is IndexedDB-backed; wait for the real rows before
+// asserting reload/search rather than racing the manager's loading shell.
+await page.locator('[data-testid="prompt-row"]').first().waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-search"]').fill(copiedName)
 assert(await page.locator('[data-testid="prompt-row"]').count() === 1, 'custom copy survives reload and is searchable')
 
