@@ -12,7 +12,7 @@ import { getPromptPreferences, setBuiltinPromptHidden, setDefaultConversationMod
 import { BUILTIN_PROMPT_IDS } from '../src/prompts/prompt-registry.ts'
 import { listEffectivePromptDefinitions, resolvePromptDefinition } from '../src/prompts/prompt-resolution.ts'
 import { listPromptCatalog } from '../src/prompts/prompt-service.ts'
-import { listConversationModeDefinitions } from '../src/prompts/prompt-mode-service.ts'
+import { listConversationModeDefinitions, switchConversationMode } from '../src/prompts/prompt-mode-service.ts'
 import { newStableId, type Conversation, type Message } from '../src/engine/types.ts'
 import type { PromptSnapshot } from '../src/prompts/prompt-types.ts'
 import type { ConversationBranch } from '../src/branches/branch-types.ts'
@@ -76,13 +76,24 @@ assert(conversation.messages.length === 2, 'root acceptance stores user plus str
 assert(conversation.promptTransitions?.length === 1 && conversation.promptTransitions[0].snapshot.content === 'A prompt', 'root acceptance stores the mode transition with the user message')
 assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('A prompt'), 'request uses the accepted frozen mode snapshot')
 
-// A mode switch creates one new boundary; it does not rewrite the previous snapshot.
-await setDefaultConversationModeId(modeB.id)
+// An explicit mode switch creates one new boundary; it does not rewrite the previous snapshot.
+await switchConversationMode({ conversationId, modeId: modeB.id })
+await sessionsActions.reload(conversationId)
 requests = []
 assert(await sessionsActions.sendUserMessage(conversationId, 'second', []), 'mode B send accepts')
 conversation = await waitForSettled('root second send', () => getConversation(conversationId) as Promise<Conversation | undefined>, (value, status) => !!value && value.messages.length === 4 && (status === 'idle' || status === 'error')) as Conversation
 assert(conversation.promptTransitions?.map((item) => item.snapshot.content).join('|') === 'A prompt|B prompt', 'A to B creates a second ordered transition')
 assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('B prompt'), 'mode B request uses B without changing A history')
+
+// An active route snapshot outranks the global default preference on the next send.
+// This guards the UI mode switch contract: changing the default preference must not
+// replace the route's already-confirmed mode at the same message boundary.
+await setDefaultConversationModeId(modeA.id)
+requests = []
+assert(await sessionsActions.sendUserMessage(conversationId, 'third', []), 'route snapshot send accepts despite global default reverting')
+conversation = await waitForSettled('route snapshot send', () => getConversation(conversationId) as Promise<Conversation | undefined>, (value, status) => !!value && value.messages.length === 6 && (status === 'idle' || status === 'error')) as Conversation
+assert(conversation.promptTransitions?.map((item) => item.snapshot.content).join('|') === 'A prompt|B prompt', 'route snapshot is not replaced by the global default')
+assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('B prompt'), 'route snapshot request keeps the confirmed mode')
 
 // Profile edits after acceptance cannot change the already prepared logical request.
 const before = conversation.messages
@@ -103,7 +114,7 @@ assert(JSON.stringify(frozenProjected).includes('B prompt') && !JSON.stringify(f
 // Branch send inherits root history but stores a branch-local mode transition only.
 const forkMessageId = conversation.messages[conversation.messages.length - 1].id
 const branch = await createBranchFromMessage(conversationId, forkMessageId)
-await setDefaultConversationModeId(modeC.id)
+await switchConversationMode({ conversationId, branchId: branch.id, modeId: modeC.id })
 requests = []
 // The branch path is read before acceptance and becomes the sole input to compile + stream.
 assert(await (await import('../src/engine/branch-thread.ts')).runBranchReply(conversationId, branch.id, 'branch', []), 'branch send accepts through the same semantic pipeline')

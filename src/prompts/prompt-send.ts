@@ -181,9 +181,12 @@ function transitionForSend(
 export async function prepareAcceptedSendContext(input: PrepareSendContextInput): Promise<PreparedSendContext> {
   await validateAcceptedSendContract(input)
   const now = input.now ?? Date.now()
+  const routeSnapshot = input.effectiveTransitions[input.effectiveTransitions.length - 1]?.snapshot
   const resolution = input.currentModeSnapshot
     ? { snapshot: input.currentModeSnapshot, diagnostics: [] as PromptResolutionDiagnostic[] }
-    : await resolveCurrentConversationModeResult(now)
+    : routeSnapshot
+      ? { snapshot: { ...routeSnapshot }, diagnostics: [] as PromptResolutionDiagnostic[] }
+      : await resolveCurrentConversationModeResult(now)
   if (!resolution.snapshot) throw new Error('当前 conversation mode 不可用：' + resolution.diagnostics.map((item) => item.code).join(', '))
   const currentMode = resolution.snapshot
   const selected = transitionForSend(input.messagesBeforeAcceptance, input.effectiveTransitions, currentMode, input.id ?? newStableId, now)
