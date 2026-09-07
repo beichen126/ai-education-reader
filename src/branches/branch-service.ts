@@ -1,4 +1,4 @@
-import { newStableId, type Conversation, type Message, type StableId } from '../engine/types'
+import { newStableId, type Conversation, type Message, type StableId, type DraftDisposition } from '../engine/types'
 import { getConversation } from '../storage/storage'
 import { idbRunTxn } from '../storage/idb'
 import { canonicalForkOwner, descendantBranchIds } from './branch-path'
@@ -81,18 +81,19 @@ export async function getActiveBranchForConversation(conversationId: StableId): 
 /**
  * Atomically ACCEPT a user message into a branch: in ONE readwrite txn across
  * ['conversationBranches','settings'] commit the updated branch record AND delete the
- * branch draft row (including any prompt transition snapshot). Never a partial state: either (message accepted + transition + draft cleared)
+ * branch draft row (including any prompt transition snapshot) when disposition is 'clear'.
+ * Never a partial state: either (message accepted + transition + requested draft disposition)
  * or (message absent + draft intact). Returning true means accepted & durable.
  */
-export async function acceptBranchUserMessage(branchId: StableId, message: Message, promptTransitions?: PromptTransition[]): Promise<boolean> {
+export async function acceptBranchUserMessage(branchId: StableId, message: Message, promptTransitions?: PromptTransition[], draftDisposition: DraftDisposition = 'clear'): Promise<boolean> {
   const branch = await getBranch(branchId)
   if (!branch) return false
   const now = Date.now()
   const updated: ConversationBranch = { ...branch, updatedAt: now, messages: [...branch.messages, message], ...(promptTransitions ? { promptTransitions } : {}) }
   await idbRunTxn(['conversationBranches', 'settings'], (txn) => {
     txn.objectStore('conversationBranches').put(updated)
-    txn.objectStore('settings').delete(branchDraftSettingKey(branchId))
+    if (draftDisposition === 'clear') txn.objectStore('settings').delete(branchDraftSettingKey(branchId))
   })
-  clearBranchDraftMemory(branchId)
+  if (draftDisposition === 'clear') clearBranchDraftMemory(branchId)
   return true
 }

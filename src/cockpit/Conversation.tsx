@@ -15,7 +15,7 @@ import { galleryActions } from '../gallery/gallery-store'
 import { PdfPanel } from '../pdf/PdfPanel'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult, type RenderedPdfPage } from '../pdf/pdf-types'
-import { newStableId, pdfContextsOf } from '../engine/types'
+import { newStableId, pdfContextsOf, type QuickFollowUpMetadata } from '../engine/types'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
 import { IconPhoto16, IconDocument16 } from './composer-icons'
 import { setComposerTriggers, triggerComposerMaterials } from '../engine/composer-triggers'
@@ -43,8 +43,10 @@ import { buildEffectivePromptPath } from '../prompts/effective-prompt-path'
 import { ConversationPromptInspector } from '../prompts/ConversationPromptInspector'
 import { resolveMessageNavigation } from './message-navigation'
 import { sendTextChat } from '../api/deepseek'
+import { listPromptCatalog } from '../prompts/prompt-service'
+import { sortEnabledQuickFollowUps } from '../prompts/quick-follow-up'
 import type { ArtifactKind, StudyArtifact, QuizDocument } from '../artifacts/artifact-types'
-import type { ArtifactPromptBundleSnapshot } from '../prompts/prompt-types'
+import type { ArtifactPromptBundleSnapshot, QuickFollowUpPrompt } from '../prompts/prompt-types'
 import type { Message as TMessage } from '../engine/types'
 import type { PromptTransition } from '../prompts/prompt-types'
 import css from './cockpit.module.css'
@@ -95,6 +97,7 @@ export function Conversation() {
   }, [session, focusMessage, branchChat.branches, branchChat.ready, branchChat.activeBranchId, branchChat.switchBranch, messages.length])
   const streaming = status === 'streaming'
   const busy = status === 'sending' || status === 'streaming'
+  const promptManagerOpen = useUi(s => s.promptManagerOpen)
   const lastMsg0 = lastMsg
   const activeStreamingId = busy && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
   const [menuMsgId, setMenuMsgId] = useState<string | null>(null)
@@ -105,8 +108,33 @@ export function Conversation() {
   const [openArtifact, setOpenArtifact] = useState<StudyArtifact | null>(null)
   const [libArtifacts, setLibArtifacts] = useState<StudyArtifact[]>([])
   const [inspectedTransition, setInspectedTransition] = useState<PromptTransition | null>(null)
+  const [quickFollowUps, setQuickFollowUps] = useState<QuickFollowUpPrompt[]>([])
+  const [quickSendingId, setQuickSendingId] = useState<string | null>(null)
+  const [inspectedQuickFollowUp, setInspectedQuickFollowUp] = useState<QuickFollowUpMetadata | null>(null)
   const promptPath = session ? buildEffectivePromptPath(session, branchChat.branches, branchChat.activeBranchId) : undefined
   const activeThread = session ? (branchChat.activeBranchId ? { type: 'branch' as const, conversationId: session.id, branchId: branchChat.activeBranchId } : { type: 'root' as const, conversationId: session.id }) : undefined
+  useEffect(() => {
+    if (promptManagerOpen) return
+    let cancelled = false
+    void listPromptCatalog('quick-follow-up').then((items) => {
+      if (!cancelled) setQuickFollowUps(sortEnabledQuickFollowUps(items.filter((item): item is QuickFollowUpPrompt => item.kind === 'quick-follow-up')))
+    }).catch(() => { if (!cancelled) setQuickFollowUps([]) })
+    return () => { cancelled = true }
+  }, [promptManagerOpen])
+  const latestCompletedAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && !!message.content && !(busy && message.id === lastMsg?.id))
+  const sendQuickFollowUp = async (item: QuickFollowUpPrompt) => {
+    if (!session || !activeThread || !latestCompletedAssistant || busy || quickSendingId) return
+    const quickFollowUp: QuickFollowUpMetadata = { promptId: item.id, labelSnapshot: item.label, promptSnapshot: item.userPrompt }
+    setQuickSendingId(item.id)
+    try {
+      if (activeThread.type === 'branch') {
+        const ok = await runBranchReply(activeThread.conversationId, activeThread.branchId, item.userPrompt, [], { quickFollowUp, draftDisposition: 'preserve' })
+        if (ok) void branchChat.refresh()
+      } else {
+        await sessionsActions.sendUserMessage(activeThread.conversationId, item.userPrompt, [], { quickFollowUp, draftDisposition: 'preserve' })
+      }
+    } finally { setQuickSendingId(null) }
+  }
   async function refreshPromptContext() {
     if (session) await sessionsActions.reload(session.id)
     await branchChat.refresh()
@@ -180,7 +208,8 @@ export function Conversation() {
             const transition = previous ? promptPath?.transitions.find((item) => item.afterMessageId === previous.id) : undefined
             return <Fragment key={m.id}>
               {transition && <PromptTransitionDivider transition={transition} onOpen={() => setInspectedTransition(transition)} />}
-              <MessageRow m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} />
+              <MessageRow m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} onInspectQuickFollowUp={setInspectedQuickFollowUp} />
+              {latestCompletedAssistant?.id === m.id && activeThread && <QuickFollowUpBar items={quickFollowUps} disabled={busy || !!quickSendingId} sendingId={quickSendingId} onSend={(item) => void sendQuickFollowUp(item)} onInspect={setInspectedQuickFollowUp} onConfigure={() => uiActions.openPromptManager('quick-follow-up')} />}
             </Fragment>
           })}
         </div>
@@ -189,6 +218,7 @@ export function Conversation() {
       </div>
       {creating && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', padding: '1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}><ArtifactCreateDialog sourceLabel={creatingSourceLabel(session, branchChat.activeBranchId, creating.messageId)} initialKind={creating.kind} busy={creatingBusy} error={creatingError} onSubmit={(i) => void onCreateArtifact(i)} onCancel={() => setCreating(null)} /></div></div>)}
       {inspectedTransition && <ConversationPromptInspector transition={inspectedTransition} positionLabel={inspectedTransition.afterMessageId ? '从下一条消息开始' : '会话开始'} onClose={() => setInspectedTransition(null)} />}
+      {inspectedQuickFollowUp && <QuickFollowUpPromptDialog metadata={inspectedQuickFollowUp} onClose={() => setInspectedQuickFollowUp(null)} />}
       {artView === 'library' && <ArtifactLibraryOverlay artifacts={libArtifacts} onOpen={(a) => { setOpenArtifact(a); setArtView(null) }} onClose={() => setArtView(null)} />}
       {openArtifact && <ArtifactViewerOverlay artifact={openArtifact} onOpen={setOpenArtifact} onClose={() => setOpenArtifact(null)} onChanged={() => void branchChat.refresh()} />}
     </div>
@@ -202,11 +232,12 @@ function PromptTransitionDivider({ transition, onOpen }: { transition: PromptTra
   </div>
 }
 
-function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu, onBranch, onArtifact }: { m: any; streamingId?: string; convId?: string; imgOffset: number; menuOpen?: boolean; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: ArtifactKind, messageId: string) => void }) {
+function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu, onBranch, onArtifact, onInspectQuickFollowUp }: { m: any; streamingId?: string; convId?: string; imgOffset: number; menuOpen?: boolean; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: ArtifactKind, messageId: string) => void; onInspectQuickFollowUp?: (metadata: QuickFollowUpMetadata) => void }) {
   if (m.role === 'user') {
     return (
       <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>
         <div className={css.bubble}><MessageText text={m.content} /></div>
+        {m.quickFollowUp && <div className={css.quickFollowUpHistory} data-testid="quick-follow-up-history"><span>快捷追问 · {m.quickFollowUp.labelSnapshot}</span><button type="button" data-testid="quick-follow-up-history-inspect" onClick={() => onInspectQuickFollowUp?.(m.quickFollowUp)}>查看实际提示词</button></div>}
         {m.images.length > 0 && <MessageAttachmentStrip convId={convId} message={m} imgOffset={imgOffset} />}
         {pdfContextsOf(m).map((context, index) => <PdfSourceButton key={context.documentId + ':' + index} context={context} />)}
       </div>
@@ -231,6 +262,46 @@ function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu,
       )}
     </div>
   )
+}
+
+function QuickFollowUpBar({ items, disabled, sendingId, onSend, onInspect, onConfigure }: { items: QuickFollowUpPrompt[]; disabled: boolean; sendingId: string | null; onSend: (item: QuickFollowUpPrompt) => void; onInspect: (metadata: QuickFollowUpMetadata) => void; onConfigure: () => void }) {
+  const [moreOpen, setMoreOpen] = useState(false)
+  if (items.length === 0) {
+    return <div className={css.quickFollowUpBar} data-testid="quick-follow-up-bar"><button type="button" className={css.quickFollowUpConfigure} data-testid="quick-follow-up-configure" onClick={onConfigure}>＋ 设置快捷追问</button></div>
+  }
+  const visible = items.slice(0, 3)
+  const inspect = (item: QuickFollowUpPrompt) => onInspect({ promptId: item.id, labelSnapshot: item.label, promptSnapshot: item.userPrompt })
+  const action = (item: QuickFollowUpPrompt) => { setMoreOpen(false); onSend(item) }
+  return (
+    <div className={css.quickFollowUpBar} data-testid="quick-follow-up-bar">
+      <span className={css.quickFollowUpTitle}>继续追问</span>
+      <div className={css.quickFollowUpItems}>
+        {visible.map((item) => <QuickFollowUpAction key={item.id} item={item} disabled={disabled} sending={sendingId === item.id} onSend={() => action(item)} onInspect={() => inspect(item)} />)}
+        {items.length > 3 && <button type="button" className={css.quickFollowUpMore} data-testid="quick-follow-up-more" disabled={disabled} aria-expanded={moreOpen} onClick={() => setMoreOpen(v => !v)}>更多</button>}
+      </div>
+      {moreOpen && <div className={css.quickFollowUpMoreList} data-testid="quick-follow-up-more-list">
+        {items.map((item) => <QuickFollowUpAction key={item.id} item={item} disabled={disabled} sending={sendingId === item.id} onSend={() => action(item)} onInspect={() => inspect(item)} />)}
+      </div>}
+    </div>
+  )
+}
+
+function QuickFollowUpAction({ item, disabled, sending, onSend, onInspect }: { item: QuickFollowUpPrompt; disabled: boolean; sending: boolean; onSend: () => void; onInspect: () => void }) {
+  return <span className={css.quickFollowUpAction}>
+    <button type="button" className={css.quickFollowUpButton} data-testid="quick-follow-up-send" disabled={disabled} aria-label={'发送快捷追问：' + item.label} onClick={onSend}>{sending ? '发送中…' : item.label}</button>
+    <button type="button" className={css.quickFollowUpInspect} data-testid="quick-follow-up-inspect" disabled={disabled} aria-label={'查看实际提示词：' + item.label} onClick={onInspect}>ⓘ</button>
+  </span>
+}
+
+function QuickFollowUpPromptDialog({ metadata, onClose }: { metadata: QuickFollowUpMetadata; onClose: () => void }) {
+  return <div className={css.quickFollowUpOverlay} role="presentation" onClick={onClose}>
+    <div className={css.quickFollowUpDialog} role="dialog" aria-modal="true" aria-label="快捷追问实际提示词" data-testid="quick-follow-up-dialog" onClick={(event) => event.stopPropagation()}>
+      <div className={css.quickFollowUpDialogHeader}><strong>{metadata.labelSnapshot}</strong><button type="button" onClick={onClose} aria-label="关闭实际提示词">×</button></div>
+      <p>发送时使用的实际提示词</p>
+      <pre>{metadata.promptSnapshot}</pre>
+      <button type="button" className={css.quickFollowUpClose} onClick={onClose}>关闭</button>
+    </div>
+  </div>
 }
 
 function PdfSourceButton({ context }: { context: { documentId: string; pageNumbers: number[] } }) {

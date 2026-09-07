@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { newStableId, type StableId } from '../engine/types'
 import type { ArtifactKind } from '../artifacts/artifact-types'
-import { uiActions } from '../engine/ui-store'
+import { uiActions, useUi } from '../engine/ui-store'
 import { getPromptPreferences, setDefaultConversationModeId, setPromptSortPreference } from './prompt-preferences'
 import {
   copyPromptDefinition,
@@ -97,9 +97,10 @@ function sourceLabel(source: PromptDefinition['source']): string {
 }
 
 export function PromptManager() {
+  const requestedCategory = useUi(s => s.promptManagerCategory)
   const [catalog, setCatalog] = useState<PromptDefinition[]>([])
   const [preferences, setPreferences] = useState<PromptUserPreferences | null>(null)
-  const [category, setCategory] = useState<Category>('all')
+  const [category, setCategory] = useState<Category>(() => requestedCategory ?? 'all')
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<StableId | null>(null)
   const [draft, setDraft] = useState<PromptDefinition | null>(null)
@@ -109,7 +110,7 @@ export function PromptManager() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
-  const [mobileStep, setMobileStep] = useState<MobileStep>(() => window.innerWidth <= 720 ? 'categories' : 'detail')
+  const [mobileStep, setMobileStep] = useState<MobileStep>(() => requestedCategory ? 'list' : window.innerWidth <= 720 ? 'categories' : 'detail')
   const [narrow, setNarrow] = useState(() => window.innerWidth <= 720)
 
   const loadCatalog = useCallback(async (preferredId?: StableId) => {
@@ -179,7 +180,7 @@ export function PromptManager() {
 
   const startCreate = () => {
     if (dirty && !window.confirm('当前修改尚未保存，确定新建提示词吗？')) return
-    setDraft(newDefinition('conversation-mode'))
+    setDraft(newDefinition(category === 'all' ? 'conversation-mode' : category))
     setSelectedId(null)
     setEditorMode('create')
     setDirty(true)

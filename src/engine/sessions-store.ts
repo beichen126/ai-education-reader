@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { type Conversation, type Message, type Attachment, type StableId, newStableId, NEW_TITLE } from './types'
+import { type Conversation, type Message, type Attachment, type StableId, type DraftDisposition, type QuickFollowUpMetadata, newStableId, NEW_TITLE } from './types'
 import { sanitizeTitle } from './session-title'
 import { getSetting, setSetting, getConversation, saveConversation, deleteConversation, listConversations, commitAcceptedUserMessage } from '../storage/storage'
 import { getSettingsSnapshot } from './settings-store'
@@ -45,6 +45,11 @@ export function getSessionsStatus(): RequestStatus { return state.status }
 export function getSessionsSendError(): string | undefined { return state.sendError }
 export function getSessionsCurrent(): string | undefined { return state.current }
 export function getSessionsFocusTarget(): MessageFocusTarget | undefined { return state.focusMessage }
+
+export type SendUserMessageOptions = {
+  quickFollowUp?: QuickFollowUpMetadata
+  draftDisposition?: DraftDisposition
+}
 
 function index(list: Conversation[]): Record<string, Conversation> {
   const m: Record<string, Conversation> = {}; for (const c of list) m[c.id] = c; return m
@@ -129,7 +134,7 @@ export const sessionsActions = {
    * rejected before acceptance (busy / no conversation / empty). The Compose caller
    * should only clear its draft / transfer attachment ownership when this returns true.
    */
-  async sendUserMessage(id: string, content: string, imageIds: StableId[] = []): Promise<boolean> {
+  async sendUserMessage(id: string, content: string, imageIds: StableId[] = [], options: SendUserMessageOptions = {}): Promise<boolean> {
     if (state.status === 'sending' || state.status === 'streaming') return false
     const locked = await tryWithConversationMutationLock(id, async () => {
       if (state.status === 'sending' || state.status === 'streaming') return false
@@ -146,7 +151,7 @@ export const sessionsActions = {
       let acceptedSend: AcceptedSendContext
       let afterUser: Conversation
       try {
-        const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now }, imageIds, now)
+        const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
         const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
         const candidate: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
         // Optimistically show 'sending'; the generation lease already blocks all other
@@ -165,7 +170,7 @@ export const sessionsActions = {
         upsertState(afterUser, { status: 'sending', sendError: undefined })
         // ONE durable transaction: put conversation + put lastConversationId + delete the
         // draft row. The user message is ACCEPTED only if this transaction commits.
-        await commitAcceptedUserMessage(afterUser, id, draftSettingKey(id))
+        await commitAcceptedUserMessage(afterUser, id, draftSettingKey(id), options.draftDisposition ?? 'clear')
       } catch (e) {
         // Revert the optimistic memory state; Draft memory + durable Draft remain intact.
         upsertState(conv, { status: state.status === 'error' ? 'error' : 'idle', sendError: '消息发送失败，请重试。' })
@@ -177,7 +182,7 @@ export const sessionsActions = {
       // Accepted: the user message + its image ids are now durably in the conversation AND
       // the draft row was deleted in the same commit. Clear Draft MEMORY without another
       // required database mutation.
-      clearDraftMemory(id)
+      if ((options.draftDisposition ?? 'clear') === 'clear') clearDraftMemory(id)
       // Keep the lease while the background stream runs. It is released by the shared
       // engine, including all preflight, abort, error, and deletion paths.
       void runReplyStream(id, afterUser, settings, acceptedSend, lease)

@@ -1,4 +1,4 @@
-import { newStableId, type Message, type StableId } from './types'
+import { newStableId, type DraftDisposition, type Message, type QuickFollowUpMetadata, type StableId } from './types'
 import { getSettingsSnapshot } from './settings-store'
 import { runThreadReply, type ReplyThread } from './stream-reply'
 import { generationRegistry, genBranchKey } from './generation-registry'
@@ -80,7 +80,12 @@ export class BranchReplyThread implements ReplyThread {
  * acceptance happens first; only then does the stream start. One global generation lock.
  * Returns true when the branch accepted + streamed (or is streaming).
  */
-export async function runBranchReply(conversationId: StableId, branchId: StableId, content: string, imageIds: StableId[] = []): Promise<boolean> {
+export type BranchReplyOptions = {
+  quickFollowUp?: QuickFollowUpMetadata
+  draftDisposition?: DraftDisposition
+}
+
+export async function runBranchReply(conversationId: StableId, branchId: StableId, content: string, imageIds: StableId[] = [], options: BranchReplyOptions = {}): Promise<boolean> {
   const locked = await tryWithConversationMutationLock(conversationId, async () => {
     const branch = await getBranch(branchId)
     if (!branch) return false
@@ -92,7 +97,7 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
     if (!lease) return false
     try {
       const now = Date.now()
-      const msg = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now }, imageIds, now)
+      const msg = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
       const conversation = await getConversation(conversationId)
       const branches = await listBranchesByConversation(conversationId)
       if (!conversation) return false
@@ -107,7 +112,7 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
       localTransitions: branch.promptTransitions ?? [],
       acceptedMessageId: msg.id,
     })
-    if (!(await acceptBranchUserMessage(branchId, msg, prepared.nextLocalTransitions))) return false
+    if (!(await acceptBranchUserMessage(branchId, msg, prepared.nextLocalTransitions, options.draftDisposition ?? 'clear'))) return false
     const thread = new BranchReplyThread(conversationId, branchId)
       await runThreadReply(thread, settings, controller, undefined, prepared.context, lease)
     return true

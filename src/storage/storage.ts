@@ -1,5 +1,5 @@
 import { idbGet, idbGetAll, idbGetAllKeys, idbPut, idbDelete, idbGetAllByIndex, idbDeleteByIndex, idbBatchPut, idbBatchDelete, idbClearAll, idbRunTxn } from './idb'
-import { normalizeConversationPdfContexts, type Attachment } from '../engine/types'
+import { normalizeConversationPdfContexts, type Attachment, type DraftDisposition } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import type { StoredBinary } from './binary-store'
 
@@ -40,18 +40,19 @@ export const LAST_CONVERSATION_ID_KEY = 'lastConversationId'
  *   1. put the updated Conversation (with the new user message and any frozen
  *      prompt transition);
  *   2. put lastConversationId;
- *   3. delete the draft:<conversationId> setting row (the accepted content must no
- *      longer be considered unsent).
+ *   3. delete the draft:<conversationId> setting row when draftDisposition is 'clear'.
+ *      A durable quick follow-up explicitly uses 'preserve' so the user's unrelated
+ *      composer draft remains unsent and recoverable.
  * The promise resolves ONLY when the transaction commits, so there is never a
  * durable state where only some of these three acceptance operations landed.
  * On failure nothing commits and the caller keeps its Draft intact.
  */
-export async function commitAcceptedUserMessage(conv: any, lastConversationId: string, draftKey: string | null): Promise<void> {
+export async function commitAcceptedUserMessage(conv: any, lastConversationId: string, draftKey: string | null, draftDisposition: DraftDisposition = 'clear'): Promise<void> {
   const normalized = normalizeConversationPdfContexts(conv)
   await idbRunTxn(['conversations', 'settings'], (txn) => {
     txn.objectStore('conversations').put(normalized)
     txn.objectStore('settings').put({ key: LAST_CONVERSATION_ID_KEY, value: lastConversationId })
-    if (draftKey) txn.objectStore('settings').delete(draftKey)
+    if (draftKey && draftDisposition === 'clear') txn.objectStore('settings').delete(draftKey)
   })
 }
 

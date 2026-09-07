@@ -5,6 +5,16 @@ import type { PromptTransition } from '../prompts/prompt-types'
 export type StableId = string
 export type MessageRole = 'user' | 'assistant'
 
+/** Frozen metadata for a Quick Follow-up user interaction. */
+export type QuickFollowUpMetadata = {
+  promptId?: StableId
+  labelSnapshot: string
+  promptSnapshot: string
+}
+
+/** Whether accepted-send should consume the current composer draft. */
+export type DraftDisposition = 'clear' | 'preserve'
+
 /** Pre-multi-range selection shape written by Stage 4-8 attachments in existing user data. */
 export type PdfSelectionV1 = {
   kind: 'outline' | 'manual'
@@ -50,11 +60,7 @@ export type Message = {
   /** Legacy v1.3.0 compatibility field. Read and normalized, never written for new messages. */
   pdfContext?: PdfContext
   /** v2: snapshot metadata for a real Quick Follow-up user interaction. */
-  quickFollowUp?: {
-    promptId?: StableId
-    labelSnapshot: string
-    promptSnapshot: string
-  }
+  quickFollowUp?: QuickFollowUpMetadata
 }
 
 /** Read provenance from both the canonical and v1.3.0 legacy message shapes. */
