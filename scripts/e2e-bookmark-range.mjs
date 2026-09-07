@@ -217,15 +217,58 @@ const testFailedPreferenceWrite = async target => {
   await page.locator('[data-testid="doc-context-cancel"]').click()
 }
 
+const testReaderPreferenceRefresh = async target => {
+  await page.locator('[data-testid="doc-open-' + doc.id + '"]').click()
+  await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
+  await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+  await page.locator('[data-testid="reader-page-input"]').fill(String(target.startPage))
+  await page.locator('[data-testid="reader-page-input"]').press('Enter')
+  await page.waitForFunction(pageNumber => document.querySelector('[data-testid="reader-page-input"]')?.value === String(pageNumber), target.startPage)
+
+  await page.locator('[data-testid="reader-ctx-toggle"]').click()
+  await page.locator('[data-testid="reader-ctx-picker"]').click()
+  await page.locator('[data-testid="doc-context-picker"]').waitFor({ state: 'visible', timeout: 10000 })
+  const selector = modeSelector(target)
+  await selector.waitFor({ state: 'visible', timeout: 10000 })
+  await selector.selectOption('inclusive')
+  const sameLevelTargets = allChapters.filter(item => item.level === target.level && item.selectable && item.startPage != null && item.endPage != null)
+  await waitForPreferences(sameLevelTargets, 'inclusive')
+  await page.locator('[data-testid="doc-context-cancel"]').click()
+  await page.locator('[data-testid="doc-context-picker"]').waitFor({ state: 'detached', timeout: 10000 })
+  assert((await page.locator('[data-testid="reader-page-input"]').inputValue()).trim() === String(target.startPage), 'Reader page is preserved when Picker closes without reload')
+
+  await page.locator('[data-testid="reader-ctx-toggle"]').click()
+  const ancestor = page.locator('[data-testid="reader-ctx-ancestor-' + target.id + '"]')
+  await ancestor.waitFor({ state: 'visible', timeout: 10000 })
+  const expectedEnd = Math.min(target.endPage + 1, doc.pageCount)
+  const menuText = await ancestor.textContent()
+  assert((menuText || '').includes('[' + target.startPage + ',' + expectedEnd + ']'), 'Reader menu uses the saved inclusive mode without reload')
+  const before = await readPdfPageAttachments()
+  await ancestor.click()
+  if (await page.locator('[data-testid="reader-ctx-confirm"]').count()) await page.locator('[data-testid="reader-ctx-confirm-yes"]').click()
+  const expectedCount = expectedEnd - target.startPage + 1
+  await page.getByText('已加入「' + target.title + '」· ' + expectedCount + ' 页', { exact: true }).waitFor({ state: 'visible', timeout: 30000 })
+  const after = await waitForPdfPageAttachments(doc.id, before.filter(item => item.source.documentId === doc.id).length + expectedCount)
+  const beforeIds = new Set(before.map(item => item.id))
+  const added = after.filter(item => !beforeIds.has(item.id) && item.source.documentId === doc.id)
+  assert(added.length === expectedCount, 'Reader sends pages matching the refreshed inclusive range without reload')
+  await page.locator('[data-testid="reader-close"]').click()
+  await page.waitForTimeout(300)
+}
+
 const exclusiveExpectedEnd = chapter.endPage
 await addSelectedChapter(chapter, 'exclusive', exclusiveExpectedEnd - chapter.startPage + 1)
+
+// Reader owner callback: change a scoped Picker preference, close without reload,
+// then use the Reader's own chapter shortcut and verify the new mode is applied.
+await testReaderPreferenceRefresh(chapter)
 
 // Close/reopen the picker and reload the app; the document-owned selection must remain inclusive.
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
 await openLibrary()
 await openPicker()
-assert(await modeSelector(chapter).inputValue() === 'exclusive', 'reload: exclusive preference is restored')
+assert(await modeSelector(chapter).inputValue() === 'inclusive', 'reload: Reader-updated inclusive preference is restored')
 await page.locator('[data-testid="doc-context-cancel"]').click()
 await addSelectedChapter(chapter, 'inclusive', Math.min(chapter.endPage + 1, doc.pageCount) - chapter.startPage + 1)
 

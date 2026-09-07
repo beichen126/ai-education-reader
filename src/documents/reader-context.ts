@@ -1,9 +1,22 @@
 // Reader -> Context selection semantics (Stage 9.2B2). Pure, no React/CSS — the
 // DocumentReader only orchestrates; these helpers own the rules.
-import type { ChapterNode } from './document-types'
+import type { ChapterNode, LearningDocument } from './document-types'
 import type { PdfRange, PdfSelection } from '../pdf/pdf-types'
-import { resolveBookmarkChapterPdfRangeBounds } from '../pdf/bookmark-range'
+import { resolveBookmarkChapterPdfRangeBounds, type BookmarkRangeEndMode } from '../pdf/bookmark-range'
 import { bookmarkRangeEndModeOf, type BookmarkRangePreferences } from './bookmark-range-preferences'
+
+export type BookmarkRangePreferenceDelta = {
+  documentId: string
+  updates: ReadonlyArray<{ chapterId: string; endMode: BookmarkRangeEndMode }>
+}
+
+/** Apply only a durable delta belonging to the currently rendered document. */
+export function applyBookmarkRangePreferenceDelta(current: LearningDocument | null, delta: BookmarkRangePreferenceDelta): LearningDocument | null {
+  if (!current || current.id !== delta.documentId || delta.updates.length === 0) return current
+  const preferences = { ...(current.bookmarkRangePreferences ?? {}) }
+  for (const update of delta.updates) preferences[update.chapterId] = update.endMode
+  return { ...current, bookmarkRangePreferences: preferences }
+}
 
 /**
  * Deepest containing selectable chapter for a page — deterministic:

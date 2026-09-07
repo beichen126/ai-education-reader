@@ -15,7 +15,7 @@ import { formatBytes } from '../storage/diagnostics'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { renderPdfContextRanges, PdfContextRenderError, type ContextRenderProgress } from '../pdf/pdf-context-render'
 import { validatePdfRange, countPdfRangePages, needsPdfContextSoftConfirm, MAX_PDF_CONTEXT_PAGES, type PdfRange, type PdfSelection } from '../pdf/pdf-types'
-import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, buildManualRangeSelection } from './reader-context'
+import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, buildManualRangeSelection, applyBookmarkRangePreferenceDelta, type BookmarkRangePreferenceDelta } from './reader-context'
 import { findCurrentChapterPath } from './document-context'
 import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
 import { bookmarkRangePresentation } from '../pdf/bookmark-range'
@@ -464,6 +464,10 @@ export function DocumentReader() {
     finally { if (gen === ctxGenRef.current) { setCtxBusy(false); setCtxRunning(null) } }
   }, [doc, conv, ctxBusy, pageCount])
 
+  const applyCommittedBookmarkRangePreferences = useCallback((delta: BookmarkRangePreferenceDelta) => {
+    setDoc(current => applyBookmarkRangePreferenceDelta(current, delta))
+  }, [])
+
   const commitManualRange = () => {
     const v = validatePdfRange(manualStart, manualEnd, pageCount)
     if (v) { setManualError(v); return }
@@ -866,6 +870,7 @@ export function DocumentReader() {
         <DocumentContextPicker
           documentId={doc.id}
           onCancel={() => setCtxPickerOpen(false)}
+          onPreferencesCommitted={applyCommittedBookmarkRangePreferences}
           onAdd={(selection) => { setCtxPickerOpen(false); void addFromPicker(selection) }}
         />
       )}

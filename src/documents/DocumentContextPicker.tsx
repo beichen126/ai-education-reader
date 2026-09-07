@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { listDocumentSummaries, getDocumentContextDescriptor, setDocumentBookmarkRangePreferences, type DocumentContextDescriptor, type DocumentSummary, type BookmarkRangePreferenceUpdate } from './document-service'
 import { buildChapterNodesSelection, findChapterById, selectableChapterRange } from './document-context'
+import type { BookmarkRangePreferenceDelta } from './reader-context'
 import { normalizePdfRanges, countPdfRangePages, pdfRangesText, needsPdfContextSoftConfirm, exceedsPdfContextHardLimit, validatePdfRange, MAX_PDF_CONTEXT_PAGES, type PdfRange, type PdfSelection } from '../pdf/pdf-types'
 import type { ChapterNode } from './document-types'
 import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
@@ -13,6 +14,7 @@ type Props = {
   documentId?: string
   onCancel: () => void
   onAdd: (selection: PdfSelection, documentId: string, fileName: string) => void
+  onPreferencesCommitted?: (delta: BookmarkRangePreferenceDelta) => void
 }
 
 type PreferenceKeyState = {
@@ -35,7 +37,7 @@ type PreferenceWriteEntry = {
 // (Library / Reader) goes straight to the context stage and never offers a misleading back.
 // Back semantics (0.10): only the unscoped picker has a document-list back; a scoped picker
 // has no back that would clear the document and leave an empty panel.
-export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
+export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferencesCommitted }: Props) {
   const scoped = !!documentId
   const [stage, setStage] = useState<'document' | 'context'>(scoped ? 'context' : 'document')
   const [doc, setDoc] = useState<DocumentContextDescriptor | null>(null)
@@ -150,13 +152,16 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd }: Props) {
     for (const update of updates) ensurePreferenceState(targetDoc, update.chapterId).pending = chain
     preferenceQueuesRef.current.set(targetDoc.id, chain)
     void chain.then(() => {
+      let currentGeneration = true
       for (const update of entry.updates) {
         const key = preferenceKey(entry.documentId, update.chapterId)
         const state = preferenceStatesRef.current.get(key)
         if (!state) continue
         state.confirmed = update.endMode
         if (state.generation === entry.generations.get(key)) { state.pending = null; state.error = null }
+        else currentGeneration = false
       }
+      if (currentGeneration && mountedRef.current) onPreferencesCommitted?.({ documentId: entry.documentId, updates: entry.updates })
     }).catch(() => {
       let currentFailure = false
       for (const update of entry.updates) {

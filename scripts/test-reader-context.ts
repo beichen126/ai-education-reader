@@ -1,5 +1,5 @@
 // Stage 9.2B2: Reader selection semantics (pure).
-import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, buildManualRangeSelection } from '../src/documents/reader-context.ts'
+import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, buildManualRangeSelection, applyBookmarkRangePreferenceDelta } from '../src/documents/reader-context.ts'
 import type { ChapterNode } from '../src/documents/document-types.ts'
 
 let pass = 0, fail = 0
@@ -44,6 +44,11 @@ const cchInclusive = buildChapterSelection(findCurrentChapter(book, 128)!, { pag
 assert(cchInclusive.ranges[0].startPage === 126 && cchInclusive.ranges[0].endPage === 133, 'reader chapter selection applies inclusive preference to actual range')
 const mr = buildManualRangeSelection(120, 135)
 assert(mr.kind === 'manual' && mr.ranges[0].startPage === 120 && mr.ranges[0].endPage === 135, 'manual range selection')
+
+const readerDoc = { id: 'reader-a', bookmarkRangePreferences: { c1: 'exclusive' as const }, chapters: [], pageCount: 10, lastReadPage: 1, fileName: 'reader.pdf' } as any
+const refreshed = applyBookmarkRangePreferenceDelta(readerDoc, { documentId: 'reader-a', updates: [{ chapterId: 'c1', endMode: 'inclusive' }, { chapterId: 'c2', endMode: 'inclusive' }] })
+assert(refreshed?.bookmarkRangePreferences?.c1 === 'inclusive' && refreshed?.bookmarkRangePreferences?.c2 === 'inclusive', 'Reader applies the durable preference delta in place')
+assert(applyBookmarkRangePreferenceDelta(refreshed, { documentId: 'reader-b', updates: [{ chapterId: 'c1', endMode: 'exclusive' }] }) === refreshed, 'stale delta for another document is ignored')
 
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)
