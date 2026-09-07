@@ -30,9 +30,11 @@ await page.locator('[data-testid="toc-thumb-8"]').click()
 assert((await page.locator('[data-testid="toc-picker-start"]').textContent()).includes('2 页'), 'A: picker shows selected count')
 
 // --- B: extraction (mock) -> review opens ---
-await page.evaluate(() => { (globalThis).__dshMockAiToc = (req) => {
+await page.evaluate(() => { (globalThis).__dshAllCalls = []; (globalThis).__dshStructureCalls = []; (globalThis).__dshMockAiToc = (req) => {
+  (globalThis).__dshAllCalls.push({ phase: req.phase, attempt: req.attempt, repair: req.repair })
   if (req.phase === 'structure') {
-    return '{"levels":[1,1]}'
+    (globalThis).__dshStructureCalls.push({ attempt: req.attempt, repair: req.repair, diagnostics: req.diagnostics })
+    return req.repair ? '{"levels":[1,1]}' : '{"levels":[1]}'
   }
   const si = (n) => { const i = req.pages.indexOf(n) + 1; return i > 0 ? i : 1 };
   return '{"title":"第一章 自然地理","pageLabel":"1","sourceImageIndex":' + si(req.pages[0]) + ',"visualIndent":0,"numbering":"第一章"}\n' +
@@ -43,6 +45,12 @@ await page.locator('[data-testid="toc-review"]').waitFor({ state: 'visible', tim
 assert(await page.locator('[data-testid="toc-review-progress"]').count() === 1, 'B: review opens with progress')
 const itemCount = await page.locator('[data-testid^="toc-review-item-"]').count()
 assert(itemCount === 2, 'B: review lists 2 items (got ' + itemCount + ')')
+const structureCalls = await page.evaluate(() => (globalThis).__dshStructureCalls)
+assert(structureCalls.length === 2, 'B1: structure repair uses exactly one retry (got ' + structureCalls.length + ')')
+assert(structureCalls[0].repair === false && structureCalls[1].repair === true, 'B1: second structure request is marked as repair')
+assert(structureCalls[1].diagnostics.some(d => d.code === 'LEVEL_COUNT_MISMATCH'), 'B1: repair request carries count-mismatch diagnostics')
+const allCalls = await page.evaluate(() => (globalThis).__dshAllCalls)
+assert(allCalls.filter(c => c.phase === 'transcribe').length === 1, 'B1: repair does not rerun successful Vision transcription')
 
 // --- B2 (finding 8): blocking continue STAYS on the current unresolved row ---
 // First row is unresolved (page 待确认) -> continueReview must NOT advance.
@@ -77,6 +85,31 @@ assert(await page.locator('[data-testid="reader-toc-edit"]').count() === 1, 'E: 
 const restoreBtn = await page.locator('[data-testid="reader-toc-restore"]').count()
 // no-outline has no native outline -> no restore button
 assert(restoreBtn === 0, 'E: manual/ai-toc PDF without native outline shows no 恢复原始目录')
+
+// --- F: a failed repair returns no partial draft and does not rerun Vision ---
+await page.evaluate(() => { (globalThis).__dshAllCalls = []; (globalThis).__dshStructureCalls = []; (globalThis).__dshMockAiToc = (req) => {
+  (globalThis).__dshAllCalls.push({ phase: req.phase, attempt: req.attempt, repair: req.repair })
+  if (req.phase === 'structure') {
+    (globalThis).__dshStructureCalls.push({ attempt: req.attempt, repair: req.repair, diagnostics: req.diagnostics })
+    return '{"levels":[1]}'
+  }
+  const si = (n) => { const i = req.pages.indexOf(n) + 1; return i > 0 ? i : 1 };
+  return '{"title":"第一章 自然地理","pageLabel":"1","sourceImageIndex":' + si(req.pages[0]) + '}\n' +
+    '{"title":"第二章 地球","pageLabel":"2","sourceImageIndex":' + si(req.pages[1]) + '}'
+} })
+await page.locator('[data-testid="reader-toc-ai"]').click()
+await page.locator('[data-testid="toc-picker"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.locator('[data-testid="toc-thumb-7"]').click()
+await page.locator('[data-testid="toc-thumb-8"]').click()
+await page.locator('[data-testid="toc-picker-start"]').click()
+await page.locator('[data-testid="ai-toc-progress-error"]').waitFor({ state: 'visible', timeout: 20000 })
+assert(await page.locator('[data-testid="toc-review"]').count() === 0, 'F: failed repair opens no partial review draft')
+assert((await page.locator('[data-testid="ai-toc-progress-error"]').textContent()).includes('层级数量'), 'F: final failure explains the structure count mismatch')
+const failedStructureCalls = await page.evaluate(() => (globalThis).__dshStructureCalls)
+assert(failedStructureCalls.length === 2 && failedStructureCalls[1].repair === true, 'F: failed repair stops after exactly one repair attempt')
+const failedAllCalls = await page.evaluate(() => (globalThis).__dshAllCalls)
+assert(failedAllCalls.filter(c => c.phase === 'transcribe').length === 1, 'F: failed repair does not rerun Vision transcription')
+assert(await page.locator('[data-testid^="reader-chapter-"]').count() === 2, 'F: failed repair leaves the previously saved TOC unchanged')
 
 await browser.close()
 const pageErrors = errors.length ? errors.join(' | ') : '(none)'

@@ -3,7 +3,7 @@
 import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary, normalizeTitle, normalizeTocLevels,
-  describeTocStructureFailure,
+  describeTocStructureFailure, buildTocStructureRepairPrompt,
 } from '../src/documents/ai-toc.ts'
 import {
   exactLabelToPage, labelsArePlainNumeric, buildInitialMapping, numericOffsetFromAnchor,
@@ -102,6 +102,17 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
 {
   const msg = describeTocStructureFailure([{ code: 'LEVEL_COUNT_MISMATCH', message: 'test', expectedRows: 3, actualLevels: 2 }]);
   assert(msg.includes('层级数量') && !msg.includes('expectedRows'), 'count mismatch gets a concise user message');
+}
+// --- structure repair prompt: diagnostics are carried without raw model output ---
+{
+  const prompt = buildTocStructureRepairPrompt(3, [
+    { code: 'LEVEL_COUNT_MISMATCH', message: 'local', expectedRows: 3, actualLevels: 2 },
+    { code: 'LEVEL_JUMP', message: 'local', rowIndex: 2 },
+  ]);
+  assert(prompt.includes('需要 3 项，实际返回 2 项'), 'repair prompt carries expected/actual count');
+  assert(prompt.includes('第 3 项发生非法层级跳变'), 'repair prompt carries row-level jump diagnostic');
+  assert(prompt.includes('{"levels":[...]}') && prompt.includes('正好包含 3 个正整数'), 'repair prompt preserves compact exact-count contract');
+  assert(!prompt.includes('local'), 'repair prompt excludes diagnostic message text');
 }
 // --- normalization: pure min->1 shift, deterministic, no semantic reorder ---
 { assert(normalizeTocLevels([3,4,5]).join(',') === '1,2,3', 'levels 3,4,5 -> 1,2,3') }

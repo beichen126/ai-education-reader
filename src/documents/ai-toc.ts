@@ -253,6 +253,30 @@ export function describeTocStructureFailure(diagnostics: TocStructureDiagnostic[
   return '目录结构分析失败，请重试或进入手动编辑。'
 }
 
+/** Build the single repair instruction used after the first structure pass
+ * fails local validation. Only stable local diagnostics are included; the raw
+ * model response and PDF text never enter the retry prompt. */
+export function buildTocStructureRepairPrompt(rowsCount: number, diagnostics: TocStructureDiagnostic[]): string {
+  const details = diagnostics.map((d) => {
+    if (d.code === 'LEVEL_COUNT_MISMATCH') {
+      return '层级数量不匹配：需要 ' + d.expectedRows + ' 项，实际返回 ' + d.actualLevels + ' 项。'
+    }
+    if (d.code === 'INVALID_LEVEL') {
+      return '第 ' + ((d.rowIndex ?? 0) + 1) + ' 项不是正整数。'
+    }
+    if (d.code === 'LEVEL_JUMP') {
+      return '第 ' + ((d.rowIndex ?? 0) + 1) + ' 项发生非法层级跳变。'
+    }
+    if (d.code === 'EMPTY_OUTPUT') return '上一次没有返回层级。'
+    if (d.code === 'MALFORMED_OUTPUT') return '上一次输出不是合法的紧凑 JSON 对象。'
+    if (d.code === 'API_ERROR') return '上一次结构分析请求失败。'
+    return '上一次结构分析未通过校验。'
+  }).join('\n')
+  return '上一次目录结构输出未通过校验。\n' + details + '\n' +
+    '请基于同一份输入重新输出完整结构。只输出一个 JSON 对象：{"levels":[...]}。\n' +
+    '必须正好包含 ' + rowsCount + ' 个正整数，严格按输入顺序对应每一行。不要返回 id、title、pageLabel 或任何解释。'
+}
+
 /** Normalized identity used ONLY for EXACT boundary-duplicate detection
  *  (same normalized title + same pageLabel + same physical tocPage). */
 export function boundaryDedupeKey(r: { title: string; pageLabel: string; tocPage: number }): string {

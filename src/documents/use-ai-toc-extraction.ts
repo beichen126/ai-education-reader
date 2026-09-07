@@ -14,7 +14,7 @@ import { sendTextChat, type ApiChatMessage } from '../api/deepseek'
 import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary,
-  TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT, describeTocStructureFailure,
+  TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT, describeTocStructureFailure, buildTocStructureRepairPrompt,
   type TocTranscriptionRow, type TocLocalRow, type TocTranscriptionLine,
   type TocStructureDiagnostic,
 } from './ai-toc'
@@ -49,6 +49,14 @@ const PREV_TAIL_SIZE = 4
 const LARGE_TOC_WINDOW = 8
 const SMALL_TOC_MAX = 8
 
+type AiTocMockRequest = {
+  pages: number[]
+  phase: 'transcribe' | 'structure'
+  attempt?: number
+  repair?: boolean
+  diagnostics?: TocStructureDiagnostic[]
+}
+
 function abortedAiTocResult(stage: AiTocFailureDiagnostics['stage']): AiTocExtractionResult {
   return { ok: false, error: '已取消', diagnostics: { stage, diagnostics: [{ code: 'ABORTED', message: '用户取消目录识别' }] } }
 }
@@ -68,8 +76,9 @@ function buildSequentialText(rows: TocTranscriptionRow[]): string {
  * Run the flat transcription -> global structure pipeline for one document.
  * `signal` is an AbortSignal: when aborted, no further request is started and
  * the result is { ok:false, error:'已取消' } (never a network-or-cors mislabel).
- * Retry contract: a malformed/schema-invalid transcription or structure result is
- * retried ONCE; a second failure aborts the whole extraction (no partial rows).
+ * Retry contract: a malformed/schema-invalid transcription is retried once;
+ * structure validation gets one diagnostic repair attempt, then aborts without
+ * returning a partial draft.
  */
 export async function extractAiToc(opts: {
   session: PdfSession
@@ -87,7 +96,7 @@ export async function extractAiToc(opts: {
 
   const labels = await getPageLabels()
 
-  const mock = (globalThis as any).__dshMockAiToc as ((request: { pages: number[]; phase: 'transcribe' | 'structure' }) => string | undefined) | undefined
+  const mock = (globalThis as any).__dshMockAiToc as ((request: AiTocMockRequest) => string | undefined) | undefined
   const isMock = typeof mock === 'function'
 
   if (!apiKey && !isMock) return { ok: false, error: 'AI 目录识别需要配置 API Key。' }
@@ -155,10 +164,15 @@ export async function extractAiToc(opts: {
   for (let attempt = 0; attempt < 2; attempt++) {
     if (signal?.aborted) return abortedAiTocResult('structuring')
     try {
-      if (isMock) { structureRaw = mock({ pages: [], phase: 'structure' }); }
+      const repair = attempt === 1
+      const repairPrompt = repair ? buildTocStructureRepairPrompt(allRows.length, lastStructureDiagnostics) : ''
+      if (isMock) {
+        structureRaw = mock({ pages: [], phase: 'structure', attempt: attempt + 1, repair, diagnostics: repair ? lastStructureDiagnostics : [] });
+      }
       else {
         const seq = buildSequentialText(allRows);
-        const messages: ApiChatMessage[] = [{ role: 'system', content: TOC_STRUCTURE_PROMPT }, { role: 'user', content: seq }];
+        const userContent = repair ? seq + '\n\n' + repairPrompt : seq
+        const messages: ApiChatMessage[] = [{ role: 'system', content: TOC_STRUCTURE_PROMPT }, { role: 'user', content: userContent }];
         const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal });
         structureRaw = res.content;
       }
@@ -200,7 +214,7 @@ async function transcribeBatch(opts: {
   apiKey: string; baseUrl: string; model: string;
   tail: TocTranscriptionRow[];
   isMock: boolean;
-  mock: ((request: { pages: number[]; phase: 'transcribe' | 'structure' }) => string | undefined) | undefined;
+  mock: ((request: AiTocMockRequest) => string | undefined) | undefined;
   signal?: AbortSignal;
 }): Promise<TocLocalRow[]> {
   const { batch, pageDataUrls, apiKey, baseUrl, model, tail, isMock, mock, signal } = opts;
