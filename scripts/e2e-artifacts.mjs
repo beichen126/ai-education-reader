@@ -25,6 +25,12 @@ assert(true, 'Note dialog opens from the message menu (mode = 整理成笔记)')
 // Default preset prompt present + editable.
 const promptVal = await page.locator('textarea[class*="promptArea"]').inputValue()
 assert(promptVal.includes('笔记'), 'Note dialog pre-fills the editable prompt (len ' + promptVal.length + ')')
+assert(await page.locator('[role="listbox"][aria-label="Artifact 模板"]').count() === 1, 'Stage 10: Artifact dialog selects from the Prompt catalog')
+await page.locator('input[aria-label="另存为名称"]').fill('我的笔记模板')
+await page.locator('textarea[aria-label="本次要求"]').fill('本次只提炼定义和易错点。')
+await page.locator('button:has-text("另存为提示词")').click()
+await page.locator('[role="status"]').waitFor({ state: 'visible', timeout: 8000 })
+assert(await page.locator('button:has-text("我的笔记模板")').count() >= 1, 'Stage 10: run-local edit can be saved as a new Artifact prompt')
 // A10: the create dialog only offers Note / Quiz / Custom (summary + study-guide hidden).
 const summaryBtn = await page.locator('button:has-text("生成总结")').count()
 const guideBtn = await page.locator('button:has-text("生成学习指南")').count()
@@ -50,6 +56,7 @@ const reqBody = getLastRequestBody()
 const reqText = reqBody ? JSON.stringify(reqBody) : ''
 assert(reqText.includes('源问题一') && reqText.includes('源答案一'), 'artifact source includes M1/A1')
 assert(!reqText.includes('源问题二') && !reqText.includes('源答案二'), 'artifact source EXCLUDES post-cutoff M2/A2 (source cutoff)')
+assert(!reqText.includes('苏格拉底式学习') && !reqText.includes('深入讲解'), 'Stage 10: Conversation Mode is not injected into Artifact request')
 // Edit title + body, reload, verify persistence.
 await page.locator('input[class*="titleInput"]').fill('我的笔记标题')
 await page.keyboard.press('Tab') // blur -> commitTitle persists the title
@@ -111,6 +118,11 @@ try {
 // Quiz viewer opens with the structured question.
 await page.waitForFunction(() => document.body.textContent.includes('2+2=?'), null, { timeout: 15000 })
 assert(true, 'QuizViewer opens with the structured question')
+const quizRequest = getLastRequestBody()
+const quizMessages = quizRequest?.messages || []
+assert(quizMessages.filter((m) => m.role === 'system').length === 1, 'Stage 10: Quiz request has one machine protocol system message')
+assert(quizMessages.some((m) => m.role === 'system' && String(m.content).includes('QuizDocument')), 'Stage 10: Quiz protocol contract is sent as system scope')
+assert(quizMessages.some((m) => m.role === 'user' && String(m.content).includes('练习题目')), 'Stage 10: Quiz user intent remains a user message')
 // A9: quiz export buttons (Markdown + JSON) in the artifact chrome.
 const quizMdDlP = page.waitForEvent('download')
 await page.locator('button:has-text("导出 Markdown")').first().click()

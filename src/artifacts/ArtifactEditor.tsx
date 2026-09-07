@@ -107,7 +107,7 @@ export function ArtifactEditor({ artifact, onOpenArtifact, onClose, onChanged, s
     if (!globalThis.confirm('重新生成将创建一个新版本，当前编辑不会丢失。继续？')) return
     setBusy(true); setGenError(undefined)
     try {
-      const draft = await createArtifactDraft({ kind: artifact.kind, conversationId: artifact.source.conversationId, branchId: artifact.source.branchId, throughMessageId: artifact.source.throughMessageId, prompt: artifact.prompt, presetId: artifact.presetId })
+      const draft = await createArtifactDraft({ kind: artifact.kind, conversationId: artifact.source.conversationId, branchId: artifact.source.branchId, throughMessageId: artifact.source.throughMessageId, prompt: artifact.prompt, presetId: artifact.presetId, promptBundle: artifact.promptBundle })
       try {
         const out = await generateArtifact(draft.id, { call: defaultModelCall })
         onOpenArtifact(out)

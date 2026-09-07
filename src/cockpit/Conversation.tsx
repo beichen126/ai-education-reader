@@ -44,6 +44,7 @@ import { ConversationPromptInspector } from '../prompts/ConversationPromptInspec
 import { resolveMessageNavigation } from './message-navigation'
 import { sendTextChat } from '../api/deepseek'
 import type { ArtifactKind, StudyArtifact, QuizDocument } from '../artifacts/artifact-types'
+import type { ArtifactPromptBundleSnapshot } from '../prompts/prompt-types'
 import type { Message as TMessage } from '../engine/types'
 import type { PromptTransition } from '../prompts/prompt-types'
 import css from './cockpit.module.css'
@@ -110,12 +111,12 @@ export function Conversation() {
     if (session) await sessionsActions.reload(session.id)
     await branchChat.refresh()
   }
-  async function onCreateArtifact(input: { kind: ArtifactKind; prompt: string; presetId?: string }) {
+  async function onCreateArtifact(input: { kind: ArtifactKind; prompt: string; presetId?: string; promptBundle: ArtifactPromptBundleSnapshot }) {
     if (!session || !creating || creatingBusy) return
     setCreatingBusy(true); setCreatingError(undefined)
     let draftId: string | undefined
     try {
-      const a = await createArtifactDraft({ kind: input.kind, conversationId: session.id, branchId: branchChat.activeBranchId, throughMessageId: creating.messageId, prompt: input.prompt, presetId: input.presetId })
+      const a = await createArtifactDraft({ kind: input.kind, conversationId: session.id, branchId: branchChat.activeBranchId, throughMessageId: creating.messageId, prompt: input.prompt, presetId: input.presetId, promptBundle: input.promptBundle })
       draftId = a.id
       const out = await generateArtifact(a.id, { call: artifactModelCall })
       setCreating(null); setOpenArtifact(out); void branchChat.refresh()
@@ -538,7 +539,7 @@ function ErrorArtifactBody({ artifact, sourceDeleted, onClose, onOpen, onChanged
   async function regenerate() {
     setBusy(true); setErr(undefined)
     try {
-      const draft = await createArtifactDraft({ kind: artifact.kind, conversationId: artifact.source.conversationId, branchId: artifact.source.branchId, throughMessageId: artifact.source.throughMessageId, prompt: artifact.prompt, presetId: artifact.presetId })
+      const draft = await createArtifactDraft({ kind: artifact.kind, conversationId: artifact.source.conversationId, branchId: artifact.source.branchId, throughMessageId: artifact.source.throughMessageId, prompt: artifact.prompt, presetId: artifact.presetId, promptBundle: artifact.promptBundle })
       try {
         const out = await generateArtifact(draft.id, { call: artifactModelCall })
         onOpen(out)

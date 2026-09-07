@@ -1,178 +1,158 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '../dsh/primitives/Button'
-import { TRANSFORMATION_PRESETS } from './artifact-prompts'
-import { listCustomActions, createCustomAction, updateCustomAction, deleteCustomAction } from './custom-action-store'
-import type { ArtifactKind, CustomArtifactAction } from './artifact-types'
+import { listPromptCatalog, getPromptDefinition, saveAsArtifactPromptDefinition } from '../prompts/prompt-service'
+import { capturePromptSnapshot } from '../prompts/prompt-resolution'
+import type { ArtifactPrompt, ArtifactPromptSnapshot, ProtocolPrompt, ProtocolPromptSnapshot, PromptDefinition } from '../prompts/prompt-types'
+import type { ArtifactKind } from './artifact-types'
 import css from './artifact.module.css'
 
 type Props = {
   sourceLabel: string
-  onSubmit: (input: { kind: ArtifactKind; prompt: string; presetId?: string }) => void
+  onSubmit: (input: { kind: ArtifactKind; prompt: string; presetId?: string; promptBundle: { template: ArtifactPromptSnapshot; userPrompt: string; protocol?: ProtocolPromptSnapshot; resolvedAt: number } }) => void
   onCancel: () => void
   busy?: boolean
   initialKind?: ArtifactKind
-  /** Generation errors surfaced from the caller (A2 — never silently swallowed). */
   error?: string
 }
 
-// A10: the DEFAULT creation surface is Note / Quiz / Custom. summary + study-guide are still
-// valid kinds (history artifacts remain readable) but are no longer top-level modes. They are
-// offered INSIDE the custom "常用操作" list and still use their original default prompts.
+// Keep the established creation surface. Artifact templates inside each mode now
+// come from the Prompt catalog; the prompt text below is a run-local edit.
 const MODE_KINDS: ArtifactKind[] = ['note', 'quiz', 'custom']
-// Built-in presets surfaced inside the custom surface (总结 / 学习指南). They are READ-ONLY:
-// the user can base a generation on one, or 另存为自定义操作, but cannot delete them.
-const BUILTIN_CUSTOM_PRESET_IDS = ['summary', 'study-guide']
 
-/** A selectable custom-surface operation: either a READ-ONLY built-in preset or a saved action. */
-type CustomOp = { kind: 'builtin' | 'saved'; key: string; name: string; prompt: string; action?: CustomArtifactAction }
+function preferredTemplate(candidates: ArtifactPrompt[], kind: ArtifactKind): ArtifactPrompt | undefined {
+  return candidates.find((item) => item.source === 'builtin' && item.id === 'builtin-artifact-' + kind)
+    ?? candidates.find((item) => item.source === 'builtin')
+    ?? candidates[0]
+}
 
 export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, initialKind, error: genError }: Props) {
-  const initKind: ArtifactKind = MODE_KINDS.includes(initialKind!) && initialKind ? initialKind! : 'note'
+  const initKind: ArtifactKind = MODE_KINDS.includes(initialKind!) && initialKind ? initialKind : 'note'
   const [kind, setKind] = useState<ArtifactKind>(initKind)
-  const [actions, setActions] = useState<CustomArtifactAction[]>([])
-  const [selectedKey, setSelectedKey] = useState<string>('custom')            // builtin id / action id / 'custom'(blank)
-  const [name, setName] = useState('')
-  // Initialize the editable prompt from the selected mode's default preset (note/quiz/custom),
-  // so note/quiz open pre-filled exactly as before; custom lets the user pick a saved op.
-  const [prompt, setPrompt] = useState(TRANSFORMATION_PRESETS.find((p) => p.kind === initKind)?.defaultPrompt ?? '')
+  const [catalog, setCatalog] = useState<PromptDefinition[]>([])
+  const [protocols, setProtocols] = useState<PromptDefinition[]>([])
+  const [selectedId, setSelectedId] = useState<string | undefined>(undefined)
+  const [prompt, setPrompt] = useState('')
+  const [saveAsName, setSaveAsName] = useState('')
   const [error, setError] = useState<string | undefined>(undefined)
-  const [saved, setSaved] = useState(false)
+  const [notice, setNotice] = useState<string | undefined>(undefined)
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { void listCustomActions().then(setActions) }, [])
+  useEffect(() => {
+    let active = true
+    void Promise.all([listPromptCatalog('artifact'), listPromptCatalog('protocol')]).then(([artifactRows, protocolRows]) => {
+      if (!active) return
+      setCatalog(artifactRows)
+      setProtocols(protocolRows)
+    }).catch((e) => { if (active) setError(e instanceof Error ? e.message : '提示词目录读取失败') })
+    return () => { active = false }
+  }, [])
 
-  // Prompt presets for the 'note'/'quiz' modes (unchanged). custom mode uses the op list.
-  const preset = TRANSFORMATION_PRESETS.find((p) => p.kind === kind)
+  const templates = useMemo(() => catalog.filter((item): item is ArtifactPrompt => item.kind === 'artifact' && item.artifactKind === kind && item.enabled), [catalog, kind])
+  const selectedTemplate = templates.find((item) => item.id === selectedId) ?? preferredTemplate(templates, kind)
+  const protocolsById = useMemo(() => new Map(protocols.filter((item): item is ProtocolPrompt => item.kind === 'protocol').map((item) => [item.id, item])), [protocols])
 
-  function builtinOps(): CustomOp[] {
-    return BUILTIN_CUSTOM_PRESET_IDS
-      .map((id) => TRANSFORMATION_PRESETS.find((p) => p.id === id))
-      .filter((p): p is NonNullable<typeof p> => !!p)
-      .map((p) => ({ kind: 'builtin' as const, key: p.id, name: p.label, prompt: p.defaultPrompt }))
-  }
-  function savedOps(): CustomOp[] {
-    return actions.map((a) => ({ kind: 'saved' as const, key: a.id, name: a.name, prompt: a.prompt, action: a }))
-  }
-  const customOps: CustomOp[] = [...builtinOps(), ...savedOps()]
-
-  function selectKind(k: ArtifactKind) {
-    setKind(k); setError(undefined)
-    const p = TRANSFORMATION_PRESETS.find((x) => x.kind === k)
-    setPrompt(p ? p.defaultPrompt : '')
-    setName(''); setSelectedKey('custom'); setSaved(false)
-  }
-
-  function selectOp(op: CustomOp | null) {
-    if (!op) { setSelectedKey('custom'); setName(''); setPrompt(''); setSaved(false); return }
-    setSelectedKey(op.key)
-    setName(op.name)
-    setPrompt(op.prompt)
-    setSaved(op.kind === 'saved')
-  }
-
-  function newAction() {
-    setSelectedKey('custom'); setName(''); setPrompt(''); setSaved(false); setError(undefined)
-  }
-
-  function submit() {
-    if (!prompt.trim()) { setError('提示词不能为空'); return }
-    onSubmit({ kind, prompt: prompt.trim(), presetId: preset?.id })
-  }
-
-  async function saveAction() {
-    if (!name.trim()) { setError('操作名称不能为空'); return }
-    if (!prompt.trim()) { setError('提示词不能为空'); return }
-    setError(undefined)
-    // Distinguish the three operation classes (v1.2.0):
-    //  - saved action  -> UPDATE it ("保存修改")
-    //  - builtin preset（总结/学习指南）-> 另存为自定义操作 (CREATE)
-    //  - new ('custom') -> CREATE
-    const op = selectedKey !== 'custom' ? customOps.find((o) => o.key === selectedKey) : null
-    setSaving(true)
-    try {
-      if (op && op.kind === 'saved') {
-        await updateCustomAction(op.key, { name, prompt })
-      } else {
-        const created = await createCustomAction({ name, prompt })
-        setSelectedKey(created.id)
-      }
-      setActions(await listCustomActions())
-      setSaved(true)
-    } catch (e) {
-      // Never swallow: surface a clear error and keep the entered values (no "已保存").
-      setSaved(false)
-      setError(e instanceof Error ? e.message : '保存操作失败，请重试。')
-    } finally {
-      setSaving(false)
+  // Catalog load and kind changes choose a template once; later text edits never
+  // mutate that template or write it back to the catalog.
+  useEffect(() => {
+    if (!selectedTemplate) return
+    if (selectedId !== selectedTemplate.id) {
+      setSelectedId(selectedTemplate.id)
+      setPrompt(selectedTemplate.userPrompt)
+      setSaveAsName(selectedTemplate.name + '（我的）')
+      setNotice(undefined)
     }
+  }, [selectedTemplate, selectedId])
+
+  function selectKind(next: ArtifactKind) {
+    setKind(next); setSelectedId(undefined); setPrompt(''); setSaveAsName(''); setError(undefined); setNotice(undefined)
   }
 
-  async function removeAction() {
-    if (selectedKey === 'custom') return
-    const op = customOps.find((o) => o.key === selectedKey)
-    if (!op || op.kind !== 'saved' || !op.action) return
-    if (!globalThis.confirm('确认删除操作「' + op.name + '」？')) return
-    await deleteCustomAction(op.action.id)
-    setActions(await listCustomActions())
-    setSelectedKey('custom'); setName(''); setPrompt(''); setSaved(false)
+  function selectTemplate(template: ArtifactPrompt) {
+    setSelectedId(template.id)
+    setPrompt(template.userPrompt)
+    setSaveAsName(template.name + '（我的）')
+    setError(undefined); setNotice(undefined)
+  }
+
+  async function protocolSnapshotFor(template: ArtifactPrompt, capturedAt: number): Promise<ProtocolPromptSnapshot | undefined> {
+    if (!template.protocolId) return undefined
+    const protocol = protocolsById.get(template.protocolId) ?? await getPromptDefinition(template.protocolId)
+    if (!protocol || protocol.kind !== 'protocol') throw new Error('所选模板的 protocol 不存在。')
+    return capturePromptSnapshot(protocol, capturedAt) as ProtocolPromptSnapshot
+  }
+
+  async function submit() {
+    if (!selectedTemplate) { setError('正在读取可用提示词，请稍候。'); return }
+    if (!prompt.trim()) { setError('本次要求不能为空'); return }
+    setError(undefined); setNotice(undefined)
+    const resolvedAt = Date.now()
+    try {
+      const protocol = await protocolSnapshotFor(selectedTemplate, resolvedAt)
+      const template = capturePromptSnapshot(selectedTemplate, resolvedAt) as ArtifactPromptSnapshot
+      const userPrompt = prompt.trim()
+      onSubmit({ kind, prompt: userPrompt, presetId: selectedTemplate.id, promptBundle: { template, userPrompt, ...(protocol ? { protocol } : {}), resolvedAt } })
+    } catch (e) { setError(e instanceof Error ? e.message : '提示词解析失败') }
+  }
+
+  async function saveAs() {
+    if (!selectedTemplate) { setError('尚未选择模板'); return }
+    if (!prompt.trim()) { setError('本次要求不能为空'); return }
+    if (!saveAsName.trim()) { setError('另存为名称不能为空'); return }
+    setSaving(true); setError(undefined); setNotice(undefined)
+    try {
+      const result = await saveAsArtifactPromptDefinition(selectedTemplate.id, { name: saveAsName, userPrompt: prompt.trim() })
+      const nextCatalog = await listPromptCatalog('artifact')
+      setCatalog(nextCatalog)
+      setSelectedId(result.definition.id)
+      setPrompt(result.definition.kind === 'artifact' ? result.definition.userPrompt : prompt)
+      setNotice(result.warnings.length ? result.warnings.map((item) => item.message).join(' ') : '已另存为提示词。')
+    } catch (e) { setError(e instanceof Error ? e.message : '另存为失败') }
+    finally { setSaving(false) }
   }
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy && !saving) onCancel() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [onCancel])
-
-  const selectedOp = customOps.find((o) => o.key === selectedKey) || null
+  }, [onCancel, busy, saving])
 
   return (<div className={css.dialog} role="dialog" aria-modal="true" aria-label="创建学习成果">
     <h3 className={css.dialogTitle}>创建学习成果</h3>
+    <div><div className={css.fieldLabel}>来源</div><div className={css.sourceLine}>{sourceLabel}</div></div>
     <div>
-      <div className={css.fieldLabel}>来源</div>
-      <div className={css.sourceLine}>{sourceLabel}</div>
+      <div className={css.fieldLabel}>类型</div>
+      <div className={css.kindRow} role="radiogroup" aria-label="类型">
+        {(['note', 'quiz', 'custom'] as const).map((item) => {
+          const labels = { note: '整理成笔记', quiz: '生成题目', custom: '自定义处理' }
+          return <button key={item} type="button" data-testid={'artifact-kind-' + item} disabled={busy || saving} className={css.filterBtn + (kind === item ? ' ' + css.active : '')} role="radio" aria-checked={kind === item} onClick={() => selectKind(item)}>{labels[item]}</button>
+        })}
+      </div>
     </div>
     <div>
-      <div className={css.fieldLabel}>模式</div>
-      <div className={css.kindRow} role="radiogroup" aria-label="模式">
-        {TRANSFORMATION_PRESETS.filter((p) => MODE_KINDS.includes(p.kind)).map((p) => (
-          <button key={p.kind} type="button" data-testid={'artifact-kind-' + p.kind} disabled={busy} className={css.filterBtn + (kind === p.kind ? ' ' + css.active : '')} role="radio" aria-checked={kind === p.kind} onClick={() => selectKind(p.kind)}>{p.label}</button>
-        ))}
+      <div className={css.fieldLabel}>模板</div>
+      <div className={css.opList} role="listbox" aria-label="Artifact 模板">
+        {templates.map((template) => <button key={template.id} type="button" role="option" aria-selected={selectedTemplate?.id === template.id} disabled={busy || saving} className={css.filterBtn + (selectedTemplate?.id === template.id ? ' ' + css.active : '')} onClick={() => selectTemplate(template)}>{template.name}</button>)}
+        {catalog.length > 0 && templates.length === 0 && <span className={css.cardMeta}>没有可用的已启用模板，请在提示词管理中启用一个。</span>}
       </div>
-      {kind !== 'custom' && preset && <div className={css.cardMeta} style={{ marginTop: '0.375rem' }}>{preset.description}</div>}
+      {selectedTemplate && <div className={css.cardMeta} style={{ marginTop: '0.375rem' }}>模板：{selectedTemplate.name} · revision {selectedTemplate.revision} · {selectedTemplate.source === 'builtin' ? 'canonical' : '本地自定义'}</div>}
     </div>
-
-    {kind === 'custom' ? (
-      <div className={css.customArea}>
-        <div className={css.fieldLabel}>操作</div>
-        <div className={css.opList}>
-          {customOps.map((o) => (
-            <button key={o.key} type="button" disabled={busy} className={css.filterBtn + (selectedKey === o.key ? ' ' + css.active : '')} onClick={() => selectOp(o)}>{o.name}</button>
-          ))}
-          <button type="button" disabled={busy} className={css.filterBtn + (selectedKey === 'custom' ? ' ' + css.active : '')} onClick={newAction}>+ 新建操作</button>
-        </div>
-        <div className={css.fieldLabel}>操作名称</div>
-        <input className={css.actionName} value={name} disabled={busy} aria-label="操作名称" placeholder="操作名称（例如：解释得更简单）" onChange={(e) => setName(e.target.value)} />
-        <div className={css.fieldLabel}>提示词</div>
-        <textarea className={css.promptArea} value={prompt} aria-label="提示词" disabled={busy} onChange={(e) => setPrompt(e.target.value)} />
+    <div>
+      <div className={css.fieldLabel}>本次要求 <span className={css.cardMeta}>（只影响本次生成，不会修改模板）</span></div>
+      <textarea className={css.promptArea} value={prompt} aria-label="本次要求" disabled={busy || saving} onChange={(event) => { setPrompt(event.target.value); setNotice(undefined) }} />
+    </div>
+    <div className={css.customArea}>
+      <div className={css.fieldLabel}>另存为提示词</div>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <input className={css.actionName} value={saveAsName} disabled={busy || saving || !selectedTemplate} aria-label="另存为名称" placeholder="提示词名称" onChange={(event) => setSaveAsName(event.target.value)} />
+        <Button variant="ghost" onClick={() => void saveAs()} disabled={busy || saving || !selectedTemplate}>{saving ? '保存中…' : '另存为提示词'}</Button>
       </div>
-    ) : (
-      <div>
-        <div className={css.fieldLabel}>提示词</div>
-        <textarea className={css.promptArea} value={prompt} aria-label="提示词" disabled={busy} onChange={(e) => setPrompt(e.target.value)} />
-      </div>
-    )}
-
+    </div>
     {genError && <div className={css.error} role="alert">{genError}</div>}
-    {error && <div className={css.error}>{error}</div>}
+    {error && <div className={css.error} role="alert">{error}</div>}
+    {notice && <div className={css.cardMeta} role="status">{notice}</div>}
     <div className={css.dialogFoot}>
-      {kind === 'custom' && (
-        <>
-          <Button variant="ghost" onClick={removeAction} disabled={busy || (selectedOp?.kind !== 'saved')}>删除</Button>
-          <Button variant="ghost" onClick={saveAction} disabled={busy || saving}>{saving ? '保存中…' : (saved ? '保存修改' : '保存为操作')}</Button>
-        </>
-      )}
-      <Button variant="ghost" onClick={onCancel} disabled={busy}>取消</Button>
-      <Button variant="primary" data-testid="artifact-generate" onClick={submit} disabled={busy}>{busy ? '生成中…' : '生成'}</Button>
+      <Button variant="ghost" onClick={onCancel} disabled={busy || saving}>取消</Button>
+      <Button variant="primary" data-testid="artifact-generate" onClick={() => void submit()} disabled={busy || saving || !selectedTemplate}>{busy ? '生成中…' : '生成'}</Button>
     </div>
   </div>)
 }
