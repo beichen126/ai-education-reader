@@ -12,7 +12,7 @@
 [隐私与本地优先](#隐私与本地优先) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v1.3.3-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v1.3.4-green?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
 ![BYOK](https://img.shields.io/badge/BYOK-self--hosted-green?style=flat-square)
@@ -112,7 +112,7 @@ Reader 支持目录导航、页码跳转、阅读位置恢复、深色模式和�
 
 选择器会把范围规范化、去重并显示实际页数。选中的页面才会被渲染为发送给模型的上下文，完整 PDF 不会因为打开 Reader 而上传。
 
-书签范围还支持按文档、按稳定书签分别选择两种边界语义：左闭右开 `[start, end)`（例如 10–19 页）或左闭右闭 `[start, end]`（例如 10–20 页）。选择器会同时显示最终实际发送的页码；设置在刷新、关闭并重开后保持，旧文档和旧备份缺少该字段时默认使用左闭右开。最后一个书签和单页章节也会自动限制在文档页数内。
+书签范围还支持按文档、按稳定书签分别选择两种边界语义：左闭右开 `[start, end)`（例如 10–19 页）或左闭右闭 `[start, end]`（例如 10–20 页）。边界语义只需在下拉栏选择，预览使用区间符号表达；实际发送的页集合由所选模式稳定计算。设置在刷新、关闭并重开后保持，旧文档和旧备份缺少该字段时默认使用左闭右开。最后一个书签和单页章节也会自动限制在文档页数内。
 
 <img src="docs/assets/readme/v133-03-document-context-picker.webp" alt="从资料库按书签选择范围并加入当前对话" width="100%" />
 
