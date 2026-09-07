@@ -5,7 +5,7 @@ import { chromium } from 'playwright-core'
 import { mkdirSync } from 'fs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const OUT = 'docs/assets/readme'
-const PREFIX = 'v132-'
+const PREFIX = 'v133-'
 mkdirSync(OUT, { recursive: true })
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 const FILES = '[data-testid="sidebar-entry-files"], [data-testid="rail-files"]'
@@ -49,7 +49,13 @@ await shot(page, '01-reader-context.webp')
 await page.locator('[data-testid="reader-close"]').click()
 await page.waitForTimeout(300)
 await openLibrary(page)
-await page.locator('[data-testid^="doc-context-"]').first().click()
+const contextCards = await page.locator('[data-testid^="doc-card-"]').all()
+let contextCard = null
+for (const card of contextCards) {
+  if ((await card.textContent()).toLowerCase().includes('outline-sample.pdf')) { contextCard = card; break }
+}
+if (!contextCard) throw new Error('README capture: outline-sample.pdf card not found')
+await contextCard.locator('[data-testid^="doc-context-"]').click()
 await page.locator('[data-testid="doc-context-picker"]').waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="doc-context-tree"]').waitFor({ state: 'visible', timeout: 5000 })
 const firstCheck = page.locator('[data-testid^="doc-context-check-"]:not([disabled])').first()

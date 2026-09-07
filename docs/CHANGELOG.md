@@ -4,6 +4,20 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。开发中的改动先进入 `Unreleased`，正式发布 tag 时再移动到对应版本。
 
+## [1.3.3] - 2026-09-07
+
+### Added
+
+- PDF 书签选择支持左闭右开 `[start, end)` 与左闭右闭 `[start, end]` 两种右边界语义。
+- 每个文档、每个稳定书签节点可独立保存范围模式，选择器同步显示最终实际发送页码。
+- 新增末页、单页和 375 / 390 / 412px 移动端 bookmark range release gate。
+
+### Changed
+
+- PDF Context 的书签范围、页数统计和实际生成页码统一使用 canonical range resolver。
+- 旧文档与旧 Backup 缺少范围偏好时默认使用左闭右开；新偏好可随文档 Backup round-trip。
+- README 截图刷新为 v1.3.3 当前界面，并补充书签范围选择说明。
+
 ## [1.3.2] - 2026-09-07
 
 ### Added
