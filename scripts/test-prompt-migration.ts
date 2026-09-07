@@ -81,6 +81,18 @@ const restored = await migrateLegacyPrompts({ id: () => 'duplicate-must-not-exis
 assert(restored.marker.fixedPromptId === restoredMode.id && restored.marker.customActionIds[0] === restoredAction.id, 'migration reuses equivalent V6 prompt rows after restore')
 assert((await idbGetAll('prompts')).length === 2, 'restore compatibility path remains duplicate-free')
 
+// Legacy custom actions may use a source-owned ID. Migration must allocate a
+// new durable ID and retain the old->new mapping in its marker.
+await idbClearAll()
+await setSetting('customArtifactActions', [{ id: BUILTIN_PROMPT_IDS.artifactCustom, name: '冲突操作', prompt: '请保留这个操作。', createdAt: 1, updatedAt: 1 }])
+let collisionIdCalls = 0
+const collisionMigration = await migrateLegacyPrompts({
+  id: () => (++collisionIdCalls === 1 ? BUILTIN_PROMPT_IDS.artifactCustom : 'migrated-collision-replacement'),
+  now: () => 400,
+})
+assert(collisionMigration.marker.collisionMappings?.some((mapping) => mapping.from === BUILTIN_PROMPT_IDS.artifactCustom && mapping.to === 'migrated-collision-replacement') === true, 'legacy migration records built-in ID collision mapping')
+assert((await getPromptRecord(BUILTIN_PROMPT_IDS.artifactCustom) === undefined) && (await getPromptRecord('migrated-collision-replacement'))?.kind === 'artifact', 'legacy migration never writes a custom row under a built-in ID')
+
 console.log('RESULT pass=' + pass + ' fail=' + fail)
 await closeDb()
 process.exit(fail === 0 ? 0 : 1)

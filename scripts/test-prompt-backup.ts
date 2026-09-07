@@ -5,6 +5,7 @@ import { buildBackup } from '../src/export/backup-export.ts'
 import { parseAndValidate, restoreBackup, BackupError } from '../src/export/backup-import.ts'
 import { savePromptRecord } from '../src/prompts/prompt-store.ts'
 import { savePromptPreferences } from '../src/prompts/prompt-preferences.ts'
+import { BUILTIN_PROMPT_IDS } from '../src/prompts/prompt-registry.ts'
 import type { PromptDefinition, PromptUserPreferences, PromptSnapshot } from '../src/prompts/prompt-types.ts'
 
 let pass = 0
@@ -26,7 +27,7 @@ const mode: PromptDefinition = {
 }
 const protocol: PromptDefinition = {
   id: 'experimental-toc', kind: 'protocol', name: '自定义目录协议', description: 'test', source: 'experimental', enabled: true,
-  createdAt: 1, updatedAt: 2, revision: 1, domain: 'ai-toc-structure', systemPrompt: '只输出结构。', overridePolicy: 'experimental',
+  createdAt: 1, updatedAt: 2, revision: 1, domain: 'ai-toc-structure', systemPrompt: '只输出结构。', overridePolicy: 'experimental', baseProtocolId: BUILTIN_PROMPT_IDS.protocolAiTocStructure,
 }
 const preferences: PromptUserPreferences = {
   version: 1, defaultConversationModeId: mode.id, hiddenBuiltinPromptIds: ['builtin-conversation-socratic'],
@@ -106,6 +107,12 @@ mustReject({ ...full, prompts: [{ ...mode, id: 'builtin-conversation-default' }]
 const badTransition = JSON.parse(JSON.stringify(full))
 badTransition.conversations[0].promptTransitions[0].afterMessageId = 'not-on-path'
 mustReject(badTransition, 'transition after an unrelated message')
+const badPreferenceDomain = JSON.parse(JSON.stringify(full))
+badPreferenceDomain.promptPreferences.activeProtocolOverrideByDomain['ai-toc-transcription'] = protocol.id
+mustReject(badPreferenceDomain, 'protocol preference whose domain does not match the override')
+const badPreferenceDefault = JSON.parse(JSON.stringify(full))
+badPreferenceDefault.promptPreferences.defaultConversationModeId = BUILTIN_PROMPT_IDS.artifactNote
+mustReject(badPreferenceDefault, 'non-conversation built-in default mode')
 const badBundle = JSON.parse(JSON.stringify(full))
 badBundle.artifacts[0].promptBundle.protocol.kind = 'artifact'
 mustReject(badBundle, 'artifact protocol snapshot with the wrong kind')

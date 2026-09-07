@@ -2,6 +2,7 @@ import { getSetting } from '../storage/storage'
 import { idbGetAll, idbRunTxn } from '../storage/idb'
 import { newStableId } from '../engine/types'
 import { DEFAULT_PROMPT_PREFERENCES, PROMPT_PREFERENCES_KEY } from './prompt-preferences'
+import { BUILTIN_PROMPT_REGISTRY, getBuiltinPrompt } from './prompt-registry'
 import type { ArtifactPrompt, PromptDefinition, PromptUserPreferences } from './prompt-types'
 
 export const LEGACY_PROMPT_MIGRATION_KEY = 'promptMigrationV1'
@@ -11,6 +12,7 @@ export type LegacyPromptMigrationMarker = {
   migratedAt: number
   fixedPromptId?: string
   customActionIds: string[]
+  collisionMappings?: { from: string; to: string }[]
 }
 
 export type PromptMigrationDependencies = {
@@ -36,7 +38,7 @@ function finiteNonNegative(value: unknown): value is number {
 }
 
 function isMarker(value: unknown): value is LegacyPromptMigrationMarker {
-  return isObject(value) && value.version === 1 && finiteNonNegative(value.migratedAt) && Array.isArray(value.customActionIds) && value.customActionIds.every(nonEmptyString) && (value.fixedPromptId === undefined || nonEmptyString(value.fixedPromptId))
+  return isObject(value) && value.version === 1 && finiteNonNegative(value.migratedAt) && Array.isArray(value.customActionIds) && value.customActionIds.every(nonEmptyString) && (value.fixedPromptId === undefined || nonEmptyString(value.fixedPromptId)) && (value.collisionMappings === undefined || (Array.isArray(value.collisionMappings) && value.collisionMappings.every((item: any) => isObject(item) && nonEmptyString(item.from) && nonEmptyString(item.to))))
 }
 
 function isEnabled(value: unknown): boolean {
@@ -85,8 +87,9 @@ export async function migrateLegacyPrompts(dependencies: PromptMigrationDependen
   ])
 
   const existing = promptRows.filter((row): row is PromptDefinition => isObject(row) && nonEmptyString(row.id))
-  const planned = new Set(existing.map((prompt) => prompt.id))
+  const planned = new Set([...BUILTIN_PROMPT_REGISTRY.map((prompt) => prompt.id), ...existing.map((prompt) => prompt.id)])
   const writes: PromptDefinition[] = []
+  const collisionMappings: { from: string; to: string }[] = []
   let fixedPromptId: string | undefined
 
   const fixedText = typeof legacyPrompt === 'string' && legacyPrompt.trim().length > 0 ? legacyPrompt : undefined
@@ -124,7 +127,7 @@ export async function migrateLegacyPrompts(dependencies: PromptMigrationDependen
     if (!candidate || seenActionIds.has(candidate.id)) continue
     seenActionIds.add(candidate.id)
     const sameId = existing.find((prompt) => prompt.id === candidate.id)
-    if (sameId) {
+    if (sameId && !getBuiltinPrompt(candidate.id)) {
       if (sameId.kind === 'artifact' && sameId.artifactKind === 'custom' && sameId.source === 'custom' && sameId.name === candidate.name && sameId.userPrompt === candidate.userPrompt) customActionIds.push(sameId.id)
       else {
         let replacement = id()
@@ -132,7 +135,17 @@ export async function migrateLegacyPrompts(dependencies: PromptMigrationDependen
         writes.push({ ...candidate, id: replacement })
         planned.add(replacement)
         customActionIds.push(replacement)
+        collisionMappings.push({ from: candidate.id, to: replacement })
       }
+      continue
+    }
+    if (planned.has(candidate.id)) {
+      let replacement = id()
+      while (planned.has(replacement)) replacement = id()
+      writes.push({ ...candidate, id: replacement })
+      planned.add(replacement)
+      customActionIds.push(replacement)
+      collisionMappings.push({ from: candidate.id, to: replacement })
       continue
     }
     writes.push(candidate)
@@ -140,7 +153,7 @@ export async function migrateLegacyPrompts(dependencies: PromptMigrationDependen
     customActionIds.push(candidate.id)
   }
 
-  const marker: LegacyPromptMigrationMarker = { version: 1, migratedAt: now(), ...(fixedPromptId ? { fixedPromptId } : {}), customActionIds }
+  const marker: LegacyPromptMigrationMarker = { version: 1, migratedAt: now(), ...(fixedPromptId ? { fixedPromptId } : {}), customActionIds, ...(collisionMappings.length ? { collisionMappings } : {}) }
   const shouldAdoptFixedPrompt = fixedPromptId !== undefined && isEnabled(legacyEnabled) && rawPreferences === undefined
   const nextPreferences: PromptUserPreferences | undefined = shouldAdoptFixedPrompt
     ? { ...DEFAULT_PROMPT_PREFERENCES, defaultConversationModeId: fixedPromptId! }

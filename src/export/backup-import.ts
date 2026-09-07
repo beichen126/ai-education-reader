@@ -13,6 +13,7 @@ import { sanitizeBookmarkRangePreferences, isBookmarkRangeEndMode } from '../doc
 import { getPromptDefinitionIssues, getPromptSnapshotIssues, getPromptTransitionIssues, validatePromptDefinition } from '../prompts/prompt-validation'
 import { DEFAULT_PROMPT_PREFERENCES } from '../prompts/prompt-preferences'
 import type { PromptDefinition, PromptSnapshot } from '../prompts/prompt-types'
+import { getBuiltinPrompt, getBuiltinProtocol } from '../prompts/prompt-registry'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -166,6 +167,7 @@ function validateV6PromptData(input: BackupV6): void {
     const definition = validatePromptDefinition(prompt)
     if (!definition) throw new BackupError('prompts[' + i + '] 定义非法')
     if (definition.source === 'builtin') throw new BackupError('prompts[' + i + '] 不允许写入 builtin 定义')
+    if (getBuiltinPrompt(definition.id)) throw new BackupError('prompts[' + i + '] 不能占用 built-in prompt ID')
     if (promptById.has(definition.id)) throw new BackupError('prompt id 重复：' + definition.id.slice(0, 8))
     promptById.set(definition.id, definition)
   }
@@ -173,20 +175,23 @@ function validateV6PromptData(input: BackupV6): void {
   const preferences = input.promptPreferences
   if (!isObj(preferences) || preferences.version !== 1) throw new BackupError('promptPreferences.version 非法')
   if (!isNonEmptyStr(preferences.defaultConversationModeId)) throw new BackupError('promptPreferences.defaultConversationModeId 非法')
-  const defaultPrompt = promptById.get(preferences.defaultConversationModeId)
-  if (defaultPrompt && defaultPrompt.kind !== 'conversation-mode') throw new BackupError('promptPreferences.defaultConversationModeId 必须指向 conversation-mode')
-  if (!defaultPrompt && !preferences.defaultConversationModeId.startsWith('builtin-')) throw new BackupError('promptPreferences.defaultConversationModeId 引用了不存在的 prompt')
+  const defaultPrompt = promptById.get(preferences.defaultConversationModeId) ?? getBuiltinPrompt(preferences.defaultConversationModeId)
+  if (!defaultPrompt || defaultPrompt.kind !== 'conversation-mode') throw new BackupError('promptPreferences.defaultConversationModeId 必须指向已存在的 conversation-mode')
 
   if (!Array.isArray(preferences.hiddenBuiltinPromptIds) || !preferences.hiddenBuiltinPromptIds.every(isNonEmptyStr)) throw new BackupError('promptPreferences.hiddenBuiltinPromptIds 非法')
   if (new Set(preferences.hiddenBuiltinPromptIds).size !== preferences.hiddenBuiltinPromptIds.length) throw new BackupError('promptPreferences.hiddenBuiltinPromptIds 重复')
+  for (const id of preferences.hiddenBuiltinPromptIds) if (!getBuiltinPrompt(id)) throw new BackupError('promptPreferences.hiddenBuiltinPromptIds 只能包含 built-in prompt ID')
   if (preferences.sortPreference !== undefined && preferences.sortPreference !== 'updatedAt-desc' && preferences.sortPreference !== 'name-asc') throw new BackupError('promptPreferences.sortPreference 非法')
   if (!isObj(preferences.activeProtocolOverrideByDomain)) throw new BackupError('promptPreferences.activeProtocolOverrideByDomain 非法')
   for (const [domain, id] of Object.entries(preferences.activeProtocolOverrideByDomain)) {
     if (!isNonEmptyStr(domain) || !isNonEmptyStr(id)) throw new BackupError('promptPreferences.activeProtocolOverrideByDomain 内容非法')
     const prompt = promptById.get(id)
-    if (!prompt || prompt.kind !== 'protocol' || prompt.source !== 'experimental' || prompt.domain !== domain) {
+    if (!prompt || prompt.kind !== 'protocol' || prompt.source !== 'experimental' || !prompt.enabled || prompt.domain !== domain) {
       throw new BackupError('promptPreferences.activeProtocolOverrideByDomain 引用了非法 protocol override')
     }
+    const base = prompt.baseProtocolId ? getBuiltinPrompt(prompt.baseProtocolId) : undefined
+    const baseProtocol = getBuiltinProtocol(domain)
+    if (!base || base.kind !== 'protocol' || !baseProtocol || baseProtocol.id !== base.id || prompt.baseProtocolId !== baseProtocol.id) throw new BackupError('promptPreferences.activeProtocolOverrideByDomain 的 baseProtocol lineage 非法')
   }
 }
 
@@ -446,6 +451,9 @@ function restoreArtifacts(artifacts: StudyArtifact[]): StudyArtifact[] {
 // idbReplaceAll transaction, then cleans up old OPFS refs best-effort. A failure at ANY step
 // leaves the existing data intact (staged OPFS files deleted, old IDB untouched).
 export async function restoreBackup(backup: Backup): Promise<void> {
+  // Validate all metadata, including prompt namespace/preferences, before any
+  // binary is staged or the existing durable database can be replaced.
+  backup = parseAndValidate(backup)
   const v2 = 'documents' in backup ? (backup as BackupV2) : null;
   const v6 = backup.version === 6 ? (backup as BackupV6) : null;
   const staged: { ref: StoredBinary; path: string | null }[] = [];
