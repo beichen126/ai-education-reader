@@ -74,6 +74,8 @@ export function DocumentReader() {
   const [noteSaveError, setNoteSaveError] = useState(false)
   const [noteLoadError, setNoteLoadError] = useState(false)
   const [noteAvailability, setNoteAvailability] = useState<NoteAvailability>({ kind: 'loading', key: '' })
+  const [noteReadAttempt, setNoteReadAttempt] = useState(0)
+  const [noteWriteEnabled, setNoteWriteEnabled] = useState(false)
   const [noteActionBusy, setNoteActionBusy] = useState(false)
   const noteSessionRef = useRef<NoteEditorSession | null>(null)
   const noteCacheRef = useRef(new NoteReadCache(getDocumentNote))
@@ -234,7 +236,7 @@ export function DocumentReader() {
       setZoomBusy(false)
       setDoc(null); setPageCount(0); setPage(1); setPageInput('')
       setPageError(null); setLoadError(null)
-      setNotesOpen(false); setNoteText(''); setNoteLoading(false); setNoteSavedAt(null); setNoteSaveError(false); setNoteLoadError(false)
+      setNotesOpen(false); setNoteText(''); setNoteLoading(false); setNoteSavedAt(null); setNoteSaveError(false); setNoteLoadError(false); setNoteWriteEnabled(false)
       setNoteAvailability({ kind: 'loading', key: '' })
       setTocState({ expanded: new Set() }); setTocOpen(false)
       setNativeDraft(null); setBuilderHint(null); setHasNativeOutline(false); setNativeOutlineStatus('unknown')
@@ -335,7 +337,7 @@ export function DocumentReader() {
       setNoteAvailability({ kind: 'error', key, persisted })
     })
     return () => { cancelled = true }
-  }, [currentNoteKey])
+  }, [currentNoteKey, noteReadAttempt])
 
   // Page notes are keyed by document + page. Loading is intentionally
   // independent from the PDF render so a slow note read never blocks page
@@ -347,26 +349,33 @@ export function DocumentReader() {
       if (prior) trackNoteFlush(flushNoteSession(prior))
       noteSessionRef.current = null
       setNoteLoading(false)
+      setNoteWriteEnabled(false)
       if (!notesOpen) setNoteText('')
       return
     }
     let cancelled = false
     const key = currentNoteKey
-    const session: NoteEditorSession = { documentId: docId, pageNumber: page, key, text: '', loaded: false, dirty: false, timer: null, lastSave: null }
+    const session: NoteEditorSession = { documentId: docId, pageNumber: page, key, text: '', loaded: false, baseLoaded: false, writeEnabled: false, dirty: false, timer: null, lastSave: null }
     noteSessionRef.current = session
-    setNoteLoading(true); setNoteSavedAt(null); setNoteSaveError(false); setNoteLoadError(false)
+    setNoteLoading(true); setNoteSavedAt(null); setNoteSaveError(false); setNoteLoadError(false); setNoteWriteEnabled(false)
     setNoteText('')
     const barrier = noteFlushBarrierRef.current
     void barrier.catch(() => undefined).then(() => noteCacheRef.current.read(docId, page)).then(note => {
       if (cancelled || noteSessionRef.current !== session) return
       session.loaded = true
+      session.baseLoaded = true
+      session.writeEnabled = true
+      setNoteWriteEnabled(true)
       if (!session.editedDuringLoad) {
         session.text = note && noteHasContent(note.content) ? note.content : ''
         setNoteText(session.text)
       }
     }).catch(() => {
       if (!cancelled && noteSessionRef.current === session) {
-        session.loaded = true
+        session.loaded = false
+        session.baseLoaded = false
+        session.writeEnabled = false
+        setNoteWriteEnabled(false)
         setNoteLoadError(true)
         if (!session.editedDuringLoad) { session.text = ''; setNoteText('') }
       }
@@ -374,6 +383,7 @@ export function DocumentReader() {
     return () => {
       cancelled = true
       trackNoteFlush(flushNoteSession(session))
+      session.writeEnabled = false
       if (noteSessionRef.current === session) noteSessionRef.current = null
     }
   }, [docId, doc, currentNoteKey, page, notesOpen, flushNoteSession, trackNoteFlush])
@@ -750,15 +760,31 @@ export function DocumentReader() {
   const currentNoteState: NoteAvailability = currentNoteKey && noteAvailability.key === currentNoteKey
     ? noteAvailability
     : { kind: 'loading', key: currentNoteKey ?? '' }
-  const closedNoteState = currentNoteState.kind === 'error' ? currentNoteState.persisted : currentNoteState.kind
+  const noteReadError = currentNoteState.kind === 'error'
+  const closedNoteState = noteReadError ? currentNoteState.persisted : currentNoteState.kind
   const noteButtonState = notesOpen ? 'open' : closedNoteState
   const noteButtonLabel = notesOpen
     ? '收起笔记'
-    : closedNoteState === 'existing' ? '查看笔记' : closedNoteState === 'empty' ? '新建笔记' : '检查笔记…'
+    : noteReadError ? '重试读取笔记'
+      : closedNoteState === 'existing' ? '查看笔记' : closedNoteState === 'empty' ? '新建笔记' : '检查笔记…'
+
+  const retryNoteRead = useCallback(() => {
+    if (!currentNoteKey || noteActionBusy) return
+    setNoteActionBusy(true)
+    setNoteLoadError(false)
+    setNoteSaveError(false)
+    setNoteAvailability({ kind: 'loading', key: currentNoteKey })
+    setNoteReadAttempt(value => value + 1)
+    window.setTimeout(() => setNoteActionBusy(false), 0)
+  }, [currentNoteKey, noteActionBusy])
 
   const toggleNotes = useCallback(async () => {
     if (!doc || noteActionBusy) return
     if (!notesOpen) {
+      if (noteReadError) {
+        retryNoteRead()
+        return
+      }
       if (closedNoteState === 'loading') return
       setNotesOpen(true)
       return
@@ -777,7 +803,7 @@ export function DocumentReader() {
     } finally {
       setNoteActionBusy(false)
     }
-  }, [closedNoteState, doc, flushCurrentNote, noteActionBusy, notesOpen])
+  }, [closedNoteState, doc, flushCurrentNote, noteActionBusy, noteReadError, notesOpen, retryNoteRead])
 
   // ---- Zoom: the main reading path is a visible canvas (C1/C2). Clicking it requests a
   //      one-off full-resolution Blob for the zoom viewer — never part of the display path. ----
@@ -905,17 +931,16 @@ export function DocumentReader() {
                 {noteLoading ? (
                   <div className={css.noteStatus} data-testid="reader-note-loading">正在加载…</div>
                 ) : (
-                <textarea ref={noteInputRef} className={css.noteInput} value={noteText} disabled={noteLoading} aria-label={`第 ${page} 页笔记`} placeholder="记录这一页的想法…" onChange={e => {
+                <textarea ref={noteInputRef} className={css.noteInput} value={noteText} disabled={noteLoading || !noteWriteEnabled} aria-label={`第 ${page} 页笔记`} placeholder="记录这一页的想法…" onChange={e => {
                   const value = e.target.value
                   setNoteText(value)
                   setNoteSavedAt(null)
                   setNoteSaveError(false)
                   setNoteLoadError(false)
                   const session = noteSessionRef.current
-                  if (session) {
+                  if (session && session.baseLoaded && session.writeEnabled) {
                     session.text = value
                     session.dirty = true
-                    if (!session.loaded) { session.editedDuringLoad = true; session.loaded = true }
                     queueNoteSave(session)
                   }
                 }} />

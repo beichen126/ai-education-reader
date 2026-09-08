@@ -13,6 +13,7 @@ const row = (content: string): DocumentNote => ({
 })
 
 assert(noteAvailabilityFrom('doc:1', undefined).kind === 'empty', 'no row is empty')
+assert(notePersistedState(undefined) === 'unknown', 'undefined cache peek is unknown, not persisted empty')
 assert(noteAvailabilityFrom('doc:1', row('  existing  ')).kind === 'existing', 'trim-nonempty row is existing')
 assert(noteAvailabilityFrom('doc:1', row(' \n\t ')).kind === 'empty', 'whitespace-only legacy row is empty')
 assert(notePersistedState(row('  ')) === 'empty', 'whitespace legacy state does not claim persisted existence')
@@ -36,6 +37,13 @@ assert((await first)?.content === 'cached', 'pending read resolves the shared ro
 assert((await cache.read('doc', 1))?.content === 'cached' && calls === 1, 'resolved row is reused without a second read')
 cache.remember('doc', 1, undefined)
 assert(cache.peek('doc', 1) === undefined, 'successful empty save replaces cached existence')
+assert(notePersistedState(cache.peek('doc', 1)) === 'unknown', 'empty cache peek remains distinguishable from a successful empty read')
+
+const rejected = new NoteReadCache(async () => { throw new Error('injected read failure') })
+await rejected.read('doc', 2).catch(() => undefined)
+assert(notePersistedState(rejected.peek('doc', 2)) === 'unknown', 'read rejection without trusted cache is unknown')
+rejected.remember('doc', 2, row('trusted cache'))
+assert(notePersistedState(rejected.peek('doc', 2)) === 'existing', 'trusted cache remains existing after a later read failure')
 
 console.log(`RESULT pass=${pass} fail=${fail}`)
 process.exit(fail === 0 ? 0 : 1)

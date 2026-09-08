@@ -4,9 +4,9 @@ export type NoteAvailability =
   | { kind: 'loading'; key: string }
   | { kind: 'empty'; key: string }
   | { kind: 'existing'; key: string }
-  | { kind: 'error'; key: string; persisted: 'empty' | 'existing' }
+  | { kind: 'error'; key: string; persisted: NotePersistedState; cachedContent?: string }
 
-export type NotePersistedState = 'empty' | 'existing'
+export type NotePersistedState = 'unknown' | 'empty' | 'existing'
 
 export type NoteReader = (documentId: string, pageNumber: number) => Promise<DocumentNote | undefined>
 
@@ -19,6 +19,7 @@ export function noteHasContent(content: string | undefined): boolean {
 }
 
 export function notePersistedState(note: DocumentNote | undefined): NotePersistedState {
+  if (note === undefined) return 'unknown'
   return noteHasContent(note?.content) ? 'existing' : 'empty'
 }
 

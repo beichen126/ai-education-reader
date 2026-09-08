@@ -6,6 +6,10 @@ export type NoteEditorSession = {
   key: string
   text: string
   loaded: boolean
+  /** A successful read established the base snapshot this session may edit. */
+  baseLoaded: boolean
+  /** Independent write guard; UI disabled state is not a persistence guarantee. */
+  writeEnabled: boolean
   dirty: boolean
   timer: number | null
   lastSave: Promise<void> | null
@@ -31,7 +35,7 @@ export function flushNoteEditorSession(session: NoteEditorSession, write: NoteSa
     window.clearTimeout(session.timer)
     session.timer = null
   }
-  if (!session.loaded || !session.dirty) return session.lastSave ?? Promise.resolve()
+  if (!session.baseLoaded || !session.writeEnabled || !session.dirty) return session.lastSave ?? Promise.resolve()
 
   const attemptedContent = session.text
   if (session.lastSave && session.pendingContent === attemptedContent) {

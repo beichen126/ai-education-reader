@@ -7,7 +7,7 @@ function assert(condition: boolean, message: string) {
   else { fail++; console.log('  FAIL: ' + message) }
 }
 
-const makeSession = (text: string): NoteEditorSession => ({ documentId: 'doc', pageNumber: 1, key: 'doc:1', text, loaded: true, dirty: true, timer: null, lastSave: null })
+const makeSession = (text: string): NoteEditorSession => ({ documentId: 'doc', pageNumber: 1, key: 'doc:1', text, loaded: true, baseLoaded: true, writeEnabled: true, dirty: true, timer: null, lastSave: null })
 const saved: string[] = []
 let rejectNext = true
 const writer = async (_documentId: string, _pageNumber: number, content: string) => {
@@ -15,6 +15,15 @@ const writer = async (_documentId: string, _pageNumber: number, content: string)
   saved.push(content)
   return undefined
 }
+
+// A read failure never establishes a writable base. The low-level flush guard
+// must reject this even if a caller accidentally marks the session dirty.
+let unknownWrites = 0
+const unknown = makeSession('MUST_NOT_OVERWRITE')
+unknown.baseLoaded = false
+unknown.writeEnabled = false
+await flushNoteEditorSession(unknown, async () => { unknownWrites++; return undefined })
+assert(unknownWrites === 0, 'unknown read state blocks flush/write at the session boundary')
 
 // A/B: a rejected write keeps the session dirty and the following flush retries it.
 const failed = makeSession('ABC')
