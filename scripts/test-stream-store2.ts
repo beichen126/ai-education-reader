@@ -34,7 +34,7 @@ await initStore()
   const id = await sessionsActions.newChat()
   const enc = new TextEncoder()
   fetchMock = async () => new Response(new ReadableStream<Uint8Array>({ start(c){ c.enqueue(enc.encode(delta('部分'))); c.enqueue(enc.encode(delta('内容'))); setTimeout(()=>c.error(new Error('socket closed')), 40) } }), { status:200 })
-  await sessionsActions.sendUserMessage(id, '问题', [])
+  void sessionsActions.sendUserMessage(id, '问题', [])
   const msgs = await waitForSettled(id, (status, messages) => status === 'error' && messages.length === 2 && messages[1].content === '部分内容')
   assert(msgs.length===2, 'user + partial assistant retained (got '+msgs.length+')')
   const ac = (msgs[1] as any).content

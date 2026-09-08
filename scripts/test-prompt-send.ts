@@ -32,7 +32,9 @@ function definition(id: string, name: string, content: string, revision = 1): an
 function msg(id: string, role: 'user' | 'assistant', content: string): Message {
   return { id, role, content, images: [], createdAt: 1, updatedAt: 1 }
 }
-function deltaDone(): string { return 'data: [DONE]\n\n' }
+function deltaDone(): string {
+  return 'data: ' + JSON.stringify({ choices: [{ delta: { content: 'ok' }, finish_reason: 'stop' }] }) + '\n\ndata: [DONE]\n\n'
+}
 
 const backgroundRejections: unknown[] = []
 const onUnhandledRejection = (reason: unknown) => { backgroundRejections.push(reason) }
