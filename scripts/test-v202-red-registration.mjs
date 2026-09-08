@@ -16,6 +16,7 @@ const checks = [
   [typeof packageJson.scripts?.['test:v202-red'] === 'string', 'v2.0.2 RED domain script is registered'],
   [typeof packageJson.scripts?.['test:v202-red-registration'] === 'string', 'v2.0.2 RED registration script is registered'],
   [testAll.includes('test:regressions'), 'v201/v202 domain regression suite is reachable from the default unit gate'],
+  [core.includes('e2e-v202-message-state') && core.includes('e2e-v202-rejection'), 'v2.0.2 browser regressions are in release CORE'],
   [new Set([...core, ...optional]).size === core.length + optional.length, 'CORE and OPTIONAL E2E lists are unique in EXTRA mode'],
   [release.includes('shell: false') && !release.includes('shell: true') && !release.includes('shell: useShell'), 'release runner uses shell-free child processes'],
   [release.includes('RELEASE PORT OCCUPIED') && release.includes('UNKNOWN E2E TEST NAME'), 'release runner fails closed before stale/unknown E2E execution'],

@@ -36,6 +36,8 @@ const CORE_E2E = [
   'e2e-branch-prompt-timeline',
   'e2e-mobile-prompt-navigation',
   'e2e-v201-regressions',
+  'e2e-v202-message-state',
+  'e2e-v202-rejection',
   'e2e-protocol-overrides',
   'e2e-quick-follow-up',
   'e2e-branching-graph',
