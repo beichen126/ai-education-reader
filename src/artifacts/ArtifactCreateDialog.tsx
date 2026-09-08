@@ -4,32 +4,32 @@ import { listPromptCatalog, getPromptDefinition, saveAsArtifactPromptDefinition 
 import { capturePromptSnapshot } from '../prompts/prompt-resolution'
 import { getBuiltinArtifactPrompt } from '../prompts/prompt-registry'
 import type { ArtifactPrompt, ArtifactPromptSnapshot, ProtocolPrompt, ProtocolPromptSnapshot, PromptDefinition } from '../prompts/prompt-types'
-import type { ArtifactKind } from './artifact-types'
+import type { ArtifactKind, CreateArtifactKind } from './artifact-types'
 import css from './artifact.module.css'
 
 type Props = {
   sourceLabel: string
-  onSubmit: (input: { kind: ArtifactKind; prompt: string; presetId?: string; promptBundle: { template: ArtifactPromptSnapshot; userPrompt: string; protocol?: ProtocolPromptSnapshot; resolvedAt: number } }) => void
+  onSubmit: (input: { kind: CreateArtifactKind; prompt: string; presetId?: string; promptBundle: { template: ArtifactPromptSnapshot; userPrompt: string; protocol?: ProtocolPromptSnapshot; resolvedAt: number } }) => void
   onCancel: () => void
   busy?: boolean
   initialKind?: ArtifactKind
   error?: string
 }
 
-// Keep the established creation surface. Artifact templates inside each mode now
-// come from the Prompt catalog; the prompt text below is a run-local edit.
-const MODE_KINDS: ArtifactKind[] = ['note', 'quiz', 'custom']
+// Artifact templates inside each mode come from the Prompt catalog; the prompt
+// text below is a run-local edit. Legacy kinds are intentionally not creatable.
+const MODE_KINDS: readonly CreateArtifactKind[] = ['note', 'quiz']
 
-function preferredTemplate(candidates: ArtifactPrompt[], kind: ArtifactKind): ArtifactPrompt | undefined {
+function preferredTemplate(candidates: ArtifactPrompt[], kind: CreateArtifactKind): ArtifactPrompt | undefined {
   return candidates.find((item) => item.source === 'builtin' && item.id === 'builtin-artifact-' + kind)
     ?? candidates.find((item) => item.source === 'builtin')
     ?? candidates[0]
 }
 
 export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, initialKind, error: genError }: Props) {
-  const initKind: ArtifactKind = MODE_KINDS.includes(initialKind!) && initialKind ? initialKind : 'note'
+  const initKind: CreateArtifactKind = initialKind === 'quiz' ? 'quiz' : 'note'
   const initialBuiltin = getBuiltinArtifactPrompt(initKind)
-  const [kind, setKind] = useState<ArtifactKind>(initKind)
+  const [kind, setKind] = useState<CreateArtifactKind>(initKind)
   const [catalog, setCatalog] = useState<PromptDefinition[]>([])
   const [protocols, setProtocols] = useState<PromptDefinition[]>([])
   const [selectedId, setSelectedId] = useState<string | undefined>(initialBuiltin?.id)
@@ -67,7 +67,7 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
     }
   }, [selectedTemplate, selectedId])
 
-  function selectKind(next: ArtifactKind) {
+  function selectKind(next: CreateArtifactKind) {
     const builtin = getBuiltinArtifactPrompt(next)
     setKind(next); setSelectedId(builtin?.id); setPrompt(builtin?.userPrompt ?? ''); setSaveAsName(''); setError(undefined); setNotice(undefined)
   }
@@ -127,8 +127,8 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
     <div>
       <div className={css.fieldLabel}>类型</div>
       <div className={css.kindRow} role="radiogroup" aria-label="类型">
-        {(['note', 'quiz', 'custom'] as const).map((item) => {
-          const labels = { note: '整理成笔记', quiz: '生成题目', custom: '自定义处理' }
+        {MODE_KINDS.map((item) => {
+          const labels = { note: '整理成笔记', quiz: '生成题目' } as const
           return <button key={item} type="button" data-testid={'artifact-kind-' + item} disabled={busy || saving} className={css.filterBtn + (kind === item ? ' ' + css.active : '')} role="radio" aria-checked={kind === item} onClick={() => selectKind(item)}>{labels[item]}</button>
         })}
       </div>

@@ -46,7 +46,7 @@ import { sendTextChat } from '../api/deepseek'
 import { listPromptCatalog } from '../prompts/prompt-service'
 import { sortEnabledQuickFollowUps } from '../prompts/quick-follow-up'
 import { quickFollowUpAnchor } from './quick-follow-up-anchor'
-import type { ArtifactKind, StudyArtifact, QuizDocument } from '../artifacts/artifact-types'
+import type { CreateArtifactKind, StudyArtifact, QuizDocument } from '../artifacts/artifact-types'
 import type { ArtifactPromptBundleSnapshot, QuickFollowUpPrompt } from '../prompts/prompt-types'
 import type { Message as TMessage } from '../engine/types'
 import type { PromptTransition } from '../prompts/prompt-types'
@@ -103,7 +103,7 @@ export function Conversation() {
   const lastMsg0 = lastMsg
   const activeStreamingId = busy && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
   const [menuMsgId, setMenuMsgId] = useState<string | null>(null)
-  const [creating, setCreating] = useState<{ kind: ArtifactKind; messageId: string } | null>(null)
+  const [creating, setCreating] = useState<{ kind: CreateArtifactKind; messageId: string } | null>(null)
   const [creatingBusy, setCreatingBusy] = useState(false)
   const [creatingError, setCreatingError] = useState<string | undefined>(undefined)
   const [artView, setArtView] = useState<'library' | null>(null)
@@ -150,7 +150,7 @@ export function Conversation() {
       }
     } finally { setQuickSendingId(null) }
   }
-  async function onCreateArtifact(input: { kind: ArtifactKind; prompt: string; presetId?: string; promptBundle: ArtifactPromptBundleSnapshot }) {
+  async function onCreateArtifact(input: { kind: CreateArtifactKind; prompt: string; presetId?: string; promptBundle: ArtifactPromptBundleSnapshot }) {
     if (!session || !creating || creatingBusy) return
     setCreatingBusy(true); setCreatingError(undefined)
     let draftId: string | undefined
@@ -242,7 +242,7 @@ function PromptTransitionDivider({ transition, onOpen }: { transition: PromptTra
   </div>
 }
 
-function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu, onBranch, onArtifact, onInspectQuickFollowUp }: { m: TMessage; streamingId?: string; convId?: string; imgOffset: number; menuOpen?: boolean; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: ArtifactKind, messageId: string) => void; onInspectQuickFollowUp?: (metadata: QuickFollowUpMetadata) => void }) {
+function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu, onBranch, onArtifact, onInspectQuickFollowUp }: { m: TMessage; streamingId?: string; convId?: string; imgOffset: number; menuOpen?: boolean; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: CreateArtifactKind, messageId: string) => void; onInspectQuickFollowUp?: (metadata: QuickFollowUpMetadata) => void }) {
   if (m.role === 'user') {
     return (
       <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>

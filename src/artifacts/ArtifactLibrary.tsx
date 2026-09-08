@@ -5,21 +5,18 @@ import { filterLiveArtifactSources } from './artifact-service'
 import type { ArtifactKind, StudyArtifact } from './artifact-types'
 import css from './artifact.module.css'
 
-// v1.1.3 IA: top-level filters are 全部 / 笔记 / 题目 / 自定义. The legacy kinds 'summary'
-// and 'study-guide' are NOT separate top-level columns — they are folded under '自定义'
-// so historical artifacts never disappear. 'note'/'quiz' stay top-level (core learning + a
-// structured schema); the merge is UI-only, the data kinds remain unchanged.
-type LibraryFilter = 'all' | 'note' | 'quiz' | 'custom'
+// New outputs are Note / Quiz. Legacy kinds remain browsable under one history filter
+// so they are never deleted or mistaken for a currently supported creation type.
+type LibraryFilter = 'all' | 'note' | 'quiz' | 'legacy'
 const FILTERS: { key: LibraryFilter; label: string }[] = [
   { key: 'all', label: '全部' },
   { key: 'note', label: '笔记' },
   { key: 'quiz', label: '题目' },
-  { key: 'custom', label: '自定义' },
+  { key: 'legacy', label: '历史类型' },
 ]
-/** A legacy kind that lives under the '自定义' umbrella (not its own column). */
-const CUSTOM_COLLAPSE: ArtifactKind[] = ['custom', 'summary', 'study-guide']
+const LEGACY_KINDS: ArtifactKind[] = ['custom', 'summary', 'study-guide']
 
-const KIND_LABEL: Record<ArtifactKind, string> = { note: '笔记', quiz: '题目', summary: '总结', 'study-guide': '学习指南', custom: '自定义' }
+const KIND_LABEL: Record<ArtifactKind, string> = { note: '笔记', quiz: '题目', summary: '历史类型 · 总结', 'study-guide': '历史类型 · 学习指南', custom: '历史类型 · 自定义' }
 
 type Props = { onOpen: (artifact: StudyArtifact) => void }
 
@@ -42,7 +39,7 @@ export function ArtifactLibrary({ onOpen }: Props) {
     setDeletedIds(del)
     setLoaded(true)
   }
-  const shown = filter === 'all' ? arts : arts.filter((a) => filter === 'custom' ? CUSTOM_COLLAPSE.includes(a.kind) : a.kind === filter)
+  const shown = filter === 'all' ? arts : arts.filter((a) => filter === 'legacy' ? LEGACY_KINDS.includes(a.kind) : a.kind === filter)
 
   async function remove(id: string) {
     if (!globalThis.confirm('删除该学习成果？')) return

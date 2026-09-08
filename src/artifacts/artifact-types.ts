@@ -4,6 +4,9 @@ import type { ArtifactPromptBundleSnapshot } from '../prompts/prompt-types'
 /** The kind of study output an Artifact represents. */
 export type ArtifactKind = 'note' | 'quiz' | 'summary' | 'study-guide' | 'custom'
 
+/** New artifact creation is intentionally narrower than the legacy persisted union. */
+export type CreateArtifactKind = 'note' | 'quiz'
+
 /** Lifecycle of an Artifact. */
 export type ArtifactStatus = 'draft' | 'generating' | 'ready' | 'error'
 

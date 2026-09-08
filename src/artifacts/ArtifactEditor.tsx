@@ -20,7 +20,7 @@ type Props = {
 
 type EditorMode = 'edit' | 'split' | 'preview'
 
-const kindLabel: Record<ArtifactKind, string> = { note: '笔记', quiz: '题目', summary: '总结', 'study-guide': '学习指南', custom: '自定义' }
+const kindLabel: Record<ArtifactKind, string> = { note: '笔记', quiz: '题目', summary: '历史类型 · 总结', 'study-guide': '历史类型 · 学习指南', custom: '历史类型 · 自定义' }
 
 const MODES: { key: EditorMode; label: string }[] = [
   { key: 'edit', label: '编辑' },

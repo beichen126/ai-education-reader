@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import type { CreateArtifactKind } from '../artifacts/artifact-types'
 import css from './branch.module.css'
 
 type Props = {
@@ -6,16 +7,15 @@ type Props = {
   branchId?: string
   messageId: string
   onBranch: (messageId: string) => void
-  onArtifact: (kind: 'note' | 'quiz' | 'summary' | 'study-guide' | 'custom', messageId: string) => void
+  onArtifact: (kind: CreateArtifactKind, messageId: string) => void
   onClose: () => void
 }
 
-// A10: the default surface is Note / Quiz / Custom. summary + study-guide remain valid
-// kinds for history artifacts but are no longer offered as default actions.
-const ARTIFACT_ACTIONS: { kind: 'note' | 'quiz' | 'summary' | 'study-guide' | 'custom'; label: string }[] = [
+// New artifacts are deliberately limited to the two supported output contracts.
+// Legacy summary/study-guide/custom kinds remain readable in stored history only.
+const ARTIFACT_ACTIONS: { kind: CreateArtifactKind; label: string }[] = [
   { kind: 'note', label: '整理成笔记' },
   { kind: 'quiz', label: '生成题目' },
-  { kind: 'custom', label: '自定义处理' },
 ]
 
 /**
