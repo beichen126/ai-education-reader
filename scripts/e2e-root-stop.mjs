@@ -22,17 +22,17 @@ await seedAndBoot(page, { convs: [conv], settings: { apiKey: 'sk-test', model: '
 // Send a MAIN (root) message -> streaming.
 await page.locator('textarea[class*="composerText"]').fill('根追问')
 await page.keyboard.press('Enter')
-await page.locator('text=停止生成').waitFor({ state: 'visible', timeout: 8000 })
+await page.getByRole('button', { name: '停止生成' }).waitFor({ state: 'visible', timeout: 8000 })
 assert(true, 'root stop button appears during streaming')
 // Wait for partial content to show in the UI (root renders progressively).
 await page.waitForFunction(() => document.body.textContent.includes('甲段'), null, { timeout: 8000 })
 const partialBefore = (await page.textContent('body')).match(/甲段[^乙]*/) || []
 const partialText = (partialBefore[0] || '甲段').slice(0, 4)
-await page.locator('text=停止生成').click()
+await page.getByRole('button', { name: '停止生成' }).click()
 await page.waitForTimeout(2200)
 const bodyAfter = await page.textContent('body')
 assert(!bodyAfter.includes('丙段'), 'root assistant content did NOT grow to the 3rd delta after stop')
-const stopGone = await page.locator('text=停止生成').count()
+const stopGone = await page.getByRole('button', { name: '停止生成' }).count()
 assert(stopGone === 0, 'root stop button disappeared (status returned to idle)')
 // reload -> partial persists.
 await page.reload({ waitUntil: 'networkidle' })

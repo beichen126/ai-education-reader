@@ -22,7 +22,11 @@ async function openScenario(id, messages, settings = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
   page.on('pageerror', (error) => errors.push(scenario + ' pageerror: ' + error.message))
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(scenario + ' console.error: ' + message.text()) })
+  page.on('console', (message) => {
+    // The browser reports the deliberately mocked HTTP 500 as a resource error.
+    // It is the fixture's expected transport signal; application/page errors remain failures.
+    if (message.type() === 'error' && !(scenario === 'V200-FCR-02' && message.text().includes('status of 500'))) errors.push(scenario + ' console.error: ' + message.text())
+  })
   await seedAndBoot(page, {
     convs: [{ id, title: id, createdAt: Date.now(), updatedAt: Date.now(), messages }],
     settings: { apiKey: 'sk-test', model: 'deepseek-chat', apiBaseUrl: 'https://api.deepseek.com', lastConversationId: id, ...settings },
@@ -166,6 +170,7 @@ if (shouldRun(scenario)) {
   await page.locator('textarea[class*="composerText"]').fill('branch failure')
   await page.keyboard.press('Enter')
   await waitFor(() => requests === 1)
+  await waitFor(() => page.locator('[role="alert"]').count() > 0)
   const branch = await readBranchForConversation(page, 'v201-branch-failure')
   const hiddenEmptyAssistant = branch?.messages?.some((message) => message.role === 'assistant' && !message.content && !message.status && !message.error)
   assert(await page.locator('[role="alert"]').count() > 0, 'V200-FCR-02 branch HTTP 500 produces an accessible visible error')

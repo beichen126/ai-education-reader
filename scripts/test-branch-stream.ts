@@ -35,7 +35,7 @@ const b = await createBranchFromMessage(convId, 'm1')
 // ---- 1. branch streams via the shared engine; root stays clean ----
 mockFetch([delta('你好'), delta('，世界'), done()])
 const ok = await runBranchReply(convId, b.id, 'branch question', [])
-assert(ok === true, '1: runBranchReply streams and returns true')
+assert(ok.kind === 'completed', '1: runBranchReply returns completed outcome')
 const bAfter = await getBranch(b.id)!
 assert(bAfter && bAfter.messages.length === 2, '1: branch has user msg + assistant msg (' + (bAfter && bAfter.messages.length) + ')')
 assert(bAfter && bAfter.messages[0].content === 'branch question' && bAfter.messages[0].role === 'user', '1: branch user message accepted first')
@@ -68,7 +68,7 @@ const bD = await createBranchFromMessage(convId, 'm1')
 const { deleteBranchSubtree } = await import('../src/branches/branch-service.ts')
 await deleteBranchSubtree(bD.id)
 const refuse = await runBranchReply(convId, bD.id, 'ghost', [])
-assert(refuse === false, '4: streaming into a deleted branch is refused')
+assert(refuse.kind === 'rejected' && refuse.code === 'branch-not-found', '4: streaming into a deleted branch is rejected')
 assert((await getBranch(bD.id)) === undefined, '4: deleted branch stays deleted (no resurrection)')
 
 // ---- 5. global lock: busy generation blocks a branch reply ----
@@ -76,7 +76,7 @@ const b2 = await createBranchFromMessage(convId, 'm1')
 const lockHeld = globalGenerationLock.tryAcquire('other', new AbortController())
 assert(lockHeld === true, '5: lock acquired')
 const blocked = await runBranchReply(convId, b2.id, 'busy', [])
-assert(blocked === false, '5: branch reply refused while one global generation is active')
+assert(blocked.kind === 'rejected' && blocked.code === 'generation-busy', '5: branch reply rejected while one global generation is active')
 globalGenerationLock.release('other')
 
 await cleanupFetch()

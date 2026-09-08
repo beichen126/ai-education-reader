@@ -31,10 +31,10 @@ await initStore()
   const id = await sessionsActions.newChat()
   setDraftText(id, '保留我')
   const ok1 = await sessionsActions.sendUserMessage(id, '', [])   // empty content + no images
-  assert(ok1 === false, 'empty send -> rejected (false)')
+  assert(ok1.kind === 'rejected' && ok1.code === 'empty-input', 'empty send -> typed rejected outcome')
   assert(getDraft(id).text === '保留我', 'rejected empty send leaves draft intact')
   const ok2 = await sessionsActions.sendUserMessage('nonexistent', 'hi', [])
-  assert(ok2 === false, 'send to nonexistent conversation -> rejected (false)')
+  assert(ok2.kind === 'rejected' && ok2.code === 'conversation-not-found', 'send to nonexistent conversation -> typed rejected outcome')
 }
 
 // 2) accepted -> true; then the Composer-style clearDraft empties it.
@@ -44,7 +44,7 @@ await initStore()
   fetchMock = async () => { throw new Error('network') }   // message is still accepted before stream
   const ok = await sessionsActions.sendUserMessage(id, 'hello world', [])
   await waitForSendSettlement('network rejection')
-  assert(ok === true, 'accepted send -> true')
+  assert(ok.kind === 'failed', 'accepted send -> terminal failed outcome after network error')
   clearDraft(id)
   assert(getDraft(id).text === '' && getDraft(id).imageIds.length === 0, 'accepted send -> draft cleared')
 }
@@ -57,7 +57,7 @@ await initStore()
   fetchMock = async () => { throw new Error('network') }
   const ok = await sessionsActions.sendUserMessage(id, '带图消息', ['att-123'])
   await waitForSendSettlement('image send network rejection')
-  assert(ok === true, 'image send accepted -> true')
+  assert(ok.kind === 'failed', 'image send with network error -> terminal failed outcome')
   clearDraft(id)
   assert(getDraft(id).imageIds.length === 0, 'after accept, draft no longer owns the image ids')
   assert(true, 'clearDraft did not delete the attachment id (ownership moved to message)')

@@ -50,7 +50,7 @@ async function testBranchFailureOutcome(): Promise<void> {
 
   const outcome = await runBranchReply(conversationId, branchId, 'branch request')
   const branch = await getBranch(branchId)
-  assert(outcome === false, 'V200-FCR-02 branch HTTP 500 returns failed outcome instead of true')
+  assert(outcome.kind === 'failed' && outcome.code === 'server', 'V200-FCR-02 branch HTTP 500 returns a typed failed outcome')
   assert(requests === 1, 'V200-FCR-02 sends exactly one mocked failing request')
   assert(branch?.messages.some((message) => message.role === 'user' && message.content === 'branch request') === true, 'V200-FCR-02 accepted user message remains durable after failure')
   const hiddenEmptyAssistant = branch?.messages.some((message) => message.role === 'assistant' && !message.content && !(message as Message & { status?: string; error?: string }).status && !(message as Message & { status?: string; error?: string }).error)
@@ -71,7 +71,7 @@ async function testEmptyBranchQuickFollowUp(): Promise<void> {
     draftDisposition: 'preserve',
   })
   const after = await getBranch(branchId)
-  assert(outcome === false, 'V200-FCR-06 whitespace quick follow-up is rejected before branch acceptance')
+  assert(outcome.kind === 'rejected' && outcome.code === 'empty-input', 'V200-FCR-06 whitespace quick follow-up is rejected before branch acceptance')
   assert(requests === 0, 'V200-FCR-06 whitespace quick follow-up makes zero network requests')
   assert(after?.messages.length === before, 'V200-FCR-06 whitespace quick follow-up adds zero branch messages')
 }

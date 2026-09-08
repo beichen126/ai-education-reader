@@ -43,7 +43,7 @@ assert((await page.textContent('body')).includes('当前路线'), 'BranchBar vis
 await page.locator('textarea[class*="composerText"]').fill('分支停止测试')
 await page.keyboard.press('Enter')
 // Status bar should show 正在生成 + a real 停止生成 button (branch streaming now drives global status).
-await page.locator('text=停止生成').waitFor({ state: 'visible', timeout: 8000 })
+await page.getByRole('button', { name: '停止生成' }).waitFor({ state: 'visible', timeout: 8000 })
 assert(true, '停止生成 button appears during branch streaming')
 // Wait for the first delta to land, then record the partial assistant content (from the branch record).
 await page.waitForTimeout(700)
@@ -61,11 +61,11 @@ const partialBeforeStop = await readAssistant()
 assert(partialBeforeStop.includes('第一段'), 'partial assistant content streamed (got ' + JSON.stringify(partialBeforeStop) + ')')
 
 // Click the real 停止生成 button.
-await page.locator('text=停止生成').click()
+await page.getByRole('button', { name: '停止生成' }).click()
 await page.waitForTimeout(2000) // wait well past the mock's remaining deltas
 const partialAfterStop = await readAssistant()
 assert(partialAfterStop === partialBeforeStop, 'assistant content did NOT grow after stop (' + JSON.stringify(partialAfterStop) + ')')
-const stopBtnGone = await page.locator('text=停止生成').count()
+const stopBtnGone = await page.getByRole('button', { name: '停止生成' }).count()
 assert(stopBtnGone === 0, '停止生成 button disappeared after stop (status returned to idle)')
 
 // reload -> partial persists.
