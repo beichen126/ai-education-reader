@@ -4,6 +4,7 @@ import { promptContent } from './prompt-validation'
 import { BUILTIN_PROMPT_REGISTRY, BUILTIN_PROMPT_IDS, clonePromptDefinition, getBuiltinProtocol } from './prompt-registry'
 import { getPromptPreferences } from './prompt-preferences'
 import { listPromptRecords } from './prompt-store'
+import { resolveProtocolCanonicalRoot } from './protocol-lineage'
 
 export type PromptResolutionDiagnostic = {
   code: 'missing' | 'disabled' | 'kind-mismatch' | 'fallback-missing' | 'fallback-disabled' | 'fallback-kind-mismatch' | 'fallback-source-mismatch'
@@ -19,7 +20,7 @@ export type PromptResolutionResult = {
 }
 
 export type ProtocolResolutionDiagnostic = {
-  code: 'missing-canonical' | 'invalid-override' | 'override-missing' | 'override-disabled' | 'override-domain-mismatch' | 'override-lineage-mismatch'
+  code: 'missing-canonical' | 'invalid-override' | 'override-missing' | 'override-disabled' | 'override-domain-mismatch' | 'override-lineage-mismatch' | 'override-legacy-lineage'
   domain: ProtocolDomain
   overrideId?: StableId
   message: string
@@ -113,11 +114,20 @@ export async function resolveCurrentProtocolResult(
       usedOverride: false,
     }
   }
-  if (candidate.baseProtocolId !== canonical.id) {
+  const lineage = resolveProtocolCanonicalRoot(candidate, catalog)
+  if ('message' in lineage) {
     return {
       definition: canonical,
       snapshot: capturePromptSnapshot(canonical, now) as ProtocolPromptSnapshot,
-      diagnostics: [{ code: 'override-lineage-mismatch', domain, overrideId, message: 'active protocol override lineage 不匹配，已回退 canonical' }],
+      diagnostics: [{ code: 'override-lineage-mismatch', domain, overrideId, message: 'active protocol override lineage 无效：' + lineage.message + '，已回退 canonical' }],
+      usedOverride: false,
+    }
+  }
+  if (lineage.canonicalId !== canonical.id) {
+    return {
+      definition: canonical,
+      snapshot: capturePromptSnapshot(canonical, now) as ProtocolPromptSnapshot,
+      diagnostics: [{ code: 'override-lineage-mismatch', domain, overrideId, message: 'active protocol override lineage 的 canonical domain 不匹配，已回退 canonical' }],
       usedOverride: false,
     }
   }
@@ -125,7 +135,9 @@ export async function resolveCurrentProtocolResult(
   return {
     definition,
     snapshot: capturePromptSnapshot(definition, now) as ProtocolPromptSnapshot,
-    diagnostics: [],
+    diagnostics: lineage.legacyChain
+      ? [{ code: 'override-legacy-lineage', domain, overrideId, message: 'active protocol override 使用了历史 experimental base 链；读取时保持原始数据，不改写历史记录' }]
+      : [],
     usedOverride: true,
   }
 }

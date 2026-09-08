@@ -4,6 +4,7 @@ import { getPromptPreferences, setBuiltinPromptHidden } from './prompt-preferenc
 import type { ArtifactPrompt, PromptDefinition, PromptKind } from './prompt-types'
 import { allocateAvailablePromptId, getPromptRecord, deletePromptRecord, updatePromptRecordAtomic } from './prompt-store'
 import { listEffectivePromptDefinitions } from './prompt-resolution'
+import { resolveProtocolCanonicalRoot } from './protocol-lineage'
 import { getPromptDefinitionIssues, validatePromptDefinition } from './prompt-validation'
 
 export type PromptServiceDependencies = {
@@ -130,6 +131,13 @@ export async function copyPromptDefinition(id: StableId, options: { name?: strin
   const d = deps(dependencies)
   const now = d.now()
   const copyId = await allocateAvailablePromptId(d.id)
+  let baseProtocolId: StableId | undefined
+  if (original.kind === 'protocol') {
+    const catalog = await listEffectivePromptDefinitions('protocol')
+    const lineage = resolveProtocolCanonicalRoot(original, catalog)
+    if ('message' in lineage) throw new PromptServiceError('invalid', '无法复制 protocol：' + lineage.message)
+    baseProtocolId = lineage.canonicalId
+  }
   const copy: PromptDefinition = {
     ...original,
     id: copyId,
@@ -139,7 +147,7 @@ export async function copyPromptDefinition(id: StableId, options: { name?: strin
     createdAt: now,
     updatedAt: now,
     revision: 1,
-    ...(original.kind === 'protocol' ? { overridePolicy: 'experimental' as const, baseProtocolId: original.id } : {}),
+    ...(original.kind === 'protocol' ? { overridePolicy: 'experimental' as const, baseProtocolId: baseProtocolId! } : {}),
   }
   return savePromptDefinition(copy, dependencies)
 }

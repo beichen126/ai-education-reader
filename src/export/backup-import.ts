@@ -14,6 +14,7 @@ import { getPromptDefinitionIssues, getPromptSnapshotIssues, getPromptTransition
 import { DEFAULT_PROMPT_PREFERENCES } from '../prompts/prompt-preferences'
 import type { PromptDefinition, PromptSnapshot } from '../prompts/prompt-types'
 import { getBuiltinPrompt, getBuiltinProtocol } from '../prompts/prompt-registry'
+import { resolveProtocolCanonicalRoot } from '../prompts/protocol-lineage'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -171,6 +172,13 @@ function validateV6PromptData(input: BackupV6): void {
     if (promptById.has(definition.id)) throw new BackupError('prompt id 重复：' + definition.id.slice(0, 8))
     promptById.set(definition.id, definition)
   }
+  for (let i = 0; i < input.prompts.length; i++) {
+    const definition = promptById.get(input.prompts[i].id)
+    if (!definition || definition.kind !== 'protocol') continue
+    if (definition.source !== 'experimental') throw new BackupError('prompts[' + i + '].source：protocol 定义必须是 experimental，不能导入 custom protocol')
+    const lineage = resolveProtocolCanonicalRoot(definition, [...promptById.values()])
+    if ('message' in lineage) throw new BackupError('prompts[' + i + '].baseProtocolId：' + lineage.code + '：' + lineage.message)
+  }
 
   const preferences = input.promptPreferences
   if (!isObj(preferences) || preferences.version !== 1) throw new BackupError('promptPreferences.version 非法')
@@ -189,9 +197,10 @@ function validateV6PromptData(input: BackupV6): void {
     if (!prompt || prompt.kind !== 'protocol' || prompt.source !== 'experimental' || !prompt.enabled || prompt.domain !== domain) {
       throw new BackupError('promptPreferences.activeProtocolOverrideByDomain 引用了非法 protocol override')
     }
-    const base = prompt.baseProtocolId ? getBuiltinPrompt(prompt.baseProtocolId) : undefined
     const baseProtocol = getBuiltinProtocol(domain)
-    if (!base || base.kind !== 'protocol' || !baseProtocol || baseProtocol.id !== base.id || prompt.baseProtocolId !== baseProtocol.id) throw new BackupError('promptPreferences.activeProtocolOverrideByDomain 的 baseProtocol lineage 非法')
+    const lineage = resolveProtocolCanonicalRoot(prompt, [...promptById.values()])
+    if ('message' in lineage) throw new BackupError('promptPreferences.activeProtocolOverrideByDomain.' + domain + ' 的 baseProtocol lineage 非法：' + lineage.code + '：' + lineage.message)
+    if (!baseProtocol || lineage.canonicalId !== baseProtocol.id) throw new BackupError('promptPreferences.activeProtocolOverrideByDomain.' + domain + ' 的 baseProtocol lineage 非法：canonical domain 不匹配')
   }
 }
 

@@ -14,7 +14,8 @@ import {
   updatePromptDefinition,
   type PromptMutationResult,
 } from './prompt-service'
-import { getBuiltinPrompt } from './prompt-registry'
+import { getBuiltinPrompt, getBuiltinProtocol } from './prompt-registry'
+import { resolveProtocolCanonicalRoot } from './protocol-lineage'
 import { promptContent } from './prompt-validation'
 import type { PromptDefinition, PromptKind, PromptUserPreferences } from './prompt-types'
 import css from './prompt-manager.module.css'
@@ -68,6 +69,21 @@ function newDefinition(kind: PromptKind = 'conversation-mode'): PromptDefinition
     case 'protocol': return { ...common, kind, domain: 'custom-protocol', systemPrompt: '', outputContract: '', overridePolicy: 'experimental' }
     default: return assertNever(kind)
   }
+}
+
+type ProtocolActivationStatus = { eligible: boolean; reason?: string }
+
+function protocolActivationStatus(definition: PromptDefinition, catalog: readonly PromptDefinition[]): ProtocolActivationStatus {
+  if (definition.kind !== 'protocol') return { eligible: false, reason: '只有 protocol 定义可以启用。' }
+  if (definition.source !== 'experimental') return { eligible: false, reason: '只有从 canonical 复制出的 experimental protocol 可以启用。' }
+  if (!definition.enabled) return { eligible: false, reason: '该 experimental protocol 已停用，请先启用它。' }
+  if (definition.overridePolicy !== 'experimental') return { eligible: false, reason: '该 protocol 的 overridePolicy 不允许启用。' }
+  const canonical = getBuiltinProtocol(definition.domain)
+  if (!canonical) return { eligible: false, reason: '该 protocol domain 没有可用的 canonical 定义。' }
+  const lineage = resolveProtocolCanonicalRoot(definition, [...catalog, definition])
+  if ('message' in lineage) return { eligible: false, reason: '该 protocol 无法启用：' + lineage.message }
+  if (lineage.canonicalId !== canonical.id) return { eligible: false, reason: '该 protocol 无法启用：canonical domain 不匹配。' }
+  return { eligible: true }
 }
 
 function assertNever(value: never): never { throw new Error('Unhandled prompt kind: ' + String(value)) }
@@ -295,6 +311,7 @@ export function PromptManager() {
 
   const selected = draft ?? (selectedId ? catalog.find((item) => item.id === selectedId) : undefined)
   const readonly = selected?.source === 'builtin'
+  const protocolStatus = selected?.kind === 'protocol' ? protocolActivationStatus(selected, catalog) : undefined
 
   const openDefinition = (definition: PromptDefinition) => {
     if (dirty && !window.confirm('当前修改尚未保存，确定切换提示词吗？')) return
@@ -313,6 +330,11 @@ export function PromptManager() {
   }
 
   const startCreate = () => {
+    if (category === 'protocol') {
+      setError('系统协议不能直接新建，请先选择 canonical protocol，再使用“复制 / 另存为”。')
+      setNotice(null)
+      return
+    }
     if (dirty && !window.confirm('当前修改尚未保存，确定新建提示词吗？')) return
     setDraft(newDefinition(category === 'all' ? 'conversation-mode' : category))
     setSelectedId(null)
@@ -392,6 +414,10 @@ export function PromptManager() {
   const activateProtocolOverride = async () => {
     const definition = selected
     if (!definition || definition.kind !== 'protocol' || definition.source !== 'experimental' || dirty) return
+    if (!protocolStatus?.eligible) {
+      setError(protocolStatus?.reason ?? '该 protocol 无法启用。')
+      return
+    }
     if (!window.confirm('启用实验协议后，后续对应请求会使用它的 Prompt；解析器和 validator 代码仍保持内置版本。确定启用吗？')) return
     setBusy(true); setError(null); setNotice(null)
     try {
@@ -453,7 +479,8 @@ export function PromptManager() {
           <div className={css.listToolbar}>
             <button type="button" className={css.mobileBack} onClick={() => setMobileStep('categories')}>‹ 分类</button>
             <label className={css.searchField}><span>搜索提示词</span><input data-testid="prompt-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、描述或内容" /></label>
-            <button type="button" className={css.newButton} data-testid="prompt-new" onClick={startCreate}>＋ 新建</button>
+            <button type="button" className={css.newButton} data-testid="prompt-new" disabled={category === 'protocol'} title={category === 'protocol' ? '系统协议需从 canonical 复制' : undefined} onClick={startCreate}>＋ 新建</button>
+            {category === 'protocol' && <span data-testid="protocol-new-hint" role="note">系统协议请从 canonical 复制</span>}
           </div>
           <div className={css.listMeta}>
             <span>{loading ? '正在读取…' : filtered.length + ' 个提示词'}</span>
@@ -492,6 +519,7 @@ export function PromptManager() {
               onActivateOverride={() => void activateProtocolOverride()}
               onRestoreProtocol={() => void restoreProtocolCanonical()}
               onSetDefault={() => void setDefault()}
+              protocolStatus={protocolStatus}
               onCancel={() => { setDraft(null); setDirty(false); setEditorMode('edit'); if (narrow) setMobileStep('list') }}
             />
           ) : (
@@ -522,6 +550,7 @@ function PromptEditor(props: {
   onRestoreProtocol: () => void
   onSetDefault: () => void
   onCancel: () => void
+  protocolStatus?: ProtocolActivationStatus
 }) {
   const { definition, readonly, creating, busy, preferences } = props
   const change = (patch: Partial<PromptDefinition>) => props.onChange({ ...definition, ...patch } as PromptDefinition)
@@ -539,7 +568,7 @@ function PromptEditor(props: {
       <div className={css.editorScroll}>
         <label className={css.editorField}><span>名称</span><input data-testid="prompt-editor-name" value={definition.name} disabled={readonly || busy} onChange={(event) => change({ name: event.target.value })} /></label>
         <label className={css.editorField}><span>描述</span><input data-testid="prompt-editor-description" value={definition.description} disabled={readonly || busy} onChange={(event) => change({ description: event.target.value })} /></label>
-        {creating && <label className={css.editorField}><span>作用范围</span><select data-testid="prompt-editor-kind" value={definition.kind} disabled={busy} onChange={(event) => props.onChange(newDefinition(event.target.value as PromptKind))}><option value="conversation-mode">会话模式</option><option value="artifact">学习成果</option><option value="quick-follow-up">快捷追问</option><option value="protocol">系统协议</option></select></label>}
+        {creating && <label className={css.editorField}><span>作用范围</span><select data-testid="prompt-editor-kind" value={definition.kind} disabled={busy} onChange={(event) => props.onChange(newDefinition(event.target.value as PromptKind))}><option value="conversation-mode">会话模式</option><option value="artifact">学习成果</option><option value="quick-follow-up">快捷追问</option><option value="protocol" disabled>系统协议（请从 canonical 复制）</option></select></label>}
         {definition.kind === 'artifact' && <label className={css.editorField}><span>学习成果类型</span><select aria-label="学习成果类型" value={definition.artifactKind} disabled={readonly || busy} onChange={(event) => change({ artifactKind: event.target.value as ArtifactKind })}>{artifactKinds.map((kind) => <option value={kind.id} key={kind.id}>{kind.label}</option>)}</select></label>}
         {definition.kind === 'quick-follow-up' && <>
           <label className={css.editorField}><span>按钮文字</span><input value={definition.label} disabled={readonly || busy} onChange={(event) => change({ label: event.target.value })} /></label>
@@ -575,7 +604,8 @@ function PromptEditor(props: {
             {readonly ? <button type="button" className={css.primaryAction} data-testid="prompt-copy" disabled={busy} onClick={props.onCopy}>复制 / 另存为</button> : <button type="button" className={css.primaryAction} data-testid="prompt-save" disabled={busy} onClick={props.onSave}>保存</button>}
             {definition.kind === 'conversation-mode' && <button type="button" className={css.secondaryAction} disabled={busy || !definition.enabled || preferences?.defaultConversationModeId === definition.id} onClick={props.onSetDefault}>{preferences?.defaultConversationModeId === definition.id ? '当前默认' : '设为默认'}</button>}
             {definition.kind === 'protocol' ? <>
-              {!readonly && <button type="button" className={css.secondaryAction} data-testid="protocol-activate" disabled={busy || props.dirty || activeProtocol} onClick={props.onActivateOverride}>{activeProtocol ? '当前实验协议' : '启用实验协议'}</button>}
+              {!readonly && <button type="button" className={css.secondaryAction} data-testid="protocol-activate" disabled={busy || props.dirty || activeProtocol || !props.protocolStatus?.eligible} onClick={props.onActivateOverride}>{activeProtocol ? '当前实验协议' : '启用实验协议'}</button>}
+              {!readonly && props.protocolStatus && !props.protocolStatus.eligible && <div className={css.editorError} data-testid="protocol-activation-reason" role="alert">{props.protocolStatus.reason}</div>}
               {!readonly && <button type="button" className={css.secondaryAction} data-testid="protocol-restore" disabled={busy || !activeProtocol} onClick={props.onRestoreProtocol}>恢复内置协议</button>}
               {!readonly && <><button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onCopy}>复制</button><button type="button" className={css.dangerAction} data-testid="prompt-delete" disabled={busy} onClick={props.onDelete}>删除</button></>}
             </> : <>

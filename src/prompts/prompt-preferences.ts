@@ -1,7 +1,8 @@
 import { getSetting } from '../storage/storage'
 import { idbUpdateOrInsert } from '../storage/idb'
 import { BUILTIN_PROMPT_IDS, getBuiltinPrompt, getBuiltinProtocol } from './prompt-registry'
-import { getPromptRecord } from './prompt-store'
+import { getPromptRecord, listPromptRecords } from './prompt-store'
+import { resolveProtocolCanonicalRoot } from './protocol-lineage'
 import type { PromptDefinition, PromptSortPreference, PromptUserPreferences } from './prompt-types'
 
 export const PROMPT_PREFERENCES_KEY = 'promptPreferences'
@@ -144,9 +145,11 @@ async function assertProtocolOverride(domain: string, id: string): Promise<void>
   if (!definition || definition.kind !== 'protocol' || definition.source !== 'experimental' || !definition.enabled || definition.domain !== domain) {
     throw new PromptPreferencesError('invalid-override', 'active protocol override 必须是 enabled、domain 匹配的 experimental protocol')
   }
-  if (!definition.baseProtocolId) throw new PromptPreferencesError('invalid-override', 'experimental protocol override 缺少 baseProtocol lineage')
   const base = getBuiltinProtocol(domain)
-  if (!base || base.id !== definition.baseProtocolId) throw new PromptPreferencesError('invalid-override', 'experimental protocol override 的 baseProtocol lineage 无效')
+  if (!base) throw new PromptPreferencesError('invalid-override', 'protocol domain 没有可用的 canonical protocol')
+  const lineage = resolveProtocolCanonicalRoot(definition, await listPromptRecords())
+  if ('message' in lineage) throw new PromptPreferencesError('invalid-override', 'experimental protocol override 的 lineage 无效（' + lineage.code + '：' + lineage.message + '）')
+  if (lineage.canonicalId !== base.id) throw new PromptPreferencesError('invalid-override', 'experimental protocol override 的 lineage 无效（canonical domain 不匹配）')
 }
 
 async function validatePreferencePatch(patch: Partial<PromptUserPreferences>): Promise<void> {
