@@ -196,6 +196,8 @@ export type EffectiveMessagePathResult = {
   diagnostics: BranchDiagnostic[]
   rootRoute: EffectiveMessageRoute
   routeByBranch: Map<StableId, EffectiveMessageRoute>
+  /** Branch rows actually used by the active route, root-most first. */
+  lineageBranches: ConversationBranch[]
 }
 
 /**
@@ -246,7 +248,7 @@ export function buildEffectiveMessagePath(
   const rootMessageIds = conversation.messages.map((message) => message.id)
   const rootRoute = createRootMessageRoute(rootMessageIds)
   const routeByBranch = new Map<StableId, EffectiveMessageRoute>()
-  if (!activeBranchId) return { messageIds: rootMessageIds, diagnostics: [], rootRoute, routeByBranch }
+  if (!activeBranchId) return { messageIds: rootMessageIds, diagnostics: [], rootRoute, routeByBranch, lineageBranches: [] }
 
   const index = branchIndex(branches)
   const diagnostics: BranchDiagnostic[] = []
@@ -256,32 +258,32 @@ export function buildEffectiveMessagePath(
   while (current !== undefined) {
     if (seen.has(current)) {
       diagnostics.push({ code: 'cycle', branchId: current, cycle: [...seen, current] })
-      return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+      return { messageIds: null, diagnostics, rootRoute, routeByBranch, lineageBranches: lineage.slice() }
     }
     seen.add(current)
     const branch = index.byId.get(current)
     if (!branch) {
       diagnostics.push({ code: 'missing-parent', branchId: current, parentBranchId: current })
-      return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+      return { messageIds: null, diagnostics, rootRoute, routeByBranch, lineageBranches: lineage.slice() }
     }
     if (index.duplicates.has(current)) {
       diagnostics.push({ code: 'duplicate-id', branchId: current })
-      return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+      return { messageIds: null, diagnostics, rootRoute, routeByBranch, lineageBranches: lineage.slice() }
     }
     if (branch.conversationId !== conversation.id) {
       diagnostics.push({ code: 'missing-conversation', branchId: current })
-      return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+      return { messageIds: null, diagnostics, rootRoute, routeByBranch, lineageBranches: lineage.slice() }
     }
     lineage.unshift(branch)
     if (branch.parentBranchId !== undefined) {
       const parent = index.byId.get(branch.parentBranchId)
       if (!parent) {
         diagnostics.push({ code: 'missing-parent', branchId: branch.id, parentBranchId: branch.parentBranchId })
-        return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+        return { messageIds: null, diagnostics, rootRoute, routeByBranch, lineageBranches: lineage.slice() }
       }
       if (parent.conversationId !== branch.conversationId) {
         diagnostics.push({ code: 'wrong-conversation-parent', branchId: branch.id, parentBranchId: branch.parentBranchId })
-        return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+        return { messageIds: null, diagnostics, rootRoute, routeByBranch, lineageBranches: lineage.slice() }
       }
       current = branch.parentBranchId
     } else current = undefined
@@ -295,7 +297,7 @@ export function buildEffectiveMessagePath(
     const forkPosition = positions.get(branch.forkMessageId)
     if (forkPosition === undefined) {
       diagnostics.push({ code: 'missing-fork', branchId: branch.id, forkMessageId: branch.forkMessageId })
-      return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+      return { messageIds: null, diagnostics, rootRoute, routeByBranch, lineageBranches: lineage.slice() }
     }
     for (let position = messageIds.length - 1; position > forkPosition; position--) {
       positions.delete(messageIds[position])
@@ -305,7 +307,7 @@ export function buildEffectiveMessagePath(
     for (const message of branch.messages) {
       if (activeIds.has(message.id)) {
         diagnostics.push({ code: 'duplicate-message-id', branchId: branch.id, messageId: message.id })
-        return { messageIds: null, diagnostics, rootRoute, routeByBranch }
+        return { messageIds: null, diagnostics, rootRoute, routeByBranch, lineageBranches: lineage.slice() }
       }
       positions.set(message.id, messageIds.length)
       activeIds.add(message.id)
@@ -314,7 +316,7 @@ export function buildEffectiveMessagePath(
     currentRoute = extendMessageRoute(currentRoute, forkPosition, branch.messages.map((message) => message.id))
     routeByBranch.set(branch.id, currentRoute)
   }
-  return { messageIds, diagnostics, rootRoute, routeByBranch }
+  return { messageIds, diagnostics, rootRoute, routeByBranch, lineageBranches: lineage.slice() }
 }
 
 /**

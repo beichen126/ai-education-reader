@@ -1,4 +1,4 @@
-import { buildEffectiveMessagePath, resolveBranchLineage } from '../branches/branch-path'
+import { buildEffectiveMessagePath } from '../branches/branch-path'
 import type { EffectiveMessageRoute } from '../branches/branch-path'
 import type { BranchDiagnostic, ConversationBranch } from '../branches/branch-types'
 import type { Conversation, StableId } from '../engine/types'
@@ -168,22 +168,18 @@ export function buildEffectivePromptPath(
 
   const materialized = buildEffectiveMessagePath(conversation, branches, activeBranchId)
   const diagnostics: EffectivePromptPathDiagnostic[] = [...materialized.diagnostics]
-  const lineage = resolveBranchLineage(branches, activeBranchId)
   const effectiveIds = materialized.messageIds
-  if (diagnostics.length > 0 || lineage === null || effectiveIds === null) {
+  if (diagnostics.length > 0 || effectiveIds === null) {
     return { ...rootResult(conversation, diagnostics), resolved: false }
   }
 
-  const byId = new Map(branches.map((branch) => [branch.id, branch]))
   const sources: Source[] = [{
     owner: 'root',
     sourceDepth: 0,
     transitions: conversation.promptTransitions,
     routeMessagePath: materialized.rootRoute,
   }]
-  lineage.forEach((branchId, index) => {
-    const branch = byId.get(branchId)
-    if (!branch) return
+  materialized.lineageBranches.forEach((branch, index) => {
     const routeMessagePath = materialized.routeByBranch.get(branch.id)
     if (routeMessagePath) sources.push({ owner: 'branch', branchId: branch.id, sourceDepth: index + 1, transitions: branch.promptTransitions, routeMessagePath })
   })

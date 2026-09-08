@@ -54,6 +54,46 @@ function measure(fixtureInput: ReturnType<typeof fixture>, repetitions = 5): num
   return median(samples)
 }
 
+function structuralAccesses(unrelatedBranches: number): { cold: number; hot: number; coldIterators: number; hotIterators: number } {
+  const fixtureInput = fixture(20, 2, 3, unrelatedBranches)
+  let numericAccesses = 0
+  let iteratorReads = 0
+  const observed = new Proxy(fixtureInput.branches, {
+    get(target, property, receiver) {
+      if (property === Symbol.iterator) iteratorReads++
+      if (typeof property === 'string' && /^\d+$/.test(property)) numericAccesses++
+      return Reflect.get(target, property, receiver)
+    },
+  })
+  buildEffectivePromptPath(fixtureInput.conversation, observed, fixtureInput.activeBranchId)
+  const cold = numericAccesses
+  const coldIterators = iteratorReads
+  numericAccesses = 0
+  iteratorReads = 0
+  buildEffectivePromptPath(fixtureInput.conversation, observed, fixtureInput.activeBranchId)
+  return { cold, hot: numericAccesses, coldIterators, hotIterators: iteratorReads }
+}
+
+const structural5k = structuralAccesses(5000)
+const structural20k = structuralAccesses(20000)
+console.log('STRUCTURAL cold5k=' + structural5k.cold + ' hot5k=' + structural5k.hot + ' cold5kIterators=' + structural5k.coldIterators + ' hot5kIterators=' + structural5k.hotIterators + ' cold20k=' + structural20k.cold + ' hot20k=' + structural20k.hot + ' cold20kIterators=' + structural20k.coldIterators + ' hot20kIterators=' + structural20k.hotIterators)
+assert(structural5k.cold >= 5000 && structural20k.cold >= 20000, 'cold index construction observes the supplied branch catalogue')
+assert(structural5k.hot === 0 && structural20k.hot === 0 && structural5k.hotIterators === 0 && structural20k.hotIterators === 0, 'warm materialization does not iterate unrelated branch rows')
+
+const mutationFixture = fixture(20, 2, 3, 100)
+const activeMutationBranch = mutationFixture.branches.find((branch) => branch.id === mutationFixture.activeBranchId)
+if (!activeMutationBranch) throw new Error('active performance fixture branch is missing')
+const beforeMutation = buildEffectivePromptPath(mutationFixture.conversation, mutationFixture.branches, mutationFixture.activeBranchId)
+activeMutationBranch.promptTransitions = (activeMutationBranch.promptTransitions ?? []).map((item) => ({ ...item, snapshot: { ...item.snapshot, name: 'updated-current-path' } }))
+const afterMutation = buildEffectivePromptPath(mutationFixture.conversation, mutationFixture.branches, mutationFixture.activeBranchId)
+assert(afterMutation.transitions.some((item) => item.snapshot.name === 'updated-current-path') && afterMutation.transitions.length === beforeMutation.transitions.length, 'current-path transition changes invalidate the materialized result')
+const unrelatedMutationBranch = mutationFixture.branches.find((branch) => branch.id === 'unrelated-0')
+if (!unrelatedMutationBranch) throw new Error('unrelated performance fixture branch is missing')
+const beforeUnrelatedMutation = afterMutation.transitions.map((item) => item.id).join('|')
+unrelatedMutationBranch.promptTransitions = [transition('unrelated-mutation', 'm-0')]
+const afterUnrelatedMutation = buildEffectivePromptPath(mutationFixture.conversation, mutationFixture.branches, mutationFixture.activeBranchId)
+assert(afterUnrelatedMutation.transitions.map((item) => item.id).join('|') === beforeUnrelatedMutation, 'unrelated branch mutation does not change the active timeline')
+
 const baseline = fixture(1000, 100, 20)
 const large = fixture(4000, 400, 80)
 const noisy = fixture(1000, 100, 20, 5000)
