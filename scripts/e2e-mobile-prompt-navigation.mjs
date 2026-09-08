@@ -195,9 +195,11 @@ for (const size of [
   assert(await quickInspect.evaluate((el) => el === document.activeElement), size.width + 'px quick inspector Escape restores focus')
 
   const composer = page.locator('textarea[aria-label="输入消息"]')
+  const responseText = '移动端回答 ' + size.width
+  await installMockModel(page, [responseText])
   await composer.fill('键盘发送 ' + size.width)
   await composer.press('Enter')
-  await page.getByText('移动端回答', { exact: true }).last().waitFor({ state: 'visible', timeout: 15000 })
+  await page.getByText(responseText, { exact: true }).waitFor({ state: 'visible', timeout: 15000 })
   assert(true, size.width + 'px keyboard send completes the user -> model response chain')
   await measureNoOverflow(page, size.width + 'px conversation')
 }
