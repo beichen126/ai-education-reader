@@ -119,6 +119,22 @@ mustReject(badBundle, 'artifact protocol snapshot with the wrong kind')
 const incompleteSnapshot = JSON.parse(JSON.stringify(full))
 delete incompleteSnapshot.artifacts[0].promptBundle.template.artifactKind
 mustReject(incompleteSnapshot, 'pre-review V6 artifact snapshot missing its domain metadata')
+const historicalCopyOfCopy = JSON.parse(JSON.stringify(full))
+historicalCopyOfCopy.prompts.push({ ...protocol, id: 'historical-protocol-copy', baseProtocolId: protocol.id })
+historicalCopyOfCopy.promptPreferences.activeProtocolOverrideByDomain['ai-toc-structure'] = 'historical-protocol-copy'
+parseAndValidate(historicalCopyOfCopy)
+assert(true, 'historical experimental-base protocol data remains importable without rewriting the stored lineage')
+const cyclicProtocol = JSON.parse(JSON.stringify(full))
+cyclicProtocol.prompts = [mode, { ...protocol, id: 'cycle-a', baseProtocolId: 'cycle-b' }, { ...protocol, id: 'cycle-b', baseProtocolId: 'cycle-a' }]
+cyclicProtocol.promptPreferences.activeProtocolOverrideByDomain = { 'ai-toc-structure': 'cycle-a' }
+mustReject(cyclicProtocol, 'protocol backup with a cyclic lineage')
+const missingProtocol = JSON.parse(JSON.stringify(full))
+missingProtocol.prompts = [mode, { ...protocol, id: 'missing-base', baseProtocolId: 'does-not-exist' }]
+missingProtocol.promptPreferences.activeProtocolOverrideByDomain = { 'ai-toc-structure': 'missing-base' }
+mustReject(missingProtocol, 'protocol backup with a missing base lineage')
+const customProtocol = JSON.parse(JSON.stringify(full))
+customProtocol.prompts = [mode, { ...protocol, id: 'custom-protocol', source: 'custom' }]
+mustReject(customProtocol, 'custom protocol without an experimental canonical lineage')
 
 await idbClearAll()
 await saveConversation(full.conversations[0])

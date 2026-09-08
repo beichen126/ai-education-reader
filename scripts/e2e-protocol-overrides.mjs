@@ -27,10 +27,23 @@ const openManager = async () => {
   await page.locator('[data-testid="sidebar-entry-prompts"]').click()
 }
 
+await openAppDb(page, {
+  store: 'prompts',
+  operation: 'put',
+  value: {
+    id: 'invalid-custom-protocol', kind: 'protocol', name: '无效自定义协议', description: '用于验证不可激活的 legacy-shaped row', source: 'custom', enabled: true,
+    createdAt: now, updatedAt: now, revision: 1, domain: 'ai-toc-structure', systemPrompt: 'invalid', overridePolicy: 'experimental',
+  },
+})
 await openManager()
 const manager = page.locator('[data-testid="prompt-manager"]')
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-protocol"]').click()
+assert(await page.locator('[data-testid="prompt-new"]').isDisabled() && await page.locator('[data-testid="protocol-new-hint"]').innerText() === '系统协议请从 canonical 复制', 'system protocol category blocks generic new and explains the canonical-copy path')
+await page.locator('[data-testid="prompt-row"]').filter({ hasText: '无效自定义协议' }).click()
+assert(await page.locator('[data-testid="protocol-activate"]').isDisabled() && (await page.locator('[data-testid="protocol-activation-reason"]').innerText()).includes('experimental'), 'invalid protocol row shows a visible activation reason and disables activation')
+await page.locator('[data-testid="prompt-delete"]').click()
+await page.getByText('提示词已删除，历史 snapshot 保持不变。', { exact: true }).waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-row"]').filter({ hasText: 'AI 目录 · 结构分析' }).click()
 await page.locator('[data-testid="protocol-inspector"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(await page.locator('[data-testid="prompt-editor-content"]').inputValue().then((value) => value.includes('levels')), 'built-in AI TOC protocol shows the complete actual system prompt')

@@ -63,11 +63,18 @@ await seedAndBoot(page, {
 await installMockModel(page, ['这是分支模式回答'])
 
 assert(await page.locator('[data-testid="active-conversation-mode"]').innerText() === '苏格拉底式学习', 'root route exposes the mode active after the root transition')
-assert(await page.locator('[data-testid="mode-transition-divider"]').count() === 1, 'root mode transition is visible at the message boundary')
+const rootDividers = page.locator('[data-testid="mode-transition-divider"]')
+assert(await rootDividers.count() === 2, 'root route renders both the initial and later mode boundaries')
+await page.locator(`[data-testid="mode-transition-divider"][data-transition-id="${rootMode.id}"]`).getByRole('button').click()
+const inspector = page.locator('[data-testid="prompt-inspector"]')
+await inspector.waitFor({ state: 'visible', timeout: 5000 })
+assert((await inspector.innerText()).includes('会话开始') && (await inspector.innerText()).includes('默认'), 'initial transition inspector shows the frozen snapshot and 会话开始 position')
+await page.getByRole('button', { name: '关闭' }).click()
 
 await createBranchFromMessage(page, 0)
 assert((await page.textContent('body')).includes('这是主线的初始回答。'), 'new branch keeps the inherited message path')
 assert(await page.locator('[data-testid="active-conversation-mode"]').innerText() === '苏格拉底式学习', 'branch inherits the root route mode timeline')
+assert(await page.locator('[data-testid="mode-transition-divider"]').count() === 1, 'branch route keeps only the inherited initial boundary before its fork')
 
 await page.locator('button[aria-label="切换对话模式"]').click()
 await page.getByRole('menuitemradio', { name: '深入讲解' }).click()

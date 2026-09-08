@@ -73,6 +73,8 @@ assert(copied.definition.source === 'custom' && copied.definition.id === 'custom
 assert((await getPromptRecord(copied.definition.id))?.name === '我的苏格拉底模式', 'copied definition is durably saved')
 const protocolCopy = await copyPromptDefinition(BUILTIN_PROMPT_IDS.protocolAiTocStructure, {}, deps)
 assert(protocolCopy.definition.source === 'experimental' && protocolCopy.definition.kind === 'protocol' && protocolCopy.definition.baseProtocolId === BUILTIN_PROMPT_IDS.protocolAiTocStructure, 'protocol copy becomes an experimental override with lineage')
+const protocolCopyOfCopy = await copyPromptDefinition(protocolCopy.definition.id, {}, deps)
+assert(protocolCopyOfCopy.definition.kind === 'protocol' && protocolCopyOfCopy.definition.baseProtocolId === BUILTIN_PROMPT_IDS.protocolAiTocStructure, 'copying an experimental protocol writes the canonical root instead of an experimental base')
 const activeOverride = await setActiveProtocolOverride('ai-toc-structure', protocolCopy.definition.id)
 assert(activeOverride.activeProtocolOverrideByDomain['ai-toc-structure'] === protocolCopy.definition.id, 'active protocol override validates experimental lineage and persists atomically')
 const resolvedOverride = await resolveCurrentProtocolResult('ai-toc-structure', 777)
@@ -83,6 +85,21 @@ assert(invalidOverride, 'active protocol override rejects a built-in protocol')
 await setActiveProtocolOverride('ai-toc-structure', undefined)
 const canonicalResolution = await resolveCurrentProtocolResult('ai-toc-structure', 778)
 assert(!canonicalResolution.usedOverride && canonicalResolution.snapshot?.profileId === BUILTIN_PROMPT_IDS.protocolAiTocStructure, 'clearing the override resolves the canonical protocol without deleting the copy')
+const legacyChain = { ...protocolCopy.definition, id: 'legacy-protocol-copy', baseProtocolId: protocolCopy.definition.id }
+await savePromptRecord(legacyChain)
+await setActiveProtocolOverride('ai-toc-structure', legacyChain.id)
+const legacyResolution = await resolveCurrentProtocolResult('ai-toc-structure', 779)
+assert(legacyResolution.usedOverride && legacyResolution.diagnostics.some((item) => item.code === 'override-legacy-lineage'), 'historical experimental-base data remains readable with an explicit lineage diagnostic')
+await setActiveProtocolOverride('ai-toc-structure', undefined)
+await savePromptRecord({ ...legacyChain, id: 'cycle-a', baseProtocolId: 'cycle-b' })
+await savePromptRecord({ ...legacyChain, id: 'cycle-b', baseProtocolId: 'cycle-a' })
+let cycleRejected = false
+try { await setActiveProtocolOverride('ai-toc-structure', 'cycle-a') } catch { cycleRejected = true }
+assert(cycleRejected, 'protocol activation rejects a cyclic lineage with a structured error')
+await savePromptRecord({ ...legacyChain, id: 'missing-base', baseProtocolId: 'does-not-exist' })
+let missingBaseRejected = false
+try { await setActiveProtocolOverride('ai-toc-structure', 'missing-base') } catch { missingBaseRejected = true }
+assert(missingBaseRejected, 'protocol activation rejects a missing canonical/base lineage with a structured error')
 
 const unchanged = await updatePromptDefinition(first.id, { name: '我的模式改名', description: '新描述' }, deps)
 assert(unchanged.definition.revision === 1, 'metadata-only edit does not bump behavior revision')
