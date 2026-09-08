@@ -66,6 +66,7 @@ export function DocumentReader() {
   const [pageCount, setPageCount] = useState(0)
   const urlOwnerRef = useRef(createUrlOwner())
   const [pageInput, setPageInput] = useState('')
+  const pageInputRef = useRef<HTMLInputElement | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
   const [notesOpen, setNotesOpen] = useState(false)
   const [noteText, setNoteText] = useState('')
@@ -91,6 +92,10 @@ export function DocumentReader() {
   const display = useReaderDisplay(sessionRef.current, page, pageCount)
   const [tocState, setTocState] = useState<TocTreeState>({ expanded: new Set() })
   const [tocOpen, setTocOpen] = useState(false)
+  const [tocPanelClosed, setTocPanelClosed] = useState(false)
+  const tocToggleRef = useRef<HTMLButtonElement | null>(null)
+  const tocPanelRef = useRef<HTMLElement | null>(null)
+  const tocBackRef = useRef<HTMLButtonElement | null>(null)
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
   const viewerOpenRef = useRef(false)
   const genRef = useRef(0)
@@ -220,6 +225,35 @@ export function DocumentReader() {
     return flush
   }, [flushNoteSession, trackNoteFlush])
 
+  const isNarrowViewport = () => typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
+  const focusTocToggle = useCallback(() => {
+    window.requestAnimationFrame(() => tocToggleRef.current?.focus())
+  }, [])
+  const focusTocBack = useCallback(() => {
+    window.requestAnimationFrame(() => tocBackRef.current?.focus())
+  }, [])
+  const closeToc = useCallback(() => {
+    setTocOpen(false)
+    setTocPanelClosed(true)
+    focusTocToggle()
+  }, [focusTocToggle])
+  const toggleToc = useCallback(() => {
+    const narrow = isNarrowViewport()
+    if (narrow) {
+      const nextOpen = tocPanelClosed || !tocOpen
+      setTocPanelClosed(false)
+      setTocOpen(nextOpen)
+      if (nextOpen) focusTocBack()
+      else focusTocToggle()
+      return
+    }
+    const nextOpen = tocPanelClosed
+    setTocPanelClosed(!nextOpen)
+    setTocOpen(nextOpen)
+    if (nextOpen) focusTocBack()
+    else focusTocToggle()
+  }, [focusTocBack, focusTocToggle, tocOpen, tocPanelClosed])
+
   // ---- load document now OWNS the whole lifecycle for one docId ----
   useEffect(() => {
     if (!docId) {
@@ -238,7 +272,7 @@ export function DocumentReader() {
       setPageError(null); setLoadError(null)
       setNotesOpen(false); setNoteText(''); setNoteLoading(false); setNoteSavedAt(null); setNoteSaveError(false); setNoteLoadError(false); setNoteWriteEnabled(false)
       setNoteAvailability({ kind: 'loading', key: '' })
-      setTocState({ expanded: new Set() }); setTocOpen(false)
+      setTocState({ expanded: new Set() }); setTocOpen(false); setTocPanelClosed(false)
       setNativeDraft(null); setBuilderHint(null); setHasNativeOutline(false); setNativeOutlineStatus('unknown')
       setRestoreConfirmOpen(false); setRestoreMsg(null)
       aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
@@ -257,7 +291,7 @@ export function DocumentReader() {
     void (async () => {
       setLoadError(null); setDoc(null)
       setPageCount(0); setPage(1); setPageInput(''); setPageError(null)
-      setTocState({ expanded: new Set() }); setTocOpen(false)
+      setTocState({ expanded: new Set() }); setTocOpen(false); setTocPanelClosed(false)
       setViewerUrl(null); viewerOpenRef.current = false
       setZoomBusy(false)
       setBuilderOpen(false)
@@ -739,6 +773,32 @@ export function DocumentReader() {
       if (restoreConfirmOpen && e.key === 'Escape') { e.preventDefault(); setRestoreConfirmOpen(false); return }
       // Context menu takes Escape ONLY — arrows / typing / everything else pass through.
       if (ctxMenuOpenRef.current && e.key === 'Escape') { e.preventDefault(); setCtxMenuOpen(false); setCtxMode('menu'); return }
+      const tocVisible = !tocPanelClosed && (!isNarrowViewport() || tocOpen)
+      if (tocVisible && e.key === 'Escape') {
+        e.preventDefault()
+        closeToc()
+        return
+      }
+      if (tocVisible && isNarrowViewport() && e.key === 'Tab') {
+        const panel = tocPanelRef.current
+        if (panel) {
+          const focusables = Array.from(panel.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')).filter(el => el.getClientRects().length > 0)
+          if (focusables.length > 0) {
+            const first = focusables[0]
+            const last = focusables[focusables.length - 1]
+            if (!panel.contains(document.activeElement)) {
+              e.preventDefault()
+              ;(e.shiftKey ? last : first).focus()
+            } else if (e.shiftKey && document.activeElement === first) {
+              e.preventDefault()
+              last.focus()
+            } else if (!e.shiftKey && document.activeElement === last) {
+              e.preventDefault()
+              first.focus()
+            }
+          }
+        }
+      }
       // Page-input editing defers ARROWS only; Escape always closes the reader.
       if (inField && e.key !== 'Escape') return
       if (e.key === 'ArrowLeft') { e.preventDefault(); go(pageRef.current - 1, pageCount) }
@@ -747,7 +807,7 @@ export function DocumentReader() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [doc, pageCount, go, restoreConfirmOpen, flushCurrentNote])
+  }, [closeToc, doc, flushCurrentNote, go, pageCount, restoreConfirmOpen, tocOpen, tocPanelClosed])
 
   const commitPageInput = () => {
     const r = parsePageInput(pageInput, pageCount)
@@ -835,7 +895,13 @@ export function DocumentReader() {
   const currentChapterPath = doc ? findCurrentChapterPath(doc.chapters, page) : []
   const toggleTocNode = (n: ChapterNode) => setTocState(prev => { const e = new Set(prev.expanded); if (e.has(n.id)) e.delete(n.id); else e.add(n.id); return { expanded: e } })
   const clickChapter = (n: ChapterNode) => {
-    if (n.selectable && n.startPage != null) { go(n.startPage, pageCount); setTocOpen(false) }
+    if (n.selectable && n.startPage != null) {
+      go(n.startPage, pageCount)
+      if (isNarrowViewport()) {
+        setTocOpen(false)
+        window.requestAnimationFrame(() => pageInputRef.current?.focus())
+      }
+    }
     else if (n.children.length > 0) toggleTocNode(n)
   }
 
@@ -855,7 +921,7 @@ export function DocumentReader() {
               相关对话 {relatedConversations.length}
             </button>
           )}
-          <button className={css.tocToggle} data-testid="reader-toc-toggle" onClick={() => setTocOpen(o => !o)}>目录</button>
+          <button ref={tocToggleRef} className={css.tocToggle} data-testid="reader-toc-toggle" aria-expanded={tocPanelClosed ? false : (isNarrowViewport() ? tocOpen : true)} aria-controls={loadError ? undefined : 'reader-toc-panel'} onClick={toggleToc}>目录</button>
           {doc && <button type="button" ref={noteToggleRef} className={css.noteToggle} data-testid="reader-notes-toggle" data-note-state={noteButtonState} disabled={(!notesOpen && closedNoteState === 'loading') || noteActionBusy} aria-busy={noteActionBusy || undefined} onClick={() => void toggleNotes()}>{noteButtonLabel}</button>}
           <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>关闭</button>
         </div>
@@ -878,8 +944,11 @@ export function DocumentReader() {
           <div className={css.errorBox} data-testid="reader-error">{loadError}</div>
         ) : (
           <>
-            <aside className={css.toc + (tocOpen ? ' ' + css.tocOpen : '')} data-testid="reader-toc">
-              <div className={css.tocTitle}>目录</div>
+            <aside ref={tocPanelRef} id="reader-toc-panel" className={css.toc + (tocOpen ? ' ' + css.tocOpen : '') + (tocPanelClosed ? ' ' + css.tocClosed : '')} data-testid="reader-toc">
+              <div className={css.tocHeader}>
+                <button type="button" ref={tocBackRef} className={css.tocBack} data-testid="reader-toc-back" aria-label="返回 PDF 阅读" onClick={closeToc}>← 返回阅读</button>
+                <div className={css.tocTitle}>目录</div>
+              </div>
               {doc && doc.chapters.length > 0 ? (
                 <div className={css.tocTree}>
                   {doc.chapters.map(c => <TocRow key={c.id} node={c} depth={0} state={tocState} onOpen={clickChapter} onToggle={toggleTocNode} />)}
@@ -1018,7 +1087,7 @@ export function DocumentReader() {
       <div className={css.navBar}>
         <button className={css.navBtn} data-testid="reader-prev" disabled={page <= 1} onClick={() => go(page - 1, pageCount)}>上一页</button>
         <div className={css.counter}>
-          <input className={css.pageInput} data-testid="reader-page-input" inputMode="numeric" aria-label="当前页码" value={pageInput}
+          <input ref={pageInputRef} className={css.pageInput} data-testid="reader-page-input" inputMode="numeric" aria-label="当前页码" value={pageInput}
             onChange={e => setPageInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitPageInput() } }} />
           <span className={css.counterTotal}>/ {pageCount}</span>

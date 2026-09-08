@@ -80,6 +80,13 @@ const toc = await page.locator('[data-testid^="reader-chapter-"]').allTextConten
 assert(toc.join('|').includes('第一章 自然地理') && toc.join('|').includes('第二章 地球'), 'D: TOC shows ai-toc chapters (got ' + toc.join('|') + ')')
 // current page preserved (was 1 before save)
 assert((await inputVal()).trim() === '1', 'D: reader page unchanged after ai-toc save (got ' + await inputVal() + ')')
+const aiTocBack = page.locator('[data-testid="reader-toc-back"]')
+assert(await aiTocBack.isVisible(), 'D: ai-toc exposes 返回阅读')
+await aiTocBack.click()
+await page.locator('[data-testid="reader-toc"]').waitFor({ state: 'hidden', timeout: 5000 })
+assert(await page.locator('[data-testid="document-reader"]').count() === 1, 'D: ai-toc 返回阅读 keeps Reader open')
+await page.locator('[data-testid="reader-toc-toggle"]').click()
+await page.locator('[data-testid="reader-toc"]').waitFor({ state: 'visible', timeout: 5000 })
 
 // --- E: context uses the new ai-toc tree (no special branch) ---
 assert(await page.locator('[data-testid="reader-toc-edit"]').count() === 1, 'E: ai-toc tree shows 编辑目录')
