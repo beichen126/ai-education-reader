@@ -1,4 +1,4 @@
-import type { Conversation, Message, StableId } from '../engine/types'
+import { isStableBranchPoint, type Conversation, type Message, type StableId } from '../engine/types'
 import type { BranchDiagnostic, ConversationBranch, MessageOwner } from './branch-types'
 
 /**
@@ -397,6 +397,10 @@ export function descendantBranchIds(branches: ConversationBranch[], branchId: St
 export function canForkFromMessage(conversation: Conversation, branches: ConversationBranch[], messageId: StableId): boolean {
   const eff = buildEffectiveConversationPath(conversation, branches)
   const m = eff.find((x) => x.id === messageId)
-  if (m) return m.content !== ''
-  return branches.some((b) => b.messages.some((x) => x.id === messageId && x.content !== ''))
+  if (m) return isStableBranchPoint(m)
+  for (const branch of branches) {
+    const local = branch.messages.find((x) => x.id === messageId)
+    if (local) return isStableBranchPoint(local)
+  }
+  return false
 }

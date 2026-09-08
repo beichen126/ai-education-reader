@@ -15,7 +15,7 @@ import { galleryActions } from '../gallery/gallery-store'
 import { PdfPanel } from '../pdf/PdfPanel'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult, type RenderedPdfPage } from '../pdf/pdf-types'
-import { newStableId, pdfContextsOf, type QuickFollowUpMetadata } from '../engine/types'
+import { isCompletedAssistantMessage, isStableBranchPoint, newStableId, pdfContextsOf, type QuickFollowUpMetadata } from '../engine/types'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
 import { IconPhoto16, IconDocument16 } from './composer-icons'
 import { setComposerTriggers, triggerComposerMaterials } from '../engine/composer-triggers'
@@ -135,7 +135,7 @@ export function Conversation() {
     }).catch(() => { if (!cancelled) setQuickFollowUps([]) })
     return () => { cancelled = true }
   }, [promptManagerOpen])
-  const latestCompletedAssistant = [...messages].reverse().find((message) => message.role === 'assistant' && !!message.content && !(busy && message.id === lastMsg?.id))
+  const latestCompletedAssistant = [...messages].reverse().find((message) => isCompletedAssistantMessage(message, { streaming: busy && message.id === lastMsg?.id }))
   const sendQuickFollowUp = async (item: QuickFollowUpPrompt) => {
     if (!session || !activeThread || !latestCompletedAssistant || busy || quickSendingId) return
     const quickFollowUp: QuickFollowUpMetadata = { promptId: item.id, labelSnapshot: item.label, promptSnapshot: item.userPrompt }
@@ -261,7 +261,7 @@ function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu,
     )
   }
   const isStreaming = m.id === streamingId
-  const stable = !isStreaming && m.content
+  const stable = isStableBranchPoint(m, { streaming: isStreaming })
   return (
     <div className={css.msg + ' ' + css.msgAssistant} data-message-id={m.id}>
       {isStreaming ? (

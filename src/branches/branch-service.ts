@@ -1,7 +1,7 @@
 import { newStableId, type Conversation, type Message, type StableId, type DraftDisposition } from '../engine/types'
 import { getConversation } from '../storage/storage'
 import { idbRunTxn } from '../storage/idb'
-import { canonicalForkOwner, descendantBranchIds } from './branch-path'
+import { canForkFromMessage, canonicalForkOwner, descendantBranchIds } from './branch-path'
 import { getBranch, saveBranchAndActive, listBranchesByConversation, getActiveBranch, setActiveBranch, deleteBranches } from './branch-store'
 import { branchDraftSettingKey, deleteBranchDraft, clearBranchDraftMemory } from '../engine/draft-store'
 import type { ConversationBranch } from './branch-types'
@@ -22,6 +22,7 @@ export async function createBranchFromMessage(conversationId: StableId, forkMess
   // The fork message must exist somewhere in this conversation's graph.
   const exists = conversation.messages.some((m) => m.id === forkMessageId) || branches.some((b) => b.messages.some((m) => m.id === forkMessageId))
   if (!exists) throw new BranchError('fork-message-not-found', '分支点消息不存在')
+  if (!canForkFromMessage(conversation, branches, forkMessageId)) throw new BranchError('fork-message-not-stable', '只能从已完成消息创建分支')
   const ownerBranchId = canonicalForkOwner(conversation, branches, forkMessageId)
   const now = Date.now()
   const branch: ConversationBranch = {

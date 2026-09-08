@@ -93,6 +93,29 @@ export type Message = {
   quickFollowUp?: QuickFollowUpMetadata
 }
 
+export type MessageStateContext = { streaming?: boolean }
+
+/** True for an assistant generation that has reached a terminal failure/abort state. */
+export function isTerminalAssistantMessage(message: Pick<Message, 'role' | 'status'>): boolean {
+  return message.role === 'assistant' && (message.status === 'failed' || message.status === 'aborted')
+}
+
+/** True only for a non-streaming assistant with content and no terminal state. */
+export function isCompletedAssistantMessage(message: Pick<Message, 'role' | 'content' | 'status'>, context: MessageStateContext = {}): boolean {
+  return message.role === 'assistant' && !context.streaming && message.status === undefined && message.content.length > 0
+}
+
+/** The one shared rule for messages that may be used as a stable source point. */
+export function isStableBranchPoint(message: Pick<Message, 'role' | 'content' | 'status'>, context: MessageStateContext = {}): boolean {
+  if (message.role === 'user') return message.content.length > 0
+  return isCompletedAssistantMessage(message, context)
+}
+
+/** Artifact creation follows the same stable-source rule as branching. */
+export function canCreateArtifactFromMessage(message: Pick<Message, 'role' | 'content' | 'status'>, context: MessageStateContext = {}): boolean {
+  return isStableBranchPoint(message, context)
+}
+
 /** Read provenance from both the canonical and v1.3.0 legacy message shapes. */
 export function pdfContextsOf(message: Pick<Message, 'pdfContexts' | 'pdfContext'>): PdfContext[] {
   if (Array.isArray(message.pdfContexts) && message.pdfContexts.length > 0) return message.pdfContexts

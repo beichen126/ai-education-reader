@@ -1,4 +1,4 @@
-import { newStableId, type Message, type StableId } from '../engine/types'
+import { canCreateArtifactFromMessage, newStableId, type Message, type StableId } from '../engine/types'
 import { getConversation } from '../storage/storage'
 import { getAttachment } from '../engine/attachment-service'
 import { buildEffectivePathThrough, resolveBranchLineage } from '../branches/branch-path'
@@ -26,6 +26,8 @@ export async function buildSourceSnapshot(
   const branches = await listBranchesByConversation(conversationId)
   const eff = buildEffectivePathThrough(conversation, branches, { branchId }, throughMessageId)
   if (eff.length === 0) throw new ArtifactError('source-point-missing', '未在所选分支中找到该截止消息')
+  const sourceMessage = eff[eff.length - 1]
+  if (!canCreateArtifactFromMessage(sourceMessage)) throw new ArtifactError('source-message-not-stable', '只能从已完成消息创建学习成果')
   const messages: ArtifactSourceSnapshot['messages'] = eff.map((m) => ({ role: m.role, text: m.content, imageIds: m.images }))
   const provenance: SourceCitation[] = []
   for (const m of eff) {
