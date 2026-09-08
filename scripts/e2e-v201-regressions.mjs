@@ -132,7 +132,7 @@ if (shouldRun(scenario)) {
 
 scenario = 'V200-FCR-07'
 if (shouldRun(scenario)) {
-  const rows = Array.from({ length: 4 }, (_, index) => ({
+  const rows = Array.from({ length: 7 }, (_, index) => ({
     id: 'red-quick-' + (index + 1),
     kind: 'quick-follow-up',
     name: 'Q' + (index + 1),
@@ -149,10 +149,16 @@ if (shouldRun(scenario)) {
   }))
   const { context, page } = await openScenario('v201-overflow', [msg('overflow-u1', 'user', '问题'), msg('overflow-a1', 'assistant', '回答')])
   await seedQuickPrompts(page, rows)
-  assert(await page.locator('[data-testid="quick-follow-up-send"]').count() === 3, 'V200-FCR-07 four quick follow-ups keep only three visible actions')
+  assert(await page.locator('[data-testid="quick-follow-up-send"]').count() === 3, 'V200-FCR-07 seven quick follow-ups keep only three visible actions')
   await page.locator('[data-testid="quick-follow-up-more"]').click()
   const overflowLabels = await page.locator('[data-testid="quick-follow-up-more-list"] [data-testid="quick-follow-up-send"]').evaluateAll((buttons) => buttons.map((button) => button.textContent?.trim()))
-  assert(overflowLabels.join('|') === 'Q4', 'V200-FCR-07 More contains only the overflow item Q4')
+  assert(overflowLabels.join('|') === 'Q4|Q5|Q6|Q7', 'V200-FCR-07 More contains only ordered overflow items Q4-Q7')
+  await page.keyboard.press('Escape')
+  assert(await page.locator('[data-testid="quick-follow-up-more-list"]').count() === 0, 'V200-FCR-07 Escape closes More')
+  assert(await page.locator('[data-testid="quick-follow-up-more"]').evaluate((element) => element === document.activeElement), 'V200-FCR-07 closing More restores focus to its opener')
+  await page.locator('[data-testid="quick-follow-up-more"]').click()
+  await page.locator('[data-testid="conversation"]').click({ position: { x: 8, y: 8 } })
+  assert(await page.locator('[data-testid="quick-follow-up-more-list"]').count() === 0, 'V200-FCR-07 outside click closes More')
   await context.close()
 }
 

@@ -284,21 +284,46 @@ function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu,
 
 function QuickFollowUpBar({ items, disabled, sendingId, onSend, onInspect, onConfigure }: { items: QuickFollowUpPrompt[]; disabled: boolean; sendingId: string | null; onSend: (item: QuickFollowUpPrompt) => void; onInspect: (metadata: QuickFollowUpMetadata) => void; onConfigure: () => void }) {
   const [moreOpen, setMoreOpen] = useState(false)
+  const moreButtonRef = useRef<HTMLButtonElement | null>(null)
+  const moreListRef = useRef<HTMLDivElement | null>(null)
+  const closeMore = () => {
+    setMoreOpen(false)
+    window.requestAnimationFrame(() => moreButtonRef.current?.focus())
+  }
+  useEffect(() => {
+    if (!moreOpen) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      closeMore()
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target
+      if (target instanceof Node && !moreListRef.current?.contains(target) && !moreButtonRef.current?.contains(target)) closeMore()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => {
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('pointerdown', onPointerDown)
+    }
+  }, [moreOpen])
   if (items.length === 0) {
     return <div className={css.quickFollowUpBar} data-testid="quick-follow-up-bar"><button type="button" className={css.quickFollowUpConfigure} data-testid="quick-follow-up-configure" onClick={onConfigure}>＋ 设置快捷追问</button></div>
   }
   const visible = items.slice(0, 3)
+  const overflow = items.slice(3)
   const inspect = (item: QuickFollowUpPrompt) => onInspect({ promptId: item.id, labelSnapshot: item.label, promptSnapshot: item.userPrompt })
-  const action = (item: QuickFollowUpPrompt) => { setMoreOpen(false); onSend(item) }
+  const action = (item: QuickFollowUpPrompt) => { closeMore(); onSend(item) }
   return (
     <div className={css.quickFollowUpBar} data-testid="quick-follow-up-bar">
       <span className={css.quickFollowUpTitle}>继续追问</span>
       <div className={css.quickFollowUpItems}>
         {visible.map((item) => <QuickFollowUpAction key={item.id} item={item} disabled={disabled} sending={sendingId === item.id} onSend={() => action(item)} onInspect={() => inspect(item)} />)}
-        {items.length > 3 && <button type="button" className={css.quickFollowUpMore} data-testid="quick-follow-up-more" disabled={disabled} aria-expanded={moreOpen} onClick={() => setMoreOpen(v => !v)}>更多</button>}
+        {overflow.length > 0 && <button ref={moreButtonRef} type="button" className={css.quickFollowUpMore} data-testid="quick-follow-up-more" disabled={disabled} aria-expanded={moreOpen} onClick={() => setMoreOpen(v => !v)}>更多</button>}
       </div>
-      {moreOpen && <div className={css.quickFollowUpMoreList} data-testid="quick-follow-up-more-list">
-        {items.map((item) => <QuickFollowUpAction key={item.id} item={item} disabled={disabled} sending={sendingId === item.id} onSend={() => action(item)} onInspect={() => inspect(item)} />)}
+      {moreOpen && <div ref={moreListRef} className={css.quickFollowUpMoreList} data-testid="quick-follow-up-more-list">
+        {overflow.map((item) => <QuickFollowUpAction key={item.id} item={item} disabled={disabled} sending={sendingId === item.id} onSend={() => action(item)} onInspect={() => inspect(item)} />)}
       </div>}
     </div>
   )
