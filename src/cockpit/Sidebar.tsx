@@ -40,6 +40,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label="新建会话" title="新建会话" onClick={() => sessionsActions.newChat()}><IconNewChatOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-images" aria-label="图片资料" title="图片资料" onClick={() => galleryActions.open(currentConv?.id, 0)}><IconPhoto16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-files" aria-label="本地文件" title="本地文件" onClick={() => documentUiActions.openLibrary()}><IconFolderOpenOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-prompts" aria-label="提示词" title="提示词" onClick={() => uiActions.openPromptManager()}><IconListPenOutline16 /></button>
         <div className={css.railSpacer} />
         <button type="button" className={css.railBtn} data-testid="rail-fullscreen" aria-label={fsTitle} title={fsTitle} onClick={toggle}><IconFullscreenOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-settings" aria-label="设置" title="设置" onClick={uiActions.openSettings}><IconSettingsOutline16 /></button>
