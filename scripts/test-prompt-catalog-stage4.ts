@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto'
-import { idbClearAll } from '../src/storage/idb.ts'
+import { idbClearAll, idbGetAll } from '../src/storage/idb.ts'
+import { parseAndValidate, restoreBackup } from '../src/export/backup-import.ts'
 import { listEffectivePromptDefinitions } from '../src/prompts/prompt-resolution.ts'
 import { listPromptCatalog, savePromptDefinition } from '../src/prompts/prompt-service.ts'
 import type { ArtifactPrompt } from '../src/prompts/prompt-types.ts'
@@ -38,6 +39,34 @@ assert(protocolCatalog.length > 0 && protocolCatalog.every((item) => item.kind =
 
 const effective = await listEffectivePromptDefinitions()
 assert(effective.some((item) => item.id === legacyCustom.id) && effective.some((item) => item.kind === 'protocol'), 'internal effective resolution still retains legacy and protocol definitions')
+
+const oldArtifactDefinitions = (['note', 'quiz', 'summary', 'study-guide', 'custom'] as const).map((artifactKind, index) => ({
+  id: 'stage4-backup-' + artifactKind,
+  kind: 'artifact' as const,
+  artifactKind,
+  name: '旧版 ' + artifactKind,
+  description: 'legacy backup fixture',
+  source: 'custom' as const,
+  enabled: true,
+  createdAt: index + 1,
+  updatedAt: index + 1,
+  revision: 1,
+  userPrompt: '旧版模板 ' + artifactKind,
+}))
+const oldBackup = {
+  format: 'ai-education-reader-backup', version: 6, exportedAt: 1,
+  settings: { apiBaseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', customSystemPrompt: '', customSystemPromptEnabled: false },
+  conversations: [], annotations: [], attachments: [], documents: [], drafts: [], appearance: 'system',
+  branches: [], branchDrafts: [], artifacts: [], activeBranches: [], documentNotes: [],
+  prompts: oldArtifactDefinitions,
+  promptPreferences: { version: 1, defaultConversationModeId: 'builtin-conversation-default', hiddenBuiltinPromptIds: [], activeProtocolOverrideByDomain: {} },
+}
+const parsedOldBackup = parseAndValidate(oldBackup)
+assert(parsedOldBackup.version === 6 && parsedOldBackup.prompts.length === 5, 'legacy five artifact prompt definitions pass Backup validation')
+await idbClearAll()
+await restoreBackup(parsedOldBackup)
+const restoredLegacyDefinitions = await idbGetAll('prompts')
+assert(restoredLegacyDefinitions.length === 5 && restoredLegacyDefinitions.every((item: any) => ['note', 'quiz', 'summary', 'study-guide', 'custom'].includes(item.artifactKind)), 'legacy five artifact prompt definitions restore without loss')
 
 console.log(`RESULT pass=${pass} fail=${fail}`)
 process.exit(fail === 0 ? 0 : 1)

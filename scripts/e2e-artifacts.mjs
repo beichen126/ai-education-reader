@@ -14,6 +14,23 @@ const conv = { id: 'art', title: '成果对话', createdAt: Date.now(), updatedA
 ] }
 await seedAndBoot(page, { convs: [conv], settings: { apiKey: 'sk-test', model: 'deepseek-chat', apiBaseUrl: 'https://api.deepseek.com', lastConversationId: 'art' } })
 
+// Legacy summary/study-guide/custom artifacts stay readable and are grouped under
+// the history-only library filter; they are never presented as new creation types.
+await page.evaluate(() => new Promise((resolve, reject) => {
+  const request = indexedDB.open('ai-education-reader')
+  request.onerror = () => reject(request.error)
+  request.onsuccess = () => {
+    const db = request.result
+    const tx = db.transaction('artifacts', 'readwrite')
+    const source = { conversationId: 'art', throughMessageId: 'A1', snapshot: { conversationId: 'art', throughMessageId: 'A1', createdAt: 1, messages: [{ role: 'user', text: '旧版来源', imageIds: [] }], provenance: [], sourceLabel: '会话', sourceDeleted: false } }
+    for (const [kind, title] of [['summary', '历史总结'], ['study-guide', '历史学习指南'], ['custom', '历史自定义']]) {
+      tx.objectStore('artifacts').put({ id: 'legacy-' + kind, kind, title, source, prompt: '旧版 ' + kind + ' 提示词', createdAt: 1, updatedAt: 1, status: 'ready', content: '# 旧版 ' + title + '\n\n兼容内容。' })
+    }
+    tx.oncomplete = () => { db.close(); resolve(true) }
+    tx.onerror = () => reject(tx.error)
+  }
+}))
+
 // ---- Note from A1 (index 0 assistant): markdown -> REAL rendered preview (A7) ----
 const NOTE_MD = '# 标题一\n\n- 要点甲\n- **要点乙**\n\n> 引用一\n\n$$E = mc^2$$\n'
 await installMockModel(page, [NOTE_MD])
@@ -197,6 +214,17 @@ if (delBtns.length > 0) { await delBtns[0].click(); await page.waitForTimeout(50
 await page.locator('button:has-text("全部")').first().click()
 await page.locator('text=我的笔记标题').first().waitFor({ state: 'visible', timeout: 8000 })
 assert(await page.locator('text=我的笔记标题').count() >= 1, 'Artifact Library still shows the Note after deleting a card')
+
+await page.locator('button:has-text("历史类型")').click()
+await page.locator('div[role="button"]:has-text("历史自定义")').first().waitFor({ state: 'visible', timeout: 8000 })
+assert(await page.locator('div[role="button"]:has-text("历史总结")').count() === 1 && await page.locator('div[role="button"]:has-text("历史学习指南")').count() === 1 && await page.locator('div[role="button"]:has-text("历史自定义")').count() === 1, 'legacy summary/study-guide/custom artifacts remain in the history library filter')
+await page.locator('div[role="button"]:has-text("历史自定义")').first().click()
+await page.locator('h1:has-text("旧版 历史自定义")').waitFor({ state: 'visible', timeout: 8000 })
+assert(await page.locator('span[class*="cardKind"]:has-text("历史类型")').count() >= 1 && await page.locator('h1:has-text("旧版 历史自定义")').count() >= 1, 'legacy custom artifact uses Markdown rendering and is marked history-only')
+const legacyExport = page.waitForEvent('download')
+await page.locator('button:has-text("导出 Markdown")').first().click()
+const legacyDownload = await legacyExport
+assert(legacyDownload.suggestedFilename().endsWith('.md'), 'legacy custom artifact remains exportable as Markdown')
 
 await browser.close()
 const pageErrors = errors.length ? errors.join(' | ') : '(none)'
