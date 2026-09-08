@@ -42,7 +42,9 @@ function normalizedName(name: string): string {
 export function getPromptNameWarnings(candidate: PromptDefinition, catalog: readonly PromptDefinition[]): PromptNameWarning[] {
   const name = normalizedName(candidate.name)
   if (!name) return []
-  const conflictingIds = catalog.filter((item) => item.id !== candidate.id && normalizedName(item.name) === name).map((item) => item.id)
+  const conflictingIds = catalog.filter((item) => item.id !== candidate.id
+    && normalizedName(item.name) === name
+    && !(candidate.kind === 'conversation-mode' && candidate.name === '默认' && item.id === BUILTIN_PROMPT_IDS.conversationDefault)).map((item) => item.id)
   return conflictingIds.length === 0 ? [] : [{ code: 'duplicate-name', name: candidate.name, conflictingIds, message: '已有同名提示词，但仍允许保存。' }]
 }
 
@@ -90,7 +92,7 @@ function sortCatalog(items: PromptDefinition[], preference: 'updatedAt-desc' | '
 /** Merge source-code built-ins with durable custom/experimental definitions. */
 export async function listPromptCatalog(kind?: PromptKind): Promise<PromptDefinition[]> {
   const [preferences, all] = await Promise.all([getPromptPreferences(), listEffectivePromptDefinitions()])
-  const selectedDefault = all.find((definition) => definition.kind === 'conversation-mode' && definition.id === preferences.defaultConversationModeId)
+  const selectedDefault = all.find((definition) => definition.kind === 'conversation-mode' && definition.id === preferences.defaultConversationModeId && definition.enabled)
     ?? all.find((definition) => definition.id === BUILTIN_PROMPT_IDS.conversationDefault)
   const visible = all.filter((definition) => definition.kind !== 'conversation-mode' || definition.id === selectedDefault?.id)
   return sortCatalog(kind ? visible.filter((definition) => definition.kind === kind) : visible, preferences.sortPreference ?? 'updatedAt-desc')
@@ -116,7 +118,7 @@ export async function savePromptDefinition(input: PromptDefinition, dependencies
     updatedAt: d.now(),
     revision: nextPromptRevision(previous, candidate),
   }))
-  const catalog = await listPromptCatalog()
+  const catalog = await listEffectivePromptDefinitions()
   return { definition: saved, warnings: getPromptNameWarnings(saved, catalog) }
 }
 
