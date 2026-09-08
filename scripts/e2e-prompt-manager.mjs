@@ -39,22 +39,22 @@ await manager.waitFor({ state: 'visible', timeout: 10000 })
 assert(await manager.getAttribute('aria-label') === '提示词管理', 'Prompt Manager exposes a named dialog')
 assert(await page.locator('[data-testid="prompt-category-all"]').count() === 1, 'category: all is available')
 assert(await page.locator('[data-testid="prompt-category-conversation-mode"]').count() === 1, 'category: conversation modes is available')
-assert(await page.locator('[data-testid="prompt-row"]').count() >= 12, 'catalog loads built-in and migrated prompt definitions')
+assert(await page.locator('[data-testid="prompt-row"]').count() >= 9, 'catalog loads the visible default, artifact and protocol definitions')
 
 let externalRequests = 0
 const requestListener = (request) => { if (!request.url().startsWith('http://127.0.0.1')) externalRequests++ }
 page.on('request', requestListener)
 
-await page.locator('[data-testid="prompt-search"]').fill('苏格拉底')
+await page.locator('[data-testid="prompt-category-conversation-mode"]').click()
 await page.locator('[data-testid="prompt-row"]').first().click()
-assert(await page.locator('[data-source="builtin"]').count() > 0, 'search finds built-in by name')
-assert(await page.locator('[data-testid="prompt-editor-content"]').inputValue().then((value) => value.includes('苏格拉底')), 'built-in content is inspectable')
-await page.locator('[data-testid="prompt-copy"]').click()
-await page.locator('[role="status"]').waitFor({ state: 'visible', timeout: 10000 })
-assert(await page.locator('[data-testid="prompt-editor-name"]').inputValue().then((value) => value.includes('副本')), 'copy built-in creates a custom definition')
-assert(await page.locator('[data-testid="prompt-save"]').count() === 1, 'copied built-in opens an editable custom form')
+assert(await page.locator('[data-testid="prompt-row"]').count() === 1 && await page.locator('[data-testid="prompt-row"]').innerText().then((value) => value.includes('默认')), 'conversation mode catalog exposes only 默认')
+assert(await page.locator('[data-testid="prompt-row"]').innerText().then((value) => !value.includes('苏格拉底') && !value.includes('深入讲解') && !value.includes('考试辅导')), 'deprecated built-in modes are not visible in the main catalog')
+await page.locator('[data-testid="prompt-editor-content"]').fill('默认提示词可编辑且只保留一份。')
+await page.locator('[data-testid="prompt-save"]').click()
+await page.getByText('提示词已保存。', { exact: true }).waitFor({ state: 'visible', timeout: 10000 })
+assert(await page.locator('[data-testid="prompt-editor-content"]').inputValue() === '默认提示词可编辑且只保留一份。', 'canonical default content is editable')
 
-const copiedName = await page.locator('[data-testid="prompt-editor-name"]').inputValue()
+const copiedName = '默认'
 await page.locator('[data-testid="prompt-manager-close"]').click()
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('[data-testid="composer-materials-input"]').waitFor({ state: 'attached', timeout: 25000 })
@@ -63,25 +63,29 @@ await manager.waitFor({ state: 'visible', timeout: 10000 })
 // Prompt catalog hydration is IndexedDB-backed; wait for the real rows before
 // asserting reload/search rather than racing the manager's loading shell.
 await page.locator('[data-testid="prompt-row"]').first().waitFor({ state: 'visible', timeout: 10000 })
-await page.locator('[data-testid="prompt-search"]').fill(copiedName)
-assert(await page.locator('[data-testid="prompt-row"]').count() === 1, 'custom copy survives reload and is searchable')
+await page.locator('[data-testid="prompt-category-conversation-mode"]').click()
+await page.locator('[data-testid="prompt-row"]').first().click()
+assert(await page.locator('[data-testid="prompt-row"]').count() === 1 && await page.locator('[data-testid="prompt-row"]').innerText().then((value) => value.includes(copiedName)), 'canonical default survives reload without restoring deprecated modes')
 
 await page.locator('[data-testid="prompt-search"]').fill('')
 await page.locator('[data-testid="prompt-category-artifact"]').click()
 assert(await page.locator('[data-testid="prompt-row"]').count() >= 5, 'category filter projects artifact prompts')
-await page.locator('[data-testid="prompt-category-all"]').click()
 await page.locator('[data-testid="prompt-new"]').click()
-await page.locator('[data-testid="prompt-editor-name"]').fill('阶段九自定义模式')
+await page.locator('[data-testid="prompt-editor-name"]').fill('阶段九自定义成果')
 await page.locator('[data-testid="prompt-editor-description"]').fill('用于验证本地 CRUD')
 await page.locator('[data-testid="prompt-editor-content"]').fill('只输出可验证的学习步骤。')
 await page.locator('[data-testid="prompt-save"]').click()
 await page.getByText('提示词已创建。', { exact: true }).waitFor({ state: 'visible', timeout: 10000 })
-assert(await page.locator('[data-testid="prompt-editor-name"]').inputValue() === '阶段九自定义模式', 'custom create persists the edited name')
+assert(await page.locator('[data-testid="prompt-editor-name"]').inputValue() === '阶段九自定义成果', 'custom artifact create persists the edited name')
 
 await page.locator('[data-testid="prompt-editor-content"]').fill('保存后的新内容。')
 await page.locator('[data-testid="prompt-save"]').click()
 await page.getByText('提示词已保存。', { exact: true }).waitFor({ state: 'visible', timeout: 10000 })
-assert(await page.locator('[data-testid="prompt-editor-content"]').inputValue() === '保存后的新内容。', 'custom edit reloads the committed content')
+assert(await page.locator('[data-testid="prompt-editor-content"]').inputValue() === '保存后的新内容。', 'custom artifact edit reloads the committed content')
+
+await page.locator('[data-testid="prompt-search"]').fill('')
+await page.locator('[data-testid="prompt-category-all"]').click()
+assert(await page.locator('[data-testid="prompt-new"]').isDisabled() && await page.locator('[data-testid="conversation-mode-new-hint"]').count() === 1, 'all category cannot create a second conversation mode')
 
 await page.locator('[data-testid="prompt-search"]').fill('')
 
@@ -103,11 +107,11 @@ assert(await page.locator('[role="alert"]').innerText().then((value) => value.in
 assert(await page.getByText('提示词已保存。', { exact: true }).count() === 0, 'store write failure never claims saved')
 await page.evaluate(() => { delete (window).__failPromptWrites })
 
-const customRow = page.locator('[data-testid="prompt-row"]').filter({ hasText: '阶段九自定义模式' })
-assert(await customRow.count() === 1, 'failed save keeps the existing custom row')
+const customRow = page.locator('[data-testid="prompt-row"]').filter({ hasText: '阶段九自定义成果' })
+assert(await customRow.count() === 1, 'failed save keeps the existing custom artifact row')
 await page.locator('[data-testid="prompt-delete"]').click()
-await waitFor(() => page.locator('[data-testid="prompt-row"]').filter({ hasText: '阶段九自定义模式' }).count() === 0, 10000)
-assert(await page.locator('[data-testid="prompt-row"]').filter({ hasText: '阶段九自定义模式' }).count() === 0, 'custom delete removes only the selected definition')
+await waitFor(() => page.locator('[data-testid="prompt-row"]').filter({ hasText: '阶段九自定义成果' }).count() === 0, 10000)
+assert(await page.locator('[data-testid="prompt-row"]').filter({ hasText: '阶段九自定义成果' }).count() === 0, 'custom delete removes only the selected definition')
 
 assert(externalRequests === 0, 'opening and using Prompt Manager makes no network request')
 page.off('request', requestListener)

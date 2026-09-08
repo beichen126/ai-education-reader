@@ -78,24 +78,24 @@ assert(conversation.messages.length === 2, 'root acceptance stores user plus str
 assert(conversation.promptTransitions?.length === 1 && conversation.promptTransitions[0].snapshot.content === 'A prompt', 'root acceptance stores the mode transition with the user message')
 assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('A prompt'), 'request uses the accepted frozen mode snapshot')
 
-// An explicit mode switch creates one new boundary; it does not rewrite the previous snapshot.
+// A deprecated route-local mode switch remains a historical boundary, but a
+// new send must resolve the current canonical default instead of inheriting it.
 await switchConversationMode({ conversationId, modeId: modeB.id })
 await sessionsActions.reload(conversationId)
 requests = []
-assert(await sessionsActions.sendUserMessage(conversationId, 'second', []), 'mode B send accepts')
+assert(await sessionsActions.sendUserMessage(conversationId, 'second', []), 'send after a deprecated mode boundary accepts')
 conversation = await waitForSettled('root second send', () => getConversation(conversationId) as Promise<Conversation | undefined>, (value, status) => !!value && value.messages.length === 4 && (status === 'idle' || status === 'error')) as Conversation
-assert(conversation.promptTransitions?.map((item) => item.snapshot.content).join('|') === 'A prompt|B prompt', 'A to B creates a second ordered transition')
-assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('B prompt'), 'mode B request uses B without changing A history')
+assert(conversation.promptTransitions?.map((item) => item.snapshot.content).join('|') === 'A prompt|A prompt', 'new send replaces an unconsumed deprecated route boundary with the current default')
+assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('A prompt') && !String(requests[0].messages[0].content).includes('B prompt'), 'new send ignores the deprecated route mode and uses the default')
 
-// An active route snapshot outranks the global default preference on the next send.
-// This guards the UI mode switch contract: changing the default preference must not
-// replace the route's already-confirmed mode at the same message boundary.
+// Changing the default preference does not rewrite the historical timeline, but
+// new sends still resolve the current default.
 await setDefaultConversationModeId(modeA.id)
 requests = []
 assert(await sessionsActions.sendUserMessage(conversationId, 'third', []), 'route snapshot send accepts despite global default reverting')
 conversation = await waitForSettled('route snapshot send', () => getConversation(conversationId) as Promise<Conversation | undefined>, (value, status) => !!value && value.messages.length === 6 && (status === 'idle' || status === 'error')) as Conversation
-assert(conversation.promptTransitions?.map((item) => item.snapshot.content).join('|') === 'A prompt|B prompt', 'route snapshot is not replaced by the global default')
-assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('B prompt'), 'route snapshot request keeps the confirmed mode')
+assert(conversation.promptTransitions?.map((item) => item.snapshot.content).join('|') === 'A prompt|A prompt', 'new default sends do not add duplicate transitions at the same message boundary')
+assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('A prompt'), 'current default remains the active request mode')
 
 // Profile edits after acceptance cannot change the already prepared logical request.
 const before = conversation.messages
@@ -107,13 +107,14 @@ const frozen = await prepareAcceptedSendContext({
   localTransitions: conversation.promptTransitions ?? [],
   acceptedMessageId: 'frozen-user',
   currentModeSnapshot: snapshot(modeB.id, '模式 B', 'B prompt', 1),
-  now: 10,
+  now: Date.now() + 1000,
 })
 await savePromptRecord(definition(modeB.id, '模式 B', 'B prompt edited after send', 2))
 const frozenProjected = await projectLogicalPromptContext(frozen.context.logical, frozen.context.compilePolicy.systemMessagePolicy)
 assert(JSON.stringify(frozenProjected).includes('B prompt') && !JSON.stringify(frozenProjected).includes('edited after send'), 'profile revision after acceptance cannot alter the frozen request')
 
-// Branch send inherits root history but stores a branch-local mode transition only.
+// Branch send inherits root history, preserves a deprecated local boundary, and
+// then captures the canonical default for the new branch message.
 const forkMessageId = conversation.messages[conversation.messages.length - 1].id
 const branch = await createBranchFromMessage(conversationId, forkMessageId)
 await switchConversationMode({ conversationId, branchId: branch.id, modeId: modeC.id })
@@ -122,9 +123,9 @@ requests = []
 assert(await (await import('../src/engine/branch-thread.ts')).runBranchReply(conversationId, branch.id, 'branch', []), 'branch send accepts through the same semantic pipeline')
 const branchAfter = await waitForSettled('branch send', () => getBranch(branch.id) as Promise<ConversationBranch | undefined>, (value, status) => !!value && value.messages.length === 2 && (status === 'idle' || status === 'error')) as ConversationBranch
 const rootAfterBranch = await getConversation(conversationId) as Conversation
-assert(branchAfter.promptTransitions?.some((item) => item.snapshot.content === 'C prompt') === true, 'branch stores its local mode transition')
-assert(rootAfterBranch.promptTransitions?.map((item) => item.snapshot.content).join('|') === 'A prompt|B prompt', 'branch send does not mutate root timeline')
-assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('C prompt'), 'branch request uses inherited timeline plus local mode')
+assert(branchAfter.promptTransitions?.length === 1 && branchAfter.promptTransitions[0].snapshot.content === 'A prompt', 'branch replaces an unconsumed deprecated local mode with the canonical default')
+assert(rootAfterBranch.promptTransitions?.map((item) => item.snapshot.content).join('|') === 'A prompt|A prompt', 'branch send does not mutate root timeline')
+assert(requests[0]?.messages?.[0]?.role === 'system' && String(requests[0].messages[0].content).includes('A prompt') && !String(requests[0].messages[0].content).includes('C prompt'), 'branch request uses the canonical default instead of the deprecated local mode')
 assert(rootAfterBranch.messages.every((item) => item.content !== 'branch'), 'branch user message does not pollute root')
 
 // Invalid timeline is rejected before acceptance; no caller should commit its candidate.
@@ -205,7 +206,7 @@ const effectiveConversationModes = await listEffectivePromptDefinitions('convers
 const catalogConversationModes = await listPromptCatalog('conversation-mode')
 const pickerConversationModes = await listConversationModeDefinitions()
 assert(effectiveConversationModes.find((item) => item.id === BUILTIN_PROMPT_IDS.conversationSocratic)?.enabled === false, 'effective catalog projects hidden built-in to enabled=false')
-assert(catalogConversationModes.find((item) => item.id === BUILTIN_PROMPT_IDS.conversationSocratic)?.enabled === false && !pickerConversationModes.some((item) => item.id === BUILTIN_PROMPT_IDS.conversationSocratic), 'catalog, mode picker, and send resolver share hidden mode state')
+assert(catalogConversationModes.length === 1 && catalogConversationModes[0].id === BUILTIN_PROMPT_IDS.conversationDefault && !pickerConversationModes.some((item) => item.id === BUILTIN_PROMPT_IDS.conversationSocratic), 'visible catalog exposes only default while hidden deprecated mode stays unavailable to the picker')
 
 await setBuiltinPromptHidden(BUILTIN_PROMPT_IDS.conversationSocratic, false)
 const disabledMode = definition('disabled-mode', '禁用模式', 'should not send')

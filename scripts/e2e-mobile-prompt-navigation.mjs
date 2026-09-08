@@ -1,4 +1,4 @@
-// Stage 13 browser gate: mobile navigation, context/mode controls, inspectors,
+// Stage 3 browser gate: mobile navigation, static default context, inspectors,
 // quick chips, keyboard CRUD, accessible names, focus restoration, and overflow.
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot, installMockModel } from './e2e-fixture.mjs'
@@ -132,19 +132,19 @@ for (const size of [
     const detailBack = manager.locator('main[aria-label="提示词详情"] > button').first()
     await detailBack.click()
     await manager.getByRole('button', { name: '‹ 分类' }).click()
-    await manager.locator('[data-testid="prompt-category-conversation-mode"]').click()
+    await manager.locator('[data-testid="prompt-category-artifact"]').click()
     const newButton = manager.locator('[data-testid="prompt-new"]')
     await newButton.focus()
     await newButton.press('Enter')
-    await manager.locator('[data-testid="prompt-editor-name"]').fill('Stage 13 键盘模式')
+    await manager.locator('[data-testid="prompt-editor-name"]').fill('Stage 3 键盘成果')
     await manager.locator('[data-testid="prompt-editor-content"]').fill('键盘 CRUD 测试内容')
     const saveButton = manager.locator('[data-testid="prompt-save"]')
     await saveButton.focus()
     await saveButton.press('Enter')
     await manager.getByText('提示词已创建。', { exact: true }).waitFor({ state: 'visible', timeout: 10000 })
     await manager.locator('main[aria-label="提示词详情"] > button').first().click()
-    await manager.locator('[data-testid="prompt-search"]').fill('Stage 13 键盘模式')
-    const customRow = manager.locator('[data-testid="prompt-row"]').filter({ hasText: 'Stage 13 键盘模式' })
+    await manager.locator('[data-testid="prompt-search"]').fill('Stage 3 键盘成果')
+    const customRow = manager.locator('[data-testid="prompt-row"]').filter({ hasText: 'Stage 3 键盘成果' })
     await customRow.waitFor({ state: 'visible', timeout: 10000 })
     assert((await customRow.getAttribute('data-source')) === 'custom' && (await customRow.innerText()).includes('自定义'), 'keyboard-created prompt is visibly marked custom')
     await customRow.click()
@@ -168,7 +168,7 @@ for (const size of [
   await contextBar.waitFor({ state: 'visible', timeout: 10000 })
   assert(await contextBar.locator('[data-testid="conversation-context-row"]').count() === 2, size.width + 'px Context Bar keeps two semantic rows')
   const modeTrigger = page.locator('button[aria-label="切换对话模式"]')
-  assert(await modeTrigger.getAttribute('aria-haspopup') === 'menu' && await modeTrigger.getAttribute('aria-expanded') === 'false', size.width + 'px mode switch exposes menu button state')
+  assert(await modeTrigger.count() === 0 && await page.locator('[data-testid="active-conversation-mode"]').innerText() === '默认', size.width + 'px mobile context keeps only the static 默认 entry')
 
   const transitionButton = page.locator('[data-testid="mode-transition-divider"] button').first()
   await transitionButton.waitFor({ state: 'visible', timeout: 10000 })
@@ -180,15 +180,7 @@ for (const size of [
   await waitFor(() => transitionButton.evaluate((el) => el === document.activeElement), 5000)
   assert(await transitionButton.evaluate((el) => el === document.activeElement), size.width + 'px inspector Escape restores focus')
 
-  await modeTrigger.click()
-  const modeMenu = page.locator('[role="menu"][aria-label="模式"]')
-  const modeItems = modeMenu.locator('[role="menuitemradio"]:not([disabled])')
-  await modeItems.first().waitFor({ state: 'visible', timeout: 5000 })
-  const targetMode = modeMenu.locator('[role="menuitemradio"][aria-checked="false"]:not([disabled])').first()
-  const beforeDialogs = dialogs.length
-  await targetMode.click()
-  assert(await waitFor(() => dialogs.length > beforeDialogs && dialogs[dialogs.length - 1].includes('下一条消息'), 5000), size.width + 'px mode switch asks for confirmation before changing history')
-  await waitFor(() => modeMenu.count().then((count) => count === 0), 10000)
+  assert(await page.locator('[role="menu"][aria-label="模式"]').count() === 0, size.width + 'px has no empty mode menu')
 
   const quickBar = page.locator('[data-testid="quick-follow-up-bar"]')
   await quickBar.waitFor({ state: 'visible', timeout: 15000 })

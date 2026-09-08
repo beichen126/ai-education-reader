@@ -148,6 +148,7 @@
     "test:e2e-document-notes": "node scripts/e2e-document-notes.mjs",
     "test:e2e-mobile-history": "node scripts/e2e-mobile-history.mjs",
     "test:e2e-prompt-keyboard": "node scripts/e2e-prompt-keyboard.mjs",
+    "test:e2e-prompt-context": "node scripts/e2e-prompt-context.mjs",
     "test:e2e-prompt-manager": "node scripts/e2e-prompt-manager.mjs",
     "test:e2e-mobile-prompt-navigation": "node scripts/e2e-mobile-prompt-navigation.mjs",
     "test:e2e-conversation-modes": "node scripts/e2e-conversation-modes.mjs",
