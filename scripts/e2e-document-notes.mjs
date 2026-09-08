@@ -21,6 +21,8 @@ const closeAndReopenReader = async (expected, message) => {
   await page.locator('[data-testid^="doc-open-"]').first().click()
   await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
   await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+  await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'existing', null, { timeout: 10000 })
+  assert(await page.locator('[data-testid="reader-notes-toggle"]').textContent() === '查看笔记', 'Reader close/reopen: existing note is visible before opening the panel')
   if (await page.locator('[data-testid="reader-notes"] textarea').count() === 0) await page.locator('[data-testid="reader-notes-toggle"]').click()
   await page.locator('[data-testid="reader-notes"] textarea').waitFor({ state: 'visible', timeout: 10000 })
   await page.waitForFunction((value) => document.querySelector('[data-testid="reader-notes"] textarea')?.value === value, expected, { timeout: 10000 })
@@ -31,13 +33,31 @@ await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
 const openLibrary = () => openDocumentLibrary(page)
 await openLibrary()
+await page.evaluate(() => {
+  const w = window
+  w.__documentNoteReads = 0
+  if (w.__documentNoteGetPatched) return
+  const get = IDBObjectStore.prototype.get
+  IDBObjectStore.prototype.get = function (...args) {
+    if (this.name === 'documentNotes') w.__documentNoteReads++
+    return get.apply(this, args)
+  }
+  w.__documentNoteGetPatched = true
+})
 await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(PDF)
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
-assert(await page.locator('[data-testid="reader-notes-toggle"]').isVisible(), 'desktop: page note entry is directly available')
-await page.locator('[data-testid="reader-notes-toggle"]').click()
+const toggle = page.locator('[data-testid="reader-notes-toggle"]')
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'empty', null, { timeout: 10000 })
+assert(await toggle.isVisible() && await toggle.textContent() === '新建笔记', 'desktop: empty page exposes 新建笔记 directly')
+assert(await page.evaluate(() => window.__documentNoteReads === 1), 'preload: closed-state existence check performs one note read')
+await toggle.focus()
+await toggle.press('Enter')
 const note = page.locator('[data-testid="reader-notes"] textarea')
 await note.waitFor({ state: 'visible', timeout: 10000 })
+await page.waitForFunction(() => document.activeElement?.matches('[data-testid="reader-notes"] textarea'), null, { timeout: 10000 })
+assert(await page.evaluate(() => window.__documentNoteReads === 1), 'preload/editor: opening the panel reuses the resolved read')
+assert(await toggle.textContent() === '收起笔记', 'open state exposes 收起笔记')
 
 await page.evaluate(() => {
   const w = window
@@ -71,6 +91,7 @@ await note.fill('切页前的最新内容')
 await page.locator('[data-testid="reader-page-input"]').fill('2')
 await page.locator('[data-testid="reader-page-input"]').press('Enter')
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'open', null, { timeout: 10000 })
 await page.locator('[data-testid="reader-page-input"]').fill('1')
 await page.locator('[data-testid="reader-page-input"]').press('Enter')
 await note.waitFor({ state: 'visible', timeout: 10000 })
@@ -80,12 +101,37 @@ assert(await note.inputValue() === '切页前的最新内容', 'page change: lat
 // Closing the note panel immediately after an edit flushes the current value;
 // reopening the panel reads the committed value.
 await note.fill('收起前的最新内容')
-await page.locator('[data-testid="reader-notes-toggle"]').click()
+await toggle.focus()
+await toggle.press('Space')
 await page.locator('[data-testid="reader-notes"]').waitFor({ state: 'hidden' })
-await page.locator('[data-testid="reader-notes-toggle"]').click()
+assert(await toggle.textContent() === '查看笔记', 'close by keyboard: non-empty flush changes the closed action to 查看笔记')
+assert(await page.evaluate(() => document.activeElement?.getAttribute('data-testid') === 'reader-notes-toggle'), 'close by keyboard: focus returns to the stable toggle')
+await toggle.press('Enter')
 await page.locator('[data-testid="reader-notes"] textarea').waitFor({ state: 'visible' })
 await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes"] textarea')?.value === '收起前的最新内容', null, { timeout: 10000 })
 assert(await page.locator('[data-testid="reader-notes"] textarea').inputValue() === '收起前的最新内容', 'close/reopen: pending edit is flushed before reload')
+
+// Clearing a note persists deletion, so the closed action goes back to New.
+await note.fill('')
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-note-status"]')?.textContent === '已自动保存', null, { timeout: 10000 })
+await toggle.focus()
+await toggle.press('Space')
+await page.locator('[data-testid="reader-notes"]').waitFor({ state: 'hidden' })
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'empty', null, { timeout: 10000 })
+assert(await toggle.textContent() === '新建笔记', 'clear and successful delete: closed action returns to 新建笔记')
+
+// The same empty state must survive a page round-trip without leaking page 1.
+await page.locator('[data-testid="reader-page-input"]').fill('2')
+await page.locator('[data-testid="reader-page-input"]').press('Enter')
+await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'empty', null, { timeout: 10000 })
+assert(await toggle.textContent() === '新建笔记', 'page isolation: page 2 has no page 1 note label')
+await page.locator('[data-testid="reader-page-input"]').fill('1')
+await page.locator('[data-testid="reader-page-input"]').press('Enter')
+await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'empty', null, { timeout: 10000 })
+await toggle.click()
+await page.locator('[data-testid="reader-notes"] textarea').waitFor({ state: 'visible', timeout: 10000 })
 
 // Closing the whole Reader must flush the current page before the document is
 // reopened from the library (not merely unmounting the note panel).
@@ -131,6 +177,14 @@ if (await page.locator('[data-testid="reader-notes"] textarea').count() === 0) a
 await page.locator('[data-testid="reader-notes"] textarea').waitFor({ state: 'visible', timeout: 10000 })
 await page.waitForFunction((expected) => document.querySelector('[data-testid="reader-notes"] textarea')?.value === expected, failedNote, { timeout: 10000 })
 assert(await page.locator('[data-testid="reader-notes"] textarea').inputValue() === failedNote, 'save failure -> Reader close retry -> reopen persists the note')
+
+await page.setViewportSize({ width: 390, height: 844 })
+assert(await toggle.isVisible() && await toggle.textContent() === '收起笔记', 'mobile: open note action keeps its full visible label')
+await toggle.focus()
+await toggle.press('Space')
+await page.locator('[data-testid="reader-notes"]').waitFor({ state: 'hidden' })
+const mobileToggleBox = await toggle.boundingBox()
+assert(!!mobileToggleBox && mobileToggleBox.width > 0 && mobileToggleBox.height > 0 && await toggle.textContent() === '查看笔记', 'mobile: closed existing action remains visible and reachable')
 
 await browser.close()
 for (const line of results) console.log(line)

@@ -42,6 +42,7 @@ import type { MappedTocItem } from './toc-mapping'
 import type { LearningDocument, ChapterNode } from './document-types'
 import { findConversationsByDocumentPage, type PdfPageConversationHit } from '../pdf/pdf-page-conversations'
 import { flushNoteEditorSession, type NoteEditorSession } from './note-session'
+import { NoteAvailabilityGate, NoteReadCache, noteAvailabilityFrom, noteHasContent, noteKey, notePersistedState, type NoteAvailability } from './note-availability'
 import css from './document-reader.module.css'
 
 type TocTreeState = { expanded: ReadonlySet<string> }
@@ -71,7 +72,16 @@ export function DocumentReader() {
   const [noteLoading, setNoteLoading] = useState(false)
   const [noteSavedAt, setNoteSavedAt] = useState<number | null>(null)
   const [noteSaveError, setNoteSaveError] = useState(false)
+  const [noteLoadError, setNoteLoadError] = useState(false)
+  const [noteAvailability, setNoteAvailability] = useState<NoteAvailability>({ kind: 'loading', key: '' })
+  const [noteActionBusy, setNoteActionBusy] = useState(false)
   const noteSessionRef = useRef<NoteEditorSession | null>(null)
+  const noteCacheRef = useRef(new NoteReadCache(getDocumentNote))
+  const noteFlushBarrierRef = useRef<Promise<void>>(Promise.resolve())
+  const noteGenerationRef = useRef(new NoteAvailabilityGate())
+  const noteToggleRef = useRef<HTMLButtonElement | null>(null)
+  const noteInputRef = useRef<HTMLTextAreaElement | null>(null)
+  const currentNoteKey = docId && doc ? noteKey(docId, page) : null
   const [zoomBusy, setZoomBusy] = useState(false)
   // ---- Reader正文 display path (Agent C): direct visible canvas, no JPEG Blob on the
   //      main reading pipeline. The hook owns viewport-aware scaling, caching, prefetch,
@@ -149,19 +159,42 @@ export function DocumentReader() {
   }, [persist])
   const flushRef = useRef(flushProgress); flushRef.current = flushProgress
 
-  const flushNoteSession = useCallback((session: NoteEditorSession): Promise<void> => flushNoteEditorSession(session, saveDocumentNote, {
+  const writeNote = useCallback(async (targetDocId: string, targetPage: number, content: string) => {
+    const saved = await saveDocumentNote(targetDocId, targetPage, content)
+    noteCacheRef.current.remember(targetDocId, targetPage, saved)
+    return saved
+  }, [])
+
+  const trackNoteFlush = useCallback((flush: Promise<void>): Promise<void> => {
+    const barrier = noteFlushBarrierRef.current.catch(() => undefined).then(() => flush).catch(() => undefined)
+    noteFlushBarrierRef.current = barrier
+    return flush
+  }, [])
+
+  const flushNoteSession = useCallback((session: NoteEditorSession): Promise<void> => flushNoteEditorSession(session, writeNote, {
     onSaved: (savedSession, _attemptedContent, currentContent) => {
       if (noteSessionRef.current !== savedSession) return
       setNoteSaveError(false)
-      if (currentContent) setNoteSavedAt(Date.now())
+      setNoteLoadError(false)
+      setNoteSavedAt(Date.now())
+      if (currentContent) {
+        const kind = noteHasContent(savedSession.text) ? 'existing' : 'empty'
+        setNoteAvailability({ kind, key: savedSession.key })
+      }
     },
     onError: (failedSession) => {
       if (noteSessionRef.current === failedSession) {
         setNoteSaveError(true)
         setNoteSavedAt(null)
+        setNoteAvailability(prev => {
+          const persisted = prev.key === failedSession.key
+            ? (prev.kind === 'existing' || (prev.kind === 'error' && prev.persisted === 'existing') ? 'existing' : 'empty')
+            : notePersistedState(noteCacheRef.current.peek(failedSession.documentId, failedSession.pageNumber))
+          return { kind: 'error', key: failedSession.key, persisted }
+        })
       }
     },
-  }), [])
+  }), [writeNote])
 
   const queueNoteSave = useCallback((session: NoteEditorSession) => {
     if (session.timer !== null) window.clearTimeout(session.timer)
@@ -174,10 +207,16 @@ export function DocumentReader() {
   // Register a pending note write before a Reader transition commits. React's
   // passive effect cleanup still flushes as a backstop, and same-snapshot
   // flushes are deduplicated by note-session.
-  const flushCurrentNote = useCallback(() => {
+  const flushCurrentNote = useCallback((): Promise<void> => {
     const session = noteSessionRef.current
-    if (session) void flushNoteSession(session).catch(() => {})
-  }, [flushNoteSession])
+    if (!session) return Promise.resolve()
+    const flush = trackNoteFlush(flushNoteSession(session))
+    // Existing navigation/close call sites are intentionally fire-and-forget;
+    // attaching this observer keeps a failed lifecycle flush observable to the
+    // session without creating an unhandled rejection. The toggle awaits it.
+    void flush.catch(() => {})
+    return flush
+  }, [flushNoteSession, trackNoteFlush])
 
   // ---- load document now OWNS the whole lifecycle for one docId ----
   useEffect(() => {
@@ -195,6 +234,8 @@ export function DocumentReader() {
       setZoomBusy(false)
       setDoc(null); setPageCount(0); setPage(1); setPageInput('')
       setPageError(null); setLoadError(null)
+      setNotesOpen(false); setNoteText(''); setNoteLoading(false); setNoteSavedAt(null); setNoteSaveError(false); setNoteLoadError(false)
+      setNoteAvailability({ kind: 'loading', key: '' })
       setTocState({ expanded: new Set() }); setTocOpen(false)
       setNativeDraft(null); setBuilderHint(null); setHasNativeOutline(false); setNativeOutlineStatus('unknown')
       setRestoreConfirmOpen(false); setRestoreMsg(null)
@@ -272,38 +313,76 @@ export function DocumentReader() {
     }
   }, [docId, readerRequestId, persist])
 
-  // Page notes are keyed by document + page. Loading is intentionally independent
-  // from the PDF render so a slow note read never blocks page navigation.
+  // Page-note availability is preloaded even while the panel is closed. The
+  // same cache/promise is consumed by the editor effect below, so the closed
+  // label and textarea cannot race two independent reads.
   useEffect(() => {
-    if (!docId || !doc || !notesOpen) {
+    if (!docId || !doc || !currentNoteKey) {
+      setNoteAvailability({ kind: 'loading', key: '' })
+      return
+    }
+    const key = currentNoteKey
+    const request = noteGenerationRef.current.begin(key)
+    let cancelled = false
+    setNoteAvailability({ kind: 'loading', key })
+    const barrier = noteFlushBarrierRef.current
+    void barrier.catch(() => undefined).then(() => noteCacheRef.current.read(docId, page)).then(note => {
+      if (cancelled || !noteGenerationRef.current.accepts(request)) return
+      setNoteAvailability(noteAvailabilityFrom(key, note))
+    }).catch(() => {
+      if (cancelled || !noteGenerationRef.current.accepts(request)) return
+      const persisted = notePersistedState(noteCacheRef.current.peek(docId, page))
+      setNoteAvailability({ kind: 'error', key, persisted })
+    })
+    return () => { cancelled = true }
+  }, [currentNoteKey])
+
+  // Page notes are keyed by document + page. Loading is intentionally
+  // independent from the PDF render so a slow note read never blocks page
+  // navigation; page/doc transitions first wait on the previous session's
+  // tracked flush barrier.
+  useEffect(() => {
+    const prior = noteSessionRef.current
+    if (!docId || !doc || !currentNoteKey || !notesOpen) {
+      if (prior) trackNoteFlush(flushNoteSession(prior))
       noteSessionRef.current = null
+      setNoteLoading(false)
+      if (!notesOpen) setNoteText('')
       return
     }
     let cancelled = false
-    const key = docId + ':' + page
+    const key = currentNoteKey
     const session: NoteEditorSession = { documentId: docId, pageNumber: page, key, text: '', loaded: false, dirty: false, timer: null, lastSave: null }
     noteSessionRef.current = session
-    setNoteLoading(true); setNoteSavedAt(null); setNoteSaveError(false)
+    setNoteLoading(true); setNoteSavedAt(null); setNoteSaveError(false); setNoteLoadError(false)
     setNoteText('')
-    void getDocumentNote(docId, page).then(note => {
+    const barrier = noteFlushBarrierRef.current
+    void barrier.catch(() => undefined).then(() => noteCacheRef.current.read(docId, page)).then(note => {
       if (cancelled || noteSessionRef.current !== session) return
       session.loaded = true
       if (!session.editedDuringLoad) {
-        session.text = note?.content ?? ''
+        session.text = note && noteHasContent(note.content) ? note.content : ''
         setNoteText(session.text)
       }
     }).catch(() => {
       if (!cancelled && noteSessionRef.current === session) {
         session.loaded = true
+        setNoteLoadError(true)
         if (!session.editedDuringLoad) { session.text = ''; setNoteText('') }
       }
-    }).finally(() => { if (!cancelled) setNoteLoading(false) })
+    }).finally(() => { if (!cancelled && noteSessionRef.current === session) setNoteLoading(false) })
     return () => {
       cancelled = true
-      void flushNoteSession(session).catch(() => {})
+      trackNoteFlush(flushNoteSession(session))
       if (noteSessionRef.current === session) noteSessionRef.current = null
     }
-  }, [docId, doc, page, notesOpen, flushNoteSession])
+  }, [docId, doc, currentNoteKey, page, notesOpen, flushNoteSession, trackNoteFlush])
+
+  useEffect(() => {
+    if (!notesOpen || noteLoading) return
+    const focusTimer = window.setTimeout(() => noteInputRef.current?.focus(), 0)
+    return () => window.clearTimeout(focusTimer)
+  }, [notesOpen, noteLoading, currentNoteKey])
 
   // Reverse provenance is a pure data query. Reader only loads the current records,
   // filters by the exact document/page pair, and renders the lightweight result list.
@@ -668,6 +747,38 @@ export function DocumentReader() {
     setPage(r.page); setPageInput(String(r.page))
   }
 
+  const currentNoteState: NoteAvailability = currentNoteKey && noteAvailability.key === currentNoteKey
+    ? noteAvailability
+    : { kind: 'loading', key: currentNoteKey ?? '' }
+  const closedNoteState = currentNoteState.kind === 'error' ? currentNoteState.persisted : currentNoteState.kind
+  const noteButtonState = notesOpen ? 'open' : closedNoteState
+  const noteButtonLabel = notesOpen
+    ? '收起笔记'
+    : closedNoteState === 'existing' ? '查看笔记' : closedNoteState === 'empty' ? '新建笔记' : '检查笔记…'
+
+  const toggleNotes = useCallback(async () => {
+    if (!doc || noteActionBusy) return
+    if (!notesOpen) {
+      if (closedNoteState === 'loading') return
+      setNotesOpen(true)
+      return
+    }
+    setNoteActionBusy(true)
+    try {
+      await flushCurrentNote()
+      setNotesOpen(false)
+      window.setTimeout(() => noteToggleRef.current?.focus(), 0)
+    } catch {
+      // Keep the panel open so the failed draft remains editable and retryable;
+      // the existing accessible status exposes the failure and the closed-state
+      // label never claims a failed draft was persisted.
+      setNoteSaveError(true)
+      noteInputRef.current?.focus()
+    } finally {
+      setNoteActionBusy(false)
+    }
+  }, [closedNoteState, doc, flushCurrentNote, noteActionBusy, notesOpen])
+
   // ---- Zoom: the main reading path is a visible canvas (C1/C2). Clicking it requests a
   //      one-off full-resolution Blob for the zoom viewer — never part of the display path. ----
   const openZoom = () => {
@@ -719,7 +830,7 @@ export function DocumentReader() {
             </button>
           )}
           <button className={css.tocToggle} data-testid="reader-toc-toggle" onClick={() => setTocOpen(o => !o)}>目录</button>
-          {doc && <button className={css.noteToggle} data-testid="reader-notes-toggle" onClick={() => { if (notesOpen) flushCurrentNote(); setNotesOpen(o => !o) }}>{notesOpen ? '收起笔记' : '笔记'}</button>}
+          {doc && <button type="button" ref={noteToggleRef} className={css.noteToggle} data-testid="reader-notes-toggle" data-note-state={noteButtonState} disabled={(!notesOpen && closedNoteState === 'loading') || noteActionBusy} aria-busy={noteActionBusy || undefined} onClick={() => void toggleNotes()}>{noteButtonLabel}</button>}
           <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>关闭</button>
         </div>
       </div>
@@ -791,10 +902,15 @@ export function DocumentReader() {
             {notesOpen && doc && (
               <aside className={css.notePanel} data-testid="reader-notes">
                 <div className={css.noteTitle}>第 {page} 页笔记</div>
-                <textarea className={css.noteInput} value={noteText} disabled={noteLoading} placeholder="记录这一页的想法…" onChange={e => {
+                {noteLoading ? (
+                  <div className={css.noteStatus} data-testid="reader-note-loading">正在加载…</div>
+                ) : (
+                <textarea ref={noteInputRef} className={css.noteInput} value={noteText} disabled={noteLoading} aria-label={`第 ${page} 页笔记`} placeholder="记录这一页的想法…" onChange={e => {
                   const value = e.target.value
                   setNoteText(value)
                   setNoteSavedAt(null)
+                  setNoteSaveError(false)
+                  setNoteLoadError(false)
                   const session = noteSessionRef.current
                   if (session) {
                     session.text = value
@@ -803,7 +919,8 @@ export function DocumentReader() {
                     queueNoteSave(session)
                   }
                 }} />
-                <div className={css.noteStatus} data-testid="reader-note-status">{noteLoading ? '正在加载…' : noteSaveError ? '保存失败，将重试' : noteSavedAt ? '已自动保存' : '输入后自动保存'}</div>
+                )}
+                <div className={css.noteStatus} data-testid="reader-note-status" role={noteSaveError || noteLoadError ? 'alert' : 'status'} aria-live="polite">{noteLoadError ? '读取失败，可重新编辑并重试' : noteSaveError ? '保存失败，将重试' : noteSavedAt ? '已自动保存' : '输入后自动保存'}</div>
               </aside>
             )}
           </>
