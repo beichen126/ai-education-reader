@@ -15,7 +15,7 @@ import { galleryActions } from '../gallery/gallery-store'
 import { PdfPanel } from '../pdf/PdfPanel'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult, type RenderedPdfPage } from '../pdf/pdf-types'
-import { isCompletedAssistantMessage, isStableBranchPoint, newStableId, pdfContextsOf, type QuickFollowUpMetadata } from '../engine/types'
+import { isStableBranchPoint, newStableId, pdfContextsOf, type QuickFollowUpMetadata } from '../engine/types'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
 import { IconPhoto16, IconDocument16 } from './composer-icons'
 import { setComposerTriggers, triggerComposerMaterials } from '../engine/composer-triggers'
@@ -45,6 +45,7 @@ import { resolveMessageNavigation } from './message-navigation'
 import { sendTextChat } from '../api/deepseek'
 import { listPromptCatalog } from '../prompts/prompt-service'
 import { sortEnabledQuickFollowUps } from '../prompts/quick-follow-up'
+import { quickFollowUpAnchor } from './quick-follow-up-anchor'
 import type { ArtifactKind, StudyArtifact, QuizDocument } from '../artifacts/artifact-types'
 import type { ArtifactPromptBundleSnapshot, QuickFollowUpPrompt } from '../prompts/prompt-types'
 import type { Message as TMessage } from '../engine/types'
@@ -135,9 +136,9 @@ export function Conversation() {
     }).catch(() => { if (!cancelled) setQuickFollowUps([]) })
     return () => { cancelled = true }
   }, [promptManagerOpen])
-  const latestCompletedAssistant = [...messages].reverse().find((message) => isCompletedAssistantMessage(message, { streaming: busy && message.id === lastMsg?.id }))
+  const quickFollowUpAnchorId = quickFollowUpAnchor(messages, activeStreamingId)
   const sendQuickFollowUp = async (item: QuickFollowUpPrompt) => {
-    if (!session || !activeThread || !latestCompletedAssistant || busy || quickSendingId) return
+    if (!session || !activeThread || !quickFollowUpAnchorId || busy || quickSendingId) return
     const quickFollowUp: QuickFollowUpMetadata = { promptId: item.id, labelSnapshot: item.label, promptSnapshot: item.userPrompt }
     setQuickSendingId(item.id)
     try {
@@ -225,7 +226,7 @@ export function Conversation() {
             return <Fragment key={m.id}>
               {transition && <PromptTransitionDivider transition={transition} onOpen={() => setInspectedTransition(transition)} />}
               <MessageRow m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} onInspectQuickFollowUp={setInspectedQuickFollowUp} />
-              {latestCompletedAssistant?.id === m.id && activeThread && <QuickFollowUpBar items={quickFollowUps} disabled={busy || !!quickSendingId} sendingId={quickSendingId} onSend={(item) => void sendQuickFollowUp(item)} onInspect={setInspectedQuickFollowUp} onConfigure={() => uiActions.openPromptManager('quick-follow-up')} />}
+              {quickFollowUpAnchorId === m.id && activeThread && <QuickFollowUpBar items={quickFollowUps} disabled={busy || !!quickSendingId} sendingId={quickSendingId} onSend={(item) => void sendQuickFollowUp(item)} onInspect={setInspectedQuickFollowUp} onConfigure={() => uiActions.openPromptManager('quick-follow-up')} />}
             </Fragment>
             })}
           </>}

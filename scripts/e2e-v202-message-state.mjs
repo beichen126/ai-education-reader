@@ -1,5 +1,5 @@
 import { launchBrowser } from './e2e-browser.mjs'
-import { msg, seedAndBoot } from './e2e-fixture.mjs'
+import { msg, seedAndBoot, installMockModel } from './e2e-fixture.mjs'
 
 const results = []
 const errors = []
@@ -37,18 +37,27 @@ await page.evaluate(() => new Promise((resolve, reject) => {
   }
 }));
 await page.reload({ waitUntil: 'networkidle' })
-await page.locator('[data-testid="quick-follow-up-bar"]').waitFor({ state: 'visible', timeout: 15000 })
+await page.locator('[data-testid="assistant-generation-error"]').first().waitFor({ state: 'visible', timeout: 15000 })
 
 const triggerIds = await page.locator('button[aria-label="消息操作"]').evaluateAll((buttons) => buttons.map((button) => button.closest('[data-message-id]')?.getAttribute('data-message-id')))
 assert(triggerIds.length === 1 && triggerIds[0] === 'completed', 'completed assistant alone exposes branch/artifact actions')
 const bars = page.locator('[data-testid="quick-follow-up-bar"]')
-assert(await bars.count() === 1, 'completed assistant alone exposes Quick Follow-up bar')
-assert(await bars.first().evaluate((bar) => bar.previousElementSibling?.getAttribute('data-message-id') === 'completed'), 'Quick Follow-up bar belongs to the completed assistant')
+assert(await bars.count() === 0, 'terminal assistant tail hides the older completed Quick Follow-up anchor')
 assert(await page.locator('[data-testid="assistant-generation-error"]').count() === 3, 'failed/aborted messages keep all failure banners visible')
 const bannerText = await page.locator('[data-testid="assistant-generation-error"]').allTextContents()
 assert(bannerText.some((text) => text.includes('生成失败：服务失败')), 'failed partial assistant keeps its failure banner')
 assert(bannerText.some((text) => text.includes('已停止生成：已停止生成')), 'aborted partial assistant keeps its stopped banner')
 assert(bannerText.some((text) => text.includes('生成失败：空回答失败')), 'failed empty assistant keeps its failure banner')
+
+// Exercise the actual browser send path: a whitespace-only SSE delta must become a
+// visible no-content failure, not a completed assistant with a hidden/empty answer.
+await installMockModel(page, [' \n\u00a0\t'])
+const composer = page.locator('textarea[aria-label="输入消息"]')
+await composer.fill('触发空回答')
+await composer.press('Enter')
+await page.getByText('模型未返回有效内容，请重试。', { exact: false }).last().waitFor({ state: 'visible', timeout: 15000 })
+assert(await page.getByText('模型未返回有效内容，请重试。', { exact: false }).count() >= 1, 'whitespace-only SSE becomes the user-visible no-content error')
+assert(await page.locator('[data-testid="quick-follow-up-bar"]').count() === 0, 'whitespace-only failed tail exposes no Quick Follow-up bar')
 
 await context.close()
 await browser.close()

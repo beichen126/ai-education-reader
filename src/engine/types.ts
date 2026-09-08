@@ -95,6 +95,11 @@ export type Message = {
 
 export type MessageStateContext = { streaming?: boolean }
 
+/** One semantic rule for whether assistant output can become a completed answer. */
+export function hasMeaningfulAssistantContent(content: string): boolean {
+  return content.trim().length > 0
+}
+
 /** True for an assistant generation that has reached a terminal failure/abort state. */
 export function isTerminalAssistantMessage(message: Pick<Message, 'role' | 'status'>): boolean {
   return message.role === 'assistant' && (message.status === 'failed' || message.status === 'aborted')
@@ -102,7 +107,7 @@ export function isTerminalAssistantMessage(message: Pick<Message, 'role' | 'stat
 
 /** True only for a non-streaming assistant with content and no terminal state. */
 export function isCompletedAssistantMessage(message: Pick<Message, 'role' | 'content' | 'status'>, context: MessageStateContext = {}): boolean {
-  return message.role === 'assistant' && !context.streaming && message.status === undefined && message.content.length > 0
+  return message.role === 'assistant' && !context.streaming && message.status === undefined && hasMeaningfulAssistantContent(message.content)
 }
 
 /** The one shared rule for messages that may be used as a stable source point. */

@@ -72,6 +72,16 @@ const doneEvent = () => 'data: [DONE]\n\n'
   assert(kind === 'no-content', 'empty body stream -> no-content (got ' + kind + ')')
 }
 
+// --- whitespace-only assistant delta -> no-content, even though a delta arrived ---
+{
+  let kind = ''
+  const stream = new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new TextEncoder().encode(delta(' \n\u00a0\t'))); c.enqueue(new TextEncoder().encode(doneEvent())); c.close() } })
+  const orig = globalThis.fetch; globalThis.fetch = (async () => new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })) as any
+  try { await streamTextChat({ apiKey: 'k', baseUrl: 'https://api.deepseek.com', model: 'm', messages: [], onDelta: () => {} }) } catch (e) { kind = (e as DeepSeekError).kind }
+  globalThis.fetch = orig
+  assert(kind === 'no-content', 'whitespace-only stream -> no-content (got ' + kind + ')')
+}
+
 // --- trailing event without a final blank line ---
 {
   const p = new SSEParser()

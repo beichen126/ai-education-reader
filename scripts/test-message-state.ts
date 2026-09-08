@@ -4,7 +4,7 @@ import { saveConversation } from '../src/storage/storage.ts'
 import { acceptBranchUserMessage, createBranchFromMessage, BranchError } from '../src/branches/branch-service.ts'
 import { canForkFromMessage } from '../src/branches/branch-path.ts'
 import { listBranchesByConversation } from '../src/branches/branch-store.ts'
-import { canCreateArtifactFromMessage, isCompletedAssistantMessage, isStableBranchPoint, isTerminalAssistantMessage, type Conversation, type Message } from '../src/engine/types.ts'
+import { canCreateArtifactFromMessage, hasMeaningfulAssistantContent, isCompletedAssistantMessage, isStableBranchPoint, isTerminalAssistantMessage, type Conversation, type Message } from '../src/engine/types.ts'
 import { ArtifactError, createArtifactDraft } from '../src/artifacts/artifact-service.ts'
 import { deleteArtifact } from '../src/artifacts/artifact-store.ts'
 
@@ -52,6 +52,8 @@ assert(!isCompletedAssistantMessage(conversation.messages[2]), 'failed partial a
 assert(!isCompletedAssistantMessage(conversation.messages[3]), 'aborted partial assistant is not completed')
 assert(!isCompletedAssistantMessage(conversation.messages[4]), 'failed empty assistant is not completed')
 assert(!isCompletedAssistantMessage(conversation.messages[1], { streaming: true }), 'current streaming assistant is not completed')
+assert(!hasMeaningfulAssistantContent(' \n\u00a0\t'), 'whitespace-only assistant content is not meaningful')
+assert(!isCompletedAssistantMessage({ role: 'assistant', content: ' \n\u00a0\t' }), 'whitespace-only assistant is not completed')
 assert(isStableBranchPoint(conversation.messages[0]), 'stable user keeps the existing branch-point rule')
 assert(isStableBranchPoint(conversation.messages[1]), 'completed assistant is a stable branch point')
 assert(!isStableBranchPoint(conversation.messages[2]), 'failed partial assistant is not a stable branch point')

@@ -1,4 +1,6 @@
 // DeepSeek API adapter. Only boundary that performs fetch from the app.
+import { hasMeaningfulAssistantContent } from '../engine/types'
+
 export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 export type ApiChatMessage = { role: 'user' | 'assistant' | 'system'; content: string | ChatContentPart[] }
 export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal }
@@ -27,7 +29,7 @@ export function errorKindLabel(kind: ErrorKind): string {
     case 'bad-request': return '请求参数错误，请检查 Base URL 与 Model。'
     case 'server': return 'DeepSeek 服务端错误，请稍后重试。'
     case 'bad-json': return '返回内容不是有效的 JSON。'
-    case 'no-content': return '返回结果中没有 assistant 文本。'
+    case 'no-content': return '模型未返回有效内容，请重试。'
     case 'aborted': return '已停止生成。'
     default: return '请求失败。'
   }
@@ -66,7 +68,7 @@ export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChat
   let json: any
   try { json = await res.json() } catch { throw new DeepSeekError('bad-json', 'response is not JSON') }
   const content = json && json.choices && json.choices[0] && json.choices[0].message ? json.choices[0].message.content : undefined
-  if (typeof content !== 'string') throw new DeepSeekError('no-content', 'no assistant content in response')
+  if (typeof content !== 'string' || !hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content in response')
   return { content }
 }
 
@@ -237,7 +239,7 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
     if (e instanceof DeepSeekError) throw e
     throw new DeepSeekError('network-or-cors', 'stream failed')
   }
-  if (!content) throw new DeepSeekError('no-content', 'no assistant content in stream')
+  if (!hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content in stream')
   return { content, finishReason }
 }
 // ---- multimodal helpers (used by the store's message conversion; UI never builds this) ----
