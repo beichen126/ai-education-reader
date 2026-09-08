@@ -68,7 +68,7 @@ export function getPromptDefinitionIssues(value: unknown): PromptValidationIssue
       break
     case 'quick-follow-up':
       if (!isNonEmptyString(value.label)) add(issues, 'INVALID_LABEL', 'label', 'label must be a non-empty string')
-      if (typeof value.userPrompt !== 'string') add(issues, 'INVALID_USER_PROMPT', 'userPrompt', 'userPrompt must be a string')
+      if (!isNonEmptyString(value.userPrompt)) add(issues, 'INVALID_USER_PROMPT', 'userPrompt', 'userPrompt must contain non-whitespace text')
       if (typeof value.pinned !== 'boolean') add(issues, 'INVALID_PINNED', 'pinned', 'pinned must be boolean')
       if (!isFiniteNumber(value.sortOrder) || !Number.isInteger(value.sortOrder) || value.sortOrder < 0) add(issues, 'INVALID_SORT_ORDER', 'sortOrder', 'sortOrder must be a non-negative integer')
       break

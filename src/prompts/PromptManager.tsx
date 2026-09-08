@@ -528,6 +528,7 @@ function PromptEditor(props: {
   const changeContent = (value: string) => props.onChange(withContent(definition, value))
   const usage = preferences ? usageText(definition, preferences) : '正在读取使用情况…'
   const activeProtocol = definition.kind === 'protocol' && preferences?.activeProtocolOverrideByDomain[definition.domain] === definition.id
+  const quickPromptError = definition.kind === 'quick-follow-up' && definition.userPrompt.trim().length === 0 ? '快捷追问内容不能为空。' : undefined
 
   return (
     <div className={css.editor}>
@@ -562,7 +563,7 @@ function PromptEditor(props: {
             <div className={css.protocolNote}>完整实际 system prompt 已在下方显示。validator 仅展示元数据，不能从界面修改执行代码。</div>
           </section>
         </>}
-        <label className={css.editorField}><span>{definition.kind === 'artifact' || definition.kind === 'quick-follow-up' ? '模板内容' : definition.kind === 'protocol' ? '协议提示词' : '系统提示词'}</span><textarea data-testid="prompt-editor-content" value={contentOf(definition)} readOnly={readonly} disabled={busy} onChange={(event) => changeContent(event.target.value)} /></label>
+        <label className={css.editorField}><span>{definition.kind === 'artifact' || definition.kind === 'quick-follow-up' ? '模板内容' : definition.kind === 'protocol' ? '协议提示词' : '系统提示词'}</span><textarea id="prompt-editor-content" data-testid="prompt-editor-content" aria-invalid={quickPromptError ? 'true' : undefined} aria-describedby={quickPromptError ? 'prompt-editor-content-error' : undefined} value={contentOf(definition)} readOnly={readonly} disabled={busy} onChange={(event) => changeContent(event.target.value)} />{quickPromptError && <span id="prompt-editor-content-error" className={css.editorError} role="alert">{quickPromptError}</span>}</label>
         {!creating && <div className={css.metaGrid}><div><span>作用范围</span><strong>{kindLabels[definition.kind]}</strong></div><div><span>版本</span><strong>revision {definition.revision}</strong></div><div><span>当前使用情况</span><strong>{usage}</strong></div></div>}
         {definition.kind === 'conversation-mode' && definition.source !== 'builtin' && <label className={css.checkField}><input type="checkbox" checked={definition.enabled} disabled={busy} onChange={(event) => change({ enabled: event.target.checked })} /><span>启用此会话模式</span></label>}
         {props.error && <div className={css.editorError} role="alert">{props.error}</div>}

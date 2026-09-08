@@ -16,21 +16,33 @@ function assertPersistable(value: unknown): PromptDefinition {
   return definition
 }
 
+function readPersisted(value: unknown): PromptDefinition | undefined {
+  try {
+    return assertPersistable(value)
+  } catch (error) {
+    // Legacy/local dirty rows must not prevent the catalog or application boot from
+    // loading. The row stays untouched for backup/diagnostic inspection and is simply
+    // isolated from active prompt resolution until the user replaces or deletes it.
+    console.warn('[prompt-store] ignored invalid local prompt row', error instanceof Error ? error.message : String(error))
+    return undefined
+  }
+}
+
 /** Raw durable operations for custom definitions and experimental protocol overrides. */
 export async function getPromptRecord(id: string): Promise<PromptDefinition | undefined> {
   const row = await idbGet('prompts', id)
   if (row === undefined) return undefined
-  return assertPersistable(row)
+  return readPersisted(row)
 }
 
 export async function listPromptRecords(): Promise<PromptDefinition[]> {
   const rows = await idbGetAll('prompts')
-  return rows.map((row: unknown) => assertPersistable(row))
+  return rows.map(readPersisted).filter((row): row is PromptDefinition => !!row)
 }
 
 export async function listPromptRecordsByKind(kind: PromptKind): Promise<PromptDefinition[]> {
   const rows = await idbGetAllByIndex('prompts', 'by_kind', kind)
-  return rows.map((row: unknown) => assertPersistable(row))
+  return rows.map(readPersisted).filter((row): row is PromptDefinition => !!row)
 }
 
 /** Resolve only after the prompts transaction commits (idbPut waits for oncomplete). */

@@ -132,7 +132,7 @@ function validateMessagePromptMetadata(message: Record<string, any>): void {
   if (!isObj(metadata)) throw new BackupError('message.quickFollowUp 非法')
   if (metadata.promptId !== undefined && !isNonEmptyStr(metadata.promptId)) throw new BackupError('message.quickFollowUp.promptId 非法')
   if (!isNonEmptyStr(metadata.labelSnapshot)) throw new BackupError('message.quickFollowUp.labelSnapshot 非法')
-  if (!isStr(metadata.promptSnapshot)) throw new BackupError('message.quickFollowUp.promptSnapshot 非法')
+   if (!isStr(metadata.promptSnapshot) || metadata.promptSnapshot.trim().length === 0) throw new BackupError('message.quickFollowUp.promptSnapshot 不能为空')
 }
 
 function validateArtifactPromptBundle(bundle: unknown, artifactKind?: StudyArtifact['kind']): void {
