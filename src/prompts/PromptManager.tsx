@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { newStableId, type StableId } from '../engine/types'
 import type { ArtifactKind } from '../artifacts/artifact-types'
 import { uiActions, useUi } from '../engine/ui-store'
@@ -96,6 +96,57 @@ function sourceLabel(source: PromptDefinition['source']): string {
   return '自定义'
 }
 
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[contenteditable="true"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+function isVisibleFocusable(element: HTMLElement): boolean {
+  if (element.getAttribute('aria-hidden') === 'true') return false
+  const style = window.getComputedStyle(element)
+  return style.display !== 'none' && style.visibility !== 'hidden' && element.getClientRects().length > 0
+}
+
+function getModalFocusableElements(dialog: HTMLElement): HTMLElement[] {
+  return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(isVisibleFocusable)
+}
+
+type BackgroundState = {
+  element: HTMLElement
+  inert: boolean
+  ariaHidden: string | null
+}
+
+function setBackgroundInert(dialog: HTMLElement): BackgroundState[] {
+  const appRoot = document.getElementById('root')
+  if (!appRoot) return []
+  const background = Array.from(appRoot.children).filter((element) => element !== dialog && !element.contains(dialog)) as HTMLElement[]
+  const states = background.map((element) => ({
+    element,
+    inert: Boolean((element as HTMLElement & { inert?: boolean }).inert),
+    ariaHidden: element.getAttribute('aria-hidden'),
+  }))
+  for (const { element } of states) {
+    ;(element as HTMLElement & { inert?: boolean }).inert = true
+    element.setAttribute('aria-hidden', 'true')
+  }
+  return states
+}
+
+function restoreBackground(states: BackgroundState[]): void {
+  for (const { element, inert, ariaHidden } of states) {
+    if (!element.isConnected) continue
+    ;(element as HTMLElement & { inert?: boolean }).inert = inert
+    if (ariaHidden === null) element.removeAttribute('aria-hidden')
+    else element.setAttribute('aria-hidden', ariaHidden)
+  }
+}
+
 export function PromptManager() {
   const requestedCategory = useUi(s => s.promptManagerCategory)
   const [catalog, setCatalog] = useState<PromptDefinition[]>([])
@@ -112,10 +163,94 @@ export function PromptManager() {
   const [notice, setNotice] = useState<string | null>(null)
   const [mobileStep, setMobileStep] = useState<MobileStep>(() => requestedCategory ? 'list' : window.innerWidth <= 720 ? 'categories' : 'detail')
   const [narrow, setNarrow] = useState(() => window.innerWidth <= 720)
+  const dialogRef = useRef<HTMLDivElement | null>(null)
+  const openerRef = useRef<HTMLElement | null>(null)
+  const busyRef = useRef(busy)
+  busyRef.current = busy
 
   useEffect(() => {
-    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    return () => { if (opener?.isConnected) opener.focus() }
+    const dialog = dialogRef.current
+    if (!dialog) return
+    const active = document.activeElement
+    openerRef.current = active instanceof HTMLElement && !dialog.contains(active) ? active : null
+    const background = setBackgroundInert(dialog)
+    let frame = 0
+    const focusables = () => getModalFocusableElements(dialog)
+    const focusFirst = () => {
+      const target = focusables()[0]
+      if (target) target.focus({ preventScroll: true })
+      else dialog.focus({ preventScroll: true })
+    }
+    const focusLast = () => {
+      const current = focusables()
+      const target = current[current.length - 1]
+      if (target) target.focus({ preventScroll: true })
+      else dialog.focus({ preventScroll: true })
+    }
+    const onFocusIn = (event: FocusEvent) => {
+      if (event.target instanceof Node && dialog.contains(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+      focusFirst()
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        if (!busyRef.current) uiActions.closePromptManager()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const current = focusables()
+      if (current.length === 0) {
+        event.preventDefault()
+        dialog.focus({ preventScroll: true })
+        return
+      }
+      const activeElement = document.activeElement
+      const index = activeElement instanceof HTMLElement ? current.indexOf(activeElement) : -1
+      if (index < 0) {
+        event.preventDefault()
+        if (event.shiftKey) focusLast()
+        else focusFirst()
+      } else if (event.shiftKey && index === 0) {
+        event.preventDefault()
+        focusLast()
+      } else if (!event.shiftKey && index === current.length - 1) {
+        event.preventDefault()
+        focusFirst()
+      }
+    }
+    document.addEventListener('focusin', onFocusIn, true)
+    document.addEventListener('keydown', onKeyDown, true)
+    frame = window.requestAnimationFrame(() => {
+      const close = dialog.querySelector<HTMLElement>('[data-testid="prompt-manager-close"]')
+      if (close && isVisibleFocusable(close)) close.focus({ preventScroll: true })
+      else focusFirst()
+    })
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('focusin', onFocusIn, true)
+      document.removeEventListener('keydown', onKeyDown, true)
+      restoreBackground(background)
+      const opener = openerRef.current
+      openerRef.current = null
+      if (opener?.isConnected && !opener.closest('[aria-hidden="true"]')) {
+        opener.focus({ preventScroll: true })
+        return
+      }
+      const fallback = document.querySelector<HTMLElement>('[data-testid="rail-prompts"], [data-testid="sidebar-entry-prompts"]')
+      if (fallback && isVisibleFocusable(fallback) && !fallback.closest('[aria-hidden="true"]')) {
+        fallback.focus({ preventScroll: true })
+        return
+      }
+      const body = document.body
+      const previousTabIndex = body.getAttribute('tabindex')
+      body.setAttribute('tabindex', '-1')
+      body.focus({ preventScroll: true })
+      if (previousTabIndex === null) body.removeAttribute('tabindex')
+      else body.setAttribute('tabindex', previousTabIndex)
+    }
   }, [])
 
   const loadCatalog = useCallback(async (preferredId?: StableId) => {
@@ -149,12 +284,6 @@ export function PromptManager() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !busy) uiActions.closePromptManager() }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [busy])
-
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase()
     return catalog.filter((item) => {
@@ -303,7 +432,7 @@ export function PromptManager() {
   }
 
   return (
-    <div className={css.promptManager} data-testid="prompt-manager" data-mobile-step={mobileStep} role="dialog" aria-modal="true" aria-label="提示词管理">
+    <div ref={dialogRef} className={css.promptManager} data-testid="prompt-manager" data-mobile-step={mobileStep} role="dialog" aria-modal="true" aria-label="提示词管理" tabIndex={-1}>
       <header className={css.managerHeader}>
         <div>
           <h1>提示词</h1>
