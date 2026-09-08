@@ -1,7 +1,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { useSessions, sessionsActions } from '../engine/sessions-store'
+import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
 import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
@@ -544,14 +544,19 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
   const onBlurReset = () => { document.documentElement.style.setProperty('--dsw-keyboard-inset', '0px') }
   const send = async () => {
     if (busy) return
+    const sendTarget = isBranch && thread
+      ? { conversationId: thread.conversationId, branchId: thread.branchId }
+      : sessionId ? { conversationId: sessionId } : undefined
+    if (!text.trim() && picIds.length === 0) {
+      if (sendTarget) clearSessionsSendError(sendTarget)
+      return
+    }
     if (isBranch && thread) {
-      if (!text.trim() && picIds.length === 0) return
       const outcome = await runBranchReply(thread.conversationId, thread.branchId!, text.trim(), picIds)
       if (outcome.kind !== 'rejected') { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null); if (onBranchSent) onBranchSent() }
       return
     }
     if (!sessionId) return
-    if (!text.trim() && picIds.length === 0) return
     const outcome = await sessionsActions.sendUserMessage(sessionId, text.trim(), picIds)
     // Only clear the draft once the user message is ACCEPTED & persisted; the image ids
     // then belong to the message (ownership transfer), so we must NOT delete them here.

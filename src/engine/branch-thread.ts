@@ -10,8 +10,8 @@ import { attachPdfContexts } from '../pdf/pdf-message-context'
 import { buildEffectivePromptPath } from '../prompts/effective-prompt-path'
 import { prepareAcceptedSendContext } from '../prompts/prompt-send'
 import { tryWithConversationMutationLock } from '../prompts/prompt-mode-lock'
-import { clearSessionsSendError, setSessionsSendError } from './sessions-store'
-import { validateSendInput, type SendFailure, type SendOutcome, type SendTarget } from './send-outcome'
+import { clearSessionsSendError, presentRejectedSend, setSessionsSendError } from './sessions-store'
+import { validateSendInput, type SendFailure, type SendIntent, type SendOutcome, type SendTarget } from './send-outcome'
 
 // Per-branch ordered durable-write queue (mirrors the root writeChains). A stale checkpoint
 // can never overwrite a newer revision of a branch record.
@@ -105,6 +105,7 @@ function pendingRejected(outcome: RejectedBranchOutcome): PendingBranchSend {
 
 export async function runBranchReply(conversationId: StableId, branchId: StableId, content: string, imageIds: StableId[] = [], options: BranchReplyOptions = {}): Promise<SendOutcome> {
   const target: SendTarget = { conversationId, branchId }
+  const intent: SendIntent = options.quickFollowUp ? 'quick-follow-up' : 'composer'
   clearSessionsSendError(target)
   const locked = await tryWithConversationMutationLock<PendingBranchSend>(conversationId, async () => {
     const branch = await getBranch(branchId)
@@ -151,6 +152,7 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
       return pendingRejected({ kind: 'rejected', code: 'branch-acceptance-failed', message: error instanceof Error ? error.message : '分支消息未能保存，请重试。' })
     }
   })
-  if (!locked.acquired) return { kind: 'rejected', code: 'generation-busy', message: '当前会话正在处理另一项操作，请稍候。' }
-  return locked.value.outcome
+  if (!locked.acquired) return presentRejectedSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前会话正在处理另一项操作，请稍候。' }, intent)
+  const outcome = await locked.value.outcome
+  return outcome.kind === 'rejected' ? presentRejectedSend(target, outcome, intent) : outcome
 }

@@ -13,7 +13,7 @@ import { attachPdfContexts } from '../pdf/pdf-message-context'
 import { getBranch } from '../branches/branch-store'
 import { prepareAcceptedSendContext, type AcceptedSendContext } from '../prompts/prompt-send'
 import { tryWithConversationMutationLock } from '../prompts/prompt-mode-lock'
-import { validateSendInput, type SendErrorState, type SendFailure, type SendOutcome, type SendTarget } from './send-outcome'
+import { shouldPresentRejectedSend, validateSendInput, type RejectedSend, type SendErrorState, type SendFailure, type SendIntent, type SendOutcome, type SendTarget } from './send-outcome'
 
 export type { Conversation as ChatSession, Message as ChatMsg, Attachment as ChatImage }
 export const uid = (_p?: string) => newStableId()
@@ -51,9 +51,16 @@ export function setSessionsSendError(error: SendErrorState): void {
   setState({ ...state, status: 'error', sendError: error.message, sendErrorTarget: { conversationId: error.conversationId, ...(error.branchId ? { branchId: error.branchId } : {}) } })
 }
 export function clearSessionsSendError(target?: SendTarget): void {
-  if (!state.sendError) return
   if (target && (!state.sendErrorTarget || state.sendErrorTarget.conversationId !== target.conversationId || state.sendErrorTarget.branchId !== target.branchId)) return
-  setState({ ...state, sendError: undefined, sendErrorTarget: undefined })
+  if (!state.sendError && state.status !== 'error') return
+  setState({ ...state, status: generationRegistry.getStatus(), sendError: undefined, sendErrorTarget: undefined })
+}
+
+/** Present every rejected outcome through one policy/state transition. */
+export function presentRejectedSend(target: SendTarget, outcome: RejectedSend, intent: SendIntent = 'internal'): RejectedSend {
+  if (shouldPresentRejectedSend(outcome, intent)) setSessionsSendError({ ...outcome, ...target })
+  else clearSessionsSendError(target)
+  return outcome
 }
 
 export type SendUserMessageOptions = {
@@ -79,9 +86,8 @@ const acceptingRef = { current: null as string | null }
 
 type PendingSend = { outcome: Promise<SendOutcome> }
 type RejectedOutcome = Extract<SendOutcome, { kind: 'rejected' }>
-function rejectSend(target: SendTarget, outcome: RejectedOutcome, showError = true): RejectedOutcome {
-  if (showError) setState({ ...state, status: 'error', sendError: outcome.message, sendErrorTarget: target })
-  return outcome
+function rejectSend(target: SendTarget, outcome: RejectedOutcome, intent: SendIntent): RejectedOutcome {
+  return presentRejectedSend(target, outcome, intent)
 }
 
 /** An explicitly-tracked active reply generation. Prevents the accidental mixture of
@@ -151,20 +157,22 @@ export const sessionsActions = {
    */
   async sendUserMessage(id: string, content: string, imageIds: StableId[] = [], options: SendUserMessageOptions = {}): Promise<SendOutcome> {
     const target: SendTarget = { conversationId: id }
-    if (state.status === 'sending' || state.status === 'streaming') return rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, false)
+    const intent: SendIntent = options.quickFollowUp ? 'quick-follow-up' : 'composer'
+    clearSessionsSendError(target)
+    if (state.status === 'sending' || state.status === 'streaming') return rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, intent)
     const locked = await tryWithConversationMutationLock<PendingSend>(id, async () => {
-      if (state.status === 'sending' || state.status === 'streaming') return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, false)) }
-      if (acceptingRef.current === id) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '消息正在提交，请稍候。' }, false)) }
+      if (state.status === 'sending' || state.status === 'streaming') return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, intent)) }
+      if (acceptingRef.current === id) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '消息正在提交，请稍候。' }, intent)) }
       const conv = state.byId[id]
-      if (!conv) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'conversation-not-found', message: '当前会话不存在。' })) }
+      if (!conv) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'conversation-not-found', message: '当前会话不存在。' }, intent)) }
       const invalidInput = validateSendInput(content, imageIds, options.quickFollowUp)
-      if (invalidInput) return { outcome: Promise.resolve(rejectSend(target, invalidInput)) }
+      if (invalidInput) return { outcome: Promise.resolve(rejectSend(target, invalidInput, intent)) }
       const settings = getSettingsSnapshot()
-      if (!settings.apiKey) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'no-api-key', message: '未配置 API Key，请先在设置中填写。' })) }
+      if (!settings.apiKey) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'no-api-key', message: '未配置 API Key，请先在设置中填写。' }, intent)) }
       const now = Date.now()
       const controller = new AbortController()
       const lease = generationRegistry.acquire(genRootKey(id), controller, 'sending')
-      if (!lease) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, false)) }
+      if (!lease) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, intent)) }
       acceptingRef.current = id
       let acceptedSend: AcceptedSendContext
       let afterUser: Conversation
@@ -187,9 +195,10 @@ export const sessionsActions = {
         await commitAcceptedUserMessage(afterUser, id, draftSettingKey(id), options.draftDisposition ?? 'clear')
       } catch (e) {
         const rejected: RejectedOutcome = { kind: 'rejected', code: 'acceptance-failed', message: '消息发送失败，请重试。' }
-        upsertState(conv, { status: 'error', sendError: rejected.message, sendErrorTarget: target })
         acceptingRef.current = null
         lease.release()
+        upsertState(conv, { status: 'idle', sendError: undefined, sendErrorTarget: undefined })
+        presentRejectedSend(target, rejected, intent)
         return { outcome: Promise.resolve(rejected) }
       }
       acceptingRef.current = null
@@ -197,7 +206,7 @@ export const sessionsActions = {
       const outcome = runReplyStream(id, settings, acceptedSend, lease)
       return { outcome }
     })
-    if (!locked.acquired) return rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前会话正在处理另一项操作，请稍候。' }, false)
+    if (!locked.acquired) return rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前会话正在处理另一项操作，请稍候。' }, intent)
     return locked.value.outcome
   },
   async addAssistant(id: string, content: string) {
