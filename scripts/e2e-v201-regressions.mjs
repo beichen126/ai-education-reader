@@ -15,6 +15,8 @@ const waitFor = async (read, timeoutMs = 10000) => {
 
 const browser = await launchBrowser()
 let scenario = ''
+const only = process.env.V201_ONLY ? new Set(process.env.V201_ONLY.split(',').map((value) => value.trim()).filter(Boolean)) : null
+const shouldRun = (name) => !only || only.has(name)
 
 async function openScenario(id, messages, settings = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
@@ -60,7 +62,7 @@ async function readBranchForConversation(page, conversationId) {
 }
 
 scenario = 'V200-FCR-01'
-{
+if (shouldRun(scenario)) {
   const { context, page } = await openScenario('v201-rail', [msg('rail-u1', 'user', '入口测试')])
   const expanded = page.locator('[data-testid="sidebar-entry-files"]')
   if (await expanded.isVisible().catch(() => false)) await page.locator('[data-testid="sidebar-collapse"]').click()
@@ -72,12 +74,14 @@ scenario = 'V200-FCR-01'
     await page.locator('[data-testid="rail-prompts"]').click()
     assert(await page.locator('[data-testid="prompt-manager"]').isVisible(), 'V200-FCR-01 rail prompt entry opens Prompt Manager directly')
     assert(await page.locator('[data-testid="rail-history"]').isVisible(), 'V200-FCR-01 direct open keeps the rail collapsed')
+    await page.keyboard.press('Escape')
+    assert(await page.locator('[data-testid="rail-prompts"]').evaluate((element) => element === document.activeElement), 'V200-FCR-01 Escape restores focus to the collapsed rail opener')
   }
   await context.close()
 }
 
 scenario = 'V200-FCR-03'
-{
+if (shouldRun(scenario)) {
   const now = Date.now()
   const transitions = [
     { id: 'initial-red', afterMessageId: null, createdAt: now, snapshot: { kind: 'conversation-mode', profileId: 'builtin-conversation-default', name: '默认', content: 'initial', revision: 1, source: 'builtin', capturedAt: now } },
@@ -105,12 +109,14 @@ scenario = 'V200-FCR-03'
 }
 
 scenario = 'V200-FCR-05'
-{
+if (shouldRun(scenario)) {
   const { context, page } = await openScenario('v201-focus', [msg('focus-u1', 'user', '焦点测试')])
   await page.locator('[data-testid="sidebar-entry-prompts"]').click()
   const manager = page.locator('[data-testid="prompt-manager"]')
   await manager.waitFor({ state: 'visible', timeout: 10000 })
   assert(await manager.evaluate((element) => element.contains(document.activeElement)), 'V200-FCR-05 opening Prompt Manager moves focus into the dialog')
+  await page.keyboard.press('Shift+Tab')
+  assert(await manager.evaluate((element) => element.contains(document.activeElement)), 'V200-FCR-05 Shift+Tab from the first control wraps inside the dialog')
   await page.keyboard.press('Tab')
   assert(await manager.evaluate((element) => element.contains(document.activeElement)), 'V200-FCR-05 first Tab remains inside the dialog')
   for (let i = 0; i < 30; i++) await page.keyboard.press('Tab')
@@ -121,7 +127,7 @@ scenario = 'V200-FCR-05'
 }
 
 scenario = 'V200-FCR-07'
-{
+if (shouldRun(scenario)) {
   const rows = Array.from({ length: 4 }, (_, index) => ({
     id: 'red-quick-' + (index + 1),
     kind: 'quick-follow-up',
@@ -147,7 +153,7 @@ scenario = 'V200-FCR-07'
 }
 
 scenario = 'V200-FCR-02'
-{
+if (shouldRun(scenario)) {
   const { context, page } = await openScenario('v201-branch-failure', [msg('failure-u1', 'user', '问题'), msg('failure-a1', 'assistant', '回答')])
   await createBranchFromMessage(page, 0)
   await page.locator('text=当前路线').first().waitFor({ state: 'visible', timeout: 10000 })
