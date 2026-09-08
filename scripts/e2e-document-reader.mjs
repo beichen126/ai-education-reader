@@ -199,9 +199,13 @@ await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible'
 await page.locator('[data-testid="reader-page-input"]').fill('6')
 await page.locator('[data-testid="reader-page-input"]').press('Enter')
 await page.waitForTimeout(120) // deliberately FAR below the 1000ms debounce
-await page.keyboard.press('Escape') // reader -> closed via cleanup path (no button flush)
+await page.keyboard.press('Escape') // first closes the visible desktop TOC
 await page.waitForTimeout(250)
-assert(await page.locator('[data-testid="document-reader"]').count() === 0, 'L: Escape closes the reader')
+assert(await page.locator('[data-testid="reader-toc"]').isHidden(), 'L: first Escape closes TOC before Reader')
+assert(await page.locator('[data-testid="document-reader"]').count() === 1, 'L: first Escape keeps the reader open')
+await page.keyboard.press('Escape') // second Escape closes the reader via cleanup path (no button flush)
+await page.waitForTimeout(250)
+assert(await page.locator('[data-testid="document-reader"]').count() === 0, 'L: second Escape closes the reader')
 await openLibrary()
 await page.locator('[data-testid^="doc-open-"]').first().click()
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
