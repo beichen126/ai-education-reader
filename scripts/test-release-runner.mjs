@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process'
+import fs from 'node:fs'
 import net from 'node:net'
+import os from 'node:os'
 import path from 'node:path'
 import { canBindPort, missingE2EScripts, resolveE2EList, resolveNpmInvocation } from './release-runner-utils.mjs'
 
@@ -52,14 +54,21 @@ assert(await canBindPort('127.0.0.1', unknownPort.port), 'unknown E2E failure st
 
 const childFailurePort = await reservePort()
 await new Promise(resolve => childFailurePort.server.close(resolve))
-const childFailureRun = await runRelease({
-  RELEASE_SKIP_UNIT: '1',
-  RELEASE_PORT: String(childFailurePort.port),
-  RELEASE_E2E: 'e2e-release-runner-child-failure',
-  RELEASE_RUNNER_SELF_TEST: '1',
-})
-assert(childFailureRun.code !== 0 && childFailureRun.output.includes('e2e-release-runner-child-failure FAILED'), 'failed child E2E returns non-zero')
-assert(await canBindPort('127.0.0.1', childFailurePort.port), 'failed child E2E cleans up the preview server')
+const previewFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-education-release-runner-'))
+fs.writeFileSync(path.join(previewFixture, 'index.html'), '<!doctype html><title>release runner self-test</title>')
+try {
+  const childFailureRun = await runRelease({
+    RELEASE_SKIP_UNIT: '1',
+    RELEASE_PORT: String(childFailurePort.port),
+    RELEASE_E2E: 'e2e-release-runner-child-failure',
+    RELEASE_RUNNER_SELF_TEST: '1',
+    RELEASE_PREVIEW_ROOT: previewFixture,
+  })
+  assert(childFailureRun.code !== 0 && childFailureRun.output.includes('e2e-release-runner-child-failure FAILED'), 'failed child E2E returns non-zero')
+  assert(await canBindPort('127.0.0.1', childFailurePort.port), 'failed child E2E cleans up the preview server')
+} finally {
+  fs.rmSync(previewFixture, { recursive: true, force: true })
+}
 
 console.log(`SUMMARY ${pass}/${pass + fail} passed`)
 process.exit(fail === 0 ? 0 : 1)

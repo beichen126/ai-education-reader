@@ -12,6 +12,7 @@ import { canBindPort, missingE2EScripts, resolveE2EList, resolveNodeInvocation, 
 const PORT = Number(process.env.RELEASE_PORT || 5320)
 const HOST = process.env.RELEASE_HOST || '127.0.0.1'
 const BASE = process.env.E2E_BASE || `http://${HOST}:${PORT}/ai-education-reader/`
+const PREVIEW_ROOT = process.env.RELEASE_PREVIEW_ROOT || 'dist'
 // Skip the unit/typecheck/build legs for a quick E2E-only iteration (RELEASE_SKIP_UNIT=1).
 const SKIP_UNIT = process.env.RELEASE_SKIP_UNIT === '1'
 const EXTRA_E2E = process.env.RELEASE_EXTRA_E2E === '1'
@@ -74,7 +75,7 @@ function startServer() {
   // Start Vite directly instead of nesting npm inside the release npm process. This keeps the
   // detached process tree stable on Windows as well as POSIX runners.
   const viteBin = path.join(process.cwd(), 'node_modules', 'vite', 'bin', 'vite.js')
-  const child = spawn(process.execPath, [viteBin, 'preview', '--port', String(PORT), '--host', HOST, '--strictPort'], {
+  const child = spawn(process.execPath, [viteBin, 'preview', '--port', String(PORT), '--host', HOST, '--strictPort', '--outDir', PREVIEW_ROOT], {
     cwd: process.cwd(), stdio: 'ignore', detached: true, shell: false,
   })
   child.unref()
