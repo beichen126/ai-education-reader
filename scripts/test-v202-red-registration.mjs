@@ -15,9 +15,10 @@ const optional = arrayLiteral('OPTIONAL_E2E')
 const checks = [
   [typeof packageJson.scripts?.['test:v202-red'] === 'string', 'v2.0.2 RED domain script is registered'],
   [typeof packageJson.scripts?.['test:v202-red-registration'] === 'string', 'v2.0.2 RED registration script is registered'],
-  [testAll.includes('test:regressions') || testAll.includes('test:v201-red-domain'), 'v201 domain regression suite is reachable from the default unit gate'],
+  [testAll.includes('test:regressions'), 'v201/v202 domain regression suite is reachable from the default unit gate'],
   [new Set([...core, ...optional]).size === core.length + optional.length, 'CORE and OPTIONAL E2E lists are unique in EXTRA mode'],
-  [!release.includes('shell: useShell'), 'release runner does not use the Windows shell shim path'],
+  [release.includes('shell: false') && !release.includes('shell: true') && !release.includes('shell: useShell'), 'release runner uses shell-free child processes'],
+  [release.includes('RELEASE PORT OCCUPIED') && release.includes('UNKNOWN E2E TEST NAME'), 'release runner fails closed before stale/unknown E2E execution'],
   [!reader.includes('data-testid="reader-build"'), 'Reader top-bar build entry is absent from production source'],
   [reader.includes('新建笔记') && reader.includes('查看笔记'), 'Reader note action is state-aware in production source'],
 ]

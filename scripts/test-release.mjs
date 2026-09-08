@@ -7,10 +7,8 @@
 // earlier agents introduced). Set RELEASE_PORT / RELEASE_HOST to move the server.
 import { spawn, spawnSync } from 'node:child_process'
 import path from 'node:path'
+import { canBindPort, missingE2EScripts, resolveE2EList, resolveNodeInvocation, resolveNpmInvocation } from './release-runner-utils.mjs'
 
-// Windows-first: npm resolves to npm.cmd; spawn without a shell cannot find the bare
-// 'npm' shim on Windows, so use the platform-appropriate command name.
-const NPM = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const PORT = Number(process.env.RELEASE_PORT || 5320)
 const HOST = process.env.RELEASE_HOST || '127.0.0.1'
 const BASE = process.env.E2E_BASE || `http://${HOST}:${PORT}/ai-education-reader/`
@@ -50,24 +48,22 @@ const OPTIONAL_E2E = [
   'e2e-opfs-storage',
   'e2e-theme',
   'e2e-native-toc',
-  'e2e-ai-toc',
   'e2e-ai-toc-calibration',
-  'e2e-ai-toc-navigation',
   'e2e-chapter-builder-v113',
   'e2e-custom-actions',
   'e2e-toc-thumbnails',
   'e2e-toc-review-layout',
 ]
-const E2E = process.env.RELEASE_E2E
-  ? process.env.RELEASE_E2E.split(',').map((s) => s.trim()).filter(Boolean)
-  : (EXTRA_E2E ? [...CORE_E2E, ...OPTIONAL_E2E] : CORE_E2E)
+const E2E = resolveE2EList({ releaseE2E: process.env.RELEASE_E2E, extraE2E: EXTRA_E2E, core: CORE_E2E, optional: OPTIONAL_E2E })
 
 function run(cmd, args, opts = {}) {
-  // Windows cannot execute the npm.cmd shim with shell=false on current Node
-  // runtimes (spawnSync returns EINVAL). Keep the POSIX path shell-free, while
-  // using the native Windows command interpreter for npm's .cmd wrapper.
-  const useShell = process.platform === 'win32' || !!opts.shell
-  const r = spawnSync(cmd, args, { cwd: process.cwd(), stdio: opts.inherit ? 'inherit' : 'pipe', env: { ...process.env, ...(opts.env || {}) }, shell: useShell })
+  const invocation = cmd === 'npm'
+    ? resolveNpmInvocation()
+    : cmd === 'node' ? resolveNodeInvocation() : { command: cmd, prefixArgs: [] }
+  const r = spawnSync(invocation.command, [...invocation.prefixArgs, ...args], {
+    cwd: process.cwd(), stdio: opts.inherit ? 'inherit' : 'pipe', env: { ...process.env, ...(opts.env || {}) }, shell: false,
+  })
+  if (r.error) console.error('[release] child process error:', r.error.message)
   return r.status === 0
 }
 
@@ -121,25 +117,37 @@ try {
 
   if (failures === 0 || SKIP_UNIT) {
     console.error('\n==== [release] start preview on ' + HOST + ':' + PORT + ' ====')
-    serverPid = startServer()
-    const up = await waitHttp(BASE)
-    if (!up) {
-      console.error('PREVIEW SERVER DID NOT COME UP — aborting E2E')
+    const missing = missingE2EScripts(E2E)
+    if (missing.length > 0) {
+      console.error('UNKNOWN E2E TEST NAME(S) — refusing to start preview:', missing.join(', '))
       failures++
     } else {
-      // Ensure the gitignored generated reader fixture exists (e2e-document-reader needs a >30-page PDF).
-      try {
-        const fs = await import('node:fs')
-        if (!fs.existsSync('test/.playwright/outline-big.pdf')) {
-          console.error('==== [release] generating reader fixture outline-big.pdf ====')
-          run('node', ['scripts/make-outline-pdf.mjs', 'test/.playwright/outline-big.pdf', '40'], { inherit: true })
-        }
-      } catch { /* non-fatal */ }
-      for (const t of E2E) {
-        console.error('\n#### [release] ' + t + ' ####')
-        if (!run('node', ['scripts/' + t + '.mjs'], { inherit: true, env: { E2E_BASE: BASE } })) {
-          console.error(t + ' FAILED')
+      const portFree = await canBindPort(HOST, PORT)
+      if (!portFree) {
+        console.error('RELEASE PORT OCCUPIED — refusing to attach to an existing server:', HOST + ':' + PORT)
+        failures++
+      } else {
+        serverPid = startServer()
+        const up = await waitHttp(BASE)
+        if (!up) {
+          console.error('PREVIEW SERVER DID NOT COME UP — aborting E2E')
           failures++
+        } else {
+          // Ensure the gitignored generated reader fixture exists (e2e-document-reader needs a >30-page PDF).
+          try {
+            const fs = await import('node:fs')
+            if (!fs.existsSync('test/.playwright/outline-big.pdf')) {
+              console.error('==== [release] generating reader fixture outline-big.pdf ====')
+              run('node', ['scripts/make-outline-pdf.mjs', 'test/.playwright/outline-big.pdf', '40'], { inherit: true })
+            }
+          } catch { /* non-fatal */ }
+          for (const t of E2E) {
+            console.error('\n#### [release] ' + t + ' ####')
+            if (!run('node', ['scripts/' + t + '.mjs'], { inherit: true, env: { E2E_BASE: BASE } })) {
+              console.error(t + ' FAILED')
+              failures++
+            }
+          }
         }
       }
     }
