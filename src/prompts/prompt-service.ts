@@ -1,7 +1,8 @@
 import { newStableId, type StableId } from '../engine/types'
-import { getBuiltinPrompt } from './prompt-registry'
-import { getPromptPreferences, setBuiltinPromptHidden } from './prompt-preferences'
-import type { ArtifactPrompt, PromptDefinition, PromptKind } from './prompt-types'
+import { BUILTIN_PROMPT_IDS, DEFAULT_CONVERSATION_MODE_DESCRIPTION, getBuiltinPrompt } from './prompt-registry'
+import { getPromptPreferences, setBuiltinPromptHidden, setDefaultConversationModeId } from './prompt-preferences'
+import { isCanonicalDefaultConversationMode } from './prompt-simplification'
+import type { ArtifactPrompt, ConversationModePrompt, PromptDefinition, PromptKind } from './prompt-types'
 import { allocateAvailablePromptId, getPromptRecord, deletePromptRecord, updatePromptRecordAtomic } from './prompt-store'
 import { listEffectivePromptDefinitions } from './prompt-resolution'
 import { resolveProtocolCanonicalRoot } from './protocol-lineage'
@@ -89,7 +90,10 @@ function sortCatalog(items: PromptDefinition[], preference: 'updatedAt-desc' | '
 /** Merge source-code built-ins with durable custom/experimental definitions. */
 export async function listPromptCatalog(kind?: PromptKind): Promise<PromptDefinition[]> {
   const [preferences, all] = await Promise.all([getPromptPreferences(), listEffectivePromptDefinitions()])
-  return sortCatalog(kind ? all.filter((definition) => definition.kind === kind) : all, preferences.sortPreference ?? 'updatedAt-desc')
+  const selectedDefault = all.find((definition) => definition.kind === 'conversation-mode' && definition.id === preferences.defaultConversationModeId)
+    ?? all.find((definition) => definition.id === BUILTIN_PROMPT_IDS.conversationDefault)
+  const visible = all.filter((definition) => definition.kind !== 'conversation-mode' || definition.id === selectedDefault?.id)
+  return sortCatalog(kind ? visible.filter((definition) => definition.kind === kind) : visible, preferences.sortPreference ?? 'updatedAt-desc')
 }
 
 export async function getPromptDefinition(id: StableId): Promise<PromptDefinition | undefined> {
@@ -123,6 +127,50 @@ export async function updatePromptDefinition(id: StableId, patch: Partial<Prompt
   const candidate = assertServiceDefinition({ ...current, ...patch })
   if (candidate.id !== current.id || candidate.kind !== current.kind || candidate.source !== current.source) throw new PromptServiceError('invalid', '不能通过更新改变提示词的 ID、kind 或 source。')
   return savePromptDefinition(candidate, dependencies)
+}
+
+/**
+ * The built-in default is the editable entry presented by Prompt Manager. Its
+ * user content is stored in a custom row so source-owned built-ins remain
+ * immutable and old IDs stay available for history/Backup compatibility.
+ */
+export async function saveDefaultConversationMode(
+  input: ConversationModePrompt,
+  dependencies?: PromptServiceDependencies,
+): Promise<PromptMutationResult> {
+  if (input.kind !== 'conversation-mode') throw new PromptServiceError('invalid', '默认会话入口必须是 conversation-mode。')
+  const d = deps(dependencies)
+  const preferences = await getPromptPreferences()
+  const current = await getPromptDefinition(preferences.defaultConversationModeId)
+  if (current && isCanonicalDefaultConversationMode(current)) {
+    const candidate: ConversationModePrompt = {
+      ...current,
+      name: '默认',
+      description: DEFAULT_CONVERSATION_MODE_DESCRIPTION,
+      enabled: true,
+      systemPrompt: input.systemPrompt,
+    }
+    const result = await savePromptDefinition(candidate, dependencies)
+    if (preferences.defaultConversationModeId !== result.definition.id) await setDefaultConversationModeId(result.definition.id)
+    return result
+  }
+  const id = await allocateAvailablePromptId(d.id)
+  const now = d.now()
+  const candidate: ConversationModePrompt = {
+    id,
+    kind: 'conversation-mode',
+    name: '默认',
+    description: DEFAULT_CONVERSATION_MODE_DESCRIPTION,
+    source: 'custom',
+    enabled: true,
+    createdAt: now,
+    updatedAt: now,
+    revision: 1,
+    systemPrompt: input.systemPrompt,
+  }
+  const result = await savePromptDefinition(candidate, dependencies)
+  await setDefaultConversationModeId(result.definition.id)
+  return result
 }
 
 export async function copyPromptDefinition(id: StableId, options: { name?: string } = {}, dependencies?: PromptServiceDependencies): Promise<PromptMutationResult> {

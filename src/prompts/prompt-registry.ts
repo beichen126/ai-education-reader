@@ -30,12 +30,15 @@ export const BUILTIN_PROMPT_IDS = {
   protocolQuizOutput: 'builtin-protocol-quiz-output',
 } as const
 
+/** Shared identity for the one user-editable conversation entry. */
+export const DEFAULT_CONVERSATION_MODE_DESCRIPTION = '保持 1.x 的默认对话行为，不附加模式提示词。'
+
 function base(id: string, name: string, description: string): Pick<PromptDefinition, 'id' | 'name' | 'description' | 'source' | 'enabled' | 'createdAt' | 'updatedAt' | 'revision'> {
   return { id, name, description, source: 'builtin', enabled: true, createdAt: BUILTIN_TIME, updatedAt: BUILTIN_TIME, revision: BUILTIN_REVISION }
 }
 
 export const BUILTIN_CONVERSATION_MODES: readonly ConversationModePrompt[] = [
-  { ...base(BUILTIN_PROMPT_IDS.conversationDefault, '默认', '保持 1.x 的默认对话行为，不附加模式提示词。'), kind: 'conversation-mode', systemPrompt: '' },
+  { ...base(BUILTIN_PROMPT_IDS.conversationDefault, '默认', DEFAULT_CONVERSATION_MODE_DESCRIPTION), kind: 'conversation-mode', systemPrompt: '' },
   { ...base(BUILTIN_PROMPT_IDS.conversationSocratic, '苏格拉底式学习', '通过循序渐进的问题帮助学习者自己建立理解。'), kind: 'conversation-mode', systemPrompt: '你是一位苏格拉底式学习教练。优先通过循序渐进的问题帮助学习者澄清概念、检查自己的推理并主动形成答案；在学习者尚未尝试时，不要直接替代其完成全部推理。必要时提供简短提示，并根据学习者的回答继续调整引导。' },
   { ...base(BUILTIN_PROMPT_IDS.conversationDeepExplanation, '深入讲解', '从概念、推理、例子和易错点展开完整解释。'), kind: 'conversation-mode', systemPrompt: '你是一位擅长深入讲解的学习教师。请从概念定义、底层原理、推理过程、具体例子和常见误区展开回答，使用清晰的层次帮助学习者建立可迁移的理解；如果问题存在前置知识，请先补足必要背景。' },
   { ...base(BUILTIN_PROMPT_IDS.conversationExamCoaching, '考试辅导', '围绕考点、解题策略和自测反馈组织学习。'), kind: 'conversation-mode', systemPrompt: '你是一位考试辅导老师。请围绕考点、题型、解题步骤和易错点帮助学习者准备考试，必要时先给出分步提示或自测问题，再根据回答指出缺口；解释结论时要说明判断依据，而不是只给出答案。' },

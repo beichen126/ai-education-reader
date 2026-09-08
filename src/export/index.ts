@@ -12,6 +12,7 @@ import { initSettings } from '../engine/settings-store'
 import { clearAnnotationCache } from '../annotations/annotation-store'
 import { resetDrafts } from '../engine/draft-store'
 import { migrateLegacyPrompts } from '../prompts/prompt-migration'
+import { migratePromptSimplification } from '../prompts/prompt-simplification'
 
 export { BackupError, PdfOutlineError, ConversationBundleError }
 export type { BackupV1, BackupAttachment } from './backup-types'
@@ -54,6 +55,7 @@ export async function importBackupText(text: string): Promise<void> {
   // the in-memory draft cache before initStore reloads from the restored settings.
   resetDrafts()
   await migrateLegacyPrompts()
+  await migratePromptSimplification()
   await initSettings()
   await initStore()
   clearAnnotationCache()

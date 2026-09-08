@@ -150,10 +150,6 @@ export function Conversation() {
       }
     } finally { setQuickSendingId(null) }
   }
-  async function refreshPromptContext() {
-    if (session) await sessionsActions.reload(session.id)
-    await branchChat.refresh()
-  }
   async function onCreateArtifact(input: { kind: ArtifactKind; prompt: string; presetId?: string; promptBundle: ArtifactPromptBundleSnapshot }) {
     if (!session || !creating || creatingBusy) return
     setCreatingBusy(true); setCreatingError(undefined)
@@ -196,12 +192,8 @@ export function Conversation() {
         conversationId={session.id}
         branches={branchChat.branches}
         activeBranchId={branchChat.activeBranchId}
-        effectiveMessageCount={messages.length}
-        effectiveTransitions={promptPath.transitions}
-        busy={busy}
         onSwitch={async (id) => { await branchChat.switchBranch(id); setMenuMsgId(null) }}
         onChanged={() => void branchChat.refresh()}
-        onModeChanged={refreshPromptContext}
       />)}
       {/* Composer sits inside the scroll body, position:sticky bottom:0 (as in DSH), so the
           mobile browser's native focus scroll lifts it above the on-screen keyboard. */}

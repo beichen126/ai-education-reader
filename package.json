@@ -118,6 +118,7 @@
     "test:prompt-storage": "npx tsx scripts/test-prompt-storage.ts",
     "test:prompt-backup": "npx tsx scripts/test-prompt-backup.ts",
     "test:prompt-migration": "npx tsx scripts/test-prompt-migration.ts",
+    "test:prompt-simplification": "npx tsx scripts/test-prompt-simplification.ts",
     "test:prompt-timeline": "npx tsx scripts/test-prompt-timeline.ts",
     "test:prompt-performance": "npx tsx scripts/test-prompt-performance.ts",
     "test:branch-prompt-path": "npx tsx scripts/test-branch-prompt-path.ts",

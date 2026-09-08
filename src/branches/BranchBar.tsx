@@ -3,57 +3,31 @@ import { Button } from '../dsh/primitives/Button'
 import { deleteBranchSubtree, renameBranch } from './branch-service'
 import { resolveBranchLineage, descendantBranchIds } from './branch-path'
 import type { ConversationBranch } from './branch-types'
-import { branchThreadKey, useDraft } from '../engine/draft-store'
-import { getPromptPreferences } from '../prompts/prompt-preferences'
-import { capturePromptSnapshot } from '../prompts/prompt-resolution'
-import { listConversationModeDefinitions, promptSnapshotNeedsApply, samePromptSnapshot, switchConversationMode } from '../prompts/prompt-mode-service'
-import type { ConversationModePrompt, PromptTransition } from '../prompts/prompt-types'
 import css from './branch.module.css'
 
 type Props = {
   conversationId: string
   branches: ConversationBranch[]
   activeBranchId?: string
-  effectiveMessageCount: number
-  effectiveTransitions: PromptTransition[]
-  busy: boolean
   onSwitch: (branchId: string | undefined) => Promise<void> | void
   onChanged: () => void
-  onModeChanged: () => Promise<void> | void
 }
 
-type OpenMenu = 'route' | 'mode' | null
+type OpenMenu = 'route' | null
 
-/** Route + mode context for the active thread. The route controls remain independent from mode history. */
-export function BranchBar({ conversationId, branches, activeBranchId, effectiveMessageCount, effectiveTransitions, busy, onSwitch, onChanged, onModeChanged }: Props) {
+/** Route context for the active thread. Conversation mode is now a static default entry. */
+export function BranchBar({ conversationId, branches, activeBranchId, onSwitch, onChanged }: Props) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
   const [editId, setEditId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
-  const [modes, setModes] = useState<ConversationModePrompt[]>([])
-  const [defaultModeId, setDefaultModeId] = useState('builtin-conversation-default')
-  const [switchingId, setSwitchingId] = useState<string | null>(null)
-  const [modeError, setModeError] = useState<string | null>(null)
   const routeTriggerRef = useRef<HTMLButtonElement | null>(null)
-  const modeTriggerRef = useRef<HTMLButtonElement | null>(null)
   const focusFrameRef = useRef<number | null>(null)
-  const draft = useDraft(activeBranchId ? branchThreadKey(activeBranchId) : conversationId)
   const routeMenuId = 'conversation-route-menu-' + conversationId
-  const modeMenuId = 'conversation-mode-menu-' + conversationId
   const initialMenuFocus = useRef<'selected' | 'first' | 'last'>('selected')
 
   useEffect(() => {
-    let cancelled = false
-    void Promise.all([listConversationModeDefinitions(), getPromptPreferences()]).then(([definitions, preferences]) => {
-      if (cancelled) return
-      setModes(definitions)
-      setDefaultModeId(preferences.defaultConversationModeId)
-    }).catch(() => { if (!cancelled) setModeError('无法加载会话模式。') })
-    return () => { cancelled = true }
-  }, [conversationId])
-
-  useEffect(() => {
     if (!openMenu) { setEditId(null); return }
-    const menuId = openMenu === 'mode' ? modeMenuId : routeMenuId
+    const menuId = routeMenuId
     const menu = document.getElementById(menuId)
     const items = menu ? Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')).filter((item) => !(item as HTMLButtonElement).disabled) : []
     if (items.length === 0) return
@@ -65,24 +39,15 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
         : selected >= 0 ? selected : 0
     initialMenuFocus.current = 'selected'
     items[focusIndex]?.focus()
-  }, [openMenu, modeMenuId, routeMenuId, modes, branches, activeBranchId, defaultModeId])
+  }, [openMenu, routeMenuId, branches, activeBranchId])
 
   const lineage = activeBranchId ? resolveBranchLineage(branches, activeBranchId) : null
-  const activeTransition = effectiveTransitions[effectiveTransitions.length - 1]
-  const activeSnapshot = activeTransition?.snapshot
-  const legacy = effectiveMessageCount > 0 && !activeTransition
-  const selectedDefinition = activeSnapshot?.profileId ? modes.find((mode) => mode.id === activeSnapshot.profileId) : modes.find((mode) => mode.id === defaultModeId)
-  const activeModeName = legacy ? '模式未记录（来自 v1.x）' : (activeSnapshot?.name || selectedDefinition?.name || '默认')
-  const hasNewRevision = !!activeSnapshot && !!selectedDefinition && promptSnapshotNeedsApply(activeSnapshot, selectedDefinition)
-  const draftNonEmpty = draft.text.trim().length > 0 || draft.imageIds.length > 0
-  const disabledReason = busy ? '发送或生成中，停止后才能切换模式' : switchingId ? '正在应用会话模式' : undefined
 
-  function focusTrigger(kind: OpenMenu): void {
+  function focusTrigger(): void {
     if (focusFrameRef.current !== null) window.cancelAnimationFrame(focusFrameRef.current)
     focusFrameRef.current = window.requestAnimationFrame(() => {
       focusFrameRef.current = null
-      const trigger = kind === 'mode' ? modeTriggerRef.current : routeTriggerRef.current
-      trigger?.focus()
+      routeTriggerRef.current?.focus()
     })
   }
 
@@ -94,7 +59,7 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
 
   function closeMenu(kind: OpenMenu, returnFocus = true): void {
     setOpenMenu(null)
-    if (returnFocus && kind) focusTrigger(kind)
+    if (returnFocus && kind) focusTrigger()
   }
 
   function toggleMenu(kind: Exclude<OpenMenu, null>): void {
@@ -130,8 +95,7 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
       return
     }
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
-    const menuId = kind === 'mode' ? modeMenuId : routeMenuId
-    const menu = document.getElementById(menuId)
+    const menu = document.getElementById(routeMenuId)
     const items = menu ? Array.from(menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')).filter((item) => !(item as HTMLButtonElement).disabled) : []
     if (items.length === 0) return
     event.preventDefault()
@@ -142,7 +106,7 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
 
   async function go(branchId: string | undefined) {
     closeMenu('route')
-    try { await onSwitch(branchId) } finally { focusTrigger('route') }
+    try { await onSwitch(branchId) } finally { focusTrigger() }
   }
 
   async function saveRename() {
@@ -161,30 +125,6 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
     closeMenu('route')
     onChanged()
     if (activeBranchId === branchId) await onSwitch(undefined)
-  }
-
-  async function applyMode(definition: ConversationModePrompt) {
-    if (busy || switchingId) return
-    const snapshotAtBoundary = activeSnapshot
-    const exact = snapshotAtBoundary && samePromptSnapshot(snapshotAtBoundary, capturePromptSnapshot(definition, snapshotAtBoundary.capturedAt))
-    if (exact) { closeMenu('mode'); return }
-    const history = effectiveMessageCount > 0
-    const draftNote = draftNonEmpty ? '\n当前草稿将在新模式下发送。' : ''
-    const confirmation = history ? `从下一条消息开始使用「${definition.name}」？${draftNote}` : `使用「${definition.name}」作为当前模式？`
-    if (history && !globalThis.confirm(confirmation)) return
-    setSwitchingId(definition.id)
-    setModeError(null)
-    try {
-      await switchConversationMode({ conversationId, branchId: activeBranchId, modeId: definition.id })
-      closeMenu('mode')
-      await onModeChanged()
-      focusTrigger('mode')
-    } catch (error) {
-      setModeError(error instanceof Error ? error.message : '无法切换会话模式。')
-      closeMenu('mode')
-    } finally {
-      setSwitchingId(null)
-    }
   }
 
   return (
@@ -217,23 +157,8 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
 
       <div className={css.contextRow} data-testid="conversation-context-row">
         <span className={css.contextLabel}>模式</span>
-        <span className={css.activeMode} data-testid="active-conversation-mode" aria-live="polite">{activeModeName}</span>
-        {legacy && <span className={css.legacyHint} data-testid="legacy-mode-hint">模式未记录</span>}
-        {hasNewRevision && selectedDefinition && <><span className={css.revisionHint}>有新版本</span><button type="button" className={css.applyButton} disabled={!!disabledReason} onClick={() => void applyMode(selectedDefinition)}>应用新版本</button></>}
-        <div className={css.switcher}>
-          <Button ref={modeTriggerRef} size="sm" variant="outline" disabled={!!disabledReason} aria-haspopup="menu" aria-expanded={openMenu === 'mode'} aria-controls={modeMenuId} aria-label="切换对话模式" title={disabledReason} onKeyDown={(event) => handleTriggerKeyDown('mode', event)} onClick={() => toggleMenu('mode')}>切换 ▾</Button>
-          {openMenu === 'mode' && <div id={modeMenuId} className={css.menu + ' ' + css.modeMenu} role="menu" aria-label="模式" onKeyDown={(event) => handleMenuKeyDown('mode', event)}>
-            <div className={css.menuHeading}>模式</div>
-            {modes.map((mode) => {
-              const selected = mode.id === activeSnapshot?.profileId || (!activeSnapshot && mode.id === defaultModeId)
-              return <button key={mode.id} type="button" className={css.menuItem + (selected ? ' ' + css.active : '')} role="menuitemradio" aria-checked={selected} disabled={!!disabledReason} onClick={() => void applyMode(mode)}>{mode.name}{selected ? ' · 当前' : ''}</button>
-            })}
-            {disabledReason && <div className={css.disabledHint} role="status">{disabledReason}</div>}
-          </div>}
-        </div>
-        {disabledReason && <span className={css.disabledHint} data-testid="mode-disabled-reason">{disabledReason}</span>}
+        <span className={css.activeMode} data-testid="active-conversation-mode" aria-live="polite">默认</span>
       </div>
-      {modeError && <div className={css.modeError} role="alert">{modeError}</div>}
     </div>
   )
 }

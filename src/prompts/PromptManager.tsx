@@ -9,12 +9,13 @@ import {
   getPromptDefinition,
   listPromptCatalog,
   PromptServiceError,
+  saveDefaultConversationMode,
   savePromptDefinition,
   setPromptEnabled,
   updatePromptDefinition,
   type PromptMutationResult,
 } from './prompt-service'
-import { getBuiltinPrompt, getBuiltinProtocol } from './prompt-registry'
+import { BUILTIN_PROMPT_IDS, getBuiltinPrompt, getBuiltinProtocol } from './prompt-registry'
 import { resolveProtocolCanonicalRoot } from './protocol-lineage'
 import { promptContent } from './prompt-validation'
 import type { PromptDefinition, PromptKind, PromptUserPreferences } from './prompt-types'
@@ -310,7 +311,8 @@ export function PromptManager() {
   }, [catalog, category, query])
 
   const selected = draft ?? (selectedId ? catalog.find((item) => item.id === selectedId) : undefined)
-  const readonly = selected?.source === 'builtin'
+  const canonicalDefault = selected?.kind === 'conversation-mode' && selected.id === (preferences?.defaultConversationModeId ?? BUILTIN_PROMPT_IDS.conversationDefault)
+  const readonly = selected?.source === 'builtin' && !canonicalDefault
   const protocolStatus = selected?.kind === 'protocol' ? protocolActivationStatus(selected, catalog) : undefined
 
   const openDefinition = (definition: PromptDefinition) => {
@@ -335,8 +337,13 @@ export function PromptManager() {
       setNotice(null)
       return
     }
+    if (category === 'all' || category === 'conversation-mode') {
+      setError('会话模式只有“默认”一个入口，不能新建第二个会话模式。')
+      setNotice(null)
+      return
+    }
     if (dirty && !window.confirm('当前修改尚未保存，确定新建提示词吗？')) return
-    setDraft(newDefinition(category === 'all' ? 'conversation-mode' : category))
+    setDraft(newDefinition(category))
     setSelectedId(null)
     setEditorMode('create')
     setDirty(true)
@@ -362,7 +369,9 @@ export function PromptManager() {
     try {
       const result = editorMode === 'create'
         ? await savePromptDefinition(draft)
-        : await updatePromptDefinition(draft.id, draft)
+        : draft.kind === 'conversation-mode' && canonicalDefault
+          ? await saveDefaultConversationMode(draft)
+          : await updatePromptDefinition(draft.id, draft)
       await afterMutation(result, editorMode === 'create' ? '提示词已创建。' : '提示词已保存。')
     } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
   }
@@ -479,8 +488,9 @@ export function PromptManager() {
           <div className={css.listToolbar}>
             <button type="button" className={css.mobileBack} onClick={() => setMobileStep('categories')}>‹ 分类</button>
             <label className={css.searchField}><span>搜索提示词</span><input data-testid="prompt-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、描述或内容" /></label>
-            <button type="button" className={css.newButton} data-testid="prompt-new" disabled={category === 'protocol'} title={category === 'protocol' ? '系统协议需从 canonical 复制' : undefined} onClick={startCreate}>＋ 新建</button>
+            <button type="button" className={css.newButton} data-testid="prompt-new" disabled={category === 'protocol' || category === 'all' || category === 'conversation-mode'} title={category === 'protocol' ? '系统协议需从 canonical 复制' : category === 'all' || category === 'conversation-mode' ? '会话模式只有默认入口' : undefined} onClick={startCreate}>＋ 新建</button>
             {category === 'protocol' && <span data-testid="protocol-new-hint" role="note">系统协议请从 canonical 复制</span>}
+            {(category === 'all' || category === 'conversation-mode') && <span data-testid="conversation-mode-new-hint" role="note">会话模式只有默认入口</span>}
           </div>
           <div className={css.listMeta}>
             <span>{loading ? '正在读取…' : filtered.length + ' 个提示词'}</span>
@@ -504,6 +514,7 @@ export function PromptManager() {
             <PromptEditor
               definition={draft}
               readonly={!!readonly}
+              canonicalDefault={!!canonicalDefault}
               creating={editorMode === 'create'}
               busy={busy}
               preferences={preferences}
@@ -534,6 +545,7 @@ export function PromptManager() {
 function PromptEditor(props: {
   definition: PromptDefinition
   readonly: boolean
+  canonicalDefault: boolean
   creating: boolean
   busy: boolean
   preferences: PromptUserPreferences | null
@@ -552,7 +564,7 @@ function PromptEditor(props: {
   onCancel: () => void
   protocolStatus?: ProtocolActivationStatus
 }) {
-  const { definition, readonly, creating, busy, preferences } = props
+  const { definition, readonly, canonicalDefault, creating, busy, preferences } = props
   const change = (patch: Partial<PromptDefinition>) => props.onChange({ ...definition, ...patch } as PromptDefinition)
   const changeContent = (value: string) => props.onChange(withContent(definition, value))
   const usage = preferences ? usageText(definition, preferences) : '正在读取使用情况…'
@@ -566,8 +578,8 @@ function PromptEditor(props: {
         <span className={css.sourceBadge} data-source={definition.source}>{sourceLabel(definition.source)}</span>
       </div>
       <div className={css.editorScroll}>
-        <label className={css.editorField}><span>名称</span><input data-testid="prompt-editor-name" value={definition.name} disabled={readonly || busy} onChange={(event) => change({ name: event.target.value })} /></label>
-        <label className={css.editorField}><span>描述</span><input data-testid="prompt-editor-description" value={definition.description} disabled={readonly || busy} onChange={(event) => change({ description: event.target.value })} /></label>
+        <label className={css.editorField}><span>名称</span><input data-testid="prompt-editor-name" value={definition.name} disabled={readonly || canonicalDefault || busy} onChange={(event) => change({ name: event.target.value })} /></label>
+        <label className={css.editorField}><span>描述</span><input data-testid="prompt-editor-description" value={definition.description} disabled={readonly || canonicalDefault || busy} onChange={(event) => change({ description: event.target.value })} /></label>
         {creating && <label className={css.editorField}><span>作用范围</span><select data-testid="prompt-editor-kind" value={definition.kind} disabled={busy} onChange={(event) => props.onChange(newDefinition(event.target.value as PromptKind))}><option value="conversation-mode">会话模式</option><option value="artifact">学习成果</option><option value="quick-follow-up">快捷追问</option><option value="protocol" disabled>系统协议（请从 canonical 复制）</option></select></label>}
         {definition.kind === 'artifact' && <label className={css.editorField}><span>学习成果类型</span><select aria-label="学习成果类型" value={definition.artifactKind} disabled={readonly || busy} onChange={(event) => change({ artifactKind: event.target.value as ArtifactKind })}>{artifactKinds.map((kind) => <option value={kind.id} key={kind.id}>{kind.label}</option>)}</select></label>}
         {definition.kind === 'quick-follow-up' && <>
@@ -594,7 +606,7 @@ function PromptEditor(props: {
         </>}
         <label className={css.editorField}><span>{definition.kind === 'artifact' || definition.kind === 'quick-follow-up' ? '模板内容' : definition.kind === 'protocol' ? '协议提示词' : '系统提示词'}</span><textarea id="prompt-editor-content" data-testid="prompt-editor-content" aria-invalid={quickPromptError ? 'true' : undefined} aria-describedby={quickPromptError ? 'prompt-editor-content-error' : undefined} value={contentOf(definition)} readOnly={readonly} disabled={busy} onChange={(event) => changeContent(event.target.value)} />{quickPromptError && <span id="prompt-editor-content-error" className={css.editorError} role="alert">{quickPromptError}</span>}</label>
         {!creating && <div className={css.metaGrid}><div><span>作用范围</span><strong>{kindLabels[definition.kind]}</strong></div><div><span>版本</span><strong>revision {definition.revision}</strong></div><div><span>当前使用情况</span><strong>{usage}</strong></div></div>}
-        {definition.kind === 'conversation-mode' && definition.source !== 'builtin' && <label className={css.checkField}><input type="checkbox" checked={definition.enabled} disabled={busy} onChange={(event) => change({ enabled: event.target.checked })} /><span>启用此会话模式</span></label>}
+        {definition.kind === 'conversation-mode' && definition.source !== 'builtin' && !canonicalDefault && <label className={css.checkField}><input type="checkbox" checked={definition.enabled} disabled={busy} onChange={(event) => change({ enabled: event.target.checked })} /><span>启用此会话模式</span></label>}
         {props.error && <div className={css.editorError} role="alert">{props.error}</div>}
         {props.notice && <div className={css.editorNotice} role="status">{props.notice}</div>}
       </div>
@@ -602,16 +614,16 @@ function PromptEditor(props: {
         {creating ? <><button type="button" className={css.primaryAction} data-testid="prompt-save" disabled={busy} onClick={props.onSave}>创建</button><button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onCancel}>取消</button></>
           : <>
             {readonly ? <button type="button" className={css.primaryAction} data-testid="prompt-copy" disabled={busy} onClick={props.onCopy}>复制 / 另存为</button> : <button type="button" className={css.primaryAction} data-testid="prompt-save" disabled={busy} onClick={props.onSave}>保存</button>}
-            {definition.kind === 'conversation-mode' && <button type="button" className={css.secondaryAction} disabled={busy || !definition.enabled || preferences?.defaultConversationModeId === definition.id} onClick={props.onSetDefault}>{preferences?.defaultConversationModeId === definition.id ? '当前默认' : '设为默认'}</button>}
+            {definition.kind === 'conversation-mode' && !canonicalDefault && <button type="button" className={css.secondaryAction} disabled={busy || !definition.enabled || preferences?.defaultConversationModeId === definition.id} onClick={props.onSetDefault}>{preferences?.defaultConversationModeId === definition.id ? '当前默认' : '设为默认'}</button>}
             {definition.kind === 'protocol' ? <>
               {!readonly && <button type="button" className={css.secondaryAction} data-testid="protocol-activate" disabled={busy || props.dirty || activeProtocol || !props.protocolStatus?.eligible} onClick={props.onActivateOverride}>{activeProtocol ? '当前实验协议' : '启用实验协议'}</button>}
               {!readonly && props.protocolStatus && !props.protocolStatus.eligible && <div className={css.editorError} data-testid="protocol-activation-reason" role="alert">{props.protocolStatus.reason}</div>}
               {!readonly && <button type="button" className={css.secondaryAction} data-testid="protocol-restore" disabled={busy || !activeProtocol} onClick={props.onRestoreProtocol}>恢复内置协议</button>}
               {!readonly && <><button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onCopy}>复制</button><button type="button" className={css.dangerAction} data-testid="prompt-delete" disabled={busy} onClick={props.onDelete}>删除</button></>}
             </> : <>
-              <button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onToggle}>{definition.enabled ? '停用' : '启用'}</button>
+              {!canonicalDefault && <button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onToggle}>{definition.enabled ? '停用' : '启用'}</button>}
               {readonly && <button type="button" className={css.secondaryAction} data-testid="prompt-restore-canonical" disabled={busy} onClick={props.onRestore}>恢复 canonical</button>}
-              {!readonly && <><button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onCopy}>复制</button><button type="button" className={css.dangerAction} data-testid="prompt-delete" disabled={busy} onClick={props.onDelete}>删除</button></>}
+              {!readonly && !canonicalDefault && <><button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onCopy}>复制</button><button type="button" className={css.dangerAction} data-testid="prompt-delete" disabled={busy} onClick={props.onDelete}>删除</button></>}
             </>}
           </>}
       </div>

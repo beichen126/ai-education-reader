@@ -21,6 +21,7 @@ import { Gallery } from './gallery/Gallery'
 import { DocumentLibrary } from './documents/DocumentLibrary'
 import { DocumentReader } from './documents/DocumentReader'
 import { migrateLegacyPrompts } from './prompts/prompt-migration'
+import { migratePromptSimplification } from './prompts/prompt-simplification'
 
 function renderSlot(key: string, owner?: any): ReactNode {
   if (key === 'sidebar') return <Sidebar collapsed={!!owner?.collapsed} width={owner?.width ?? 0} />
@@ -38,7 +39,7 @@ export function App() {
   const [boot, setBoot] = useState<BootState>('loading')
   const bootFn = useCallback(async () => {
     setBoot('loading')
-    try { await migrateLegacyPrompts(); await initSettings(); await initStore(); setBoot('ready') }
+    try { await migrateLegacyPrompts(); await migratePromptSimplification(); await initSettings(); await initStore(); setBoot('ready') }
     catch (e) { console.error('本地数据载入失败', e); setBoot('error') }
   }, [])
   useEffect(() => { void bootFn() }, [bootFn])
