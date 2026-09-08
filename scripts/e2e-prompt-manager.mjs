@@ -39,7 +39,8 @@ await manager.waitFor({ state: 'visible', timeout: 10000 })
 assert(await manager.getAttribute('aria-label') === '提示词管理', 'Prompt Manager exposes a named dialog')
 assert(await page.locator('[data-testid="prompt-category-all"]').count() === 1, 'category: all is available')
 assert(await page.locator('[data-testid="prompt-category-conversation-mode"]').count() === 1, 'category: conversation modes is available')
-assert(await page.locator('[data-testid="prompt-row"]').count() >= 9, 'catalog loads the visible default, artifact and protocol definitions')
+assert(await page.locator('[data-testid="prompt-row"]').count() >= 3, 'catalog loads the visible default, artifact and quick-follow-up definitions without protocols')
+assert(!(await page.locator('[data-testid="prompt-row"]').allTextContents()).join(' ').includes('协议'), 'default all catalog does not render protocol definitions')
 
 let externalRequests = 0
 const requestListener = (request) => { if (!request.url().startsWith('http://127.0.0.1')) externalRequests++ }
@@ -69,7 +70,7 @@ assert(await page.locator('[data-testid="prompt-row"]').count() === 1 && await p
 
 await page.locator('[data-testid="prompt-search"]').fill('')
 await page.locator('[data-testid="prompt-category-artifact"]').click()
-assert(await page.locator('[data-testid="prompt-row"]').count() >= 5, 'category filter projects artifact prompts')
+assert(await page.locator('[data-testid="prompt-row"]').count() === 2, 'category filter exposes only canonical note and quiz prompts before user templates')
 await page.locator('[data-testid="prompt-new"]').click()
 await page.locator('[data-testid="prompt-editor-name"]').fill('阶段九自定义成果')
 await page.locator('[data-testid="prompt-editor-description"]').fill('用于验证本地 CRUD')

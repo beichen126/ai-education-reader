@@ -52,14 +52,18 @@ const manager = page.locator('[data-testid="prompt-manager"]')
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-artifact"]').click()
 await page.locator('[data-testid="prompt-search"]').fill(legacyName)
-assert(await page.locator('[data-testid="prompt-row"]').count() === 1, 'legacy Custom Artifact Action migrates into the Artifact prompt catalog')
-await page.locator('[data-testid="prompt-row"]').first().click()
-assert(await page.locator('[data-testid="prompt-editor-content"]').inputValue().then(value => value.includes('迁移测试')), 'migrated Artifact prompt keeps its original content')
-await page.locator('[data-testid="prompt-editor-name"]').fill(migratedName)
-await page.locator('[data-testid="prompt-editor-content"]').fill('迁移后的新模板内容。')
-await page.locator('[data-testid="prompt-save"]').click()
-await page.getByText('提示词已保存。', { exact: true }).waitFor({ state: 'visible', timeout: 10000 })
-assert(await page.locator('[data-testid="prompt-editor-content"]').inputValue() === '迁移后的新模板内容。', 'migrated Artifact prompt CRUD is persisted by Prompt Manager')
+assert(await page.locator('[data-testid="prompt-row"]').count() === 0, 'legacy Custom Artifact Action is hidden from the new Artifact catalog')
+const migratedRow = await page.evaluate((id) => new Promise((resolve) => {
+  const request = indexedDB.open('ai-education-reader')
+  request.onsuccess = () => {
+    const db = request.result
+    const get = db.transaction('prompts', 'readonly').objectStore('prompts').get(id)
+    get.onsuccess = () => { const row = get.result; db.close(); resolve(row ? { content: row.userPrompt, kind: row.artifactKind } : null) }
+    get.onerror = () => { db.close(); resolve(null) }
+  }
+  request.onerror = () => resolve(null)
+}), 'legacy-action-' + now)
+assert(migratedRow?.kind === 'custom' && migratedRow?.content.includes('迁移测试'), 'hidden migrated Artifact prompt remains durable with its original content')
 
 await page.locator('[data-testid="prompt-manager-close"]').click()
 await page.reload({ waitUntil: 'networkidle' })
@@ -68,11 +72,18 @@ await openFromSidebar()
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-artifact"]').click()
 await page.locator('[data-testid="prompt-search"]').fill(migratedName)
-assert(await page.locator('[data-testid="prompt-row"]').count() === 1, 'migrated Artifact prompt survives reload')
-await page.locator('[data-testid="prompt-row"]').first().click()
-await page.locator('[data-testid="prompt-delete"]').click()
-await page.locator('[data-testid="prompt-row"]').filter({ hasText: migratedName }).waitFor({ state: 'detached', timeout: 10000 })
-assert(await page.locator('[data-testid="prompt-row"]').filter({ hasText: migratedName }).count() === 0, 'migrated Artifact prompt can be deleted from Prompt Manager')
+assert(await page.locator('[data-testid="prompt-row"]').count() === 0, 'migrated Artifact prompt remains hidden after reload')
+const durableAfterReload = await page.evaluate((id) => new Promise((resolve) => {
+  const request = indexedDB.open('ai-education-reader')
+  request.onsuccess = () => {
+    const db = request.result
+    const get = db.transaction('prompts', 'readonly').objectStore('prompts').get(id)
+    get.onsuccess = () => { const row = get.result; db.close(); resolve(!!row) }
+    get.onerror = () => { db.close(); resolve(false) }
+  }
+  request.onerror = () => resolve(false)
+}), 'legacy-action-' + now)
+assert(durableAfterReload, 'migrated Artifact prompt survives reload in durable storage')
 
 await browser.close()
 console.log(results.join('\n'))

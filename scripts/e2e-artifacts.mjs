@@ -31,10 +31,12 @@ await page.locator('textarea[aria-label="本次要求"]').fill('本次只提炼�
 await page.locator('button:has-text("另存为提示词")').click()
 await page.locator('[role="status"]').waitFor({ state: 'visible', timeout: 8000 })
 assert(await page.locator('button:has-text("我的笔记模板")').count() >= 1, 'Stage 10: run-local edit can be saved as a new Artifact prompt')
-// A10: the create dialog only offers Note / Quiz / Custom (summary + study-guide hidden).
+// Stage 4: the create dialog only offers Note / Quiz; legacy kinds are history-only.
+assert(await page.locator('[role="radiogroup"][aria-label="类型"] [role="radio"]').count() === 2, 'Stage 4: create dialog exposes exactly Note and Quiz')
+assert(await page.locator('[data-testid="artifact-kind-custom"]').count() === 0, 'Stage 4: custom processing is absent from the create dialog')
 const summaryBtn = await page.locator('button:has-text("生成总结")').count()
 const guideBtn = await page.locator('button:has-text("生成学习指南")').count()
-assert(summaryBtn === 0 && guideBtn === 0, 'A10: summary/study-guide actions are NOT exposed (default surface Note/Quiz/Custom)')
+assert(summaryBtn === 0 && guideBtn === 0, 'Stage 4: summary/study-guide actions are absent from the create dialog')
 // Generate.
 await page.locator('button:has-text("生成")').filter({ hasText: /^生成$/ }).last().click()
 // The generated Note editor opens (title input + body textarea).

@@ -116,6 +116,7 @@
     "test:protocol-registry": "npm run test:prompt-registry",
     "test:protocol-overrides": "npx tsx scripts/test-protocol-overrides.ts",
     "test:prompt-storage": "npx tsx scripts/test-prompt-storage.ts",
+    "test:prompt-catalog-stage4": "npx tsx scripts/test-prompt-catalog-stage4.ts",
     "test:prompt-backup": "npx tsx scripts/test-prompt-backup.ts",
     "test:prompt-migration": "npx tsx scripts/test-prompt-migration.ts",
     "test:prompt-simplification": "npx tsx scripts/test-prompt-simplification.ts",
