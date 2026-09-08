@@ -1,5 +1,5 @@
 
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
@@ -113,6 +113,14 @@ export function Conversation() {
   const [quickSendingId, setQuickSendingId] = useState<string | null>(null)
   const [inspectedQuickFollowUp, setInspectedQuickFollowUp] = useState<QuickFollowUpMetadata | null>(null)
   const promptPath = session ? buildEffectivePromptPath(session, branchChat.branches, branchChat.activeBranchId) : undefined
+  const transitionByBoundary = useMemo(() => {
+    const byBoundary = new Map<string | null, PromptTransition>()
+    for (const transition of promptPath?.transitions ?? []) {
+      if (!byBoundary.has(transition.afterMessageId)) byBoundary.set(transition.afterMessageId, transition)
+    }
+    return byBoundary
+  }, [promptPath])
+  const initialTransition = messages.length > 0 ? transitionByBoundary.get(null) : undefined
   const activeThread = session ? (branchChat.activeBranchId ? { type: 'branch' as const, conversationId: session.id, branchId: branchChat.activeBranchId } : { type: 'root' as const, conversationId: session.id }) : undefined
   const visibleSendError = sendError
     && sendErrorTarget?.conversationId === session?.id
@@ -209,15 +217,18 @@ export function Conversation() {
               </div>
               {!hasKey && <div className={css.emptyHint}>开始前，需要配置你自己的 DeepSeek API Key。</div>}
             </div>
-          ) : messages.map((m, index) => {
+          ) : <>
+            {initialTransition && <PromptTransitionDivider transition={initialTransition} onOpen={() => setInspectedTransition(initialTransition)} />}
+            {messages.map((m, index) => {
             const previous = messages[index - 1]
-            const transition = previous ? promptPath?.transitions.find((item) => item.afterMessageId === previous.id) : undefined
+            const transition = previous ? transitionByBoundary.get(previous.id) : undefined
             return <Fragment key={m.id}>
               {transition && <PromptTransitionDivider transition={transition} onOpen={() => setInspectedTransition(transition)} />}
               <MessageRow m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} onInspectQuickFollowUp={setInspectedQuickFollowUp} />
               {latestCompletedAssistant?.id === m.id && activeThread && <QuickFollowUpBar items={quickFollowUps} disabled={busy || !!quickSendingId} sendingId={quickSendingId} onSend={(item) => void sendQuickFollowUp(item)} onInspect={setInspectedQuickFollowUp} onConfigure={() => uiActions.openPromptManager('quick-follow-up')} />}
             </Fragment>
-          })}
+            })}
+          </>}
         </div>
         <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" onClick={openLibrary}>学习成果</Button></div>
         <Composer sessionId={session?.id} busy={busy} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
