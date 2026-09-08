@@ -67,9 +67,10 @@ async function testFailedAssistantConsumption(): Promise<void> {
   assert(!canForkFromMessage(conversation, [], failed.id), 'V201-CR-02 failed assistant is not a stable fork point')
 
   const cockpit = readFileSync('src/cockpit/Conversation.tsx', 'utf8')
+  const quickAnchor = readFileSync('src/cockpit/quick-follow-up-anchor.ts', 'utf8')
   const stableActionGuard = cockpit.includes('isStableBranchPoint') || (cockpit.includes("m.status !== 'failed'") && cockpit.includes("m.status !== 'aborted'"))
   assert(stableActionGuard, 'V201-CR-02 failed/aborted assistant has no branch/artifact action path')
-  const quickFollowUpGuard = cockpit.includes('isCompletedAssistantMessage') || (cockpit.includes("message.status !== 'failed'") && cockpit.includes("message.status !== 'aborted'"))
+  const quickFollowUpGuard = quickAnchor.includes('isCompletedAssistantMessage') || cockpit.includes('isCompletedAssistantMessage') || (cockpit.includes("message.status !== 'failed'") && cockpit.includes("message.status !== 'aborted'"))
   assert(quickFollowUpGuard, 'V201-CR-02 failed/aborted assistant has no Quick Follow-up path')
 
   await idbClearAll()
