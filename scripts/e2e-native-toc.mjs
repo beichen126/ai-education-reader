@@ -25,6 +25,7 @@ await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible'
 assert(await page.locator('[data-testid="reader-toc-empty"]').count() === 0, 'A: native doc has non-empty TOC')
 assert(await page.locator('[data-testid="reader-toc-organize"]').count() === 1, 'A: native doc shows 整理目录 button')
 assert(await page.locator('[data-testid="reader-toc-restore"]').count() === 0, 'A: native doc shows NO restore button (already native)')
+assert(await page.locator('[data-testid="reader-build"]').count() === 0, 'A: native doc has no reader-build entry')
 const nativeTitles = await tocTexts()
 assert(nativeTitles.join('|').includes('Computer Organization'), 'A: shows native chapter title')
 

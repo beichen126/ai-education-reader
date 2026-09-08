@@ -2,6 +2,7 @@
 // (window.__dshMockAiToc) so NO real paid API is called. Validates the full chain:
 // picker -> extraction -> review (jump/continue/adjust) -> save to 'ai-toc' -> TOC.
 import { chromium } from 'playwright-core'
+import { openChapterBuilderForSource } from './chapter-entry.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF = 'test/fixtures/no-outline.pdf'
 const results = [], errors = []
@@ -82,6 +83,11 @@ assert((await inputVal()).trim() === '1', 'D: reader page unchanged after ai-toc
 
 // --- E: context uses the new ai-toc tree (no special branch) ---
 assert(await page.locator('[data-testid="reader-toc-edit"]').count() === 1, 'E: ai-toc tree shows 编辑目录')
+assert(await page.locator('[data-testid="reader-build"]').count() === 0, 'E: ai-toc tree has no reader-build entry')
+await openChapterBuilderForSource(page, 'ai-toc')
+assert(await page.locator('[data-testid="cb-add"]').count() === 1, 'E: ai-toc edit path keeps Builder current-page add')
+await page.locator('[data-testid="cb-cancel"]').click()
+await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'detached', timeout: 10000 })
 const restoreBtn = await page.locator('[data-testid="reader-toc-restore"]').count()
 // no-outline has no native outline -> no restore button
 assert(restoreBtn === 0, 'E: manual/ai-toc PDF without native outline shows no 恢复原始目录')

@@ -24,8 +24,6 @@ type Props = {
   pageCount: number
   initialChapters: ChapterNode[]
   currentPage: number
-  /** When opened via 从此页新建章节, pre-seed ONE new row at currentPage. */
-  seedFromCurrentPage?: boolean
   /** Pre-computed editable draft (e.g. from a native outline via chaptersToEditableDraft). */
   draftSeed?: ChapterDraftItem[]
   /** Light note shown above the list (e.g. '正在整理 PDF 原始目录…'). */
@@ -54,20 +52,11 @@ function idsBetween(orderedIds: readonly string[], anchorId: string | null, targ
   return orderedIds.slice(start, end + 1)
 }
 
-export function ChapterBuilder({ pageCount, initialChapters, currentPage, seedFromCurrentPage, draftSeed, hint, skippedUnresolved = 0, saveSource = 'manual', onSave, onClose }: Props) {
-  const seedConflictRef = useRef<string | null>(null)
+export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftSeed, hint, skippedUnresolved = 0, saveSource = 'manual', onSave, onClose }: Props) {
   const [items, setItems] = useState<ChapterDraftItem[]>(() => {
     // A pre-computed draftSeed (native / ai-toc) wins; otherwise derive from the tree.
-    const base = draftSeed ? cloneChapterDraft(draftSeed) : cloneChapterDraft(flattenManualChapters(initialChapters))
-    if (!seedFromCurrentPage) return base
-    const item = makeNewChapterItem({ currentPage, pageCount, level: 1 })
-    const r = insertChapterByPage(base, item)
-    if (r.ok) return r.items
-    // A same-page / inside-subtree conflict must NOT fabricate an unsavable draft — keep base + note it.
-    seedConflictRef.current = ('reason' in r && r.reason === 'inside-existing-subtree') ? INSIDE_SUBTREE_MSG : SAME_PAGE_MSG.replace('{P}', String(item.startPage))
-    return base
+    return draftSeed ? cloneChapterDraft(draftSeed) : cloneChapterDraft(flattenManualChapters(initialChapters))
   })
-  useEffect(() => { if (seedConflictRef.current) { setInsertError(seedConflictRef.current); seedConflictRef.current = null } }, [])
   const [validation, setValidation] = useState<ChapterDraftValidation>({ ok: true, issues: [] })
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({})
   const [pendingDelete, setPendingDelete] = useState<number | null>(null)

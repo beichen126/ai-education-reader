@@ -1,5 +1,6 @@
 // Stage G2 focused browser gate: multi-select and atomic bulk level editing.
 import { chromium } from 'playwright-core'
+import { openChapterBuilderForSource } from './chapter-entry.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const NO_OUTLINE = 'test/fixtures/no-outline.pdf'
@@ -36,8 +37,7 @@ try {
   await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'detached', timeout: 10000 })
   for (const [pageNumber, title] of [[2, '第二章'], [3, '第三章'], [4, '第四章']]) {
     await jumpTo(pageNumber)
-    await page.locator('[data-testid="reader-build"]').click()
-    await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+    await openChapterBuilderForSource(page, 'manual', { addCurrentPage: true })
     await page.locator('[data-testid="cb-title-0"]').fill(title)
     await page.locator('[data-testid="cb-save"]').click()
     await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'detached', timeout: 10000 })

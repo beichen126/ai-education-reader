@@ -3,6 +3,7 @@
 // demo state (fixture PDFs + mocked AI TOC), captures 1440x900 desktop and 390x844 mobile.
 import { chromium } from 'playwright-core'
 import { mkdirSync } from 'fs'
+import { openChapterBuilderForSource } from './chapter-entry.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const OUT = 'docs/assets/readme'
 const PREFIX = 'v200-'
@@ -101,9 +102,7 @@ await shot(page, '04-ai-toc-review.webp')
 await page.locator('[data-testid="toc-review-close"]').click()
 await page.waitForTimeout(300)
 
-// 05 — Chapter Editor. Open a doc WITHOUT a native outline (so the builder entry exists).
-// The outline-tricky fixture is still in the library; reopen it. Its chapterSource != native
-// so 从此页新建章节 (reader-build) is shown; fall back to 创建章节 (reader-toc-create).
+// 05 — Chapter Editor. Open a doc WITHOUT a native outline and use its empty-TOC entry.
 await page.locator('[data-testid="reader-close"]').click()
 await page.waitForTimeout(300)
 await openLibrary(page)
@@ -121,10 +120,7 @@ for (const card of docs) {
 if (!opened) await page.locator('[data-testid^="doc-open-"]').first().click()
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
-const buildBtn = page.locator('[data-testid="reader-build"]')
-if (await buildBtn.count()) await buildBtn.click()
-else await page.locator('[data-testid="reader-toc-create"]').click()
-await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+await openChapterBuilderForSource(page, 'none')
 for (let index = 0; index < 8; index++) {
   await page.locator('[data-testid="cb-add"]').click()
   await page.locator('[data-testid="cb-title-' + index + '"]').fill('章节 ' + String(index + 1).padStart(2, '0'))

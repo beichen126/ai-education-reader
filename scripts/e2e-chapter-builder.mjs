@@ -2,8 +2,9 @@
 // Run:
 //   1) npm run build && npm run preview -- --port 5299
 //   2) node scripts/e2e-chapter-builder.mjs
-// Uses a NO-OUTLINE PDF fixture so the "创建章节 / 从此页新建章节" flow is exercised.
+// Uses a NO-OUTLINE PDF fixture so the directory "创建章节" and Builder "从 PDF 第 N 页新建章节" flows are exercised.
 import { chromium } from 'playwright-core'
+import { openChapterBuilderForSource } from './chapter-entry.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const NO_OUTLINE = 'test/fixtures/no-outline.pdf'
 const NATIVE = 'test/fixtures/outline-sample.pdf'
@@ -40,6 +41,21 @@ const importPdf = async (p, title) => {
   await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
   assert((await page.locator('[data-testid="reader-title"]').textContent()).includes(title), 'import reader title ' + title)
 }
+const importPdfCopy = async (p) => {
+  await openLibrary()
+  const reader = page.locator('[data-testid="document-reader"]')
+  const conflict = page.locator('[data-testid="import-conflict"]')
+  await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(p)
+  await Promise.race([
+    reader.waitFor({ state: 'visible', timeout: 40000 }),
+    conflict.waitFor({ state: 'visible', timeout: 40000 }),
+  ])
+  if (await conflict.isVisible().catch(() => false)) {
+    await conflict.locator('[data-testid="duplicate-import-copy"]').click()
+  }
+  await reader.waitFor({ state: 'visible', timeout: 40000 })
+  await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+}
 const jumpTo = async (pg) => {
   await page.locator('[data-testid="reader-page-input"]').fill(String(pg))
   await page.locator('[data-testid="reader-page-input"]').press('Enter')
@@ -64,6 +80,7 @@ await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible'
 assert((await page.locator('[data-testid="reader-title"]').textContent()).includes('no-outline.pdf'), 'A: imported no-outline pdf')
 assert(await page.locator('[data-testid="reader-toc-empty"]').count() === 1, 'A: empty TOC state shown')
 assert(await page.locator('[data-testid="reader-toc-create"]').count() === 1, 'A: 创建章节 button shown in empty TOC')
+assert(await page.locator('[data-testid="reader-build"]').count() === 0, 'A: reader-build is absent for none source')
 
 // ---- B. create chapters (Chapter A p2, then Chapter B p8) ---------------
 // Create the first chapter from the empty builder at page 2.
@@ -77,10 +94,10 @@ assert((await page.locator('[data-testid="cb-page-0"]').inputValue()).trim() ===
 await page.locator('[data-testid="cb-save"]').click()
 await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'detached', timeout: 10000 })
 assert(await page.locator('[data-testid="document-reader"]').count() === 1, 'B: reader STAYS open after first save')
+assert(await page.locator('[data-testid="reader-build"]').count() === 0, 'B: manual source has no reader-build entry')
 // Create the second chapter from current page 8.
 await jumpTo(8)
-await page.locator('[data-testid="reader-build"]').click()
-await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+await openChapterBuilderForSource(page, 'manual', { addCurrentPage: true })
 const idxB = await fillRowAtPage(8, 'Chapter B')
 assert(idxB >= 0, 'B: new Chapter B row at page 8 found')
 await page.locator('[data-testid="cb-save"]').click()
@@ -93,12 +110,11 @@ await page.locator('[data-testid^="reader-chapter-"]').filter({ hasText: 'Chapte
 await page.waitForTimeout(400)
 assert((await inputVal()).trim() === '8', 'C: click Chapter B -> page 8 (got ' + await inputVal() + ')')
 
-// ---- D. 从此页新建 at page 5 -> MIDDLE insertion (A p2, X p5, B p8) §18 ---------------
+// ---- D. directory edit at page 5 -> MIDDLE insertion (A p2, X p5, B p8) §18 ---------------
 await jumpTo(5)
-await page.locator('[data-testid="reader-build"]').click()
-await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+await openChapterBuilderForSource(page, 'manual', { addCurrentPage: true })
 const rowsD = await page.locator('[data-testid^="cb-row"]').count()
-assert(rowsD === 3, 'D: builder pre-seeds a row (3 rows; got ' + rowsD + ')')
+assert(rowsD === 3, 'D: Builder adds a current-page row (3 rows; got ' + rowsD + ')')
 const orderD = await page.evaluate(() => {
   const rows = Array.from(document.querySelectorAll('[data-testid^="cb-row"]'))
   return rows.map(r => r.querySelector('[data-testid^="cb-page-"]')?.value).join(',')
@@ -115,8 +131,7 @@ assert(!tocRows2.join('|').includes('B') || tocRows2.join('|').split('|').findIn
 
 // ---- E. same-page insertion now SUCCEEDS (Stage 9.4B.1): jump page 5, add a row at 5 ---------------
 await jumpTo(5)
-await page.locator('[data-testid="reader-build"]').click()
-await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+await openChapterBuilderForSource(page, 'manual', { addCurrentPage: true })
 assert(await page.locator('[data-testid="cb-insert-error"]').count() === 0, 'E: no same-page conflict error (same-page allowed)')
 const rowsE = await page.locator('[data-testid^="cb-row"]').count()
 assert(rowsE === 4, 'E: same-page new row inserted (4 rows: A,X,NEW,B; got ' + rowsE + ')')
@@ -125,8 +140,7 @@ if (await page.locator('[data-testid="cb-discard-confirm"]').count()) { await pa
 await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'detached', timeout: 10000 })
 
 // ---- F. save-failure retry: draft preserved, error shown, stays open, retry succeeds §21 ---------------
-await page.locator('[data-testid="reader-build"]').click()
-await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+await openChapterBuilderForSource(page, 'manual', { addCurrentPage: true })
 await page.locator('[data-testid="cb-title-0"]').fill('Chapter A EDITED')
 await page.evaluate(() => { (window).__dshFailNextChapterSave = true })
 await page.locator('[data-testid="cb-save"]').click()
@@ -158,16 +172,14 @@ assert(await page.locator('[data-testid="document-reader"]').count() === 1, 'G: 
 await page.locator('[data-testid="reader-ctx-toggle"]').click().catch(() => {})
 
 // ---- H. cancel/dirty reopen preserves old title ---------------
-await page.locator('[data-testid="reader-build"]').click()
-await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+await openChapterBuilderForSource(page, 'manual', { addCurrentPage: true })
 await page.locator('[data-testid="cb-title-0"]').fill('FLIP')
 await page.locator('[data-testid="cb-cancel"]').click()
 await page.locator('[data-testid="cb-discard-confirm"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(await page.locator('[data-testid="cb-discard-confirm"]').count() === 1, 'H: dirty cancel -> discard confirm')
 await page.locator('[data-testid="cb-discard-yes"]').click()
 await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'detached', timeout: 10000 })
-await page.locator('[data-testid="reader-build"]').click()
-await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+await openChapterBuilderForSource(page, 'manual', { addCurrentPage: true })
 const titleH = await page.locator('[data-testid="cb-title-0"]').inputValue()
 assert(titleH.trim() === 'Chapter A EDITED', 'H: reopen keeps old title (got ' + titleH + ')')
 await page.locator('[data-testid="cb-cancel"]').click()
@@ -198,8 +210,7 @@ const SIZES = [360, 768, 1024, 1280]
 for (const w of SIZES) {
   await page.setViewportSize({ width: w, height: w <= 768 ? 1024 : 800 })
   await page.waitForTimeout(250)
-  await page.locator('[data-testid="reader-build"]').click()
-  await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+  await openChapterBuilderForSource(page, 'manual', { addCurrentPage: true })
   const noOverflow = await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 2)
   assert(noOverflow, 'J: no horizontal overflow in builder at ' + w + 'px')
   assert(await page.locator('[data-testid="cb-title-0"]').isEditable(), 'J: title input editable at ' + w + 'px')
@@ -221,9 +232,7 @@ await page.waitForTimeout(200)
 await page.locator('[data-testid="reader-close"]').click()
 await page.waitForTimeout(300)
 await openLibrary()
-await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(NO_OUTLINE)
-await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
-await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+await importPdfCopy(NO_OUTLINE)
 // create a fresh pair First p4, Second p8 (each from its own current page)
 await jumpTo(4)
 await page.locator('[data-testid="reader-toc-create"]').click()
@@ -233,15 +242,13 @@ await page.locator('[data-testid="cb-title-0"]').fill('First')
 await page.locator('[data-testid="cb-save"]').click()
 await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'detached', timeout: 10000 })
 await jumpTo(8)
-await page.locator('[data-testid="reader-build"]').click()
-await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+await openChapterBuilderForSource(page, 'manual', { addCurrentPage: true })
 await page.locator('[data-testid="cb-title-0"]').fill('Second')
 await page.locator('[data-testid="cb-save"]').click()
 await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'detached', timeout: 10000 })
-// before-first: jump page 2 -> 从此页新建 -> new at p2 goes BEFORE First
+// before-first: jump page 2 -> directory edit -> new at p2 goes BEFORE First
 await jumpTo(2)
-await page.locator('[data-testid="reader-build"]').click()
-await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+await openChapterBuilderForSource(page, 'manual', { addCurrentPage: true })
 const orderK1 = await page.evaluate(() => {
   const rows = Array.from(document.querySelectorAll('[data-testid^="cb-row"]'))
   return rows.map(r => r.querySelector('[data-testid^="cb-page-"]')?.value).join(',')
@@ -251,10 +258,9 @@ const idxZero = await fillRowAtPage(2, 'Zero')
 assert(idxZero >= 0, 'K: new Zero row at page 2 found')
 await page.locator('[data-testid="cb-save"]').click()
 await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'detached', timeout: 10000 })
-// append: jump page 9 -> 从此页新建 -> new at p9 appended
+// append: jump page 9 -> directory edit -> new at p9 appended
 await jumpTo(9)
-await page.locator('[data-testid="reader-build"]').click()
-await page.locator('[data-testid="chapter-builder"]').waitFor({ state: 'visible', timeout: 10000 })
+await openChapterBuilderForSource(page, 'manual', { addCurrentPage: true })
 const orderK2 = await page.evaluate(() => {
   const rows = Array.from(document.querySelectorAll('[data-testid^="cb-row"]'))
   return rows.map(r => r.querySelector('[data-testid^="cb-page-"]')?.value).join(',')
@@ -275,7 +281,7 @@ await page.locator('[data-testid="document-library"] input[type="file"]').setInp
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
 assert(await page.locator('[data-testid="reader-toc-empty"]').count() === 0, 'L: native doc has non-empty TOC')
-assert(await page.locator('[data-testid="reader-build"]').count() === 0, 'L: native doc hides 从此页新建章节 (read-only)')
+assert(await page.locator('[data-testid="reader-build"]').count() === 0, 'L: native doc has no reader-build entry')
 await page.locator('[data-testid="reader-toc-toggle-0"]').click()
 await page.waitForTimeout(200)
 await page.locator('[data-testid="reader-chapter-0.0"]').click()

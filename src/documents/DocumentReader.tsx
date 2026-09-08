@@ -111,7 +111,6 @@ export function DocumentReader() {
   const ctxMenuOpenRef = useRef(false); ctxMenuOpenRef.current = ctxMenuOpen
   // ---- Manual Chapter Builder (Stage 9.4A) ----
   const [builderOpen, setBuilderOpen] = useState(false)
-  const [builderSeed, setBuilderSeed] = useState(false)
   const [builderSaveSource, setBuilderSaveSource] = useState<'manual' | 'ai-toc'>('manual')
   const builderOpenRef = useRef(false); builderOpenRef.current = builderOpen
   // ---- Native TOC override (Stage 9.4A.2) ----
@@ -509,7 +508,7 @@ export function DocumentReader() {
     const { items, skippedUnresolved } = chaptersToEditableDraft(doc.chapters)
     setNativeDraft({ items, skipped: skippedUnresolved })
     setBuilderHint('正在整理 PDF 原始目录。保存后仅修改本地目录，不会改动原 PDF。')
-    setBuilderSeed(false); setBuilderSaveSource('manual')
+    setBuilderSaveSource('manual')
     setBuilderOpen(true)
   }, [doc])
   // 编辑目录: edit the current (manual override) tree in place — no native origin hint.
@@ -518,7 +517,7 @@ export function DocumentReader() {
     const { items, skippedUnresolved } = chaptersToEditableDraft(doc.chapters)
     setNativeDraft({ items, skipped: skippedUnresolved })
     setBuilderHint(null)
-    setBuilderSeed(false); setBuilderSaveSource('manual')
+    setBuilderSaveSource('manual')
     setBuilderOpen(true)
   }, [doc])
   // ---- AI TOC extraction runner (Stage 9.4C.1): snapshot -> vision -> mapped draft ----
@@ -587,7 +586,7 @@ export function DocumentReader() {
       .map((r, i) => ({ id: 'ai' + i, title: r.title, level: r.level, startPage: r.startPage as number }))
     setNativeDraft({ items, skipped: rows.filter(r => r.startPage == null).length })
     setBuilderHint('正在编辑 AI 识别并已检查的目录。保存后仅修改本地目录，不会改动原 PDF。')
-    setBuilderSeed(false); setBuilderSaveSource('ai-toc')
+    setBuilderSaveSource('ai-toc')
     setTocReviewOpen(false)
     setBuilderOpen(true)
   }, [])
@@ -719,9 +718,6 @@ export function DocumentReader() {
               相关对话 {relatedConversations.length}
             </button>
           )}
-          {doc && doc.chapterSource !== 'native' && (
-            <button className={css.buildBtn} data-testid="reader-build" title="从此页新建章节" onClick={() => { setBuilderSeed(true); setBuilderSaveSource('manual'); setBuilderOpen(true) }}>从此页新建章节</button>
-          )}
           <button className={css.tocToggle} data-testid="reader-toc-toggle" onClick={() => setTocOpen(o => !o)}>目录</button>
           {doc && <button className={css.noteToggle} data-testid="reader-notes-toggle" onClick={() => { if (notesOpen) flushCurrentNote(); setNotesOpen(o => !o) }}>{notesOpen ? '收起笔记' : '笔记'}</button>}
           <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>关闭</button>
@@ -754,7 +750,7 @@ export function DocumentReader() {
               ) : (
                 <div className={css.tocEmpty}>
                   <div data-testid="reader-toc-empty">这份 PDF 暂无章节目录。</div>
-                  <button type="button" className={css.tocCreate} data-testid="reader-toc-create" onClick={() => { setBuilderSeed(false); setBuilderSaveSource('manual'); setBuilderOpen(true) }}>创建章节</button>
+                  <button type="button" className={css.tocCreate} data-testid="reader-toc-create" onClick={() => { setBuilderSaveSource('manual'); setBuilderOpen(true) }}>创建章节</button>
                 </div>
               )}
               {doc && doc.chapterSource !== 'none' && (
@@ -929,13 +925,12 @@ export function DocumentReader() {
           pageCount={doc.pageCount}
           initialChapters={doc.chapters}
           currentPage={page}
-          seedFromCurrentPage={builderSeed}
           draftSeed={nativeDraft ? nativeDraft.items : undefined}
           skippedUnresolved={nativeDraft ? nativeDraft.skipped : 0}
           hint={builderHint || undefined}
           saveSource={builderSaveSource}
           onSave={saveBuilder}
-          onClose={() => { setBuilderOpen(false); setBuilderSeed(false); setNativeDraft(null); setBuilderHint(null) }}
+          onClose={() => { setBuilderOpen(false); setNativeDraft(null); setBuilderHint(null) }}
         />
       )}
       {restoreConfirmOpen && (
