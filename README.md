@@ -12,7 +12,7 @@
 [隐私与本地优先](#隐私与本地优先) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v2.0.1-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v2.0.2-green?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
 ![BYOK](https://img.shields.io/badge/BYOK-self--hosted-green?style=flat-square)
@@ -21,7 +21,7 @@
 
 ---
 
-当前发布：**v2.0.1**。这是 v2.0.0 的稳定化补丁，补强了收起 rail 入口、分支失败反馈、Prompt timeline、协议复制链、Modal focus、空快捷追问、overflow 列表和正式 release gate。
+当前发布：**v2.0.2**。这是面向稳定性的收口版本：补齐失败/取消消息的边界、分支拒绝反馈、Reader 章节入口和页面笔记状态，并把关键回归、浏览器 E2E、Pages 部署纳入同一条发布门禁。
 
 <img src="docs/assets/readme/v200-00-app-shell.webp" alt="AI Education Reader 当前主界面，保留完整侧栏与资料入口" width="100%" />
 

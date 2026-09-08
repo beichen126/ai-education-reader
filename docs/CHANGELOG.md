@@ -4,6 +4,37 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。开发中的改动先进入 `Unreleased`，正式发布 tag 时再移动到对应版本。
 
+## [2.0.2] - 2026-09-08
+
+### Fixed
+
+- Backup 导入现在统一校验 root/branch 消息的 `status`、`error` 和 assistant 角色关系；非法的 failed/aborted 组合会在写入前被原子拒绝。
+- failed/aborted 的部分 assistant 回答不再作为稳定答案用于分支、学习成果或快捷追问；部分内容和失败提示仍会保留，便于用户重试。
+- branch/root 的拒绝结果进入一致的可见错误通道，清理旧错误时同步恢复可发送状态，避免出现“按钮无反应”或 `status=error` 无错误文本。
+- Reader 顶栏移除重复的章节入口；无目录文档仍从目录区进入 Chapter Builder，并保留从当前页添加章节的能力。
+- 页面笔记按当前文档与页码显示“新建笔记 / 查看笔记 / 收起笔记”状态；连续输入使用 debounce，切页、关闭和删除文档时正确 flush，旧异步写入不能覆盖新页或复活数据。
+
+### Changed
+
+- v2.0.1 的领域回归进入默认 `npm test`；release runner 现在使用唯一、稳定的 E2E 列表，在未知名称、端口占用和子测试失败时 fail-closed，并保证 preview cleanup。
+- Windows release runner 改用 shell-free 的 Node/npm CLI 解析，消除原有 child-process shell warning；GitHub Pages deploy 依赖 browser E2E gate。
+
+### Compatibility
+
+- IndexedDB schema / DB version 保持 7，不需要 migration；v1.3.x、v2.0.0 和 v2.0.1 的 PDF、章节、页面笔记、provenance 与 Reader ↔ Conversation 学习路径继续可读。
+- Backup V1–V6 继续导入；缺失的 v2.0.x 新字段使用既有安全默认值，新的消息终态字段按严格规则验证；API Key 仍不会进入 Backup。
+- README 只更新了当前版本 badge 与稳定化说明；现有截图已对应当前界面，无需重复生成。
+
+### Tests
+
+- 发布门禁覆盖 `npm run typecheck`、`npm test`、`npm run build`、Backup E2E、v2.0.1 regression E2E、Notes E2E、Chapter Builder E2E、完整 `npm run test:release`、CI quality gate、Pages browser gate 和 deploy。
+- 每组关键 browser E2E 均检查真实用户行为链与 `PAGEERRORS`，最终发布证据记录在固定开发汇报中。
+
+### Known warnings
+
+- Vite 仍报告既有 dynamic/static import 与 large-chunk warnings；部分本地测试仍会显示 `--localstorage-file`、PDF.js `standardFontDataUrl` 等非阻断 warning。
+- `e2e-document-reader / rail-files` 的既有 CI 问题仍单独登记，最终 release report 会区分其与本轮回归的关系。
+
 ## [2.0.1] - 2026-09-08
 
 ### Added
