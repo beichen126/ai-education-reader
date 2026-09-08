@@ -55,6 +55,9 @@ export type Message = {
   images: StableId[]
   createdAt: number
   updatedAt: number
+  /** Present only when an assistant generation ended after acceptance. */
+  status?: 'failed' | 'aborted'
+  error?: string
   /** Canonical v1.3.1 provenance shape. New messages write this field only. */
   pdfContexts?: PdfContext[]
   /** Legacy v1.3.0 compatibility field. Read and normalized, never written for new messages. */

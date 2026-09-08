@@ -13,6 +13,7 @@ import { attachPdfContexts } from '../pdf/pdf-message-context'
 import { getBranch } from '../branches/branch-store'
 import { prepareAcceptedSendContext, type AcceptedSendContext } from '../prompts/prompt-send'
 import { tryWithConversationMutationLock } from '../prompts/prompt-mode-lock'
+import { validateSendInput, type SendErrorState, type SendFailure, type SendOutcome, type SendTarget } from './send-outcome'
 
 export type { Conversation as ChatSession, Message as ChatMsg, Attachment as ChatImage }
 export const uid = (_p?: string) => newStableId()
@@ -27,7 +28,7 @@ export function makeSession(title: string = NEW_TITLE): Conversation {
 
 export type SessionsState = {
   list: Conversation[]; byId: Record<string, Conversation>; current: string | undefined; ready: boolean
-  status: RequestStatus; sendError: string | undefined; focusMessage?: MessageFocusTarget
+  status: RequestStatus; sendError: string | undefined; sendErrorTarget?: SendTarget; focusMessage?: MessageFocusTarget
 }
 
 let state: SessionsState = { list: [], byId: {}, current: undefined, ready: false, status: 'idle', sendError: undefined }
@@ -43,8 +44,17 @@ const getSnapshot = () => state
 export function useSessions<T>(sel: (s: SessionsState) => T): T { return useSyncExternalStore(subscribe, () => sel(state)) }
 export function getSessionsStatus(): RequestStatus { return state.status }
 export function getSessionsSendError(): string | undefined { return state.sendError }
+export function getSessionsSendErrorTarget(): SendTarget | undefined { return state.sendErrorTarget }
 export function getSessionsCurrent(): string | undefined { return state.current }
 export function getSessionsFocusTarget(): MessageFocusTarget | undefined { return state.focusMessage }
+export function setSessionsSendError(error: SendErrorState): void {
+  setState({ ...state, status: 'error', sendError: error.message, sendErrorTarget: { conversationId: error.conversationId, ...(error.branchId ? { branchId: error.branchId } : {}) } })
+}
+export function clearSessionsSendError(target?: SendTarget): void {
+  if (!state.sendError) return
+  if (target && (!state.sendErrorTarget || state.sendErrorTarget.conversationId !== target.conversationId || state.sendErrorTarget.branchId !== target.branchId)) return
+  setState({ ...state, sendError: undefined, sendErrorTarget: undefined })
+}
 
 export type SendUserMessageOptions = {
   quickFollowUp?: QuickFollowUpMetadata
@@ -55,9 +65,9 @@ function index(list: Conversation[]): Record<string, Conversation> {
   const m: Record<string, Conversation> = {}; for (const c of list) m[c.id] = c; return m
 }
 function sortList(list: Conversation[]): Conversation[] { return [...list].sort((a, b) => b.updatedAt - a.updatedAt) }
-function toState(list: Conversation[], current?: string, ready = state.ready, status = state.status, sendError = state.sendError): SessionsState {
+function toState(list: Conversation[], current?: string, ready = state.ready, status = state.status, sendError = state.sendError, sendErrorTarget = state.sendErrorTarget): SessionsState {
   const sorted = sortList(list)
-  return { list: sorted, byId: index(sorted), current: current ?? sorted[0]?.id, ready, status, sendError, focusMessage: state.focusMessage }
+  return { list: sorted, byId: index(sorted), current: current ?? sorted[0]?.id, ready, status, sendError, sendErrorTarget, focusMessage: state.focusMessage }
 }
 function upsertState(conv: Conversation, extra?: Partial<SessionsState>) {
   setState({ ...toState(state.list.map(c => c.id === conv.id ? conv : c), state.current), ...(extra || {}) })
@@ -66,6 +76,13 @@ const LAST_CONV = 'lastConversationId'
 let abortControllerRef: AbortController | null = null
 /** Id of a conversation whose user-message acceptance transaction is in flight. */
 const acceptingRef = { current: null as string | null }
+
+type PendingSend = { outcome: Promise<SendOutcome> }
+type RejectedOutcome = Extract<SendOutcome, { kind: 'rejected' }>
+function rejectSend(target: SendTarget, outcome: RejectedOutcome, showError = true): RejectedOutcome {
+  if (showError) setState({ ...state, status: 'error', sendError: outcome.message, sendErrorTarget: target })
+  return outcome
+}
 
 /** An explicitly-tracked active reply generation. Prevents the accidental mixture of
  *  'a naked global AbortController' + a stale snapshot. One generation globally.
@@ -129,24 +146,25 @@ export const sessionsActions = {
   },
   stopGenerating() { generationRegistry.cancel() },
   /**
-   * Send a user message. Returns true when the user message (+ its image ids) has
-   * been ACCEPTED and persisted into the conversation; false when the send was
-   * rejected before acceptance (busy / no conversation / empty). The Compose caller
-   * should only clear its draft / transfer attachment ownership when this returns true.
+   * Send a user message and resolve with the terminal outcome. Acceptance still happens
+   * before streaming, but the mutation lock is released before the model request runs.
    */
-  async sendUserMessage(id: string, content: string, imageIds: StableId[] = [], options: SendUserMessageOptions = {}): Promise<boolean> {
-    if (state.status === 'sending' || state.status === 'streaming') return false
-    const locked = await tryWithConversationMutationLock(id, async () => {
-      if (state.status === 'sending' || state.status === 'streaming') return false
-      // Double-submit guard while the acceptance transaction is in progress.
-      if (acceptingRef.current === id) return false
-      const conv = state.byId[id]; if (!conv) return false
-      if (!content.trim() && imageIds.length === 0) return false
-      const now = Date.now()
+  async sendUserMessage(id: string, content: string, imageIds: StableId[] = [], options: SendUserMessageOptions = {}): Promise<SendOutcome> {
+    const target: SendTarget = { conversationId: id }
+    if (state.status === 'sending' || state.status === 'streaming') return rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, false)
+    const locked = await tryWithConversationMutationLock<PendingSend>(id, async () => {
+      if (state.status === 'sending' || state.status === 'streaming') return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, false)) }
+      if (acceptingRef.current === id) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '消息正在提交，请稍候。' }, false)) }
+      const conv = state.byId[id]
+      if (!conv) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'conversation-not-found', message: '当前会话不存在。' })) }
+      const invalidInput = validateSendInput(content, imageIds, options.quickFollowUp)
+      if (invalidInput) return { outcome: Promise.resolve(rejectSend(target, invalidInput)) }
       const settings = getSettingsSnapshot()
+      if (!settings.apiKey) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'no-api-key', message: '未配置 API Key，请先在设置中填写。' })) }
+      const now = Date.now()
       const controller = new AbortController()
       const lease = generationRegistry.acquire(genRootKey(id), controller, 'sending')
-      if (!lease) return false
+      if (!lease) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, false)) }
       acceptingRef.current = id
       let acceptedSend: AcceptedSendContext
       let afterUser: Conversation
@@ -154,9 +172,7 @@ export const sessionsActions = {
         const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
         const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
         const candidate: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
-        // Optimistically show 'sending'; the generation lease already blocks all other
-        // roots, branches, artifacts, and mode mutations at this point.
-        upsertState(candidate, { status: 'sending', sendError: undefined })
+        upsertState(candidate, { status: 'sending', sendError: undefined, sendErrorTarget: undefined })
         const prepared = await prepareAcceptedSendContext({
           threadRef: { type: 'root', conversationId: id },
           messagesBeforeAcceptance: conv.messages,
@@ -167,28 +183,22 @@ export const sessionsActions = {
         })
         acceptedSend = prepared.context
         afterUser = { ...candidate, promptTransitions: prepared.nextLocalTransitions }
-        upsertState(afterUser, { status: 'sending', sendError: undefined })
-        // ONE durable transaction: put conversation + put lastConversationId + delete the
-        // draft row. The user message is ACCEPTED only if this transaction commits.
+        upsertState(afterUser, { status: 'sending', sendError: undefined, sendErrorTarget: undefined })
         await commitAcceptedUserMessage(afterUser, id, draftSettingKey(id), options.draftDisposition ?? 'clear')
       } catch (e) {
-        // Revert the optimistic memory state; Draft memory + durable Draft remain intact.
-        upsertState(conv, { status: state.status === 'error' ? 'error' : 'idle', sendError: '消息发送失败，请重试。' })
+        const rejected: RejectedOutcome = { kind: 'rejected', code: 'acceptance-failed', message: '消息发送失败，请重试。' }
+        upsertState(conv, { status: 'error', sendError: rejected.message, sendErrorTarget: target })
         acceptingRef.current = null
         lease.release()
-        return false
+        return { outcome: Promise.resolve(rejected) }
       }
       acceptingRef.current = null
-      // Accepted: the user message + its image ids are now durably in the conversation AND
-      // the draft row was deleted in the same commit. Clear Draft MEMORY without another
-      // required database mutation.
       if ((options.draftDisposition ?? 'clear') === 'clear') clearDraftMemory(id)
-      // Keep the lease while the background stream runs. It is released by the shared
-      // engine, including all preflight, abort, error, and deletion paths.
-      void runReplyStream(id, afterUser, settings, acceptedSend, lease)
-      return true
+      const outcome = runReplyStream(id, settings, acceptedSend, lease)
+      return { outcome }
     })
-    return locked.acquired ? locked.value : false
+    if (!locked.acquired) return rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前会话正在处理另一项操作，请稍候。' }, false)
+    return locked.value.outcome
   },
   async addAssistant(id: string, content: string) {
     const conv = state.byId[id]; if (!conv) return
@@ -244,7 +254,7 @@ export async function persistConversation(conv: Conversation): Promise<void> {
   return enqueueWrite(conv.id, async () => { if (state.byId[conv.id]) await saveConversation(conv) })
 }
 
-/** Fire-and-forget reply stream: runs AFTER the user message is accepted & persisted. */
+/** Root reply stream: runs AFTER the user message is accepted & persisted. */
 /**
  * Root conversation target for the shared streaming engine. The engine is thread-agnostic;
  * this target binds it to the existing root Conversation (v1 behavior preserved). */
@@ -275,26 +285,43 @@ class RootReplyThread implements ReplyThread {
     const updated: Conversation = { ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] }
     void persistConversation(updated)
   }
+  settleAssistant(status: 'failed' | 'aborted', message: string): void {
+    const cur = state.byId[this.id]; if (!cur) return
+    const last = cur.messages[cur.messages.length - 1]
+    if (!last || last.id !== this.assistantId) return
+    if (!last.content) {
+      upsertState({ ...cur, updatedAt: Date.now(), messages: cur.messages.slice(0, -1) })
+      return
+    }
+    const updatedMsg: Message = { ...last, status, error: message, updatedAt: Date.now() }
+    upsertState({ ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] })
+  }
   async persistFinal(): Promise<void> { const cur = state.byId[this.id]; if (cur) await persistConversation(cur) }
   async drainWrites(): Promise<void> { await drainWrites(this.id) }
   exists(): boolean { return !!state.byId[this.id] }
-  setStreaming(): void { setState({ ...state, status: 'streaming', sendError: undefined }) }
-  setIdle(): void { setState({ ...state, status: 'idle', sendError: undefined }) }
-  setError(message: string): void { setState({ ...state, status: 'error', sendError: message }) }
+  setStreaming(): void { setState({ ...state, status: 'streaming', sendError: undefined, sendErrorTarget: undefined }) }
+  setIdle(): void { setState({ ...state, status: 'idle', sendError: undefined, sendErrorTarget: undefined }) }
+  setError(error: SendFailure): void { setSessionsSendError({ ...error, conversationId: this.id }) }
 }
 
 /** Fire-and-forget reply stream: runs AFTER the user message is accepted & persisted. */
-async function runReplyStream(id: string, afterUser: Conversation, settings: ReturnType<typeof getSettingsSnapshot>, acceptedSend: AcceptedSendContext, lease: GenerationLease): Promise<void> {
-  if (!settings.apiKey) { lease.release(); setState({ ...state, status: 'error', sendError: errorKindLabel('no-api-key') }); return }
+async function runReplyStream(id: string, settings: ReturnType<typeof getSettingsSnapshot>, acceptedSend: AcceptedSendContext, lease: GenerationLease): Promise<SendOutcome> {
+  if (!settings.apiKey) {
+    const failure: SendFailure = { kind: 'failed', code: 'no-api-key', message: errorKindLabel('no-api-key') }
+    lease.release()
+    setSessionsSendError({ ...failure, conversationId: id })
+    return failure
+  }
   const controller = lease.controller
   const thread = new RootReplyThread(id)
-  await runThreadReply(thread, settings, controller, (c, assistantId) => {
+  const outcome = await runThreadReply(thread, settings, controller, (c, assistantId) => {
     abortControllerRef = c
     activeGeneration = { conversationId: id, assistantId, controller: c }
   }, acceptedSend, lease)
   // The engine already flushed + drained + set status; clear ownership deterministically.
   activeGeneration = null
   abortControllerRef = null
+  return outcome
 }
 export async function initStore(): Promise<void> {
   const convs = await listConversations()

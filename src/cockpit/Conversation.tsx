@@ -56,6 +56,7 @@ export function Conversation() {
   const focusMessage = useSessions(s => s.focusMessage)
   const status = useSessions(s => s.status)
   const sendError = useSessions(s => s.sendError)
+  const sendErrorTarget = useSessions(s => s.sendErrorTarget)
   const hasKey = useSettings(s => !!s.apiKey)
   const listRef = useRef<HTMLDivElement | null>(null)
   const atBottomRef = useRef(true)
@@ -113,6 +114,11 @@ export function Conversation() {
   const [inspectedQuickFollowUp, setInspectedQuickFollowUp] = useState<QuickFollowUpMetadata | null>(null)
   const promptPath = session ? buildEffectivePromptPath(session, branchChat.branches, branchChat.activeBranchId) : undefined
   const activeThread = session ? (branchChat.activeBranchId ? { type: 'branch' as const, conversationId: session.id, branchId: branchChat.activeBranchId } : { type: 'root' as const, conversationId: session.id }) : undefined
+  const visibleSendError = sendError
+    && sendErrorTarget?.conversationId === session?.id
+    && (sendErrorTarget.branchId ?? undefined) === (branchChat.activeBranchId ?? undefined)
+    ? sendError
+    : undefined
   useEffect(() => {
     if (promptManagerOpen) return
     let cancelled = false
@@ -128,8 +134,8 @@ export function Conversation() {
     setQuickSendingId(item.id)
     try {
       if (activeThread.type === 'branch') {
-        const ok = await runBranchReply(activeThread.conversationId, activeThread.branchId, item.userPrompt, [], { quickFollowUp, draftDisposition: 'preserve' })
-        if (ok) void branchChat.refresh()
+        const outcome = await runBranchReply(activeThread.conversationId, activeThread.branchId, item.userPrompt, [], { quickFollowUp, draftDisposition: 'preserve' })
+        if (outcome.kind !== 'rejected') void branchChat.refresh()
       } else {
         await sessionsActions.sendUserMessage(activeThread.conversationId, item.userPrompt, [], { quickFollowUp, draftDisposition: 'preserve' })
       }
@@ -176,7 +182,7 @@ export function Conversation() {
           {streaming && <button className={css.stopBtn} onClick={sessionsActions.stopGenerating}>停止生成</button>}
         </div>
       )}
-      {sendError && !busy && <div className={css.errorBanner}>{sendError}</div>}
+      {visibleSendError && !busy && <div className={css.errorBanner} role="alert" aria-live="assertive">{visibleSendError}</div>}
       {session && promptPath && (<BranchBar
         conversationId={session.id}
         branches={branchChat.branches}
@@ -254,6 +260,7 @@ function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu,
       ) : (
         <div className={css.assistantBody} data-empty></div>
       )}
+      {m.status && m.error && <div className={css.errorBanner} role="alert" data-testid="assistant-generation-error">{m.status === 'aborted' ? '已停止生成：' : '生成失败：'}{m.error}</div>}
       {stable && onToggleMenu && onBranch && onArtifact && (
         <div style={{ position: 'relative' }}>
           <button type="button" aria-label="消息操作" title="从这里分支 / 学习成果" onClick={() => onToggleMenu(!menuOpen)} style={{ appearance: 'none', border: 0, background: 'transparent', color: 'var(--dsw-alias-label-tertiary)', cursor: 'pointer', fontSize: '0.8rem', padding: '0.1rem 0.375rem', borderRadius: '0.375rem' }}>⋯</button>
@@ -503,16 +510,16 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
     if (busy) return
     if (isBranch && thread) {
       if (!text.trim() && picIds.length === 0) return
-      const ok = await runBranchReply(thread.conversationId, thread.branchId!, text.trim(), picIds)
-      if (ok) { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null); if (onBranchSent) onBranchSent() }
+      const outcome = await runBranchReply(thread.conversationId, thread.branchId!, text.trim(), picIds)
+      if (outcome.kind !== 'rejected') { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null); if (onBranchSent) onBranchSent() }
       return
     }
     if (!sessionId) return
     if (!text.trim() && picIds.length === 0) return
-    const ok = await sessionsActions.sendUserMessage(sessionId, text.trim(), picIds)
+    const outcome = await sessionsActions.sendUserMessage(sessionId, text.trim(), picIds)
     // Only clear the draft once the user message is ACCEPTED & persisted; the image ids
     // then belong to the message (ownership transfer), so we must NOT delete them here.
-    if (ok) { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null) }
+    if (outcome.kind !== 'rejected') { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null) }
   }
   return (
     <div className={css.composer}>
