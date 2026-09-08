@@ -27,7 +27,7 @@ type MobileStep = 'categories' | 'list' | 'detail'
 const categories: { id: Category; label: string; description: string }[] = [
   { id: 'all', label: '全部', description: '所有本地提示词' },
   { id: 'conversation-mode', label: '会话模式', description: '对话时使用的模式' },
-  { id: 'artifact', label: '学习成果', description: '笔记、总结与练习' },
+  { id: 'artifact', label: '学习成果', description: '笔记与题目' },
   { id: 'quick-follow-up', label: '快捷追问', description: '对最新回答继续追问' },
   { id: 'protocol', label: '系统协议', description: '结构化输出约束' },
 ]
@@ -42,9 +42,6 @@ const kindLabels: Record<PromptKind, string> = {
 const artifactKinds: { id: ArtifactKind; label: string }[] = [
   { id: 'note', label: '笔记' },
   { id: 'quiz', label: '测验' },
-  { id: 'summary', label: '总结' },
-  { id: 'study-guide', label: '学习指南' },
-  { id: 'custom', label: '自定义' },
 ]
 
 function contentOf(definition: PromptDefinition): string { return promptContent(definition) }
@@ -65,7 +62,7 @@ function newDefinition(kind: PromptKind = 'conversation-mode'): PromptDefinition
   const common = { id: newStableId(), name: '未命名提示词', description: '', source: 'custom' as const, enabled: true, createdAt: now, updatedAt: now, revision: 1 }
   switch (kind) {
     case 'conversation-mode': return { ...common, kind, systemPrompt: '' }
-    case 'artifact': return { ...common, kind, artifactKind: 'custom', userPrompt: '' }
+    case 'artifact': return { ...common, kind, artifactKind: 'note', userPrompt: '' }
     case 'quick-follow-up': return { ...common, kind, label: '新的追问', userPrompt: '', pinned: false, sortOrder: 0 }
     case 'protocol': return { ...common, kind, domain: 'custom-protocol', systemPrompt: '', outputContract: '', overridePolicy: 'experimental' }
     default: return assertNever(kind)
@@ -167,6 +164,7 @@ function restoreBackground(states: BackgroundState[]): void {
 export function PromptManager() {
   const requestedCategory = useUi(s => s.promptManagerCategory)
   const [catalog, setCatalog] = useState<PromptDefinition[]>([])
+  const [protocolCatalog, setProtocolCatalog] = useState<PromptDefinition[]>([])
   const [preferences, setPreferences] = useState<PromptUserPreferences | null>(null)
   const [category, setCategory] = useState<Category>(() => requestedCategory ?? 'all')
   const [query, setQuery] = useState('')
@@ -270,11 +268,12 @@ export function PromptManager() {
     }
   }, [])
 
-  const loadCatalog = useCallback(async (preferredId?: StableId) => {
+  const loadCatalog = useCallback(async (preferredId?: StableId, scope: 'default' | 'protocol' = 'default') => {
     setLoading(true)
     try {
-      const [next, nextPreferences] = await Promise.all([listPromptCatalog(), getPromptPreferences()])
-      setCatalog(next)
+      const [next, nextPreferences] = await Promise.all([listPromptCatalog(scope === 'protocol' ? 'protocol' : undefined), getPromptPreferences()])
+      if (scope === 'protocol') setProtocolCatalog(next)
+      else setCatalog(next)
       setPreferences(nextPreferences)
       const nextId = preferredId && next.some((item) => item.id === preferredId)
         ? preferredId
@@ -291,7 +290,7 @@ export function PromptManager() {
     }
   }, [dirty, editorMode, selectedId])
 
-  useEffect(() => { void loadCatalog() }, []) // catalog is intentionally loaded once per manager open
+  useEffect(() => { void loadCatalog(undefined, category === 'protocol' ? 'protocol' : 'default') }, []) // visible catalog is loaded once per manager open; protocols are explicit-only
   useEffect(() => {
     const onResize = () => {
       const next = window.innerWidth <= 720
@@ -301,19 +300,20 @@ export function PromptManager() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
+  const browseCatalog = category === 'protocol' ? protocolCatalog : catalog
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase()
-    return catalog.filter((item) => {
+    return browseCatalog.filter((item) => {
       if (category !== 'all' && item.kind !== category) return false
       if (!normalized) return true
       return [item.name, item.description, contentOf(item)].some((value) => value.toLocaleLowerCase().includes(normalized))
     })
-  }, [catalog, category, query])
+  }, [browseCatalog, category, query])
 
-  const selected = draft ?? (selectedId ? catalog.find((item) => item.id === selectedId) : undefined)
+  const selected = draft ?? (selectedId ? browseCatalog.find((item) => item.id === selectedId) : undefined)
   const canonicalDefault = selected?.kind === 'conversation-mode' && selected.id === (preferences?.defaultConversationModeId ?? BUILTIN_PROMPT_IDS.conversationDefault)
   const readonly = selected?.source === 'builtin' && !canonicalDefault
-  const protocolStatus = selected?.kind === 'protocol' ? protocolActivationStatus(selected, catalog) : undefined
+  const protocolStatus = selected?.kind === 'protocol' ? protocolActivationStatus(selected, protocolCatalog) : undefined
 
   const openDefinition = (definition: PromptDefinition) => {
     if (dirty && !window.confirm('当前修改尚未保存，确定切换提示词吗？')) return
@@ -327,7 +327,20 @@ export function PromptManager() {
   }
 
   const chooseCategory = (next: Category) => {
+    if (dirty && !window.confirm('当前修改尚未保存，确定切换提示词分类吗？')) return
     setCategory(next)
+    setDraft(null)
+    setSelectedId(null)
+    setEditorMode('edit')
+    setDirty(false)
+    setError(null)
+    setNotice(null)
+    if (next === 'protocol') void loadCatalog(undefined, 'protocol')
+    else {
+      const nextRows = next === 'all' ? catalog : catalog.filter((item) => item.kind === next)
+      const first = nextRows[0]
+      if (first) { setSelectedId(first.id); setDraft(cloneDefinition(first)) }
+    }
     if (narrow) setMobileStep('list')
   }
 
@@ -360,7 +373,7 @@ export function PromptManager() {
     setEditorMode('edit')
     setDirty(false)
     setNotice(result.warnings.length ? result.warnings.map((warning) => warning.message).join(' ') : message)
-    await loadCatalog(result.definition.id)
+    await loadCatalog(result.definition.id, result.definition.kind === 'protocol' ? 'protocol' : 'default')
   }
 
   const save = async () => {
@@ -445,7 +458,7 @@ export function PromptManager() {
       await deletePromptDefinition(definition.id)
       setDraft(null); setDirty(false); setEditorMode('edit')
       setNotice('提示词已删除，历史 snapshot 保持不变。')
-      await loadCatalog()
+      await loadCatalog(undefined, category === 'protocol' ? 'protocol' : 'default')
       if (narrow) setMobileStep('list')
     } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
   }
@@ -462,7 +475,7 @@ export function PromptManager() {
 
   const changeSort = async (value: 'updatedAt-desc' | 'name-asc') => {
     setBusy(true); setError(null)
-    try { await setPromptSortPreference(value); await loadCatalog(); setNotice('排序已保存。') }
+    try { await setPromptSortPreference(value); await loadCatalog(undefined, category === 'protocol' ? 'protocol' : 'default'); setNotice('排序已保存。') }
     catch (e) { setError(errorText(e)) } finally { setBusy(false) }
   }
 

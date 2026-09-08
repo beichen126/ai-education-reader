@@ -91,10 +91,20 @@ function sortCatalog(items: PromptDefinition[], preference: 'updatedAt-desc' | '
 
 /** Merge source-code built-ins with durable custom/experimental definitions. */
 export async function listPromptCatalog(kind?: PromptKind): Promise<PromptDefinition[]> {
-  const [preferences, all] = await Promise.all([getPromptPreferences(), listEffectivePromptDefinitions()])
+  const [preferences, all] = await Promise.all([
+    getPromptPreferences(),
+    kind === 'protocol'
+      ? listEffectivePromptDefinitions('protocol')
+      : listEffectivePromptDefinitions(kind, { excludeKinds: ['protocol'] }),
+  ])
+  if (kind === 'protocol') return sortCatalog(all, preferences.sortPreference ?? 'updatedAt-desc')
   const selectedDefault = all.find((definition) => definition.kind === 'conversation-mode' && definition.id === preferences.defaultConversationModeId && definition.enabled)
     ?? all.find((definition) => definition.id === BUILTIN_PROMPT_IDS.conversationDefault)
-  const visible = all.filter((definition) => definition.kind !== 'conversation-mode' || definition.id === selectedDefault?.id)
+  const visible = all.filter((definition) => {
+    if (definition.kind === 'conversation-mode') return definition.id === selectedDefault?.id
+    if (definition.kind === 'artifact') return definition.artifactKind === 'note' || definition.artifactKind === 'quiz'
+    return true
+  })
   return sortCatalog(kind ? visible.filter((definition) => definition.kind === kind) : visible, preferences.sortPreference ?? 'updatedAt-desc')
 }
 

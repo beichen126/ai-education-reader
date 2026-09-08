@@ -3,7 +3,7 @@ import type { ProtocolDomain, ProtocolPrompt, ProtocolPromptSnapshot, PromptDefi
 import { promptContent } from './prompt-validation'
 import { BUILTIN_PROMPT_REGISTRY, BUILTIN_PROMPT_IDS, clonePromptDefinition, getBuiltinProtocol } from './prompt-registry'
 import { getPromptPreferences } from './prompt-preferences'
-import { listPromptRecords } from './prompt-store'
+import { listPromptRecords, listPromptRecordsByKind } from './prompt-store'
 import { resolveProtocolCanonicalRoot } from './protocol-lineage'
 
 export type PromptResolutionDiagnostic = {
@@ -45,18 +45,32 @@ export type ResolvePromptOptions = {
  * resolution. Built-ins remain source-owned; preferences project hidden built-ins
  * to `enabled: false` without mutating the registry or writing a shadow row.
  */
-export async function listEffectivePromptDefinitions(kind?: PromptKind): Promise<PromptDefinition[]> {
-  const [preferences, custom] = await Promise.all([getPromptPreferences(), listPromptRecords()])
+export type ListEffectivePromptOptions = {
+  /** Avoid reading excluded prompt kinds when a visible catalog does not need them. */
+  excludeKinds?: readonly PromptKind[]
+}
+
+const PROMPT_KINDS: readonly PromptKind[] = ['conversation-mode', 'artifact', 'quick-follow-up', 'protocol']
+
+export async function listEffectivePromptDefinitions(kind?: PromptKind, options: ListEffectivePromptOptions = {}): Promise<PromptDefinition[]> {
+  const excluded = new Set(options.excludeKinds ?? [])
+  const customRows = kind
+    ? excluded.has(kind) ? Promise.resolve([] as PromptDefinition[]) : listPromptRecordsByKind(kind)
+    : excluded.size > 0
+      ? Promise.all(PROMPT_KINDS.filter((promptKind) => !excluded.has(promptKind)).map((promptKind) => listPromptRecordsByKind(promptKind))).then((rows) => rows.flat())
+      : listPromptRecords()
+  const [preferences, custom] = await Promise.all([getPromptPreferences(), customRows])
   const hidden = new Set(preferences.hiddenBuiltinPromptIds)
   const byId = new Map<StableId, PromptDefinition>()
   for (const definition of BUILTIN_PROMPT_REGISTRY) {
+    if (excluded.has(definition.kind)) continue
     byId.set(definition.id, { ...clonePromptDefinition(definition), enabled: definition.enabled && !hidden.has(definition.id) } as PromptDefinition)
   }
   // Built-ins own their stable IDs. A malformed legacy/custom shadow row cannot
   // replace a canonical definition; Stage 4 separately rejects such rows at storage.
   for (const definition of custom) if (!byId.has(definition.id)) byId.set(definition.id, definition)
   const all = [...byId.values()]
-  return kind ? all.filter((definition) => definition.kind === kind) : all
+  return kind ? all.filter((definition) => definition.kind === kind && !excluded.has(definition.kind)) : all.filter((definition) => !excluded.has(definition.kind))
 }
 
 /**
