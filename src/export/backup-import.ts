@@ -8,7 +8,7 @@ import { buildEffectiveMessageIds, validateBranchGraph } from '../branches/branc
 import { validateArtifact, validateQuizDocument } from '../artifacts/artifact-validation'
 import type { ConversationBranch } from '../branches/branch-types'
 import type { StudyArtifact } from '../artifacts/artifact-types'
-import { normalizeConversationPdfContexts, normalizeMessagePdfContexts } from '../engine/types'
+import { normalizeConversationPdfContexts, normalizeMessagePdfContexts, validateMessageGenerationState } from '../engine/types'
 import { sanitizeBookmarkRangePreferences, isBookmarkRangeEndMode } from '../documents/bookmark-range-preferences'
 import { getPromptDefinitionIssues, getPromptSnapshotIssues, getPromptTransitionIssues, validatePromptDefinition } from '../prompts/prompt-validation'
 import { DEFAULT_PROMPT_PREFERENCES } from '../prompts/prompt-preferences'
@@ -136,6 +136,15 @@ function validateMessagePromptMetadata(message: Record<string, any>): void {
    if (!isStr(metadata.promptSnapshot) || metadata.promptSnapshot.trim().length === 0) throw new BackupError('message.quickFollowUp.promptSnapshot 不能为空')
 }
 
+function validatePersistedMessageGenerationState(message: Record<string, any>, scope: string): void {
+  try {
+    validateMessageGenerationState({ role: message.role, status: message.status, error: message.error })
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : 'invalid generation state'
+    throw new BackupError(scope + ' generation state 非法：' + reason)
+  }
+}
+
 function validateArtifactPromptBundle(bundle: unknown, artifactKind?: StudyArtifact['kind']): void {
   if (!isObj(bundle) || !isStr(bundle.userPrompt) || !isNum(bundle.resolvedAt) || bundle.resolvedAt < 0) {
     throw new BackupError('artifact.promptBundle 基础结构非法')
@@ -238,6 +247,7 @@ export function parseAndValidate(input: unknown): Backup {
       if (!isStr(m.content)) throw new BackupError('message.content 必须是字符串')
       if (!Array.isArray(m.images) || !m.images.every(isStr)) throw new BackupError('message.images 必须是字符串数组')
       if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('message 时间戳必须是数字')
+      validatePersistedMessageGenerationState(m, 'root message')
       validateMessagePromptMetadata(m)
       if (m.pdfContexts !== undefined) validatePdfContexts(m.pdfContexts)
       if (m.pdfContext !== undefined) validatePdfContext(m.pdfContext)
@@ -370,6 +380,7 @@ function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], a
       if (!isStr(m.content)) throw new BackupError('branch message.content 非法')
       if (!Array.isArray(m.images) || !m.images.every(isStr)) throw new BackupError('branch message.images 非法')
       if (!isNum(m.createdAt) || !isNum(m.updatedAt)) throw new BackupError('branch message 时间戳非法')
+      validatePersistedMessageGenerationState(m, 'branch message')
       validateMessagePromptMetadata(m)
       if (m.pdfContexts !== undefined) validatePdfContexts(m.pdfContexts)
       if (m.pdfContext !== undefined) validatePdfContext(m.pdfContext)

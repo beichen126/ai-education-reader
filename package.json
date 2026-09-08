@@ -58,6 +58,7 @@
     "test:annotation-ownership": "npx tsx scripts/test-annotation-ownership.ts",
     "test:multimodal-context": "npx tsx scripts/test-multimodal-context.ts",
     "test:backup-validation": "npx tsx scripts/test-backup-validation.ts",
+    "test:backup-message-state": "npx tsx scripts/test-backup-message-state.ts",
     "test:session-lifecycle": "npx tsx scripts/test-session-lifecycle.ts",
     "test:drafts": "npx tsx scripts/test-drafts.ts",
     "test:draft-attachments": "npx tsx scripts/test-draft-attachments.ts",

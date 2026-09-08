@@ -4,6 +4,33 @@ import type { PromptTransition } from '../prompts/prompt-types'
 
 export type StableId = string
 export type MessageRole = 'user' | 'assistant'
+export type MessageGenerationStatus = 'failed' | 'aborted'
+
+export type MessageGenerationStateInput = {
+  role: unknown
+  status?: unknown
+  error?: unknown
+}
+
+/**
+ * Validate the optional persisted generation state shared by root and branch messages.
+ * The validator intentionally does not normalize or echo untrusted values: backup import
+ * adds its own root/branch context to the safe error category.
+ */
+export function validateMessageGenerationState(message: MessageGenerationStateInput): void {
+  const hasStatus = message.status !== undefined
+  const hasError = message.error !== undefined
+
+  if (message.role === 'user') {
+    if (hasStatus || hasError) throw new Error('user message cannot carry generation state')
+    return
+  }
+  if (message.role !== 'assistant') return
+  if (!hasStatus && !hasError) return
+  if (!hasStatus && hasError) throw new Error('error requires failed or aborted status')
+  if (message.status !== 'failed' && message.status !== 'aborted') throw new Error('status must be failed or aborted')
+  if (typeof message.error !== 'string' || message.error.trim().length === 0) throw new Error('failed or aborted status requires a non-empty string error')
+}
 
 /** Frozen metadata for a Quick Follow-up user interaction. */
 export type QuickFollowUpMetadata = {
@@ -56,7 +83,7 @@ export type Message = {
   createdAt: number
   updatedAt: number
   /** Present only when an assistant generation ended after acceptance. */
-  status?: 'failed' | 'aborted'
+  status?: MessageGenerationStatus
   error?: string
   /** Canonical v1.3.1 provenance shape. New messages write this field only. */
   pdfContexts?: PdfContext[]

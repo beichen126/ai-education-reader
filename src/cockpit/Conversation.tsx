@@ -249,7 +249,7 @@ function PromptTransitionDivider({ transition, onOpen }: { transition: PromptTra
   </div>
 }
 
-function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu, onBranch, onArtifact, onInspectQuickFollowUp }: { m: any; streamingId?: string; convId?: string; imgOffset: number; menuOpen?: boolean; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: ArtifactKind, messageId: string) => void; onInspectQuickFollowUp?: (metadata: QuickFollowUpMetadata) => void }) {
+function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu, onBranch, onArtifact, onInspectQuickFollowUp }: { m: TMessage; streamingId?: string; convId?: string; imgOffset: number; menuOpen?: boolean; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: ArtifactKind, messageId: string) => void; onInspectQuickFollowUp?: (metadata: QuickFollowUpMetadata) => void }) {
   if (m.role === 'user') {
     return (
       <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>
