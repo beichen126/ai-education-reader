@@ -131,6 +131,8 @@ for (const size of [
   if (!keyboardCrudDone) {
     const detailBack = manager.locator('main[aria-label="提示词详情"] > button').first()
     await detailBack.click()
+    await manager.getByRole('button', { name: '‹ 分类' }).click()
+    await manager.locator('[data-testid="prompt-category-conversation-mode"]').click()
     const newButton = manager.locator('[data-testid="prompt-new"]')
     await newButton.focus()
     await newButton.press('Enter')
