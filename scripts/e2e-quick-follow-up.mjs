@@ -131,7 +131,8 @@ const firstQuick = rootAfterFirst.messages.find((item) => item.quickFollowUp?.pr
 assert(firstQuick?.content === '请继续解释上一条回答', 'root click creates a real user Message with actual prompt content')
 assert(firstQuick?.quickFollowUp?.labelSnapshot === '解释' && firstQuick?.quickFollowUp?.promptSnapshot === '请继续解释上一条回答', 'root message stores frozen quick snapshot')
 const firstBody = getLastRequestBody()
-assert(JSON.stringify(firstBody).includes('当前模式：必须给出分步解释。'), 'current Conversation Mode is preserved in quick send request')
+assert(!JSON.stringify(firstBody).includes('当前模式：必须给出分步解释。') && !firstBody?.messages?.some((message) => message.role === 'system'), 'quick send with an empty canonical default does not send the deprecated mode prompt')
+assert(rootAfterFirst.promptTransitions?.at(-1)?.snapshot?.profileId === 'builtin-conversation-default' && rootAfterFirst.promptTransitions.at(-1).snapshot.content === '', 'quick send captures the canonical default snapshot')
 
 await page.locator('[data-testid="quick-follow-up-history-inspect"]').last().click()
 await page.locator('[data-testid="quick-follow-up-dialog"]').waitFor({ state: 'visible', timeout: 5000 })
