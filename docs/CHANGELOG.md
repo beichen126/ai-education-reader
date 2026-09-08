@@ -4,6 +4,41 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。开发中的改动先进入 `Unreleased`，正式发布 tag 时再移动到对应版本。
 
+## [2.0.1] - 2026-09-08
+
+### Added
+
+- 收起 rail 保留历史、新会话、图片、文件和提示词等直接入口；点击提示词可直接打开 Prompt Manager，不改变侧栏展开状态。
+- 正式 release gate 纳入 v2.0.1 关键反例：rail direct-open、Prompt Manager focus boundary、initial transition、branch failure、protocol copy-of-copy、空 Quick Follow-up、overflow-only 列表和 timeline 性能隔离。
+
+### Fixed
+
+- branch 发送失败现在进入可观察、可访问的失败通道，不再把 HTTP/API 失败表示为伪成功；已接受的用户消息保持耐久。
+- 首条消息前的 initial mode transition 可见且只渲染一次；root、branch 和导出保持同一边界语义。
+- protocol copy-of-copy 直接继承 canonical lineage；非法或不可激活协议不再显示无响应的启用操作。
+- Prompt Manager 建立完整的 Tab、Shift+Tab、Escape 和 opener focus restore 边界。
+- root/branch 的空白 Quick Follow-up 在 UI、service、backup 和 runtime 层统一拒绝，不产生消息、lease 或网络请求。
+- Quick Follow-up 的“更多”列表只显示前三项之后的 overflow，关闭后恢复 opener focus。
+
+### Performance
+
+- 有效 Prompt timeline materialization 只使用当前 lineage，不再为每次读取扫描全部无关 branches；5k/20k 结构性 warm 访问计数为 0。
+
+### Compatibility
+
+- IndexedDB schema 和 DB version 未升级；Backup schema 保持 V1–V6 兼容，API Key 仍不进入 Backup。
+- PDF、书签范围、目录、页面笔记、provenance、Reader ↔ Conversation 反向链和原有 v1.3.x 学习路径未改变。
+- README collapsed rail 截图已更新为包含提示词直接入口的当前界面；其余截图未因无关页面重复生成。
+
+### Release evidence
+
+- Local: `npm run typecheck`、`npm test`、`npm run build`、`npm run test:prompt-performance`、`npm run test:v201-red-domain`、`npm run test:release` 全部通过。
+- Remote: CI quality gate、Pages build、26 组 critical browser E2E（658 assertions）和 deploy 全部 success；所有 PAGEERRORS 为 none，线上站点 HTTP 200。
+
+### Known warnings
+
+- 构建仍有既有 dynamic/static import 与 large-chunk warnings；GitHub Actions 仍显示 Node.js 20 deprecation annotation，均未阻断本次发布。
+
 ## [2.0.0] - 2026-09-08
 
 ### Added
