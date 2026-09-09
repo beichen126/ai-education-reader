@@ -131,10 +131,14 @@ const addSelectedChapter = async (target, mode, expectedPages) => {
   await page.keyboard.press('Tab')
   assert(await selector.evaluate(element => document.activeElement === element), target.title + ': Tab moves from checkbox to mode selector')
   const optionTexts = await selector.locator('option').allTextContents()
-  const exclusiveLabel = '[' + target.startPage + ',' + (target.endPage + 1) + ')'
-  const inclusiveLabel = '[' + target.startPage + ',' + Math.min(target.endPage + 1, doc.pageCount) + ']'
-  assert(optionTexts.some(text => text.includes('左闭右开 ' + exclusiveLabel)), target.title + ': exclusive option uses canonical boundary before selection')
-  assert(optionTexts.some(text => text.includes('左闭右闭 ' + inclusiveLabel)), target.title + ': inclusive option uses canonical boundary before selection')
+  assert(optionTexts.includes('[)'), target.title + ': exclusive option uses compact bracket symbol without a duplicate page range')
+  assert(optionTexts.includes('[]'), target.title + ': inclusive option uses compact bracket symbol without a duplicate page range')
+  assert(optionTexts.every(text => !/\\d/.test(text) && !text.includes('左闭右开') && !text.includes('左闭右闭')), target.title + ': range options omit dynamic page labels and verbose mode text')
+  const selectorBox = await selector.boundingBox()
+  assert(Boolean(selectorBox && selectorBox.width <= 120 && selectorBox.height >= 28 && selectorBox.height <= 32), target.title + ': desktop range selector is compact (<=120px, 28-32px)')
+  const descriptionId = await selector.getAttribute('aria-describedby')
+  const description = descriptionId ? await page.locator('#' + descriptionId).textContent() : null
+  assert(Boolean(description && description.includes('左闭右开') && description.includes('左闭右闭')), target.title + ': range semantics have an accessible non-visual description')
   await selector.selectOption(mode)
   assert(await selector.inputValue() === mode, mode + ': selector shows selected mode')
   assert(await checkbox.isChecked(), target.title + ': changing mode leaves checkbox selected')
@@ -341,6 +345,7 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 390, height: 844 }
   await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
   await openLibrary()
   await openPicker()
+  await page.locator('[data-testid^="doc-context-mode-"]').first().waitFor({ state: 'visible', timeout: 5000 })
   const layout = await page.evaluate(() => {
     const picker = document.querySelector('[data-testid="doc-context-picker"]')
     const mode = picker?.querySelector('[data-testid^="doc-context-mode-"]')
@@ -353,10 +358,13 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 390, height: 844 }
       pickerClientWidth: picker?.clientWidth ?? 0,
       modeRight: box?.right ?? 0,
       modeLeft: box?.left ?? 0,
+      modeWidth: box?.width ?? 0,
+      modeHeight: box?.height ?? 0,
     }
   })
   assert(layout.documentScrollWidth <= layout.viewport + 1 && layout.bodyScrollWidth <= layout.viewport + 1 && layout.pickerScrollWidth <= layout.pickerClientWidth + 1, viewport.width + 'x' + viewport.height + ': no horizontal overflow')
   assert(layout.modeLeft >= -1 && layout.modeRight <= layout.viewport + 1, viewport.width + 'x' + viewport.height + ': range selector is inside viewport')
+  assert(layout.modeWidth <= 120 && layout.modeWidth < layout.viewport && layout.modeHeight >= 28 && layout.modeHeight <= 32, viewport.width + 'x' + viewport.height + ': range selector stays compact instead of filling the row (' + JSON.stringify(layout) + ')')
   const target = allChapters.find(item => item.id === chapter.id)
   await actualLabel(target).scrollIntoViewIfNeeded()
   const actualBox = await actualLabel(target).boundingBox()
