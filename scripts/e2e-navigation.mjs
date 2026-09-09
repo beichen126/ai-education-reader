@@ -1,5 +1,6 @@
 export async function dismissProductGuide(page) {
   const guide = page.locator('[data-testid="product-guide"]')
+  await guide.waitFor({ state: 'visible', timeout: 1500 }).catch(() => {})
   if (await guide.isVisible().catch(() => false)) {
     await page.locator('[data-testid="product-guide-later"]').click()
     await guide.waitFor({ state: 'hidden', timeout: 10000 })
