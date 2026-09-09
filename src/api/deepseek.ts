@@ -37,6 +37,25 @@ export function errorKindLabel(kind: ErrorKind): string {
 
 const DEFAULT_BASE = 'https://api.deepseek.com'
 
+export type DeepSeekReasoningEffort = 'low' | 'high' | 'max'
+export const DEFAULT_DEEPSEEK_REASONING_EFFORT: DeepSeekReasoningEffort = 'max'
+
+function isDeepSeekRequest(baseUrl: string, model: string): boolean {
+  const normalizedModel = model.trim().toLowerCase()
+  if (/^deepseek(?:-|$)/.test(normalizedModel)) return true
+  try {
+    const hostname = new URL(baseUrl || DEFAULT_BASE).hostname.toLowerCase()
+    return hostname === 'deepseek.com' || hostname.endsWith('.deepseek.com')
+  } catch {
+    return false
+  }
+}
+
+/** Add DeepSeek-only defaults without leaking provider-specific fields to compatible APIs. */
+export function deepSeekRequestOptions(baseUrl: string, model: string): { reasoning_effort?: DeepSeekReasoningEffort } {
+  return isDeepSeekRequest(baseUrl, model) ? { reasoning_effort: DEFAULT_DEEPSEEK_REASONING_EFFORT } : {}
+}
+
 export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChatResult> {
   const { apiKey, baseUrl, model, messages, signal } = args
   if (!apiKey) throw new DeepSeekError('no-api-key', 'missing api key')
@@ -46,7 +65,7 @@ export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChat
     res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify({ model, messages, stream: false }),
+      body: JSON.stringify({ model, messages, stream: false, ...deepSeekRequestOptions(baseUrl, model) }),
       signal,
     })
   } catch {
@@ -190,7 +209,7 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
     res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify({ model, messages, stream: true }),
+      body: JSON.stringify({ model, messages, stream: true, ...deepSeekRequestOptions(baseUrl, model) }),
       signal,
     })
   } catch (e) {
