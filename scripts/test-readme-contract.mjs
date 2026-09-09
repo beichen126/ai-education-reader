@@ -17,7 +17,7 @@ function expect(condition, message) {
 const headings = [
   '产品一句话介绍',
   '30 秒理解本产品',
-  '第一代产品的设计哲学：PDF 是一等对象',
+  '设计理念：问完还能回到原文',
   '与 Zotero 等 PDF 阅读器有什么不同',
   '与 ChatGPT/DeepSeek 等 AI 网页端有什么不同',
   '第一次使用',
@@ -47,8 +47,22 @@ expect(readme.includes('一次最多选择 **120 页**') && readme.includes('超
 const badge = new RegExp('status-v' + pkg.version.replaceAll('.', '\\.') + '-').test(readme)
 expect(badge, 'status badge matches package version ' + pkg.version)
 
-const imagePaths = [...readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((match) => match[1])
-expect(imagePaths.length >= 10, 'README has current product screenshots (got ' + imagePaths.length + ')')
+const imagePaths = [
+  ...[...readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((match) => match[1]),
+  ...[...readme.matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi)].map((match) => match[1]),
+]
+const localImagePaths = imagePaths.filter((imagePath) => !/^[a-z][a-z0-9+.-]*:/i.test(imagePath))
+expect(localImagePaths.length === 5, 'README keeps five information-dense product screenshots (got ' + localImagePaths.length + ')')
+for (const requiredImage of [
+  'docs/assets/readme/v210-00-app-shell.webp',
+  'docs/assets/readme/v210-02-document-library.webp',
+  'docs/assets/readme/v210-03-document-context-picker.webp',
+  'docs/assets/readme/v210-04-ai-toc-review.webp',
+  'docs/assets/readme/v210-11-prompt-manager.webp',
+]) {
+  expect(localImagePaths.includes(requiredImage), 'README keeps key screenshot: ' + requiredImage)
+}
+expect(!/v210-(07-mobile|08-dark-mode|09-mobile-history-drawer|10-mobile-rail)/.test(readme), 'README does not use low-information mobile/rail screenshots')
 for (const imagePath of imagePaths) {
   if (/^[a-z][a-z0-9+.-]*:/i.test(imagePath)) continue
   const target = path.resolve(root, imagePath)
@@ -67,6 +81,12 @@ for (const link of localLinks) {
 const limits = fs.readFileSync(path.join(root, 'src/pdf/pdf-types.ts'), 'utf8')
 expect(/PDF_CONTEXT_SOFT_WARNING_PAGES\s*=\s*30/.test(limits), 'source soft warning constant is 30')
 expect(/MAX_PDF_CONTEXT_PAGES\s*=\s*120/.test(limits), 'source hard page limit constant is 120')
+
+const order = (heading) => readme.indexOf('## ' + heading)
+expect(order('产品一句话介绍') < order('与 Zotero 等 PDF 阅读器有什么不同') && order('与 Zotero 等 PDF 阅读器有什么不同') < order('FAQ'), 'README foregrounds product and core differences before FAQ')
+expect(order('FAQ') < order('设计理念：问完还能回到原文') && order('设计理念：问完还能回到原文') < order('功能亮点') && order('功能亮点') < order('页面展示'), 'README puts FAQ/design before features and screenshots')
+expect(readme.includes('打开 Zotero，你先面对一页 PDF；打开本产品，你先面对一场 AI 对话'), 'Zotero difference is stated in plain user language')
+expect(readme.includes('网页端 AI 把附件和图片顶在聊天最上方') && readme.includes('左侧边栏回到已经发送的图片、PDF'), 'AI web difference explains attachment return path')
 
 console.log(`SUMMARY ${pass}/${pass + fail} passed`)
 process.exit(fail === 0 ? 0 : 1)

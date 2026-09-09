@@ -95,7 +95,7 @@ npm run docs:screenshots
 npm run test:readme-contract
 ```
 
-契约测试检查 README 的固定用户章节、FAQ 数量、Zotero/AI 网页端差异说明、图片路径、仓库内链接、版本 badge、已删除入口和 PDF Context 的 30/120 页事实。新增产品入口或改变实际阈值时，应先更新产品实现/测试，再更新 README 契约。
+契约测试检查 README 的固定用户章节、FAQ 数量、Zotero/AI 网页端差异说明、产品信息顺序、五张高信息量截图及其 HTML 路径、仓库内链接、版本 badge、已删除入口和 PDF Context 的 30/120 页事实。新增产品入口或改变实际阈值时，应先更新产品实现/测试，再更新 README 契约。
 
 ## 代码组织
 
