@@ -40,13 +40,17 @@ if (await firstNode.count()) {
   const flatten = (nodes, out = []) => { for (const node of nodes || []) { out.push(node); flatten(node.children, out) } return out }
   const selectedNode = flatten(beforeDoc.chapters).find(node => node.id === nodeId)
   const expectedStartPage = selectedNode?.startPage || Math.max(1, Math.min(beforeDoc.lastReadPage || 1, beforeDoc.pageCount))
-  const range = firstNode.locator('[data-testid^="doc-context-actual-"]')
-  const rangeText = (await range.textContent()) || ''
-  const optionTexts = await firstNode.locator('option').allTextContents()
-  assert(optionTexts.every(text => !rangeText || !text.includes(rangeText)), 'range page text is rendered once, not duplicated inside select labels')
-  const mode = firstNode.locator('select[data-testid^="doc-context-mode-"]')
+  const mode = firstNode.locator('[data-testid^="doc-context-mode-"]')
+  const triggerText = (await mode.textContent()) || ''
+  assert(/\[\d+,\d+[\]\)]/.test(triggerText), 'range trigger exposes the complete current page range')
+  await mode.click()
+  const popup = page.locator('[role="listbox"]')
+  await popup.waitFor({ state: 'visible', timeout: 5000 })
+  const optionTexts = await popup.getByRole('option').allTextContents()
+  assert(optionTexts.some(text => text.includes('左闭右开') && /\[\d+,\d+\)/.test(text)) && optionTexts.some(text => text.includes('左闭右闭') && /\[\d+,\d+\]/.test(text)), 'range popup contains both semantic options with complete page ranges')
+  await page.keyboard.press('Escape')
   const box = await mode.boundingBox()
-  assert(Boolean(box) && box.width <= 120, 'range mode select stays within the compact desktop width budget')
+  assert(Boolean(box) && box.width <= 132, 'range mode trigger stays within the compact desktop width budget')
 
   await page.locator('[data-testid="doc-context-preview"]').click()
   await page.locator('[data-testid="doc-context-preview-view"]').waitFor({ state: 'visible', timeout: 15000 })

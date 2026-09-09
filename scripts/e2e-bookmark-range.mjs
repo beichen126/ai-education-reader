@@ -95,6 +95,15 @@ const openPickerFor = async (documentId) => {
 const openPicker = () => openPickerFor(doc.id)
 
 const modeSelector = (target) => page.locator('[data-testid="doc-context-mode-' + target.id + '"]')
+const modePopup = (target) => page.locator('#doc-context-range-menu-' + target.id)
+const readMode = async target => (await modeSelector(target).innerText()).includes(']') ? 'inclusive' : 'exclusive'
+const chooseMode = async (target, mode) => {
+  const selector = modeSelector(target)
+  await selector.click()
+  const popup = modePopup(target)
+  await popup.waitFor({ state: 'visible', timeout: 5000 })
+  await popup.getByRole('option', { name: mode === 'inclusive' ? /左闭右闭/ : /左闭右开/ }).click()
+}
 const waitForPreference = async (target, mode, documentId = doc.id) => {
   const deadline = Date.now() + 10000
   while (Date.now() < deadline) {
@@ -129,23 +138,27 @@ const addSelectedChapter = async (target, mode, expectedPages) => {
   assert(await checkbox.isChecked(), target.title + ': Space selects the focused checkbox')
   await page.keyboard.press('Tab')
   assert(await selector.evaluate(element => document.activeElement === element), target.title + ': Tab moves from checkbox to mode selector')
-  const optionTexts = await selector.locator('option').allTextContents()
-  const exclusiveEnd = Math.min(target.endPage + 1, doc.pageCount)
+  const exclusiveEnd = target.endPage + 1
   const inclusiveEnd = Math.min(target.endPage + 1, doc.pageCount)
+  await selector.click()
+  const popup = modePopup(target)
+  await popup.waitFor({ state: 'visible', timeout: 5000 })
+  const optionTexts = await popup.getByRole('option').allTextContents()
   assert(optionTexts.some(text => text.includes('[' + target.startPage + ',' + exclusiveEnd + ')')), target.title + ': trigger/popup keeps the complete exclusive page range')
   assert(optionTexts.some(text => text.includes('[' + target.startPage + ',' + inclusiveEnd + ']')), target.title + ': trigger/popup keeps the complete inclusive page range')
   assert(optionTexts.some(text => text.includes('左闭右开')) && optionTexts.some(text => text.includes('左闭右闭')), target.title + ': range options visibly include semantic names')
+  await page.keyboard.press('Escape')
   assert(!(await page.locator('[data-testid="doc-context-actual-' + target.id + '"]').isVisible().catch(() => false)), target.title + ': left-side duplicate range is not visible')
   const selectorBox = await selector.boundingBox()
   assert(Boolean(selectorBox && selectorBox.width <= 120 && selectorBox.height >= 28 && selectorBox.height <= 32), target.title + ': desktop range selector is compact (<=120px, 28-32px)')
   const descriptionId = await selector.getAttribute('aria-describedby')
   const description = descriptionId ? await page.locator('#' + descriptionId).textContent() : null
   assert(Boolean(description && description.includes('左闭右开') && description.includes('左闭右闭')), target.title + ': range semantics have an accessible non-visual description')
-  await selector.selectOption(mode)
-  assert(await selector.inputValue() === mode, mode + ': selector shows selected mode')
+  await chooseMode(target, mode)
+  assert(await readMode(target) === mode, mode + ': selector shows selected mode')
   assert(await checkbox.isChecked(), target.title + ': changing mode leaves checkbox selected')
   await waitForPreferences(sameLevelTargets, mode)
-  for (const sibling of sameLevelTargets) assert(await modeSelector(sibling).inputValue() === mode, sibling.title + ': same-level selector follows batch mode')
+  for (const sibling of sameLevelTargets) assert(await readMode(sibling) === mode, sibling.title + ': same-level selector follows batch mode')
   const expectedEnd = mode === 'inclusive' ? Math.min(target.endPage + 1, doc.pageCount) : target.endPage
   await checkbox.focus()
   await page.keyboard.press('Space')
@@ -169,28 +182,28 @@ const addSelectedChapter = async (target, mode, expectedPages) => {
 const testRapidPreferenceWrites = async target => {
   await openPicker()
   const selector = modeSelector(target)
-  await selector.selectOption('inclusive')
-  await selector.selectOption('exclusive')
+  await chooseMode(target, 'inclusive')
+  await chooseMode(target, 'exclusive')
   const sameLevelTargets = allChapters.filter(item => item.level === target.level && item.selectable && item.startPage != null && item.endPage != null)
   await waitForPreferences(sameLevelTargets, 'exclusive')
-  assert(await selector.inputValue() === 'exclusive', target.title + ': rapid inclusive -> exclusive ends exclusive')
+  assert(await readMode(target) === 'exclusive', target.title + ': rapid inclusive -> exclusive ends exclusive')
   await page.locator('[data-testid="doc-context-cancel"]').click()
 }
 
 const testFailedPreferenceWrite = async target => {
   await openPicker()
-  const selector = modeSelector(target)
-  const before = await selector.inputValue()
+  const before = await readMode(target)
   const next = before === 'inclusive' ? 'exclusive' : 'inclusive'
   await page.evaluate(() => { window.__dshFailNextBookmarkRangePreferenceWrite = true })
-  await selector.selectOption(next)
+  await chooseMode(target, next)
+  await page.waitForTimeout(1000)
   await page.locator('[data-testid="doc-context-block"]').waitFor({ state: 'visible', timeout: 10000 })
   assert(await page.locator('[data-testid="doc-context-picker"]').count() === 1, target.title + ': failed preference keeps Picker open')
-  assert(await selector.inputValue() === before, target.title + ': failed preference rolls back to confirmed mode')
+  assert(await readMode(target) === before, target.title + ': failed preference rolls back to confirmed mode')
   await page.locator('[data-testid="doc-context-cancel"]').click()
   await page.locator('[data-testid="doc-context-picker"]').waitFor({ state: 'visible', timeout: 5000 })
   assert(await page.locator('[data-testid="doc-context-picker"]').count() === 1, target.title + ': cancel does not unmount after durable failure')
-  await selector.selectOption(next)
+  await chooseMode(target, next)
   await waitForPreferences(allChapters.filter(item => item.level === target.level && item.selectable && item.startPage != null && item.endPage != null), next)
   assert((await page.locator('[data-testid="doc-context-block"]').count()) === 0, target.title + ': successful retry clears the failure message')
   await page.locator('[data-testid="doc-context-cancel"]').click()
@@ -201,18 +214,18 @@ const selectableAtLevel = level => allChapters.filter(item => item.level === lev
 const testSameNameDocumentIsolation = async target => {
   const sameLevelTargets = selectableAtLevel(target.level)
   await openPicker()
-  await modeSelector(target).selectOption('inclusive')
+  await chooseMode(target, 'inclusive')
   await waitForPreferences(sameLevelTargets, 'inclusive')
   await page.locator('[data-testid="doc-context-cancel"]').click()
 
   await openPickerFor(sameNameDocumentId)
-  assert(await modeSelector(target).inputValue() === 'exclusive', 'same-name document starts with its own default exclusive mode')
-  await modeSelector(target).selectOption('inclusive')
+  assert(await readMode(target) === 'exclusive', 'same-name document starts with its own default exclusive mode')
+  await chooseMode(target, 'inclusive')
   await waitForPreferences(sameLevelTargets, 'inclusive', sameNameDocumentId)
   await page.locator('[data-testid="doc-context-cancel"]').click()
 
   await openPicker()
-  assert(await modeSelector(target).inputValue() === 'inclusive', 'same-name document preference does not overwrite the primary document')
+  assert(await readMode(target) === 'inclusive', 'same-name document preference does not overwrite the primary document')
   await page.locator('[data-testid="doc-context-cancel"]').click()
 }
 
@@ -225,7 +238,7 @@ const testIndependentLevelPreferences = async () => {
   for (const { target, mode } of targets) {
     const sameLevelTargets = selectableAtLevel(target.level)
     await openPicker()
-    await modeSelector(target).selectOption(mode)
+    await chooseMode(target, mode)
     await waitForPreferences(sameLevelTargets, mode)
     await page.locator('[data-testid="doc-context-cancel"]').click()
   }
@@ -235,7 +248,7 @@ const testIndependentLevelPreferences = async () => {
   await openLibrary()
   await openPicker()
   for (const { target, mode } of targets) {
-    assert(await modeSelector(target).inputValue() === mode, target.title + ': ' + mode + ' preference survives reload independently')
+    assert(await readMode(target) === mode, target.title + ': ' + mode + ' preference survives reload independently')
   }
   await page.locator('[data-testid="doc-context-cancel"]').click()
 }
@@ -278,7 +291,7 @@ const testReaderPreferenceRefresh = async target => {
   await page.locator('[data-testid="doc-context-picker"]').waitFor({ state: 'visible', timeout: 10000 })
   const selector = modeSelector(target)
   await selector.waitFor({ state: 'visible', timeout: 10000 })
-  await selector.selectOption('inclusive')
+  await chooseMode(target, 'inclusive')
   const sameLevelTargets = allChapters.filter(item => item.level === target.level && item.selectable && item.startPage != null && item.endPage != null)
   await waitForPreferences(sameLevelTargets, 'inclusive')
   await page.locator('[data-testid="doc-context-cancel"]').click()
@@ -318,7 +331,7 @@ await page.reload({ waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
 await openLibrary()
 await openPicker()
-assert(await modeSelector(chapter).inputValue() === 'inclusive', 'reload: Reader-updated inclusive preference is restored')
+assert(await readMode(chapter) === 'inclusive', 'reload: Reader-updated inclusive preference is restored')
 await page.locator('[data-testid="doc-context-cancel"]').click()
 await addSelectedChapter(chapter, 'inclusive', Math.min(chapter.endPage + 1, doc.pageCount) - chapter.startPage + 1)
 
