@@ -17,7 +17,7 @@ function expect(condition, message) {
 const headings = [
   '产品一句话介绍',
   '30 秒理解本产品',
-  '设计理念：问完还能回到原文',
+  '设计哲学：PDF 是一等对象',
   '与 Zotero 等 PDF 阅读器有什么不同',
   '与 ChatGPT/DeepSeek 等 AI 网页端有什么不同',
   '第一次使用',
@@ -84,7 +84,7 @@ expect(/MAX_PDF_CONTEXT_PAGES\s*=\s*120/.test(limits), 'source hard page limit c
 
 const order = (heading) => readme.indexOf('## ' + heading)
 expect(order('产品一句话介绍') < order('与 Zotero 等 PDF 阅读器有什么不同') && order('与 Zotero 等 PDF 阅读器有什么不同') < order('FAQ'), 'README foregrounds product and core differences before FAQ')
-expect(order('FAQ') < order('设计理念：问完还能回到原文') && order('设计理念：问完还能回到原文') < order('功能亮点') && order('功能亮点') < order('页面展示'), 'README puts FAQ/design before features and screenshots')
+expect(order('FAQ') < order('设计哲学：PDF 是一等对象') && order('设计哲学：PDF 是一等对象') < order('功能亮点') && order('功能亮点') < order('页面展示'), 'README puts FAQ/design before features and screenshots')
 expect(readme.includes('打开 Zotero，你先面对一页 PDF；打开本产品，你先面对一场 AI 对话'), 'Zotero difference is stated in plain user language')
 expect(readme.includes('网页端 AI 把附件和图片顶在聊天最上方') && readme.includes('左侧边栏回到已经发送的图片、PDF'), 'AI web difference explains attachment return path')
 
