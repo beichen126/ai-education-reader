@@ -8,6 +8,7 @@ type Props = {
   chapterTitle: string
   mode: BookmarkRangeEndMode
   presentation: BookmarkRangePresentation
+  disabled?: boolean
   onChange: (mode: BookmarkRangeEndMode) => void
 }
 
@@ -24,7 +25,7 @@ function optionLabel(mode: BookmarkRangeEndMode, presentation: BookmarkRangePres
     : '左闭右闭 · ' + presentation.inclusive.label
 }
 
-export function ChapterRangeModeControl({ chapterId, chapterTitle, mode, presentation, onChange }: Props) {
+export function ChapterRangeModeControl({ chapterId, chapterTitle, mode, presentation, disabled = false, onChange }: Props) {
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const popupRef = useRef<HTMLDivElement | null>(null)
   const optionRefs = useRef<Record<BookmarkRangeEndMode, HTMLButtonElement | null>>({ exclusive: null, inclusive: null })
@@ -158,13 +159,14 @@ export function ChapterRangeModeControl({ chapterId, chapterTitle, mode, present
         type="button"
         className={css.trigger}
         data-testid={'doc-context-mode-' + chapterId}
+        aria-disabled={disabled || undefined}
         aria-label={chapterTitle + ' 范围'}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={popupId}
         aria-describedby={'doc-context-range-help-' + chapterId}
-        onClick={() => open ? close(false) : openMenu()}
-        onKeyDown={handleTriggerKeyDown}
+        onClick={() => { if (!disabled) open ? close(false) : openMenu() }}
+        onKeyDown={event => { if (disabled) { event.preventDefault(); return }; handleTriggerKeyDown(event) }}
       >
         {presentation[mode].label} <span className={css.chevron} aria-hidden="true">▾</span>
       </button>

@@ -58,6 +58,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
   const [manualSel, setManualSel] = useState<PdfSelection | null>(null)
   const [blockMsg, setBlockMsg] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<PdfSelection | null>(null)
+  const [preferenceBusyKeys, setPreferenceBusyKeys] = useState<Set<string>>(new Set())
   const preferenceStatesRef = useRef(new Map<string, PreferenceKeyState>())
   const preferenceQueuesRef = useRef(new Map<string, Promise<void>>())
   const mountedRef = useRef(true)
@@ -171,6 +172,11 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
     const chain = previous.catch(() => {}).then(() => setDocumentBookmarkRangePreferences(targetDoc.id, updates))
     const entry: PreferenceWriteEntry = { documentId: targetDoc.id, updates, generations, chain }
     for (const update of updates) ensurePreferenceState(targetDoc, update.chapterId).pending = chain
+    setPreferenceBusyKeys(previousKeys => {
+      const next = new Set(previousKeys)
+      for (const update of updates) next.add(preferenceKey(targetDoc.id, update.chapterId))
+      return next
+    })
     preferenceQueuesRef.current.set(targetDoc.id, chain)
     void chain.then(() => {
       let currentGeneration = true
@@ -200,6 +206,14 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
       }
     }).finally(() => {
       if (preferenceQueuesRef.current.get(entry.documentId) === entry.chain) preferenceQueuesRef.current.delete(entry.documentId)
+      setPreferenceBusyKeys(previousKeys => {
+        const next = new Set(previousKeys)
+        for (const update of entry.updates) {
+          const key = preferenceKey(entry.documentId, update.chapterId)
+          if (!preferenceStatesRef.current.get(key)?.pending) next.delete(key)
+        }
+        return next
+      })
     })
   }
 
@@ -352,7 +366,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
                 {doc.chapters.length === 0 ? (
                   <div className={css.empty}>这份文档还没有目录。可使用「页码」或「整份文档」（&le;120 页）。</div>
                 ) : (
-                  <ChapterTreeCheck nodes={doc.chapters} checked={checked} bookmarkRangePreferences={doc.bookmarkRangePreferences} pageCount={doc.pageCount} onToggle={toggle} onModeChange={changeBookmarkRangeMode} />
+                  <ChapterTreeCheck nodes={doc.chapters} checked={checked} bookmarkRangePreferences={doc.bookmarkRangePreferences} pageCount={doc.pageCount} preferenceBusy={chapterId => preferenceBusyKeys.has(preferenceKey(doc.id, chapterId))} onToggle={toggle} onModeChange={changeBookmarkRangeMode} />
                 )}
               </div>
             ) : (
@@ -396,7 +410,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
   )
 }
 
-function ChapterTreeCheck({ nodes, checked, pageCount, bookmarkRangePreferences, onToggle, onModeChange }: { nodes: ChapterNode[]; checked: Set<string>; pageCount: number; bookmarkRangePreferences?: Record<string, BookmarkRangeEndMode>; onToggle: (id: string) => void; onModeChange: (id: string, mode: BookmarkRangeEndMode) => void }) {
+function ChapterTreeCheck({ nodes, checked, pageCount, bookmarkRangePreferences, preferenceBusy, onToggle, onModeChange }: { nodes: ChapterNode[]; checked: Set<string>; pageCount: number; bookmarkRangePreferences?: Record<string, BookmarkRangeEndMode>; preferenceBusy: (chapterId: string) => boolean; onToggle: (id: string) => void; onModeChange: (id: string, mode: BookmarkRangeEndMode) => void }) {
   return (
     <div className={css.tree}>
       {nodes.map(n => {
@@ -413,12 +427,12 @@ function ChapterTreeCheck({ nodes, checked, pageCount, bookmarkRangePreferences,
               </label>
               {presentation ? (
                 <span className={css.treeDetails}>
-                  <ChapterRangeModeControl chapterId={n.id} chapterTitle={n.title} mode={mode} presentation={presentation} onChange={nextMode => onModeChange(n.id, nextMode)} />
+                  <ChapterRangeModeControl chapterId={n.id} chapterTitle={n.title} mode={mode} presentation={presentation} disabled={preferenceBusy(n.id)} onChange={nextMode => onModeChange(n.id, nextMode)} />
                   <span id={'doc-context-range-help-' + n.id} className={css.srOnly}>范围语义：左闭右开表示到下一章节起始页前一页；左闭右闭表示包含所示终点页。</span>
                 </span>
               ) : <span className={css.treeRange}>无法定位页码</span>}
             </div>
-            {n.children.length > 0 && <ChapterTreeCheck nodes={n.children} checked={checked} pageCount={pageCount} bookmarkRangePreferences={bookmarkRangePreferences} onToggle={onToggle} onModeChange={onModeChange} />}
+            {n.children.length > 0 && <ChapterTreeCheck nodes={n.children} checked={checked} pageCount={pageCount} bookmarkRangePreferences={bookmarkRangePreferences} preferenceBusy={preferenceBusy} onToggle={onToggle} onModeChange={onModeChange} />}
           </div>
         )
       })}
