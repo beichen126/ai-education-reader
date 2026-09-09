@@ -10,13 +10,21 @@ const PREFIX = process.env.README_SCREENSHOT_PREFIX || 'v210-'
 mkdirSync(OUT, { recursive: true })
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 const FILES = '[data-testid="sidebar-entry-files"], [data-testid="rail-files"]'
-const openLibrary = async (page) => { if (await page.locator('[data-testid="document-library"]').count()) return; await page.locator(FILES).first().click(); await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 }) }
+const dismissProductGuide = async (page) => {
+  const guide = page.locator('[data-testid="product-guide"]')
+  if (await guide.isVisible().catch(() => false)) {
+    await guide.locator('[data-testid="product-guide-close"]').click()
+    await guide.waitFor({ state: 'detached', timeout: 10000 })
+  }
+}
+const openLibrary = async (page) => { await dismissProductGuide(page); if (await page.locator('[data-testid="document-library"]').count()) return; await page.locator(FILES).first().click(); await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 }) }
 const shot = async (page, name) => { const file = PREFIX + name; await page.screenshot({ path: OUT + '/' + file, type: 'webp' }); console.log('shot ' + file) }
 
 // Import two fixture PDFs so the library has real, deterministic content.
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
 await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
+await dismissProductGuide(page)
 await page.waitForTimeout(500)
 await shot(page, '00-app-shell.webp')
 await page.locator('[data-testid="sidebar-entry-prompts"]').first().click()
@@ -179,6 +187,7 @@ await page.waitForTimeout(300)
 const mpage = await (await browser.newContext({ viewport: { width: 390, height: 844 } })).newPage()
 await mpage.goto(BASE, { waitUntil: 'networkidle' })
 await mpage.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
+await dismissProductGuide(mpage)
 await mpage.waitForTimeout(500)
 await mpage.locator('[data-testid="rail-history"]').click()
 await mpage.locator('[data-testid="mobile-history-drawer"]').waitFor({ state: 'visible', timeout: 10000 })
