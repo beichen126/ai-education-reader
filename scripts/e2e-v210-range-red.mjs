@@ -14,6 +14,11 @@ page.on('dialog', dialog => { void dialog.accept() })
 
 const openLibrary = async () => {
   if (await page.locator('[data-testid="document-library"]').count()) return
+  const guide = page.locator('[data-testid="product-guide"]')
+  if (await guide.isVisible().catch(() => false)) {
+    await guide.locator('[data-testid="product-guide-close"]').click()
+    await guide.waitFor({ state: 'detached', timeout: 10000 })
+  }
   await page.locator('[data-testid="sidebar-entry-files"], [data-testid="rail-files"]').first().click()
   await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
 }
@@ -91,6 +96,7 @@ await page.waitForFunction(() => document.querySelector('[data-testid^="doc-cont
 await mode.click({ force: true })
 await popup.waitFor({ state: 'visible', timeout: 5000 })
 await page.keyboard.press('Escape')
+await page.waitForFunction(() => !document.querySelector('[role="listbox"]') && document.activeElement?.getAttribute('data-testid')?.startsWith('doc-context-mode-') === true)
 assert(!(await popup.isVisible().catch(() => false)) && await page.evaluate(() => document.activeElement?.getAttribute('data-testid')?.startsWith('doc-context-mode-') === true), 'V210-RED Escape closes and returns focus to the trigger')
 
 await mode.click({ force: true })
