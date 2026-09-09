@@ -1,6 +1,7 @@
 // Stage G4 release gate: chapter editor desktop workflow plus mobile layout.
 // This is intentionally self-contained so Pages can run it with bundled Chromium.
 import { chromium } from 'playwright-core'
+import { dismissProductGuide } from './e2e-navigation.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const LONG_PDF = 'test/fixtures/many-pages.pdf'
@@ -35,6 +36,8 @@ const noHorizontalOverflow = async () => page.evaluate(() => {
 
 try {
   await page.goto(BASE, { waitUntil: 'networkidle' })
+  await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
+  await dismissProductGuide(page)
   await page.locator('[data-testid="sidebar-entry-files"], [data-testid="rail-files"]').first().click()
   await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
   await page.locator('[data-testid="document-library"] input[type="file"][accept=".pdf,application/pdf"]').setInputFiles(LONG_PDF)

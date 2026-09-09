@@ -3,6 +3,7 @@
 // picker -> extraction -> review (jump/continue/adjust) -> save to 'ai-toc' -> TOC.
 import { chromium } from 'playwright-core'
 import { openChapterBuilderForSource } from './chapter-entry.mjs'
+import { dismissProductGuide } from './e2e-navigation.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF = 'test/fixtures/no-outline.pdf'
 const results = [], errors = []
@@ -14,6 +15,7 @@ page.on('pageerror', e => errors.push('pageerror: ' + e.message))
 page.on('dialog', d => { void d.accept() })
 await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
+await dismissProductGuide(page)
 const FILES = '[data-testid="sidebar-entry-files"], [data-testid="rail-files"]'
 const openLibrary = async () => { if (await page.locator('[data-testid="document-library"]').count()) return; await page.locator(FILES).first().click(); await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 }) }
 const inputVal = () => page.locator('[data-testid="reader-page-input"]').inputValue()

@@ -20,7 +20,14 @@ export async function seedAndBoot(page, { convs = [], settings = {} }) {
       for (const clear of ['conversationBranches','artifacts']) if (names.includes(clear)) { try { db.transaction(clear, 'readwrite').objectStore(clear).clear() } catch {} }
       const tx = db.transaction(txStores, 'readwrite')
       if (names.includes('conversations')) { const os = tx.objectStore('conversations'); for (const c of convs) os.put(c) }
-      if (names.includes('settings')) { const os = tx.objectStore('settings'); for (const [k, v] of Object.entries(settings)) os.put({ key: k, value: v }) }
+      if (names.includes('settings')) {
+        const os = tx.objectStore('settings')
+        // Existing E2E scenarios target their own surface. Seed the current Product Guide
+        // marker by default so a newly introduced onboarding modal cannot intercept unrelated
+        // fixture interactions; the Product Guide E2E and RED test opt into fresh state directly.
+        const seededSettings = { productGuideSeenVersion: '2.1.0', ...settings }
+        for (const [k, v] of Object.entries(seededSettings)) os.put({ key: k, value: v })
+      }
       tx.oncomplete = () => { try { db.close() } catch {} ; resolve(true) }
       tx.onerror = () => resolve(false)
     }

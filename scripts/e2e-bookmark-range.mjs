@@ -1,6 +1,7 @@
 // v1.3.3 Stage C: bookmark range selector -> persistence -> actual PDF pages.
 import { launchBrowser } from './e2e-browser.mjs'
 import { openAppDb } from './e2e-idb.mjs'
+import { dismissProductGuide } from './e2e-navigation.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF = 'test/fixtures/many-pages.pdf'
@@ -47,6 +48,7 @@ const flatten = (chapters, output = []) => {
 
 await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
+await dismissProductGuide(page)
 await openLibrary()
 await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles(PDF)
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })

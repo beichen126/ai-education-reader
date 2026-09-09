@@ -1,4 +1,13 @@
+export async function dismissProductGuide(page) {
+  const guide = page.locator('[data-testid="product-guide"]')
+  if (await guide.isVisible().catch(() => false)) {
+    await page.locator('[data-testid="product-guide-later"]').click()
+    await guide.waitFor({ state: 'hidden', timeout: 10000 })
+  }
+}
+
 export async function openDocumentLibrary(page) {
+  await dismissProductGuide(page)
   const library = page.locator('[data-testid="document-library"]')
   if (await library.isVisible().catch(() => false)) return
 

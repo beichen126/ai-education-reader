@@ -38,6 +38,20 @@ await openAppDb(page, {
   value: { id: 'v210-red-custom-mode', kind: 'conversation-mode', name: '数学证明教练', description: '用证明步骤解释数学问题', source: 'custom', enabled: true, createdAt: 1, updatedAt: 1, revision: 1, systemPrompt: '先明确命题，再逐步给出证明。' },
 })
 
+// The shared fixture suppresses onboarding for unrelated E2E scenarios. Remove that
+// marker here because this RED test explicitly verifies the no-key first-entry path.
+await page.evaluate(() => new Promise((resolve, reject) => {
+  const request = indexedDB.open('ai-education-reader')
+  request.onerror = () => reject(request.error)
+  request.onsuccess = () => {
+    const db = request.result
+    const tx = db.transaction('settings', 'readwrite')
+    tx.objectStore('settings').delete('productGuideSeenVersion')
+    tx.oncomplete = () => { db.close(); resolve(true) }
+    tx.onerror = () => reject(tx.error)
+  }
+}))
+
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
 assert(await page.locator('[data-testid="product-guide"]').isVisible().catch(() => false), 'V210-RED no-key first entry opens Product Guide')
