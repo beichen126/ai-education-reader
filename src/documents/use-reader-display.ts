@@ -3,9 +3,10 @@
 // viewport-style geometry measurement (ResizeObserver + debounce), the surface blit to
 // the visible canvas, and the on-demand full-resolution Blob for the zoom viewer.
 // The Reader正文 display NEVER encodes to a JPEG Blob (C1/C2) — the canvas is the screen.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { readSessionPageViewport, renderSessionPageSurface, renderSessionPage, type PdfSession } from '../pdf/pdf-session'
 import { ReaderRenderController, type CachedSurface, type DisplayGeometry } from '../pdf/reader-render-controller'
+import type { PdfPerformanceTelemetry } from './pdf-performance-telemetry'
 
 export type ReaderDisplayApi = {
   /** Attach to the visible <canvas>. */
@@ -24,7 +25,7 @@ export type ReaderDisplayApi = {
 const STAGE_PADDING = 24 // 12px each side of the reader stage
 export { isZoomStale, type ZoomRequestContext } from './zoom-ownership'
 
-export function useReaderDisplay(session: PdfSession | null, page: number, pageCount: number): ReaderDisplayApi {
+export function useReaderDisplay(session: PdfSession | null, page: number, pageCount: number, telemetry: PdfPerformanceTelemetry | null = null, onFirstPixelReady?: () => void): ReaderDisplayApi {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const stageRef = useRef<HTMLDivElement | null>(null)
   const controllerRef = useRef<ReaderRenderController | null>(null)
@@ -58,12 +59,13 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
       onForeground: (s) => { if (controllerRef.current === ctrl) setSurface(s) },
       onRenderState: (r) => { if (controllerRef.current === ctrl) setRendering(r) },
       onPageError: (n) => { if (controllerRef.current === ctrl) setPageError('第 ' + n + ' 页渲染失败。') },
+      onRenderStart: () => { if (controllerRef.current === ctrl) telemetry?.mark('first-render-start') },
     })
     controllerRef.current = ctrl
     return () => {
       if (controllerRef.current === ctrl) { ctrl.cancelAll(); controllerRef.current = null }
     }
-  }, [session])
+  }, [session, telemetry])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { controllerRef.current?.setPageCount(pageCount) }, [pageCount])
 
@@ -75,11 +77,11 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
     canvas.width = surface.width
     canvas.height = surface.height
     const ctx = canvas.getContext('2d')
-    if (ctx) ctx.drawImage(surface.surface, 0, 0)
-  }, [surface])
+    if (ctx) { ctx.drawImage(surface.surface, 0, 0); telemetry?.mark('first-pixel-ready'); onFirstPixelReady?.() }
+  }, [surface, telemetry, onFirstPixelReady])
 
-  // ---- measure the stage box (debounced on resize) to drive viewport-aware scaling ----
-  useEffect(() => {
+  // ---- measure the initial stage synchronously; later resize stays debounced ----
+  useLayoutEffect(() => {
     const el = stageRef.current
     if (!el) return
     let timer: number | null = null
@@ -90,6 +92,7 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
       })
     }
     measure()
+    telemetry?.mark('geometry-ready')
     if (typeof ResizeObserver !== 'undefined') {
       const ro = new ResizeObserver(() => { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(measure, 200) })
       ro.observe(el)
@@ -97,7 +100,7 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
     }
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
-  }, [session])
+  }, [session, telemetry])
 
   // ---- push geometry + navigate: the controller decides cache / cancel / prefetch ----
   useEffect(() => {

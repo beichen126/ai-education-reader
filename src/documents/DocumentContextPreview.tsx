@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { closePdfSession, openPdfSession, type PdfSession } from '../pdf/pdf-session'
 import { PdfError, pdfErrorMessage } from '../pdf/pdf-service'
 import { useReaderDisplay } from './use-reader-display'
+import { createPdfPerformanceTelemetry, type PdfPerformanceTelemetry } from './pdf-performance-telemetry'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import type { ChapterNode, LearningDocument } from './document-types'
 import css from './document-context-preview.module.css'
@@ -38,6 +39,7 @@ function PreviewTocRows({ nodes, onOpen, depth = 0 }: { nodes: ChapterNode[]; on
 
 export function DocumentContextPreview({ document: sourceDoc, initialPage, onBack }: Props) {
   const [session, setSession] = useState<PdfSession | null>(null)
+  const [displayTelemetry, setDisplayTelemetry] = useState<PdfPerformanceTelemetry | null>(null)
   const sessionRef = useRef<PdfSession | null>(null)
   const generationRef = useRef(0)
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
@@ -51,7 +53,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
   const zoomGenerationRef = useRef(0)
   const [zoomBusy, setZoomBusy] = useState(false)
   const backRef = useRef<HTMLButtonElement | null>(null)
-  const display = useReaderDisplay(session, page, sourceDoc.pageCount)
+  const display = useReaderDisplay(session, page, sourceDoc.pageCount, displayTelemetry)
   const tocVisible = narrowViewport() ? tocOpen && !tocClosed : !tocClosed
 
   const clearZoom = useCallback(() => {
@@ -63,6 +65,11 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
   useEffect(() => {
     const generation = ++generationRef.current
     let ownedSession: PdfSession | null = null
+    const telemetry = createPdfPerformanceTelemetry(sourceDoc.id, 'preview')
+    telemetry.mark('reader-open-intent')
+    telemetry.mark('metadata-ready')
+    telemetry.mark('binary-ready')
+    setDisplayTelemetry(telemetry)
     setSession(null)
     setStatus('loading')
     setError(null)
@@ -73,6 +80,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
       if (generation !== generationRef.current) { void closePdfSession(opened.session); return }
       ownedSession = opened.session
       sessionRef.current = opened.session
+      telemetry.mark('pdf-proxy-ready')
       setSession(opened.session)
       setStatus('ready')
       window.requestAnimationFrame(() => backRef.current?.focus())
@@ -85,7 +93,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
       generationRef.current++
       zoomGenerationRef.current++
       clearZoom()
-      if (sessionRef.current === ownedSession) { sessionRef.current = null; setSession(null) }
+      if (sessionRef.current === ownedSession) { sessionRef.current = null; setSession(null); setDisplayTelemetry(null) }
       if (ownedSession) void closePdfSession(ownedSession)
     }
   }, [clearZoom, initialPage, sourceDoc.id, sourceDoc.sourceBlob, sourceDoc.pageCount])

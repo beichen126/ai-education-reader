@@ -6,7 +6,7 @@
 // progress flushed with the document id bound at call time). App-level unmount
 // effect only keeps pagehide/visibility flush.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getDocument, updateLastReadPage, updateDocumentChapters, DocumentBinaryMissingError } from './document-service'
+import { getDocument, getDocumentRecordMeta, getDocumentBinary, updateLastReadPage, updateDocumentChapters, DocumentBinaryMissingError } from './document-service'
 import { getDocumentNote, saveDocumentNote } from './document-note-service'
 import { useSessions, getSessionsCurrent, sessionsActions } from '../engine/sessions-store'
 import { listConversations } from '../storage/storage'
@@ -44,6 +44,7 @@ import { findConversationsByDocumentPage, type PdfPageConversationHit } from '..
 import { flushNoteEditorSession, type NoteEditorSession } from './note-session'
 import { NoteAvailabilityGate, NoteReadCache, noteAvailabilityFrom, noteHasContent, noteKey, notePersistedState, type NoteAvailability } from './note-availability'
 import { ReaderProgressController } from './reader-progress-controller'
+import { createPdfPerformanceTelemetry, type PdfPerformanceTelemetry } from './pdf-performance-telemetry'
 import css from './document-reader.module.css'
 
 type TocTreeState = { expanded: ReadonlySet<string> }
@@ -61,9 +62,12 @@ export function DocumentReader() {
   const readerRequestId = ui.view === 'reader' ? ui.requestId : 0
   const requestedPage = ui.view === 'reader' ? ui.pageNumber : undefined
   const [doc, setDoc] = useState<LearningDocument | null>(null)
+  const [recordMeta, setRecordMeta] = useState<Awaited<ReturnType<typeof getDocumentRecordMeta>> | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const sessionRef = useRef<PdfSession | null>(null)
   const [displaySession, setDisplaySession] = useState<PdfSession | null>(null)
+  const [displayTelemetry, setDisplayTelemetry] = useState<PdfPerformanceTelemetry | null>(null)
+  const outlineScheduleRef = useRef<(() => void) | null>(null)
   const [page, setPage] = useState(1)
   const [pageCount, setPageCount] = useState(0)
   const urlOwnerRef = useRef(createUrlOwner())
@@ -92,7 +96,12 @@ export function DocumentReader() {
   // ---- Reader正文 display path (Agent C): direct visible canvas, no JPEG Blob on the
   //      main reading pipeline. The hook owns viewport-aware scaling, caching, prefetch,
   //      real RenderTask cancellation, and the on-demand zoom Blob. ----
-  const display = useReaderDisplay(displaySession, page, pageCount)
+  const onFirstPixelReady = useCallback(() => {
+    const schedule = outlineScheduleRef.current
+    outlineScheduleRef.current = null
+    schedule?.()
+  }, [])
+  const display = useReaderDisplay(displaySession, page, pageCount, displayTelemetry, onFirstPixelReady)
   const [tocState, setTocState] = useState<TocTreeState>({ expanded: new Set() })
   const [tocOpen, setTocOpen] = useState(false)
   const [tocPanelClosed, setTocPanelClosed] = useState(false)
@@ -263,10 +272,11 @@ export function DocumentReader() {
       setBuilderOpen(false)
       sessionRef.current = null
       setDisplaySession(null)
+      setDisplayTelemetry(null)
       urlOwnerRef.current.revokeAll()
       setViewerUrl(null); viewerOpenRef.current = false
       setZoomBusy(false)
-      setDoc(null); setPageCount(0); setPage(1); setPageInput('')
+      setDoc(null); setRecordMeta(null); setPageCount(0); setPage(1); setPageInput('')
       setPageError(null); setProgressError(null); setLoadError(null)
       setNotesOpen(false); setNoteText(''); setNoteLoading(false); setNoteSavedAt(null); setNoteSaveError(false); setNoteLoadError(false); setNoteWriteEnabled(false)
       setNoteAvailability({ kind: 'loading', key: '' })
@@ -287,8 +297,12 @@ export function DocumentReader() {
     let cancelled = false
     let ownedSession: PdfSession | null = null
     let ownedProgressBinding: ReturnType<ReaderProgressController['bind']> | null = null
+    let outlineTimer: number | null = null
     void (async () => {
-      setLoadError(null); setDoc(null)
+      const telemetry = createPdfPerformanceTelemetry(ownedDocId, 'reader')
+      telemetry.mark('reader-open-intent')
+      setDisplayTelemetry(telemetry)
+      setLoadError(null); setDoc(null); setRecordMeta(null)
       setPageCount(0); setPage(1); setPageInput(''); setPageError(null)
       setTocState({ expanded: new Set() }); setTocOpen(false); setTocPanelClosed(false)
       setViewerUrl(null); viewerOpenRef.current = false
@@ -297,37 +311,74 @@ export function DocumentReader() {
       urlOwnerRef.current.revokeAll()
       sessionRef.current = null
       setDisplaySession(null)
+      outlineScheduleRef.current = null
       aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
       aiTocGenRef.current++
       setTocPickerOpen(false); setAiTocExtracting(false); setAiTocMsg(null)
       setAiTocItems(null); setTocReviewOpen(false)
       setAiTocProgress(null); setAiTocDialogHidden(false); setAiTocError(null); lastAiTocPagesRef.current = []
       try {
-        const d = await getDocument(docId)
+        const perfMode = (globalThis as typeof globalThis & { __dshPdfPerformanceMode?: 'legacy' | 'split' }).__dshPdfPerformanceMode ?? 'split'
+        // Diagnostics-only legacy branch: it reproduces the pre-Stage-6 hydrated
+        // getDocument() path so the benchmark can compare like-for-like in one build.
+        const legacyDocument = perfMode === 'legacy' ? await getDocument(ownedDocId) : undefined
+        const metaPromise = legacyDocument ? Promise.resolve(legacyDocument) : getDocumentRecordMeta(ownedDocId)
+        // Start the binary read immediately. Metadata still resolves first for the
+        // Reader shell, but the two independent storage reads no longer serialize.
+        const binaryPromise = legacyDocument ? null : getDocumentBinary(ownedDocId)
+        const meta = await metaPromise
         if (cancelled) return
-        if (!d) { setLoadError('找不到这份文档。'); return }
-        const o = await openPdfSession(d.sourceBlob)
+        if (!meta) {
+          await binaryPromise?.catch(() => undefined)
+          setLoadError('找不到这份文档。')
+          return
+        }
+        telemetry.mark('metadata-ready')
+        setRecordMeta(meta)
+        setPageCount(meta.pageCount)
+        const start = clampReaderPage((requestedPage ?? meta.lastReadPage) || 1, meta.pageCount)
+        setPage(start); setPageInput(String(start))
+        const sourceBlob = legacyDocument?.sourceBlob ?? await binaryPromise!
+        telemetry.mark('binary-ready')
+        if (cancelled) return
+        const o = await openPdfSession(sourceBlob)
+        telemetry.mark('pdf-proxy-ready')
         if (cancelled) { void closePdfSession(o.session); return }
+        const d: LearningDocument = { ...meta, sourceBlob }
         ownedSession = o.session
         sessionRef.current = o.session
         setDisplaySession(o.session)
         setDoc(d); setPageCount(d.pageCount)
-        const start = clampReaderPage((requestedPage ?? d.lastReadPage) || 1, d.pageCount)
         ownedProgressBinding = progressRef.current?.bind(ownedDocId, start) ?? null
         setProgressError(null)
-        setPage(start); setPageInput(String(start))
         // Detect whether the ORIGINAL PDF has a native outline — ephemeral, used only
         // for the 整理/恢复 目录 UI. Reading must never fail because of this.
         setNativeOutlineStatus('unknown')
-        try {
-          const outline = await readSessionOutline(o.session)
-          if (!cancelled) {
-            setHasNativeOutline(outline.items.length > 0)
-            setNativeOutlineStatus(outline.items.length > 0 ? 'yes' : 'no')
+        const readOutline = () => {
+          if (telemetry.snapshot()?.phases['first-pixel-ready'] === undefined) {
+            outlineTimer = window.setTimeout(readOutline, 16)
+            return
           }
-        } catch {
-          if (!cancelled) { setHasNativeOutline(false); setNativeOutlineStatus('unknown') }
+          void readSessionOutline(o.session).then(outline => {
+            telemetry.mark('outline-ready')
+            if (!cancelled) {
+              setHasNativeOutline(outline.items.length > 0)
+              setNativeOutlineStatus(outline.items.length > 0 ? 'yes' : 'no')
+            }
+          }).catch(() => {
+            telemetry.mark('outline-ready')
+            if (!cancelled) { setHasNativeOutline(false); setNativeOutlineStatus('unknown') }
+          })
         }
+        const scheduleOutline = () => {
+          // A late surface callback from a previous StrictMode/session render may
+          // reach the current ref. Only this run's first-pixel mark may release
+          // the outline, otherwise outline work can race ahead of the new page.
+          if (cancelled || telemetry.snapshot()?.phases['first-pixel-ready'] === undefined) return
+          const idle = (window as Window & { requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number }).requestIdleCallback
+          outlineTimer = idle ? idle(readOutline, { timeout: 0 }) : window.setTimeout(readOutline, 0)
+        }
+        outlineScheduleRef.current = scheduleOutline
       } catch (e) {
         if (!cancelled) {
           if (e instanceof DocumentBinaryMissingError) setLoadError('本地 PDF 文件数据已丢失，请重新导入。')
@@ -337,6 +388,12 @@ export function DocumentReader() {
     })()
     return () => {
       cancelled = true
+      outlineScheduleRef.current = null
+      if (outlineTimer !== null) {
+        const cancelIdle = (window as Window & { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback
+        if (cancelIdle) cancelIdle(outlineTimer)
+        else window.clearTimeout(outlineTimer)
+      }
       genRef.current++ // invalidate pending renders of THIS document immediately
       ctxGenRef.current++ // cancel any in-flight Reader Context generation (silent)
       setCtxBusy(false); setCtxProgress(null); setCtxMsg(null)
@@ -347,7 +404,7 @@ export function DocumentReader() {
       aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
       aiTocGenRef.current++
       if (ownedSession) { void closePdfSession(ownedSession) }
-      if (sessionRef.current === ownedSession) { sessionRef.current = null; setDisplaySession(null) }
+      if (sessionRef.current === ownedSession) { sessionRef.current = null; setDisplaySession(null); setDisplayTelemetry(null) }
       urlOwnerRef.current.revokeAll()
       setViewerUrl(null); viewerOpenRef.current = false
     }
@@ -915,7 +972,7 @@ export function DocumentReader() {
     <div className={css.overlay} data-testid="document-reader">
       <div className={css.topbar}>
         <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary() }}>← 文件</button>
-        <span className={css.title} data-testid="reader-title">{doc ? doc.fileName : '…'}</span>
+        <span className={css.title} data-testid="reader-title">{doc?.fileName ?? recordMeta?.fileName ?? '…'}</span>
         <div className={css.topActions}>
           {doc && (
             <button className={css.ctxBtn} data-testid="reader-ctx-toggle" aria-label="加入对话" title="加入对话" disabled={ctxBusy} onClick={() => setCtxMenuOpen(o => !o)}>

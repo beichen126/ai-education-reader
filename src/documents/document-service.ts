@@ -91,12 +91,34 @@ export async function getDocument(id: string): Promise<LearningDocument | undefi
   return hydrate(row);
 }
 
+/** Read one document's metadata without hydrating its PDF binary. */
+export async function getDocumentRecordMeta(id: string): Promise<DocumentRecordMeta | undefined> {
+  const row = await idbGet('documents', id)
+  if (!row) return undefined
+  return {
+    id: row.id, kind: 'pdf', fileName: row.fileName, mimeType: row.mimeType,
+    fileSize: row.fileSize, pageCount: row.pageCount, chapters: (row.chapters ?? []) as ChapterNode[],
+    chapterSource: row.chapterSource ?? 'none', lastReadPage: row.lastReadPage ?? 0,
+    lastReadAt: lastReadAtOf(row),
+    ...(sanitizeBookmarkRangePreferences((row.chapters ?? []) as ChapterNode[], row.bookmarkRangePreferences) ? { bookmarkRangePreferences: sanitizeBookmarkRangePreferences((row.chapters ?? []) as ChapterNode[], row.bookmarkRangePreferences) } : {}),
+    ...(row.importSource ? { importSource: row.importSource } : {}),
+    ...(row.contentHash ? { contentHash: row.contentHash } : {}),
+    ...(row.fastFingerprint ? { fastFingerprint: row.fastFingerprint } : {}),
+    createdAt: row.createdAt ?? 0, updatedAt: row.updatedAt ?? 0,
+  }
+}
+
 export async function readDocumentSourceBlob(id: string): Promise<Blob> {
   const row = await idbGet('documents', id);
   if (!row) throw new DocumentNotFoundError(id);
   if (isLegacyRow(row)) return row.sourceBlob;
   if (hasSourceRef(row)) return readBinary(row.source);
   throw new DocumentBinaryMissingError(id);
+}
+
+/** Read the durable PDF binary independently from its metadata. */
+export async function getDocumentBinary(id: string): Promise<Blob> {
+  return readDocumentSourceBlob(id)
 }
 
 /** TEST-ONLY / internal: hydrates EVERY document's full source Blob into memory. The

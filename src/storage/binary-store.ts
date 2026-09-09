@@ -187,6 +187,7 @@ let driverChecked = false
 // install/uninstall inside one process is honored). Otherwise the REAL OPFS adapter is
 // detected once and cached; a null (unsupported) is re-checked but never cached as final.
 async function getDriver(): Promise<OpfsFileSystem | null> {
+  if ((globalThis as { __dshForceIdbBinaryFallback?: boolean }).__dshForceIdbBinaryFallback) return null
   const seam = (globalThis as any).__dshOpfsMock
   if (seam) return seam as OpfsFileSystem
   if (driver) return driver

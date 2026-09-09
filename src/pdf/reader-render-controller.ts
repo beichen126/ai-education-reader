@@ -51,6 +51,8 @@ export type RenderControllerEvents = {
   onRenderState(rendering: boolean): void
   /** A foreground page failed to render (NOT a cancellation). */
   onPageError(pageNumber: number): void
+  /** Foreground raster work started (diagnostics only). */
+  onRenderStart?(): void
 }
 
 function releaseSurface(p: PageSurface): void {
@@ -178,6 +180,7 @@ export class ReaderRenderController {
     const geometry = this.geometry
     if (!geometry) return
     this.events.onRenderState(true)
+    this.events.onRenderStart?.()
     try {
       const vp1 = await this.backend.readViewport1(pageNumber)
       if (gen !== this.gen || this.disposed || this.fgPage !== pageNumber) return
