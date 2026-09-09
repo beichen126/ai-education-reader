@@ -48,7 +48,7 @@ page.on('request', requestListener)
 
 await page.locator('[data-testid="prompt-category-conversation-mode"]').click()
 await page.locator('[data-testid="prompt-row"]').first().click()
-assert(await page.locator('[data-testid="prompt-row"]').count() === 1 && await page.locator('[data-testid="prompt-row"]').innerText().then((value) => value.includes('默认')), 'conversation mode catalog exposes only 默认')
+assert(await page.locator('[data-testid="prompt-row"]').count() === 1 && await page.locator('[data-testid="prompt-row"]').innerText().then((value) => value.includes('默认')), 'clean conversation mode catalog exposes only 默认')
 assert(await page.locator('[data-testid="prompt-row"]').innerText().then((value) => !value.includes('苏格拉底') && !value.includes('深入讲解') && !value.includes('考试辅导')), 'deprecated built-in modes are not visible in the main catalog')
 await page.locator('[data-testid="prompt-editor-content"]').fill('默认提示词可编辑且只保留一份。')
 await page.locator('[data-testid="prompt-save"]').click()
@@ -86,7 +86,7 @@ assert(await page.locator('[data-testid="prompt-editor-content"]').inputValue() 
 
 await page.locator('[data-testid="prompt-search"]').fill('')
 await page.locator('[data-testid="prompt-category-all"]').click()
-assert(await page.locator('[data-testid="prompt-new"]').isDisabled() && await page.locator('[data-testid="conversation-mode-new-hint"]').count() === 1, 'all category cannot create a second conversation mode')
+assert(await page.locator('[data-testid="prompt-new"]').isEnabled() && await page.locator('[data-testid="conversation-mode-new-hint"]').count() === 0, 'all category does not block custom conversation mode creation')
 
 await page.locator('[data-testid="prompt-search"]').fill('')
 

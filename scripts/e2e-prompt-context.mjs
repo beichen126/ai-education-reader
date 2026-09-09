@@ -1,5 +1,5 @@
-// Stage 3 browser gate: static default context, historical snapshot inspector,
-// route switching, and responsive layout after mode-menu removal.
+// Stage 1 browser gate: historical mode snapshot inspection, route mode
+// selection, root/branch switching, and responsive context layout.
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot, installMockModel, createBranchFromMessage } from './e2e-fixture.mjs'
 
@@ -39,8 +39,8 @@ await seedAndBoot(page, {
 
 const contextBar = page.locator('[role="navigation"][aria-label="会话上下文"]')
 await contextBar.waitFor({ state: 'visible', timeout: 10000 })
-assert(await page.locator('[data-testid="active-conversation-mode"]').textContent() === '默认', 'historical route still displays static 默认')
-assert(await page.locator('button[aria-label="切换对话模式"]').count() === 0 && await page.locator('[role="menu"][aria-label="模式"]').count() === 0, 'historical route has no mode trigger or menu')
+assert(await page.locator('[data-testid="active-conversation-mode"]').textContent() === '历史模式', 'historical route displays its immutable snapshot name')
+assert(await page.locator('button[aria-label="切换对话模式"]').count() === 1 && await page.locator('[role="menu"][aria-label="模式"]').count() === 0, 'historical route exposes a future-message mode trigger without opening the menu')
 
 const transitionButton = page.locator('[data-testid="mode-transition-divider"] button').first()
 await transitionButton.waitFor({ state: 'visible', timeout: 10000 })

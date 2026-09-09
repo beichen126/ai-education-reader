@@ -1,5 +1,5 @@
-// Stage 3 browser gate: the deprecated mode menu is absent while the route
-// popup keeps its existing focus and keyboard contract.
+// Stage 1 browser gate: mode and route selectors keep their focus and
+// keyboard contracts.
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot, createBranchFromMessage } from './e2e-fixture.mjs'
 
@@ -34,9 +34,23 @@ await seedAndBoot(page, {
   settings: { apiKey: 'sk-test', model: 'deepseek-chat', apiBaseUrl: 'https://api.deepseek.com', lastConversationId: conversation.id },
 })
 
-assert(await page.locator('button[aria-label="切换对话模式"]').count() === 0, 'mode switch trigger is absent')
+const modeTrigger = page.locator('button[aria-label="切换对话模式"]')
+await modeTrigger.waitFor({ state: 'visible', timeout: 5000 })
+assert(await modeTrigger.count() === 1, 'mode switch trigger is present')
 assert(await page.locator('[role="menu"][aria-label="模式"]').count() === 0, 'mode menu is absent rather than empty')
-assert(await page.locator('[data-testid="active-conversation-mode"]').innerText() === '默认', 'static mode label is 默认')
+assert(await page.locator('[data-testid="active-conversation-mode"]').innerText() === '模式未记录（来自 v1.x）', 'message history without a transition is labeled as legacy mode')
+
+await modeTrigger.press('ArrowDown')
+const modeMenu = page.locator('[role="menu"][aria-label="模式"]')
+const modeItems = modeMenu.locator('[role="menuitemradio"]:not([disabled])')
+await modeItems.first().waitFor({ state: 'visible', timeout: 5000 })
+assert(await focusItem('[role="menuitemradio"]:not([disabled])', 0), 'mode ArrowDown focuses the first enabled item')
+await page.keyboard.press('End')
+assert(await focusItem('[role="menuitemradio"]:not([disabled])', (await modeItems.count()) - 1), 'mode End roves to the last enabled item')
+await page.keyboard.press('Home')
+assert(await focusItem('[role="menuitemradio"]:not([disabled])', 0), 'mode Home roves to the first enabled item')
+await page.keyboard.press('Escape')
+assert(await focusIs('button[aria-label="切换对话模式"]') && await modeTrigger.getAttribute('aria-expanded') === 'false', 'mode Escape closes and returns focus to trigger')
 
 await createBranchFromMessage(page, 0)
 const routeTrigger = page.locator('button[aria-label="切换路线"]')

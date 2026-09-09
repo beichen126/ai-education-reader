@@ -1,4 +1,4 @@
-// Stage 3 browser gate: mobile navigation, static default context, inspectors,
+// Stage 1 browser gate: mobile navigation, route mode context, inspectors,
 // quick chips, keyboard CRUD, accessible names, focus restoration, and overflow.
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot, installMockModel } from './e2e-fixture.mjs'
@@ -168,7 +168,8 @@ for (const size of [
   await contextBar.waitFor({ state: 'visible', timeout: 10000 })
   assert(await contextBar.locator('[data-testid="conversation-context-row"]').count() === 2, size.width + 'px Context Bar keeps two semantic rows')
   const modeTrigger = page.locator('button[aria-label="切换对话模式"]')
-  assert(await modeTrigger.count() === 0 && await page.locator('[data-testid="active-conversation-mode"]').innerText() === '默认', size.width + 'px mobile context keeps only the static 默认 entry')
+  const expectedModeName = size.width === 375 ? '记录模式' : '默认'
+  assert(await modeTrigger.count() === 1 && await page.locator('[data-testid="active-conversation-mode"]').innerText() === expectedModeName, size.width + 'px mobile context keeps the route snapshot and mode trigger')
 
   const transitionButton = page.locator('[data-testid="mode-transition-divider"] button').first()
   await transitionButton.waitFor({ state: 'visible', timeout: 10000 })
@@ -180,7 +181,12 @@ for (const size of [
   await waitFor(() => transitionButton.evaluate((el) => el === document.activeElement), 5000)
   assert(await transitionButton.evaluate((el) => el === document.activeElement), size.width + 'px inspector Escape restores focus')
 
-  assert(await page.locator('[role="menu"][aria-label="模式"]').count() === 0, size.width + 'px has no empty mode menu')
+  await modeTrigger.click()
+  const modeMenu = page.locator('[role="menu"][aria-label="模式"]')
+  await modeMenu.waitFor({ state: 'visible', timeout: 5000 })
+  assert(await modeMenu.getByRole('menuitemradio', { name: /默认/ }).count() === 1, size.width + 'px mode menu keeps the canonical default option')
+  await page.keyboard.press('Escape')
+  assert(await modeMenu.count() === 0, size.width + 'px mode Escape closes the menu')
 
   const quickBar = page.locator('[data-testid="quick-follow-up-bar"]')
   await quickBar.waitFor({ state: 'visible', timeout: 15000 })
