@@ -12,12 +12,15 @@ AI Education Reader 的用户可感知更新记录。
 - 新增 `docs/DEVELOPMENT.md`，集中记录安装、测试分层、production 截图和贡献约定。
 - 新增 README contract test，检查用户章节、FAQ、图片、仓库内链接、版本 badge 和 PDF Context 阈值。
 - README 返工为人话优先的阅读顺序：先讲打开后就是 AI 对话、与 Zotero/网页端 AI 的核心区别和 FAQ，再讲设计理念、功能和页面展示。
+- 新增 Product Guide：首次无 API 进入时在应用就绪后非阻塞展示，并从桌面侧栏与收起 rail 的“帮助”入口永久可达。
 
 ### Changed
 
 - Roadmap 当前版本同步为 v2.1.0 开发中，并明确已完成与后续阅读能力的边界。
 - README 截图改由当前 production build 重新生成，使用 v2.1.0 命名的确定性文档资产；正文只保留 5 张信息增量明确的画面，移除移动端竖栏、drawer、深色模式和空白 Reader 截图。
 - README contract test 增加内容顺序、核心差异人话文案、HTML 图片路径和低信息截图禁用检查。
+- Product Guide 与 README 共用 `src/help/product-guide.md` 内容源；同步脚本使用固定章节边界，不向 README 插入标记，也不会改变冻结章节之外的内容。
+- Product Guide 的“导入 PDF”“打开资料库”“配置 API”按钮分别进入现有资料库导入面板、资料库和设置；首次查看版本写入既有 settings store，不升级 IndexedDB。
 
 ## [2.0.3] - 2026-09-09
 

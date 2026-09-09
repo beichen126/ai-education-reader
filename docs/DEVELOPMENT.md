@@ -27,6 +27,8 @@ npm run build           # production 构建
 npm run preview         # 预览 production 构建
 npm run test:release    # release runner：类型、全量测试、构建和关键 E2E
 npm run test:readme-contract # README 结构、链接、图片和事实契约
+npm run test:product-guide    # Product Guide 与 README canonical block 一致性
+npm run sync:product-guide    # 从 src/help/product-guide.md 同步同一 README 章节
 npm run docs:screenshots     # 从 production preview 生成 README 截图
 ```
 
@@ -96,6 +98,8 @@ npm run test:readme-contract
 ```
 
 契约测试检查 README 的固定用户章节、FAQ 数量、Zotero/AI 网页端差异说明、产品信息顺序、五张高信息量截图及其 HTML 路径、仓库内链接、版本 badge、已删除入口和 PDF Context 的 30/120 页事实。新增产品入口或改变实际阈值时，应先更新产品实现/测试，再更新 README 契约。
+
+Product Guide 位于应用内帮助对话框，内容源是 `src/help/product-guide.md`。`npm run test:product-guide` 会检查它与 README 中从 `## 产品一句话介绍` 到 `## 功能亮点` 之前的 canonical block 完全一致，并检查产品解释、首屏 AI 对话、Zotero/AI 网页端差异、18 个 FAQ 和 Markdown 安全边界。同步时使用 `npm run sync:product-guide`；该脚本只替换这两个固定标题之间的内容，不在 README 增加同步标记。
 
 ## 代码组织
 

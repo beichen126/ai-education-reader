@@ -35,6 +35,7 @@ const CORE_E2E = [
   'e2e-conversation-modes',
   'e2e-branch-prompt-timeline',
   'e2e-mobile-prompt-navigation',
+  'e2e-product-guide',
   'e2e-v201-regressions',
   'e2e-v202-message-state',
   'e2e-v202-rejection',

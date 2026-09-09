@@ -8,7 +8,8 @@ import { initSettings } from './engine/settings-store'
 import { migrateLegacyBinaryStorage, backfillDocumentMetadata } from './storage/migration'
 import { cleanupOrphanAttachments } from './engine/attachment-service'
 import { requestStoragePersist } from './storage/binary-store'
-import { useUi } from './engine/ui-store'
+import { uiActions, useUi } from './engine/ui-store'
+import { useSettings, getSettingsSnapshot } from './engine/settings-store'
 import { useTheme } from './theme/use-theme'
 import { layoutStore, useLayoutStore } from './engine/layout-store'
 import { SessionProvider } from './engine/session-context'
@@ -22,6 +23,9 @@ import { DocumentLibrary } from './documents/DocumentLibrary'
 import { DocumentReader } from './documents/DocumentReader'
 import { migrateLegacyPrompts } from './prompts/prompt-migration'
 import { migratePromptSimplification } from './prompts/prompt-simplification'
+import { ProductGuideDialog } from './help/ProductGuideDialog'
+import { getProductGuideSeenVersion, markProductGuideSeen, PRODUCT_GUIDE_VERSION } from './help/product-guide-state'
+import { documentUiActions } from './documents/document-ui-store'
 
 function renderSlot(key: string, owner?: any): ReactNode {
   if (key === 'sidebar') return <Sidebar collapsed={!!owner?.collapsed} width={owner?.width ?? 0} />
@@ -36,13 +40,31 @@ export function App() {
   const persistRequestedRef = useRef(false)
   const settingsOpen = useUi(s => s.settingsOpen)
   const promptManagerOpen = useUi(s => s.promptManagerOpen)
+  const productGuideOpen = useUi(s => s.productGuideOpen)
+  const apiKey = useSettings(s => s.apiKey)
   const [boot, setBoot] = useState<BootState>('loading')
+  const productGuideCheckedRef = useRef(false)
   const bootFn = useCallback(async () => {
     setBoot('loading')
     try { await migrateLegacyPrompts(); await migratePromptSimplification(); await initSettings(); await initStore(); setBoot('ready') }
     catch (e) { console.error('本地数据载入失败', e); setBoot('error') }
   }, [])
   useEffect(() => { void bootFn() }, [bootFn])
+  useEffect(() => {
+    if (boot !== 'ready' || productGuideCheckedRef.current) return
+    productGuideCheckedRef.current = true
+    let active = true
+    void getProductGuideSeenVersion().then(seen => {
+      if (!active || getSettingsSnapshot().apiKey.trim() || seen === PRODUCT_GUIDE_VERSION) return
+      uiActions.openProductGuide()
+      // Marker persistence is deliberately best-effort. A storage failure may cause the
+      // guide to appear again after reload, but must never block the ready application.
+      void markProductGuideSeen().catch(() => {})
+    }).catch(() => {
+      if (active && !apiKey.trim()) uiActions.openProductGuide()
+    })
+    return () => { active = false }
+  }, [apiKey, boot])
   // Stage 9.4D: best-effort, NON-blocking legacy-blob -> OPFS background migration + a
   // one-time persistent-storage request (never a hard requirement, never a blocking modal).
   useEffect(() => {
@@ -93,6 +115,13 @@ export function App() {
       <Gallery />
       <DocumentLibrary />
       <DocumentReader />
+      <ProductGuideDialog
+        open={productGuideOpen}
+        onClose={uiActions.closeProductGuide}
+        onImportPdf={() => { documentUiActions.openLibrary(); }}
+        onOpenLibrary={() => { documentUiActions.openLibrary(); }}
+        onConfigureApi={uiActions.openSettings}
+      />
     </>
   )
 }
