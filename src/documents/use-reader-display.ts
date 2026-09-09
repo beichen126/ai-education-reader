@@ -18,7 +18,7 @@ export type ReaderDisplayApi = {
   surface: CachedSurface | null
   pageError: string | null
   /** Produce a full-resolution (MAX_RENDER_EDGE) Blob URL for the zoom viewer. */
-  requestZoomUrl(): Promise<string>
+  requestZoomUrl(pageOverride?: number): Promise<string>
   clearPageError(): void
 }
 
@@ -112,9 +112,9 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
     ctrl.requestForeground(page)
   }, [page, pageCount, geometry, session])
 
-  const requestZoomUrl = useCallback(async (): Promise<string> => {
+  const requestZoomUrl = useCallback(async (pageOverride?: number): Promise<string> => {
     const sess = session
-    const pg = pageRef.current
+    const pg = pageOverride ?? pageRef.current
     if (!sess) return ''
     const r = await renderSessionPage(sess, pg)
     return URL.createObjectURL(r.blob)

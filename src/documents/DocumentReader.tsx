@@ -103,7 +103,6 @@ export function DocumentReader() {
     outlineScheduleRef.current = null
     schedule?.()
   }, [])
-  const display = usePdfViewport({ session: displaySession, documentKey: docId, pageCount, currentPage: page, mode: pdfNavigationMode, telemetry: displayTelemetry, onFirstPixelReady })
   const [tocState, setTocState] = useState<TocTreeState>({ expanded: new Set() })
   const [tocOpen, setTocOpen] = useState(false)
   const [tocPanelClosed, setTocPanelClosed] = useState(false)
@@ -111,6 +110,7 @@ export function DocumentReader() {
   const tocPanelRef = useRef<HTMLElement | null>(null)
   const tocBackRef = useRef<HTMLButtonElement | null>(null)
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
+  const [viewerPage, setViewerPage] = useState(1)
   const viewerOpenRef = useRef(false)
   const genRef = useRef(0)
   // Zoom ownership token (Agent G, G1): a full-res zoom Blob render is bound to the navigation
@@ -276,7 +276,7 @@ export function DocumentReader() {
       setDisplaySession(null)
       setDisplayTelemetry(null)
       urlOwnerRef.current.revokeAll()
-      setViewerUrl(null); viewerOpenRef.current = false
+      setViewerUrl(null); setViewerPage(1); viewerOpenRef.current = false
       setZoomBusy(false)
       setDoc(null); setRecordMeta(null); setPageCount(0); setPage(1); setPageInput('')
       setPageError(null); setProgressError(null); setLoadError(null)
@@ -307,7 +307,7 @@ export function DocumentReader() {
       setLoadError(null); setDoc(null); setRecordMeta(null)
       setPageCount(0); setPage(1); setPageInput(''); setPageError(null)
       setTocState({ expanded: new Set() }); setTocOpen(false); setTocPanelClosed(false)
-      setViewerUrl(null); viewerOpenRef.current = false
+      setViewerUrl(null); setViewerPage(1); viewerOpenRef.current = false
       setZoomBusy(false)
       setBuilderOpen(false)
       urlOwnerRef.current.revokeAll()
@@ -408,7 +408,7 @@ export function DocumentReader() {
       if (ownedSession) { void closePdfSession(ownedSession) }
       if (sessionRef.current === ownedSession) { sessionRef.current = null; setDisplaySession(null); setDisplayTelemetry(null) }
       urlOwnerRef.current.revokeAll()
-      setViewerUrl(null); viewerOpenRef.current = false
+      setViewerUrl(null); setViewerPage(1); viewerOpenRef.current = false
     }
   }, [docId, readerRequestId])
 
@@ -539,6 +539,17 @@ export function DocumentReader() {
     setPage(prev => prev === next ? prev : next)
     setPageInput(String(next))
   }, [flushCurrentNote])
+
+  const display = usePdfViewport({
+    session: displaySession,
+    documentKey: docId,
+    pageCount,
+    currentPage: page,
+    mode: pdfNavigationMode,
+    telemetry: displayTelemetry,
+    onCurrentPageChange: next => go(next, pageCount),
+    onFirstPixelReady,
+  })
 
   const openRelatedConversation = useCallback(async (hit: PdfPageConversationHit) => {
     flushCurrentNote()
@@ -932,23 +943,27 @@ export function DocumentReader() {
 
   // ---- Zoom: the main reading path is a visible canvas (C1/C2). Clicking it requests a
   //      one-off full-resolution Blob for the zoom viewer — never part of the display path. ----
-  const openZoom = () => {
+  const openZoom = (targetPage = page) => {
     if (viewerOpenRef.current || zoomBusy) return
     setZoomBusy(true)
     // G1: bind this zoom request to the navigation context it was requested from.
     const zoomGen = ++zoomGenRef.current
     const ownedDocId = docIdRef.current
-    const ownedPage = pageRef.current
+    const ownedPage = targetPage
     const ownedSession = sessionRef.current
-    void display.requestZoomUrl()
+    void display.requestZoomUrl(targetPage)
       .then(url => {
         if (!url) return
         // G2/G3: a stale zoom (page turned / doc switched / reader closed / a newer zoom) must
         // never open, and its Blob URL must be released NOW — never handed to urlOwner to forget.
-        const currentCtx = { gen: zoomGenRef.current, docId: docIdRef.current, page: pageRef.current, session: sessionRef.current }
+        const currentPageForZoom = display.mode === 'continuous' && pageRef.current === page && ownedPage !== page
+          ? ownedPage
+          : pageRef.current
+        const currentCtx = { gen: zoomGenRef.current, docId: docIdRef.current, page: currentPageForZoom, session: sessionRef.current }
         if (isZoomStale({ gen: zoomGen, docId: ownedDocId, page: ownedPage, session: ownedSession }, currentCtx)) { URL.revokeObjectURL(url); return }
         urlOwnerRef.current.replace(url)
         viewerOpenRef.current = true
+        setViewerPage(ownedPage)
         setViewerUrl(urlOwnerRef.current.current)
       })
       .catch(() => { setPageError('第 ' + page + ' 页渲染失败。') })
@@ -1050,13 +1065,26 @@ export function DocumentReader() {
                 <button type="button" className={css.tocActionBtn} data-testid="reader-toc-ai-activity" onClick={() => setAiTocDialogHidden(false)}>⏳ 目录识别中…（点击查看进度）</button>
               )}
             </aside>
-            <main className={css.stage} ref={display.stageRef} data-pdf-navigation-mode={display.mode}>
+            <main className={css.stage} ref={display.stageRef} data-testid="reader-viewport" data-pdf-navigation-mode={display.mode}>
               {display.rendering && <div className={css.hint} data-testid="reader-loading">正在渲染第 {page} 页…</div>}
               {(display.pageError || pageError) && <div className={css.errorBox} data-testid="reader-page-error">{display.pageError || pageError}</div>}
-              {display.surface && (
-                <button className={css.pageBtn} data-testid="reader-page" disabled={zoomBusy} onClick={openZoom}>
+              {display.mode !== 'continuous' && display.surface && (
+                <button className={css.pageBtn} data-testid="reader-page" disabled={zoomBusy} onClick={() => openZoom()}>
                   <canvas ref={display.canvasRef} className={css.pageCanvas} data-testid="reader-page-img" aria-label={'PDF 第 ' + page + ' 页'} data-render-width={String(display.surface.width)} data-render-height={String(display.surface.height)} width={display.surface.width} height={display.surface.height} />
                 </button>
+              )}
+              {display.mode === 'continuous' && display.continuousPages && (
+                <div className={css.continuousStack} data-testid="reader-continuous-scroll" role="region" aria-label="PDF 连续阅读">
+                  {display.continuousPages.map(view => (
+                    <section key={view.pageNumber} ref={view.pageRef} className={css.continuousPage} data-testid={'reader-continuous-page-' + view.pageNumber} data-page-number={view.pageNumber} data-mounted={String(view.mounted)} style={view.style}>
+                      {view.mounted && view.surface ? (
+                        <button type="button" className={css.continuousPageButton} data-testid={'reader-continuous-page-button-' + view.pageNumber} disabled={zoomBusy} onClick={() => openZoom(view.pageNumber)}>
+                          <canvas ref={view.canvasRef} className={css.continuousCanvas} data-testid={'reader-continuous-canvas-' + view.pageNumber} aria-label={'PDF 第 ' + view.pageNumber + ' 页'} width={view.surface.width} height={view.surface.height} data-render-width={String(view.surface.width)} data-render-height={String(view.surface.height)} />
+                        </button>
+                      ) : view.mounted && view.error ? <div className={css.errorBox} role="alert">{view.error}</div> : <span className={css.continuousPlaceholder}>第 {view.pageNumber} 页</span>}
+                    </section>
+                  ))}
+                </div>
               )}
             </main>
             {notesOpen && doc && (
@@ -1168,9 +1196,9 @@ export function DocumentReader() {
       {viewerUrl && (
         <ZoomableImageDialog
           src={viewerUrl}
-          alt=""
-          resetKey={page}
-          onClose={() => { viewerOpenRef.current = false; setViewerUrl(null); urlOwnerRef.current.revokeAll() }}
+          alt={'PDF 第 ' + viewerPage + ' 页'}
+          resetKey={viewerPage}
+          onClose={() => { viewerOpenRef.current = false; setViewerUrl(null); setViewerPage(1); urlOwnerRef.current.revokeAll() }}
           labels={{ close: '关闭', dialog: 'PDF 页面查看' }}
         />
       )}

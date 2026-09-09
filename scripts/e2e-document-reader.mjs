@@ -166,6 +166,14 @@ await page.waitForFunction(() => new Promise(resolve => {
   req.onerror = () => resolve(false)
 }), null, { timeout: 10000 })
 assert(await page.locator('[data-testid="pdf-navigation-continuous"]').getAttribute('aria-checked') === 'true', 'H: continuous mode selection is reflected in Settings')
+await page.locator('[data-testid="pdf-navigation-paged"]').click()
+await page.getByRole('button', { name: '保存', exact: true }).click()
+await page.waitForFunction(() => new Promise(resolve => {
+  const req = indexedDB.open('ai-education-reader')
+  req.onsuccess = () => { const db = req.result; const r = db.transaction('settings', 'readonly').objectStore('settings').get('pdfNavigationMode'); r.onsuccess = () => resolve(r.result?.value === 'paged'); r.onerror = () => resolve(false) }
+  req.onerror = () => resolve(false)
+}), null, { timeout: 10000 })
+assert(await page.locator('[data-testid="pdf-navigation-paged"]').getAttribute('aria-checked') === 'true', 'H: switching back to paged is persisted')
 await page.keyboard.press('Escape')
 await page.waitForTimeout(300)
 await page.locator('[data-testid="sidebar-new-chat"]').click()
@@ -178,7 +186,7 @@ assert(await page.locator('[data-testid="sidebar-new-chat"]').count() === 1, 'H:
 await openLibrary()
 await importPdfAndOpen(PDF)
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
-assert(await page.locator('[data-testid="reader-page-img"]').evaluate(el => el.closest('[data-pdf-navigation-mode]')?.getAttribute('data-pdf-navigation-mode')) === 'continuous', 'J: Reader receives the persisted navigation mode through the shared viewport contract')
+assert(await page.locator('[data-testid="reader-page-img"]').evaluate(el => el.closest('[data-pdf-navigation-mode]')?.getAttribute('data-pdf-navigation-mode')) === 'paged', 'J: Reader keeps the paged default through the shared viewport contract')
 await page.locator('[data-testid="reader-back"]').click()
 await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(await page.locator('[data-testid="library-import"]').isEnabled(), 'J: 导入 PDF re-enabled after reader round-trip')
