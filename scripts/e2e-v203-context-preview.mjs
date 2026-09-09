@@ -1,5 +1,6 @@
 import { launchBrowser } from './e2e-browser.mjs'
 import { openDocumentLibrary } from './e2e-navigation.mjs'
+import { openAppDb } from './e2e-idb.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF = 'test/fixtures/outline-sample.pdf'
@@ -19,15 +20,26 @@ await page.locator('[data-testid="document-library"] input[type="file"]').setInp
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 40000 })
 await page.locator('[data-testid="reader-back"]').click()
 await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
-await page.locator('[data-testid^="doc-context-"]').first().click()
+const contextTrigger = page.locator('[data-testid^="doc-context-"]').first()
+const documentId = (await contextTrigger.getAttribute('data-testid')).replace('doc-context-', '')
+const beforeDoc = await openAppDb(page, { store: 'documents', operation: 'get', key: documentId })
+const beforeAttachments = (await openAppDb(page, { store: 'attachments' })).filter(row => row.meta?.source?.documentId === documentId).length
+await contextTrigger.click()
 await page.locator('[data-testid="doc-context-picker"]').waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="doc-context-tree"]').waitFor({ state: 'visible', timeout: 10000 })
 
 assert(await page.locator('[data-testid="doc-context-preview"]').count() === 1, 'context picker exposes an independent PDF 预览 action')
+await page.waitForFunction(() => document.querySelector('[data-testid="doc-context-preview"]')?.disabled === false)
+assert(await page.locator('[data-testid="doc-context-preview"]').isEnabled(), 'preview is enabled when the document binary is available')
 const firstNode = page.locator('[data-testid^="doc-context-node-"]').filter({ has: page.locator('input[type="checkbox"]:not([disabled])') }).first()
 if (await firstNode.count()) {
   const checkbox = firstNode.locator('input[type="checkbox"]')
   await checkbox.click()
+  const nodeTestId = await firstNode.getAttribute('data-testid')
+  const nodeId = nodeTestId.replace('doc-context-node-', '')
+  const flatten = (nodes, out = []) => { for (const node of nodes || []) { out.push(node); flatten(node.children, out) } return out }
+  const selectedNode = flatten(beforeDoc.chapters).find(node => node.id === nodeId)
+  const expectedStartPage = selectedNode?.startPage || Math.max(1, Math.min(beforeDoc.lastReadPage || 1, beforeDoc.pageCount))
   const range = firstNode.locator('[data-testid^="doc-context-actual-"]')
   const rangeText = (await range.textContent()) || ''
   const optionTexts = await firstNode.locator('option').allTextContents()
@@ -35,7 +47,58 @@ if (await firstNode.count()) {
   const mode = firstNode.locator('select[data-testid^="doc-context-mode-"]')
   const box = await mode.boundingBox()
   assert(Boolean(box) && box.width <= 120, 'range mode select stays within the compact desktop width budget')
+
+  await page.locator('[data-testid="doc-context-preview"]').click()
+  await page.locator('[data-testid="doc-context-preview-view"]').waitFor({ state: 'visible', timeout: 15000 })
+  await page.locator('[data-testid="doc-context-preview-back"]').waitFor({ state: 'visible', timeout: 10000 })
+  assert((await page.locator('[data-testid="doc-context-preview-title"]').textContent() || '').includes('outline-sample.pdf'), 'preview title names the selected PDF')
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'doc-context-preview-back')
+  const previewPageInput = page.locator('[data-testid="doc-context-preview-page-input"]')
+  await previewPageInput.waitFor({ state: 'visible', timeout: 15000 })
+  assert(Number(await previewPageInput.inputValue()) === expectedStartPage, 'preview starts at the first selected normalized range page')
+  await page.locator('[data-testid="doc-context-preview-page"]').waitFor({ state: 'visible', timeout: 30000 })
+  const previewBeforeNavigation = await openAppDb(page, { store: 'documents', operation: 'get', key: documentId })
+  assert(previewBeforeNavigation.lastReadPage === beforeDoc.lastReadPage, 'opening preview does not change lastReadPage')
+  assert((await openAppDb(page, { store: 'attachments' })).filter(row => row.meta?.source?.documentId === documentId).length === beforeAttachments, 'opening preview creates no attachment')
+  if (expectedStartPage < beforeDoc.pageCount) {
+    await page.locator('[data-testid="doc-context-preview-next"]').click()
+    await page.waitForFunction(pageNumber => Number(document.querySelector('[data-testid="doc-context-preview-page-input"]')?.value) === pageNumber, expectedStartPage + 1)
+    await page.locator('[data-testid="doc-context-preview-prev"]').click()
+    await page.waitForFunction(pageNumber => Number(document.querySelector('[data-testid="doc-context-preview-page-input"]')?.value) === pageNumber, expectedStartPage)
+  }
+  const previewChapter = page.locator('[data-testid^="doc-context-preview-chapter-"]').first()
+  assert(await previewChapter.count() > 0, 'preview exposes read-only chapter navigation')
+  await previewChapter.click()
+  await page.waitForTimeout(200)
+  await page.keyboard.press('Escape')
+  assert(await page.locator('[data-testid="doc-context-preview-view"]').count() === 1, 'first Escape closes preview TOC without leaving preview')
+  await page.keyboard.press('Escape')
+  await page.locator('[data-testid="doc-context-picker"]').waitFor({ state: 'visible', timeout: 10000 })
+  assert(await checkbox.isChecked(), 'return from preview preserves selected chapter')
+  assert(await page.locator('[data-testid="doc-context-preview"]').evaluate(element => document.activeElement === element), 'return from preview restores focus to preview trigger')
+  const afterPreviewDoc = await openAppDb(page, { store: 'documents', operation: 'get', key: documentId })
+  assert(afterPreviewDoc.lastReadPage === beforeDoc.lastReadPage, 'preview navigation does not persist reading progress')
+  assert((await openAppDb(page, { store: 'attachments' })).filter(row => row.meta?.source?.documentId === documentId).length === beforeAttachments, 'return from preview still creates no attachment')
 }
+
+await page.locator('[data-testid="doc-context-cancel"]').click()
+await page.setViewportSize({ width: 375, height: 812 })
+const fallbackPage = Math.min(3, beforeDoc.pageCount)
+await openAppDb(page, { store: 'documents', operation: 'put', value: { ...beforeDoc, lastReadPage: fallbackPage } })
+await page.locator('[data-testid="doc-context-' + documentId + '"]').click()
+await page.locator('[data-testid="doc-context-picker"]').waitFor({ state: 'visible', timeout: 10000 })
+assert(await page.locator('[data-testid="doc-context-add"]').isDisabled(), 'no scope keeps commit disabled while preview remains available')
+await page.waitForFunction(() => document.querySelector('[data-testid="doc-context-preview"]')?.disabled === false)
+await page.locator('[data-testid="doc-context-preview"]').click()
+await page.locator('[data-testid="doc-context-preview-view"]').waitFor({ state: 'visible', timeout: 15000 })
+await page.locator('[data-testid="doc-context-preview-page-input"]').waitFor({ state: 'visible', timeout: 15000 })
+assert(Number(await page.locator('[data-testid="doc-context-preview-page-input"]').inputValue()) === fallbackPage, 'preview falls back to lastReadPage when no chapter scope is selected')
+assert(await page.locator('[data-testid="doc-context-preview-back"]').isVisible(), '375px preview keeps the return action usable')
+const mobilePreviewBox = await page.locator('[data-testid="doc-context-preview-view"]').boundingBox()
+assert(Boolean(mobilePreviewBox && mobilePreviewBox.width <= 375), '375px preview stays inside the viewport')
+await page.locator('[data-testid="doc-context-preview-back"]').click()
+await page.locator('[data-testid="doc-context-picker"]').waitFor({ state: 'visible', timeout: 10000 })
+assert(await page.locator('[data-testid="doc-context-preview"]').isVisible(), '375px return restores the picker without closing the composer')
 
 await browser.close()
 for (const line of results) console.log(line)
