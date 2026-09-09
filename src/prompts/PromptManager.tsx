@@ -8,6 +8,7 @@ import {
   deletePromptDefinition,
   getPromptDefinition,
   listPromptCatalog,
+  PROMPT_CATALOG_CHANGED_EVENT,
   PromptServiceError,
   saveDefaultConversationMode,
   savePromptDefinition,
@@ -350,13 +351,8 @@ export function PromptManager() {
       setNotice(null)
       return
     }
-    if (category === 'all' || category === 'conversation-mode') {
-      setError('会话模式只有“默认”一个入口，不能新建第二个会话模式。')
-      setNotice(null)
-      return
-    }
     if (dirty && !window.confirm('当前修改尚未保存，确定新建提示词吗？')) return
-    setDraft(newDefinition(category))
+    setDraft(newDefinition(category === 'all' ? 'conversation-mode' : category))
     setSelectedId(null)
     setEditorMode('create')
     setDirty(true)
@@ -373,6 +369,7 @@ export function PromptManager() {
     setEditorMode('edit')
     setDirty(false)
     setNotice(result.warnings.length ? result.warnings.map((warning) => warning.message).join(' ') : message)
+    window.dispatchEvent(new Event(PROMPT_CATALOG_CHANGED_EVENT))
     await loadCatalog(result.definition.id, result.definition.kind === 'protocol' ? 'protocol' : 'default')
   }
 
@@ -456,6 +453,7 @@ export function PromptManager() {
     setBusy(true); setError(null); setNotice(null)
     try {
       await deletePromptDefinition(definition.id)
+      window.dispatchEvent(new Event(PROMPT_CATALOG_CHANGED_EVENT))
       setDraft(null); setDirty(false); setEditorMode('edit')
       setNotice('提示词已删除，历史 snapshot 保持不变。')
       await loadCatalog(undefined, category === 'protocol' ? 'protocol' : 'default')
@@ -469,6 +467,7 @@ export function PromptManager() {
     try {
       await setDefaultConversationModeId(selected.id)
       setPreferences(await getPromptPreferences())
+      window.dispatchEvent(new Event(PROMPT_CATALOG_CHANGED_EVENT))
       setNotice('已设为默认会话模式。')
     } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
   }
@@ -501,9 +500,8 @@ export function PromptManager() {
           <div className={css.listToolbar}>
             <button type="button" className={css.mobileBack} onClick={() => setMobileStep('categories')}>‹ 分类</button>
             <label className={css.searchField}><span>搜索提示词</span><input data-testid="prompt-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、描述或内容" /></label>
-            <button type="button" className={css.newButton} data-testid="prompt-new" disabled={category === 'protocol' || category === 'all' || category === 'conversation-mode'} title={category === 'protocol' ? '系统协议需从 canonical 复制' : category === 'all' || category === 'conversation-mode' ? '会话模式只有默认入口' : undefined} onClick={startCreate}>＋ 新建</button>
+            <button type="button" className={css.newButton} data-testid="prompt-new" disabled={category === 'protocol'} title={category === 'protocol' ? '系统协议需从 canonical 复制' : undefined} onClick={startCreate}>＋ 新建</button>
             {category === 'protocol' && <span data-testid="protocol-new-hint" role="note">系统协议请从 canonical 复制</span>}
-            {(category === 'all' || category === 'conversation-mode') && <span data-testid="conversation-mode-new-hint" role="note">会话模式只有默认入口</span>}
           </div>
           <div className={css.listMeta}>
             <span>{loading ? '正在读取…' : filtered.length + ' 个提示词'}</span>

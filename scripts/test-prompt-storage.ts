@@ -124,7 +124,7 @@ const hidden = await setPromptEnabled(BUILTIN_PROMPT_IDS.conversationDeepExplana
 assert(hidden.definition.enabled === false, 'built-in disable is represented as a user preference')
 assert((await getBuiltinPrompt(BUILTIN_PROMPT_IDS.conversationDeepExplanation))?.enabled === true, 'built-in disable does not mutate source registry')
 const visibleModesAfterHide = await listPromptCatalog('conversation-mode')
-assert(visibleModesAfterHide.length === 1 && visibleModesAfterHide[0].id === BUILTIN_PROMPT_IDS.conversationDefault, 'visible catalog keeps only the default when a deprecated built-in is hidden')
+assert(visibleModesAfterHide.some((item) => item.id === BUILTIN_PROMPT_IDS.conversationDefault) && visibleModesAfterHide.some((item) => item.id === first.id) && !visibleModesAfterHide.some((item) => item.id === BUILTIN_PROMPT_IDS.conversationDeepExplanation), 'visible catalog keeps custom modes while hiding deprecated built-ins')
 await setBuiltinPromptHidden(BUILTIN_PROMPT_IDS.conversationDeepExplanation, false)
 
 await setPromptSortPreference('name-asc')

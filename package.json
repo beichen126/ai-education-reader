@@ -171,6 +171,7 @@
     "test:v203-red-registration": "node scripts/test-v203-red-registration.mjs",
     "test:v202-red-registration": "node scripts/test-v202-red-registration.mjs",
     "test:v210-red": "npx tsx scripts/test-v210-red.ts",
+    "test:v210-prompt-modes": "npx tsx scripts/test-v210-prompt-modes.ts",
     "test:e2e-v210-red": "node scripts/e2e-v210-red.mjs",
     "test:e2e-v210-range-red": "node scripts/e2e-v210-range-red.mjs",
     "test:regressions": "npm run test:v201-red-domain && npm run test:v201-stage2 && npm run test:v202-red && npm run test:v203-red && npm run test:quick-follow-up-anchor",

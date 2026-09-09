@@ -30,8 +30,7 @@ await page.locator('[data-testid="prompt-new"]').click().catch(() => {})
 assert(await page.locator('[data-testid="prompt-editor-kind"]').count() === 1, 'V210-RED user can open custom conversation-mode editor')
 
 await page.locator('[data-testid="prompt-manager-close"]').click()
-const modeControl = page.locator('[data-testid="active-conversation-mode"]')
-assert(await modeControl.getAttribute('role') === 'button' || await modeControl.locator('button').count() > 0, 'V210-RED current route exposes a selectable mode control')
+assert(await page.locator('button[aria-label="切换对话模式"]').count() === 1, 'V210-RED current route exposes a selectable mode control')
 
 await openAppDb(page, {
   store: 'prompts',

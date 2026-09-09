@@ -137,6 +137,7 @@ async function resolvePromptForPreference(id: string): Promise<PromptDefinition>
 async function assertDefaultMode(id: string): Promise<void> {
   const definition = await resolvePromptForPreference(id)
   if (definition.kind !== 'conversation-mode') throw new PromptPreferencesError('invalid-default-mode', 'defaultConversationModeId 必须指向 conversation-mode')
+  if (!definition.enabled) throw new PromptPreferencesError('invalid-default-mode', '停用的会话模式不能设为新会话默认')
 }
 
 async function assertProtocolOverride(domain: string, id: string): Promise<void> {

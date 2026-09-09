@@ -1,17 +1,21 @@
 import { newStableId, type StableId } from '../engine/types'
+import { idbRunTxn } from '../storage/idb'
 import { BUILTIN_PROMPT_IDS, DEFAULT_CONVERSATION_MODE_DESCRIPTION, getBuiltinPrompt } from './prompt-registry'
-import { getPromptPreferences, setBuiltinPromptHidden, setDefaultConversationModeId } from './prompt-preferences'
+import { getPromptPreferences, PROMPT_PREFERENCES_KEY, setBuiltinPromptHidden, setDefaultConversationModeId } from './prompt-preferences'
 import { isCanonicalDefaultConversationMode } from './prompt-simplification'
 import type { ArtifactPrompt, ConversationModePrompt, PromptDefinition, PromptKind } from './prompt-types'
 import { allocateAvailablePromptId, getPromptRecord, deletePromptRecord, updatePromptRecordAtomic } from './prompt-store'
 import { listEffectivePromptDefinitions } from './prompt-resolution'
 import { resolveProtocolCanonicalRoot } from './protocol-lineage'
 import { getPromptDefinitionIssues, validatePromptDefinition } from './prompt-validation'
+import { listSelectableConversationModes as selectVisibleConversationModes, listVisibleConversationModes } from './conversation-mode-visibility'
 
 export type PromptServiceDependencies = {
   id?: () => StableId
   now?: () => number
 }
+
+export const PROMPT_CATALOG_CHANGED_EVENT = 'ai-education-reader:prompt-catalog-changed'
 
 export type PromptNameWarning = {
   code: 'duplicate-name'
@@ -98,14 +102,20 @@ export async function listPromptCatalog(kind?: PromptKind): Promise<PromptDefini
       : listEffectivePromptDefinitions(kind, { excludeKinds: ['protocol'] }),
   ])
   if (kind === 'protocol') return sortCatalog(all, preferences.sortPreference ?? 'updatedAt-desc')
-  const selectedDefault = all.find((definition) => definition.kind === 'conversation-mode' && definition.id === preferences.defaultConversationModeId && definition.enabled)
-    ?? all.find((definition) => definition.id === BUILTIN_PROMPT_IDS.conversationDefault)
+  const visibleModes = await listVisibleConversationModes(all, { includeDisabled: true })
+  const visibleModeIds = new Set(visibleModes.map((definition) => definition.id))
   const visible = all.filter((definition) => {
-    if (definition.kind === 'conversation-mode') return definition.id === selectedDefault?.id
+    if (definition.kind === 'conversation-mode') return visibleModeIds.has(definition.id)
     if (definition.kind === 'artifact') return definition.artifactKind === 'note' || definition.artifactKind === 'quiz'
     return true
   })
   return sortCatalog(kind ? visible.filter((definition) => definition.kind === kind) : visible, preferences.sortPreference ?? 'updatedAt-desc')
+}
+
+/** Selector-only view: deprecated and disabled modes never become send choices. */
+export async function listSelectableConversationModes(): Promise<ConversationModePrompt[]> {
+  const definitions = await listEffectivePromptDefinitions('conversation-mode')
+  return selectVisibleConversationModes(definitions)
 }
 
 export async function getPromptDefinition(id: StableId): Promise<PromptDefinition | undefined> {
@@ -245,6 +255,17 @@ export async function deletePromptDefinition(id: StableId): Promise<void> {
   if (builtin) throw new PromptServiceError('builtin-immutable', '内置提示词不可删除。')
   const current = await getPromptRecord(id)
   if (!current) throw new PromptServiceError('not-found', '提示词不存在。')
+  const preferences = await getPromptPreferences()
+  if (preferences.defaultConversationModeId === id) {
+    await idbRunTxn(['prompts', 'settings'], (txn) => {
+      txn.objectStore('prompts').delete(id)
+      txn.objectStore('settings').put({
+        key: PROMPT_PREFERENCES_KEY,
+        value: { ...preferences, defaultConversationModeId: BUILTIN_PROMPT_IDS.conversationDefault },
+      })
+    })
+    return
+  }
   await deletePromptRecord(id)
 }
 

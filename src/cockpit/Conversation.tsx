@@ -192,8 +192,12 @@ export function Conversation() {
         conversationId={session.id}
         branches={branchChat.branches}
         activeBranchId={branchChat.activeBranchId}
+        effectiveMessageCount={promptPath.messageIds.length}
+        effectiveTransitions={promptPath.transitions}
+        busy={busy}
         onSwitch={async (id) => { await branchChat.switchBranch(id); setMenuMsgId(null) }}
         onChanged={() => void branchChat.refresh()}
+        onModeChanged={async () => { await sessionsActions.reload(session.id); await branchChat.refresh() }}
       />)}
       {/* Composer sits inside the scroll body, position:sticky bottom:0 (as in DSH), so the
           mobile browser's native focus scroll lifts it above the on-screen keyboard. */}

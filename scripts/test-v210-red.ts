@@ -38,7 +38,7 @@ const promptManagerSource = fs.readFileSync('src/prompts/PromptManager.tsx', 'ut
 expect(!promptManagerSource.includes("category === 'conversation-mode'} disabled") && !promptManagerSource.includes("category === 'all' || category === 'conversation-mode'"), 'V210-RED Prompt Manager allows creating conversation modes')
 
 const branchBarSource = fs.readFileSync('src/branches/BranchBar.tsx', 'utf8')
-expect(branchBarSource.includes('ConversationModeSelector') || branchBarSource.includes('listSelectableConversationModes'), 'V210-RED current route exposes a selectable conversation-mode control')
+expect(branchBarSource.includes('listConversationModeDefinitions') && branchBarSource.includes('切换对话模式'), 'V210-RED current route exposes a selectable conversation-mode control')
 
 const readme = fs.readFileSync('README.md', 'utf8')
 for (const heading of ['30 秒理解本产品', '与 Zotero 等 PDF 阅读器有什么不同', '与 ChatGPT/DeepSeek 等 AI 网页端有什么不同', '自定义会话模式', 'FAQ']) {

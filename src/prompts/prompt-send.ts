@@ -8,6 +8,7 @@ import { newStableId } from '../engine/types'
 import { BUILTIN_PROMPT_IDS } from './prompt-registry'
 import { getPromptPreferences } from './prompt-preferences'
 import { capturePromptSnapshot, listEffectivePromptDefinitions, resolvePromptDefinition, type PromptResolutionDiagnostic } from './prompt-resolution'
+import { listSelectableConversationModes } from './prompt-service'
 import { appendPromptTransition } from './prompt-timeline'
 import { compileConversationLogicalContext, type LogicalPromptContext } from './prompt-compiler'
 import { getPromptSnapshotIssues } from './prompt-validation'
@@ -136,6 +137,20 @@ export async function resolveCurrentConversationMode(now = Date.now()): Promise<
   return resolved.snapshot
 }
 
+/** Resolve an explicit route transition before falling back to the new-session default. */
+export async function resolveConversationModeForPathResult(
+  effectiveTransitions: readonly PromptTransition[],
+  now = Date.now(),
+): Promise<ConversationModeResolution> {
+  const routeSnapshot = effectiveTransitions[effectiveTransitions.length - 1]?.snapshot
+  if (routeSnapshot?.kind === 'conversation-mode' && routeSnapshot.profileId) {
+    const selectable = await listSelectableConversationModes()
+    const definition = selectable.find((item) => item.id === routeSnapshot.profileId)
+    if (definition) return { definition, snapshot: routeSnapshot, diagnostics: [], usedFallback: false }
+  }
+  return resolveCurrentConversationModeResult(now)
+}
+
 function freezeTransition(transition: PromptTransition): PromptTransition {
   return { ...transition, snapshot: { ...transition.snapshot } }
 }
@@ -183,7 +198,7 @@ export async function prepareAcceptedSendContext(input: PrepareSendContextInput)
   const now = input.now ?? Date.now()
   const resolution = input.currentModeSnapshot
     ? { snapshot: input.currentModeSnapshot, diagnostics: [] as PromptResolutionDiagnostic[] }
-    : await resolveCurrentConversationModeResult(now)
+    : await resolveConversationModeForPathResult(input.effectiveTransitions, now)
   if (!resolution.snapshot) throw new Error('当前 conversation mode 不可用：' + resolution.diagnostics.map((item) => item.code).join(', '))
   const currentMode = resolution.snapshot
   const selected = transitionForSend(input.messagesBeforeAcceptance, input.effectiveTransitions, currentMode, input.id ?? newStableId, now)
