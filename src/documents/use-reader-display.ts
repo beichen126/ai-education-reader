@@ -34,6 +34,9 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
   const [geometry, setGeometry] = useState<DisplayGeometry | null>(null)
   const pageRef = useRef(page); pageRef.current = page
   const pageCountRef = useRef(pageCount); pageCountRef.current = pageCount
+  const surfaceSessionRef = useRef<PdfSession | null>(session)
+  const surfaceBelongsToSession = surfaceSessionRef.current === session
+  if (!surfaceBelongsToSession) surfaceSessionRef.current = session
 
   // ---- bind a controller to the session (recreated on document switch) ----
   useEffect(() => {
@@ -48,10 +51,13 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
       readViewport1: (n: number) => readSessionPageViewport(session, n),
       startRender: (n: number, scale: number) => renderSessionPageSurface(session, n, scale),
     }
-    const ctrl = new ReaderRenderController(backend, { cacheCapacity: 5, pageCount }, {
-      onForeground: (s) => setSurface(s),
-      onRenderState: (r) => setRendering(r),
-      onPageError: (n) => setPageError('第 ' + n + ' 页渲染失败。'),
+    let ctrl: ReaderRenderController | null = null
+    ctrl = new ReaderRenderController(backend, { cacheCapacity: 5, pageCount }, {
+      // A cancelled controller may still settle a render promise after a document
+      // switch. Its callbacks must not repopulate the new document's surface state.
+      onForeground: (s) => { if (controllerRef.current === ctrl) setSurface(s) },
+      onRenderState: (r) => { if (controllerRef.current === ctrl) setRendering(r) },
+      onPageError: (n) => { if (controllerRef.current === ctrl) setPageError('第 ' + n + ' 页渲染失败。') },
     })
     controllerRef.current = ctrl
     return () => {
@@ -113,5 +119,7 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
 
   const clearPageError = useCallback(() => setPageError(null), [])
 
-  return { canvasRef, stageRef, rendering, surface, pageError, requestZoomUrl, clearPageError }
+  // Effects clear the previous surface after commit; hide it synchronously during
+  // the transition so a new document can never render the old page in the gap.
+  return { canvasRef, stageRef, rendering, surface: surfaceBelongsToSession ? surface : null, pageError, requestZoomUrl, clearPageError }
 }

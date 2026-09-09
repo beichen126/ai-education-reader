@@ -82,6 +82,7 @@
 .ctxProgress { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 25; background: rgba(24,26,30,0.85); color: #e8eaed; border-radius: 8px; padding: 6px 12px; font-size: 12px; }
 .ctxMsg { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 25; display: flex; align-items: center; gap: 10px; background: rgba(24,26,30,0.85); color: #e8eaed; border-radius: 8px; padding: 6px 12px; font-size: 12px; }
 .ctxMsgOk { background: rgba(22, 84, 52, 0.9); }
+.progressError { position: absolute; bottom: 64px; left: 50%; transform: translateX(-50%); z-index: 26; display: flex; align-items: center; gap: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-state-error-primary); border: 1px solid var(--dsw-alias-state-error-primary); border-radius: 8px; padding: 6px 8px 6px 12px; font-size: 12px; box-shadow: 0 4px 18px rgba(0,0,0,0.16); }
 .navBar { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 10px 12px calc(env(safe-area-inset-bottom, 0px) + 10px); border-top: 1px solid var(--dsw-alias-border-l2); }
 .navBtn { min-height: 40px; min-width: 76px; padding: 6px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
 .navBtn:disabled { opacity: 0.4; cursor: not-allowed; }

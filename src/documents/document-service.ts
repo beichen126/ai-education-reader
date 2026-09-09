@@ -254,6 +254,13 @@ export function assertValidLastReadPage(page: number, pageCount: number): void {
 /** Reading progress: updates lastReadPage + lastReadAt. It intentionally does NOT bump
  *  updatedAt any more (B2: updatedAt = metadata mutation; lastReadAt = reading activity). */
 export async function updateLastReadPage(id: string, page: number): Promise<void> {
+  // Browser E2E seam: fail exactly one durable progress write, then let the
+  // Reader's normal retry path prove that dirty state is recoverable.
+  const runtime = globalThis as typeof globalThis & { __dshFailNextLastReadPageWrite?: boolean }
+  if (runtime.__dshFailNextLastReadPageWrite) {
+    runtime.__dshFailNextLastReadPageWrite = false
+    throw new Error('simulated lastReadPage write failure')
+  }
   try { await idbUpdate('documents', id, (cur: any) => { assertValidLastReadPage(page, cur.pageCount); return { ...cur, lastReadPage: page, lastReadAt: Date.now() }; }); }
   catch (e) { if (isRowMissing(e)) throw new DocumentNotFoundError(id); throw e; }
 }

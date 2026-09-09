@@ -43,6 +43,7 @@ import type { LearningDocument, ChapterNode } from './document-types'
 import { findConversationsByDocumentPage, type PdfPageConversationHit } from '../pdf/pdf-page-conversations'
 import { flushNoteEditorSession, type NoteEditorSession } from './note-session'
 import { NoteAvailabilityGate, NoteReadCache, noteAvailabilityFrom, noteHasContent, noteKey, notePersistedState, type NoteAvailability } from './note-availability'
+import { ReaderProgressController } from './reader-progress-controller'
 import css from './document-reader.module.css'
 
 type TocTreeState = { expanded: ReadonlySet<string> }
@@ -62,12 +63,14 @@ export function DocumentReader() {
   const [doc, setDoc] = useState<LearningDocument | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const sessionRef = useRef<PdfSession | null>(null)
+  const [displaySession, setDisplaySession] = useState<PdfSession | null>(null)
   const [page, setPage] = useState(1)
   const [pageCount, setPageCount] = useState(0)
   const urlOwnerRef = useRef(createUrlOwner())
   const [pageInput, setPageInput] = useState('')
   const pageInputRef = useRef<HTMLInputElement | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
+  const [progressError, setProgressError] = useState<string | null>(null)
   const [notesOpen, setNotesOpen] = useState(false)
   const [noteText, setNoteText] = useState('')
   const [noteLoading, setNoteLoading] = useState(false)
@@ -89,7 +92,7 @@ export function DocumentReader() {
   // ---- Reader正文 display path (Agent C): direct visible canvas, no JPEG Blob on the
   //      main reading pipeline. The hook owns viewport-aware scaling, caching, prefetch,
   //      real RenderTask cancellation, and the on-demand zoom Blob. ----
-  const display = useReaderDisplay(sessionRef.current, page, pageCount)
+  const display = useReaderDisplay(displaySession, page, pageCount)
   const [tocState, setTocState] = useState<TocTreeState>({ expanded: new Set() })
   const [tocOpen, setTocOpen] = useState(false)
   const [tocPanelClosed, setTocPanelClosed] = useState(false)
@@ -106,8 +109,12 @@ export function DocumentReader() {
   const zoomGenRef = useRef(0)
   const pageRef = useRef(1); pageRef.current = page
   const docIdRef = useRef<string | null>(null); docIdRef.current = docId
-  const skipFirstProgressRef = useRef(true)
-  const queueRef = useRef<Promise<void>>(Promise.resolve())
+  const progressRef = useRef<ReaderProgressController | null>(null)
+  if (progressRef.current === null) {
+    progressRef.current = new ReaderProgressController(updateLastReadPage, {
+      onStateChange: state => setProgressError(state.lastError ?? null),
+    })
+  }
   // ---- Reader -> Context bridge state (Stage 9.2B2) ----
   const conv = useSessions(s => s.byId[s.current || ''])
   const [ctxMenuOpen, setCtxMenuOpen] = useState(false)
@@ -154,17 +161,6 @@ export function DocumentReader() {
   const aiTocGenRef = useRef(0)
   const aiTocAbortRef = useRef<AbortController | null>(null)
   const lastAiTocPagesRef = useRef<number[]>([])
-
-  // ---- docId-BOUND progress persistence: each write carries the id it belongs to ----
-  const persist = useCallback((targetDocId: string, p: number) => {
-    if (!targetDocId) return
-    queueRef.current = queueRef.current.then(() => updateLastReadPage(targetDocId, p).catch(() => {})).catch(() => {})
-  }, [])
-  const flushProgress = useCallback(() => {
-    const id = docIdRef.current
-    if (id) persist(id, pageRef.current)
-  }, [persist])
-  const flushRef = useRef(flushProgress); flushRef.current = flushProgress
 
   const writeNote = useCallback(async (targetDocId: string, targetPage: number, content: string) => {
     const saved = await saveDocumentNote(targetDocId, targetPage, content)
@@ -259,17 +255,19 @@ export function DocumentReader() {
     if (!docId) {
       // Reader left (library / closed / switching): reset everything synchronously
       // so the previous document's page / image / TOC / viewer never leaks in.
+      void progressRef.current?.release('close')
       genRef.current++ // any in-flight render of the old document becomes stale
       ctxGenRef.current++ // any in-flight Reader Context generation becomes cancelled
       setCtxBusy(false); setCtxProgress(null); setCtxMsg(null)
       setCtxPending(null); setCtxMenuOpen(false); setCtxMode('menu'); setManualError(null)
       setBuilderOpen(false)
       sessionRef.current = null
+      setDisplaySession(null)
       urlOwnerRef.current.revokeAll()
       setViewerUrl(null); viewerOpenRef.current = false
       setZoomBusy(false)
       setDoc(null); setPageCount(0); setPage(1); setPageInput('')
-      setPageError(null); setLoadError(null)
+      setPageError(null); setProgressError(null); setLoadError(null)
       setNotesOpen(false); setNoteText(''); setNoteLoading(false); setNoteSavedAt(null); setNoteSaveError(false); setNoteLoadError(false); setNoteWriteEnabled(false)
       setNoteAvailability({ kind: 'loading', key: '' })
       setTocState({ expanded: new Set() }); setTocOpen(false); setTocPanelClosed(false)
@@ -288,6 +286,7 @@ export function DocumentReader() {
     const ownedDocId = docId
     let cancelled = false
     let ownedSession: PdfSession | null = null
+    let ownedProgressBinding: ReturnType<ReaderProgressController['bind']> | null = null
     void (async () => {
       setLoadError(null); setDoc(null)
       setPageCount(0); setPage(1); setPageInput(''); setPageError(null)
@@ -297,6 +296,7 @@ export function DocumentReader() {
       setBuilderOpen(false)
       urlOwnerRef.current.revokeAll()
       sessionRef.current = null
+      setDisplaySession(null)
       aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
       aiTocGenRef.current++
       setTocPickerOpen(false); setAiTocExtracting(false); setAiTocMsg(null)
@@ -310,8 +310,11 @@ export function DocumentReader() {
         if (cancelled) { void closePdfSession(o.session); return }
         ownedSession = o.session
         sessionRef.current = o.session
+        setDisplaySession(o.session)
         setDoc(d); setPageCount(d.pageCount)
         const start = clampReaderPage((requestedPage ?? d.lastReadPage) || 1, d.pageCount)
+        ownedProgressBinding = progressRef.current?.bind(ownedDocId, start) ?? null
+        setProgressError(null)
         setPage(start); setPageInput(String(start))
         // Detect whether the ORIGINAL PDF has a native outline — ephemeral, used only
         // for the 整理/恢复 目录 UI. Reading must never fail because of this.
@@ -338,16 +341,17 @@ export function DocumentReader() {
       ctxGenRef.current++ // cancel any in-flight Reader Context generation (silent)
       setCtxBusy(false); setCtxProgress(null); setCtxMsg(null)
       setCtxPending(null); setCtxMenuOpen(false)
-      // last meaningful page of the OWNED document — closure id, NEVER docIdRef
-      if (ownedDocId) persist(ownedDocId, pageRef.current)
+      // Release the controller session owned by this document effect. The controller
+      // keeps the closure-bound owner and serializes any pending write.
+      if (ownedProgressBinding) void progressRef.current?.release('switch', ownedProgressBinding)
       aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
       aiTocGenRef.current++
       if (ownedSession) { void closePdfSession(ownedSession) }
-      if (sessionRef.current === ownedSession) sessionRef.current = null
+      if (sessionRef.current === ownedSession) { sessionRef.current = null; setDisplaySession(null) }
       urlOwnerRef.current.revokeAll()
       setViewerUrl(null); viewerOpenRef.current = false
     }
-  }, [docId, readerRequestId, persist])
+  }, [docId, readerRequestId])
 
   // Page-note availability is preloaded even while the panel is closed. The
   // same cache/promise is consumed by the editor effect below, so the closed
@@ -452,18 +456,16 @@ export function DocumentReader() {
   // ---- Reader正文 display render: now handled by useReaderDisplay (viewport-aware
   //      scale, real RenderTask cancel, bounded cache, neighbor prefetch). No JPEG Blob. ----
 
-  // ---- debounced progress persistence (1000ms), id bound at schedule time ----
+  // ---- progress observation is centralized in ReaderProgressController ----
   useEffect(() => {
-    if (skipFirstProgressRef.current) { skipFirstProgressRef.current = false; return }
-    const idAtSchedule = docIdRef.current
-    const t = setTimeout(() => { if (idAtSchedule) persist(idAtSchedule, page) }, 1000)
-    return () => clearTimeout(t)
-  }, [page, persist])
+    if (!docId || !doc) return
+    progressRef.current?.observePage(page, 'navigation')
+  }, [docId, doc?.id, page])
 
-  // ---- App-level: flush on hidden/pagehide (unmount flush is the [docId] cleanup) ----
+  // ---- App-level: use the same controller for hidden/pagehide flush ----
   useEffect(() => {
-    const flush = () => flushRef.current()
-    const onVis = () => { if (document.visibilityState === 'hidden') flushRef.current() }
+    const flush = () => { void progressRef.current?.flush('pagehide') }
+    const onVis = () => { if (document.visibilityState === 'hidden') void progressRef.current?.flush('hidden') }
     window.addEventListener('pagehide', flush)
     document.addEventListener('visibilitychange', onVis)
     return () => {
@@ -813,9 +815,13 @@ export function DocumentReader() {
     const r = parsePageInput(pageInput, pageCount)
     if (r.ok === false) { setPageError(r.error); return }
     flushCurrentNote()
-    setPageError(null); skipFirstProgressRef.current = false
+    setPageError(null)
     setPage(r.page); setPageInput(String(r.page))
   }
+
+  const retryProgress = useCallback(() => {
+    void progressRef.current?.retry()
+  }, [])
 
   const currentNoteState: NoteAvailability = currentNoteKey && noteAvailability.key === currentNoteKey
     ? noteAvailability
@@ -1083,6 +1089,12 @@ export function DocumentReader() {
       )}
       {doc && ctxRunning && (
         <div className={css.ctxProgress} data-testid="reader-ctx-progress">正在准备上下文 {ctxRunning.done} / {ctxRunning.total} 页</div>
+      )}
+      {progressError && (
+        <div className={css.progressError} data-testid="reader-progress-error" role="alert">
+          <span>阅读位置暂未保存</span>
+          <button type="button" className={css.ctxSecondary} data-testid="reader-progress-retry" onClick={retryProgress}>重试</button>
+        </div>
       )}
       <div className={css.navBar}>
         <button className={css.navBtn} data-testid="reader-prev" disabled={page <= 1} onClick={() => go(page - 1, pageCount)}>上一页</button>
