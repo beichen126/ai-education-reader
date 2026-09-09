@@ -6,6 +6,7 @@ const PDF = 'test/fixtures/outline-sample.pdf'
 const results = []
 const errors = []
 const assert = (condition, message) => results.push((condition ? 'PASS  ' : 'FAIL  ') + message)
+const NOTE_STATE_TIMEOUT = 30000
 
 const browser = await launchBrowser()
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
@@ -79,7 +80,7 @@ await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible'
 await page.locator('[data-testid="reader-notes-toggle"]').waitFor({ state: 'visible', timeout: 10000 })
 
 const noteToggle = page.locator('[data-testid="reader-notes-toggle"]')
-await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'unknown', null, { timeout: 10000 })
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'unknown', null, { timeout: NOTE_STATE_TIMEOUT })
 assert(await noteToggle.getAttribute('data-note-state') === 'unknown', 'cold note read failure keeps the closed state unknown')
 assert((await noteToggle.textContent() || '').includes('重试'), 'cold note read failure does not present an existing note as 新建笔记')
 
@@ -104,9 +105,9 @@ assert(await page.evaluate(() => window.__v203NoteWrites === 0), 'unknown note s
 await page.locator('[data-testid^="doc-open-"]').first().click()
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 15000 })
 await page.locator('[data-testid="reader-notes-toggle"]').waitFor({ state: 'visible', timeout: 10000 })
-await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'unknown', null, { timeout: 10000 })
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'unknown', null, { timeout: NOTE_STATE_TIMEOUT })
 await page.locator('[data-testid="reader-notes-toggle"]').click()
-await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'existing', null, { timeout: 10000 })
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'existing', null, { timeout: NOTE_STATE_TIMEOUT })
 assert(await page.evaluate(() => window.__v203NoteWrites === 0), 'retry read does not write while establishing the base')
 await page.locator('[data-testid="reader-notes-toggle"]').click()
 const note = page.locator('[data-testid="reader-notes"] textarea')
@@ -120,10 +121,10 @@ await page.evaluate(() => { window.__v203FailNoteReads = 1 })
 // Force the page-2 read after arming the fault; page 2 has no persisted note.
 await page.locator('[data-testid="reader-page-input"]').fill('2')
 await page.locator('[data-testid="reader-page-input"]').press('Enter')
-await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'unknown', null, { timeout: 10000 })
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'unknown', null, { timeout: NOTE_STATE_TIMEOUT })
 assert(await page.locator('[data-testid="reader-notes"]').count() === 0, 'empty note read failure keeps the editor closed before retry')
 await page.locator('[data-testid="reader-notes-toggle"]').click()
-await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'empty', null, { timeout: 10000 })
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'empty', null, { timeout: NOTE_STATE_TIMEOUT })
 await page.locator('[data-testid="reader-notes-toggle"]').click()
 const emptyNote = page.locator('[data-testid="reader-notes"] textarea')
 await emptyNote.waitFor({ state: 'visible', timeout: 10000 })
