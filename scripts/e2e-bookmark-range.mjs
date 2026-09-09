@@ -95,7 +95,6 @@ const openPickerFor = async (documentId) => {
 const openPicker = () => openPickerFor(doc.id)
 
 const modeSelector = (target) => page.locator('[data-testid="doc-context-mode-' + target.id + '"]')
-const actualLabel = (target) => page.locator('[data-testid="doc-context-actual-' + target.id + '"]')
 const waitForPreference = async (target, mode, documentId = doc.id) => {
   const deadline = Date.now() + 10000
   while (Date.now() < deadline) {
@@ -131,9 +130,12 @@ const addSelectedChapter = async (target, mode, expectedPages) => {
   await page.keyboard.press('Tab')
   assert(await selector.evaluate(element => document.activeElement === element), target.title + ': Tab moves from checkbox to mode selector')
   const optionTexts = await selector.locator('option').allTextContents()
-  assert(optionTexts.includes('[)'), target.title + ': exclusive option uses compact bracket symbol without a duplicate page range')
-  assert(optionTexts.includes('[]'), target.title + ': inclusive option uses compact bracket symbol without a duplicate page range')
-  assert(optionTexts.every(text => !/\\d/.test(text) && !text.includes('左闭右开') && !text.includes('左闭右闭')), target.title + ': range options omit dynamic page labels and verbose mode text')
+  const exclusiveEnd = Math.min(target.endPage + 1, doc.pageCount)
+  const inclusiveEnd = Math.min(target.endPage + 1, doc.pageCount)
+  assert(optionTexts.some(text => text.includes('[' + target.startPage + ',' + exclusiveEnd + ')')), target.title + ': trigger/popup keeps the complete exclusive page range')
+  assert(optionTexts.some(text => text.includes('[' + target.startPage + ',' + inclusiveEnd + ']')), target.title + ': trigger/popup keeps the complete inclusive page range')
+  assert(optionTexts.some(text => text.includes('左闭右开')) && optionTexts.some(text => text.includes('左闭右闭')), target.title + ': range options visibly include semantic names')
+  assert(!(await page.locator('[data-testid="doc-context-actual-' + target.id + '"]').isVisible().catch(() => false)), target.title + ': left-side duplicate range is not visible')
   const selectorBox = await selector.boundingBox()
   assert(Boolean(selectorBox && selectorBox.width <= 120 && selectorBox.height >= 28 && selectorBox.height <= 32), target.title + ': desktop range selector is compact (<=120px, 28-32px)')
   const descriptionId = await selector.getAttribute('aria-describedby')
@@ -144,11 +146,7 @@ const addSelectedChapter = async (target, mode, expectedPages) => {
   assert(await checkbox.isChecked(), target.title + ': changing mode leaves checkbox selected')
   await waitForPreferences(sameLevelTargets, mode)
   for (const sibling of sameLevelTargets) assert(await modeSelector(sibling).inputValue() === mode, sibling.title + ': same-level selector follows batch mode')
-  const actual = await actualLabel(target).textContent()
   const expectedEnd = mode === 'inclusive' ? Math.min(target.endPage + 1, doc.pageCount) : target.endPage
-  const expectedLabel = mode === 'inclusive' ? '[' + target.startPage + ',' + expectedEnd + ']' : '[' + target.startPage + ',' + (target.endPage + 1) + ')'
-  assert((actual || '').trim() === expectedLabel, target.title + ' ' + mode + ': UI preview uses bracket notation only (' + expectedLabel + ')')
-  assert(!(actual || '').includes('实际发送') && !(actual || '').includes('左闭右开') && !(actual || '').includes('左闭右闭'), target.title + ' ' + mode + ': UI preview omits verbose mode text')
   await checkbox.focus()
   await page.keyboard.press('Space')
   assert(!(await checkbox.isChecked()), target.title + ': Space can clear the checkbox without changing mode')
@@ -337,8 +335,8 @@ await testFailedPreferenceWrite(chapter)
 await testIndependentLevelPreferences()
 await testContextLimits()
 
-// Mobile layout gate: all requested widths keep the selector and actual-page
-// preview inside the viewport with no document/picker horizontal overflow.
+// Mobile layout gate: all requested widths keep the compact range control
+// inside the viewport with no document/picker horizontal overflow.
 for (const viewport of [{ width: 375, height: 812 }, { width: 390, height: 844 }, { width: 412, height: 915 }]) {
   await page.setViewportSize(viewport)
   await page.reload({ waitUntil: 'networkidle' })
@@ -365,10 +363,6 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 390, height: 844 }
   assert(layout.documentScrollWidth <= layout.viewport + 1 && layout.bodyScrollWidth <= layout.viewport + 1 && layout.pickerScrollWidth <= layout.pickerClientWidth + 1, viewport.width + 'x' + viewport.height + ': no horizontal overflow')
   assert(layout.modeLeft >= -1 && layout.modeRight <= layout.viewport + 1, viewport.width + 'x' + viewport.height + ': range selector is inside viewport')
   assert(layout.modeWidth <= 120 && layout.modeWidth < layout.viewport && layout.modeHeight >= 28 && layout.modeHeight <= 32, viewport.width + 'x' + viewport.height + ': range selector stays compact instead of filling the row (' + JSON.stringify(layout) + ')')
-  const target = allChapters.find(item => item.id === chapter.id)
-  await actualLabel(target).scrollIntoViewIfNeeded()
-  const actualBox = await actualLabel(target).boundingBox()
-  assert(Boolean(actualBox && actualBox.x >= -1 && actualBox.x + actualBox.width <= viewport.width + 1 && actualBox.y < viewport.height && actualBox.y + actualBox.height > 0), viewport.width + 'x' + viewport.height + ': actual-page preview remains visible for ' + target.title)
   await page.locator('[data-testid="doc-context-cancel"]').click()
 }
 
