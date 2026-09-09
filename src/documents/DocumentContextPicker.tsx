@@ -8,6 +8,7 @@ import { normalizePdfRanges, countPdfRangePages, pdfRangesText, needsPdfContextS
 import type { ChapterNode, LearningDocument } from './document-types'
 import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
 import { bookmarkRangePresentation, type BookmarkRangeEndMode } from '../pdf/bookmark-range'
+import { ChapterRangeModeControl } from './ChapterRangeModeControl'
 import { DocumentContextPreview } from './DocumentContextPreview'
 import css from './document-context-picker.module.css'
 
@@ -64,7 +65,10 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
   const previewFocusTargetRef = useRef<string | null>(null)
   const previewScrollTopRef = useRef(0)
 
-  useEffect(() => () => { mountedRef.current = false }, [])
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   // Load the document list only for the unscoped (document) stage.
   useEffect(() => { if (stage === 'document' && !scoped) { void listDocumentSummaries().then(setDocs).catch(() => setDocs([])) } }, [stage, scoped])
@@ -409,11 +413,7 @@ function ChapterTreeCheck({ nodes, checked, pageCount, bookmarkRangePreferences,
               </label>
               {presentation ? (
                 <span className={css.treeDetails}>
-                  <span className={css.treeRange} data-testid={'doc-context-actual-' + n.id}>{presentation[mode].label}</span>
-                  <select className={css.rangeMode} data-testid={'doc-context-mode-' + n.id} aria-label={n.title + ' 范围语义'} aria-describedby={'doc-context-range-help-' + n.id} value={mode} onChange={e => onModeChange(n.id, e.target.value as BookmarkRangeEndMode)}>
-                    <option value="exclusive">[)</option>
-                    <option value="inclusive">[]</option>
-                  </select>
+                  <ChapterRangeModeControl chapterId={n.id} chapterTitle={n.title} mode={mode} presentation={presentation} onChange={nextMode => onModeChange(n.id, nextMode)} />
                   <span id={'doc-context-range-help-' + n.id} className={css.srOnly}>范围语义：左闭右开表示到下一章节起始页前一页；左闭右闭表示包含所示终点页。</span>
                 </span>
               ) : <span className={css.treeRange}>无法定位页码</span>}
