@@ -2,9 +2,9 @@
 
 AI Education Reader 的用户可感知更新记录。
 
-格式参考 Keep a Changelog，但保持简洁。开发中的改动先进入 `Unreleased`，正式发布 tag 时再移动到对应版本。
+格式参考 Keep a Changelog，但保持简洁。正式发布的改动按版本记录，未发布改动再单独进入 `Unreleased`。
 
-## [Unreleased]
+## [2.1.0] - 2026-09-09
 
 ### Added
 
@@ -21,6 +21,21 @@ AI Education Reader 的用户可感知更新记录。
 - README contract test 增加内容顺序、核心差异人话文案、HTML 图片路径和低信息截图禁用检查。
 - Product Guide 与 README 共用 `src/help/product-guide.md` 内容源；同步脚本使用固定章节边界，不向 README 插入标记，也不会改变冻结章节之外的内容。
 - Product Guide 的“导入 PDF”“打开资料库”“配置 API”按钮分别进入现有资料库导入面板、资料库和设置；首次查看版本写入既有 settings store，不升级 IndexedDB。
+
+### Fixed
+
+- 修正 v2.0.3 遗留的发布契约：连续 PDF 阅读使用真实 viewport/controller 文件，设置契约从 PDF navigation domain 读取，CORE browser gate 增加注册完整性检查。
+- 连续滚动 Reader 与 Context Preview 共用分页/连续模式设置，并保持现有 PDF、消息、页面笔记和来源回链行为。
+
+### Performance
+
+- 连续滚动使用虚拟化窗口和附近页面渲染，避免大型 PDF 首屏一次性挂载全部页面。
+- 发布门禁同时保留 PDF 冷启动性能基线与连续渲染 controller 测试。
+
+### Compatibility
+
+- package/package-lock 与文档同步到 v2.1.0；IndexedDB schema/version 不变，旧文档、旧设置和旧 Backup 无需 migration。
+- 旧分页模式仍是默认值；旧 Backup 缺失 `pdfNavigationMode` 时继续回落为 `paged`，现有 V1–V6 Backup 兼容保持不变。
 
 ## [2.0.3] - 2026-09-09
 

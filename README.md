@@ -13,7 +13,7 @@
 [隐私与备份](#数据隐私与备份) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v2.0.3-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v2.1.0-green?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
 ![BYOK](https://img.shields.io/badge/BYOK-self--hosted-green?style=flat-square)
@@ -152,7 +152,7 @@ AI 先读取你选择的目录页，再提出标题、层级和页码映射。�
 
 ### 17. 分页阅读和连续滚动如何切换？
 
-当前稳定基线使用分页阅读；连续滚动设置和虚拟化 Reader 属于 v2.1.0 后续 Stage，发布后会在设置中提供切换。不要把当前版本不存在的入口当作已交付功能。
+在设置中选择“单页翻页”或“连续上下滚动”即可切换。连续模式只渲染屏幕附近的页面，并在切换时尽量保持当前页；消息中的静态图片不受影响。
 
 ### 18. 单次最多能发送多少页？
 

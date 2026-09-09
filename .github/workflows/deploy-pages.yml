@@ -38,10 +38,10 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: dist
-  # The Pages deployment must NOT ship on unit/build green alone. Run the critical browser
-  # E2E subset, including the chapter editor workflow and backup, against a real preview of
-  # the built app and gate `deploy` on it. Uses Playwright-bundled Chromium, so it does not
-  # depend on a Windows runner having Edge installed. Failures block deployment.
+  # The Pages deployment must NOT ship on unit/build green alone. Critical browser E2E suites
+  # run against a real preview of the built app and gate `deploy`.
+  # Uses Playwright-bundled Chromium, so it does not depend on a Windows runner having Edge
+  # installed. Failures block deployment.
   browser-e2e:
     needs: build
     runs-on: ubuntu-latest
