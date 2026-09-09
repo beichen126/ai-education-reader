@@ -12,7 +12,7 @@
 [隐私与本地优先](#隐私与本地优先) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v2.0.2-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v2.0.3-green?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
 ![BYOK](https://img.shields.io/badge/BYOK-self--hosted-green?style=flat-square)
@@ -21,9 +21,9 @@
 
 ---
 
-当前发布：**v2.0.2**。这是面向稳定性的收口版本：补齐失败/取消消息的边界、分支拒绝反馈、Reader 章节入口和页面笔记状态，并把关键回归、浏览器 E2E、Pages 部署纳入同一条发布门禁。
+当前发布：**v2.0.3**。这是把 Prompt 工作区、Reader 返回链、紧凑章节范围和 PDF 预览真正收进正式发布门禁的版本：旧数据继续可读，新的 PDF 学习链路可以从资料库、Reader、Context、对话一路往返。
 
-<img src="docs/assets/readme/v200-00-app-shell.webp" alt="AI Education Reader 当前主界面，保留完整侧栏与资料入口" width="100%" />
+<img src="docs/assets/readme/v203-00-app-shell.webp" alt="AI Education Reader 当前主界面，保留完整侧栏与资料入口" width="100%" />
 
 ## 这是什么
 
@@ -34,7 +34,7 @@ AI Education Reader 是一个面向教材、论文和技术资料的 **Local-fir
 - 在 Reader 中阅读整份文档，按章节、当前页或不连续页码选择上下文；
 - 把同一份 PDF 的不同章节加入不同对话，不必重复上传；
 - 从消息返回原文页，也可以从原文页找到相关历史消息；
-- 把回答继续加工成笔记、题目、学习指南或其他学习成果；
+- 把回答继续加工成笔记或题目；历史总结、学习指南和自定义成果仍可查看、编辑和导出；
 - 通过本地备份把这些学习关系一起带走。
 
 模型调用采用 BYOK（Bring Your Own Key）：应用不提供模型额度，也没有产品后端中转。浏览器直接调用你配置的 API，数据默认留在当前浏览器的本地存储中。
@@ -88,13 +88,13 @@ v2.0 在 PDF 一等对象之上增加了一层更清晰的学习工作区。你�
 | 你想解决的问题 | 对应入口 | 它会记住什么 |
 | --- | --- | --- |
 | 我想让 AI 怎么教我？ | **会话模式** | 从下一条消息开始采用的讲解方式；历史回答保留当时的方式 |
-| 我想把内容变成什么？ | **学习成果** | 笔记、题目、总结、学习指南或自己的加工方式 |
+| 我想把内容变成什么？ | **学习成果** | 新建面只保留笔记、题目；历史成果继续可读 |
 | 我下一步经常会问什么？ | **快捷追问** | 一键发送的真实追问；仍然出现在会话历史中 |
 | 软件如何指挥模型？ | **系统协议** | 可查看的目录、题目等结构化输出规则与校验说明 |
 
 这四个入口彼此分工：会话模式决定“怎么讲”，学习成果决定“产出什么”，快捷追问负责“下一步问什么”，系统协议负责“结构化结果怎样被检查”。它们都服务于同一份 PDF 上下文，不会把资料重新变成一次性附件。
 
-<img src="docs/assets/readme/v200-11-prompt-manager.webp" alt="提示词管理：按会话模式、学习成果、快捷追问和系统协议查看与管理学习工作方式" width="100%" />
+<img src="docs/assets/readme/v203-11-prompt-manager.webp" alt="提示词管理：按会话模式、学习成果、快捷追问和系统协议查看与管理学习工作方式" width="100%" />
 
 ## 功能亮点
 
@@ -102,19 +102,19 @@ v2.0 在 PDF 一等对象之上增加了一层更清晰的学习工作区。你�
 
 导入后的 PDF 会进入本地资料库，拥有自己的名称、页数、目录来源、阅读进度和文档 ID。资料库只读取元数据，打开时才按需读取二进制；同一份资料可以被多个对话复用。
 
-<img src="docs/assets/readme/v200-02-document-library.webp" alt="本地 PDF 资料库，支持阅读、加入对话和更多操作" width="100%" />
+<img src="docs/assets/readme/v203-02-document-library.webp" alt="本地 PDF 资料库，支持阅读、加入对话和更多操作" width="100%" />
 
-Reader 支持目录导航、页码跳转、阅读位置恢复、深色模式和响应式布局。读到某一页时，可以从当前页继续创建章节、选择 Context 或打开页面笔记。
+Reader 支持目录导航、页码跳转、阅读位置恢复、深色模式和响应式布局。打开目录后可以点击明确的“返回阅读”按钮，也可以按 Escape 返回；读到某一页时，可以从当前页继续创建章节、选择 Context 或打开页面笔记。
 
 ### 2. 目录是可检查、可编辑的学习结构
 
 项目同时支持 PDF 原生书签、无目录 PDF 的手动章节，以及 AI 辅助目录。AI 目录不是黑盒地“猜一个目录”，而是一条可检查的工作流：选择目录页 → 视觉转录 → 全局结构分析 → 页码映射 → 人工检查、调整和保存。原始 printed page label 会被保留，结构分析失败时也会给出可理解的诊断，而不是静默生成一棵看似完整的目录。
 
-<img src="docs/assets/readme/v200-04-ai-toc-review.webp" alt="AI 目录检查：逐项确认标题、层级和页码映射" width="100%" />
+<img src="docs/assets/readme/v203-04-ai-toc-review.webp" alt="AI 目录检查：逐项确认标题、层级和页码映射" width="100%" />
 
 没有原生目录时，也可以在 Reader 内直接编辑章节树；章节结构保存后即可用于导航和 Context 选择。长目录支持搜索、Shift 范围选择、按当前层级选择，以及批量调整层级；这些选择只是编辑器里的临时状态，不会污染文档数据。
 
-<img src="docs/assets/readme/v200-05-chapter-editor.webp" alt="在 Reader 内搜索并批量编辑 PDF 章节树" width="100%" />
+<img src="docs/assets/readme/v203-05-chapter-editor.webp" alt="在 Reader 内搜索并批量编辑 PDF 章节树" width="100%" />
 
 目录相关的页码映射遵循“能证明才映射”的原则：优先使用 PDF PageLabels；没有 PageLabels 时，可以用明确的单一锚点校准数字页码；非数字或不确定的页码保持待确认，不擅自猜测。
 
@@ -131,7 +131,9 @@ Reader 支持目录导航、页码跳转、阅读位置恢复、深色模式和�
 
 书签范围还支持按文档、按稳定书签分别选择两种边界语义：左闭右开 `[start, end)`（例如 10–19 页）或左闭右闭 `[start, end]`（例如 10–20 页）。边界语义只需在下拉栏选择，预览使用区间符号表达；实际发送的页集合由所选模式稳定计算。设置在刷新、关闭并重开后保持，旧文档和旧备份缺少该字段时默认使用左闭右开。最后一个书签和单页章节也会自动限制在文档页数内。
 
-<img src="docs/assets/readme/v200-03-document-context-picker.webp" alt="从资料库按书签选择范围并加入当前对话" width="100%" />
+文件或章节加入对话前，可以先打开只读 PDF 预览：从选区第一段开始，或回到文档上次阅读页；在预览中翻页和跳目录不会改变选择、阅读进度或产生 attachment。只有明确点击“加入当前对话”才会提交选中的页面。
+
+<img src="docs/assets/readme/v203-03-document-context-picker.webp" alt="从资料库按书签选择范围并加入当前对话" width="100%" />
 
 ### 4. 对话、页面和来源可以双向返回
 
@@ -153,28 +155,28 @@ PDF provenance 不是展示用的标签，而是可操作的导航关系：
 
 - 可编辑的 Markdown 学习笔记；
 - 带答案、解释和来源的结构化测验；
-- 总结、学习指南等可复用自定义学习成果；
+- 历史总结、学习指南和自定义成果仍可打开、编辑和导出；新建面只提供笔记与题目；
 - 会话分支，以及主线 / 分支各自独立的草稿。
 
 ### 6. 桌面、平板和手机使用同一套阅读逻辑
 
 侧栏收起后保留原来的 rail 入口；展开时才显示完整侧栏或移动端 drawer。桌面端、窄屏端和移动端不会因为换了 viewport 就改变“资料库、Reader、会话”的基本语义。
 
-<img src="docs/assets/readme/v200-07-mobile.webp" alt="390px 移动端 PDF Reader，保留返回、加入对话、目录、笔记和关闭入口" width="45%" />
+<img src="docs/assets/readme/v203-07-mobile.webp" alt="390px 移动端 PDF Reader，保留返回、加入对话、目录、笔记和关闭入口" width="45%" />
 
-<img src="docs/assets/readme/v200-09-mobile-history-drawer.webp" alt="390px 移动端展开后的历史会话 drawer，收起时仍保留原 rail 入口" width="45%" />
+<img src="docs/assets/readme/v203-09-mobile-history-drawer.webp" alt="390px 移动端展开后的历史会话 drawer，收起时仍保留原 rail 入口" width="45%" />
 
-<img src="docs/assets/readme/v200-10-mobile-rail.webp" alt="390px 移动端收起后的原 rail，历史、新会话、图片、文件、全屏和设置仍可直接访问" width="45%" />
+<img src="docs/assets/readme/v203-10-mobile-rail.webp" alt="390px 移动端收起后的原 rail，历史、新会话、图片、文件、全屏和设置仍可直接访问" width="45%" />
 
 界面提供系统、浅色和深色三档外观，使用设计 token 控制颜色和交互状态，避免深色模式把正文变成刺眼的纯白。
 
-<img src="docs/assets/readme/v200-08-dark-mode.webp" alt="深色模式下的 PDF Reader" width="100%" />
+<img src="docs/assets/readme/v203-08-dark-mode.webp" alt="深色模式下的 PDF Reader" width="100%" />
 
 ### 7. Local-first、BYOK 和可恢复数据
 
 浏览器本地保存元数据、会话、分支、设置、文档关系、页面笔记和 Prompt 学习配置；原始 PDF 与图片优先保存到 OPFS，不支持或写入失败时回退到 IndexedDB。完整 Backup V6 JSON 不包含 API Key，并兼容导入 V1–V5 备份。
 
-<img src="docs/assets/readme/v200-06-settings-byok.webp" alt="BYOK 设置和本地数据导出入口" width="100%" />
+<img src="docs/assets/readme/v203-06-settings-byok.webp" alt="BYOK 设置和本地数据导出入口" width="100%" />
 
 ## 快速开始
 

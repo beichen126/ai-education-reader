@@ -4,6 +4,32 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。开发中的改动先进入 `Unreleased`，正式发布 tag 时再移动到对应版本。
 
+## [2.0.3] - 2026-09-09
+
+### Fixed
+
+- 页面笔记的连续输入、异步保存、切页/关闭 flush 和删除文档竞态继续由 domain 与 browser gate 保护；旧写入不能覆盖新内容，也不能在文档删除后复活笔记。
+- DeepSeek 请求默认显式使用 `reasoning_effort: "max"`；其他 OpenAI-compatible endpoint 不会收到 DeepSeek 专属字段。
+
+### Changed
+
+- Prompt Manager 的会话模式主界面只保留“默认”；学习成果新建面只保留“整理成笔记”和“生成题目”；历史总结、学习指南、自定义成果和旧 prompt snapshot 仍可读取。
+- 系统协议从默认“全部”目录隐藏，只有主动进入“系统协议”分类才展示；离开分类后协议详情清除。
+- Reader 目录面板增加明确的返回阅读路径；收起侧栏继续保留原 rail 的直接入口，桌面和移动端不改变基础导航语义。
+- 章节范围控件改为紧凑的 `[)` / `[]` 符号选择；不再重复显示实际发送页码或长语义文案。
+
+### Added
+
+- 文件/章节 Context picker 增加只读 PDF 预览：预览从选区首段、文档 `lastReadPage` 或第 1 页开始，支持翻页和目录跳转；返回时保留选择、滚动、焦点与阅读状态。
+- 正式 release runner CORE 注册 v2.0.2 与 v2.0.3 关键 browser suites，包含 preview、prompt simplification、Reader navigation 和 note read safety。
+- README 改为以“PDF 是一等对象”为中心的功能说明，并用最终 v2.0.3 构建重新生成桌面/移动端截图。
+
+### Compatibility
+
+- IndexedDB schema/version 未升级；旧文档、章节、页面笔记、provenance、Prompt snapshot 和 v1.3.x/v2.0.x 数据继续按既有 migration 读取。
+- Backup V1–V6 继续导入；旧 artifact、旧 summary/study-guide/custom 数据保留可查看与导出，新的 catalog 过滤不做物理删除。
+- preview 不写 attachment、message、note、chapter、`lastReadPage` 或 Backup；旧 PDF 无范围偏好时仍使用左闭右开 `[)` 安全默认。
+
 ## [2.0.2] - 2026-09-08
 
 ### Fixed
