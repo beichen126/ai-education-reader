@@ -90,6 +90,7 @@
     "test:reader-progress": "npx tsx scripts/test-reader-progress-controller.ts",
     "test:pdf-performance-telemetry": "npx tsx scripts/test-pdf-performance-telemetry.ts",
     "test:pdf-performance": "node scripts/benchmark-pdf-performance.mjs",
+    "test:pdf-navigation-settings": "npx tsx scripts/test-pdf-navigation-settings.ts",
     "test:reader-render": "npx tsx scripts/test-reader-render.ts",
     "test:reader-zoom-ownership": "npx tsx scripts/test-reader-zoom-ownership.ts",
     "test:document-lifecycle": "npx tsx scripts/test-document-lifecycle.ts",

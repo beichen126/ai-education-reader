@@ -24,7 +24,8 @@ import { executeDocumentContext } from './document-context-service'
 import { useDocumentUi, documentUiActions } from './document-ui-store'
 import { clampReaderPage, parsePageInput } from './reader-utils'
 import { openPdfSession, closePdfSession, readSessionOutline, readSessionPageLabels, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
-import { useReaderDisplay, isZoomStale } from './use-reader-display'
+import { isZoomStale } from './use-reader-display'
+import { usePdfViewport } from './pdf-viewport'
 import { PdfError } from '../pdf/pdf-service'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { createUrlOwner } from './url-owner'
@@ -37,7 +38,7 @@ import { TocReview, type TocReviewSave } from './TocReview'
 import { extractAiToc, type AiTocProgress } from './use-ai-toc-extraction'
 import { exportBookmarkedPdf, PdfOutlineError } from '../export/index'
 import { AiTocProgressDialog } from './AiTocProgressDialog'
-import { getSettingsSnapshot } from '../engine/settings-store'
+import { getSettingsSnapshot, useSettings } from '../engine/settings-store'
 import type { MappedTocItem } from './toc-mapping'
 import type { LearningDocument, ChapterNode } from './document-types'
 import { findConversationsByDocumentPage, type PdfPageConversationHit } from '../pdf/pdf-page-conversations'
@@ -58,6 +59,7 @@ const EMPTY_DOC_STATE = {
 
 export function DocumentReader() {
   const ui = useDocumentUi(x => x)
+  const pdfNavigationMode = useSettings(s => s.pdfNavigationMode)
   const docId = ui.view === 'reader' ? ui.documentId : null
   const readerRequestId = ui.view === 'reader' ? ui.requestId : 0
   const requestedPage = ui.view === 'reader' ? ui.pageNumber : undefined
@@ -101,7 +103,7 @@ export function DocumentReader() {
     outlineScheduleRef.current = null
     schedule?.()
   }, [])
-  const display = useReaderDisplay(displaySession, page, pageCount, displayTelemetry, onFirstPixelReady)
+  const display = usePdfViewport({ session: displaySession, documentKey: docId, pageCount, currentPage: page, mode: pdfNavigationMode, telemetry: displayTelemetry, onFirstPixelReady })
   const [tocState, setTocState] = useState<TocTreeState>({ expanded: new Set() })
   const [tocOpen, setTocOpen] = useState(false)
   const [tocPanelClosed, setTocPanelClosed] = useState(false)
@@ -1048,7 +1050,7 @@ export function DocumentReader() {
                 <button type="button" className={css.tocActionBtn} data-testid="reader-toc-ai-activity" onClick={() => setAiTocDialogHidden(false)}>⏳ 目录识别中…（点击查看进度）</button>
               )}
             </aside>
-            <main className={css.stage} ref={display.stageRef}>
+            <main className={css.stage} ref={display.stageRef} data-pdf-navigation-mode={display.mode}>
               {display.rendering && <div className={css.hint} data-testid="reader-loading">正在渲染第 {page} 页…</div>}
               {(display.pageError || pageError) && <div className={css.errorBox} data-testid="reader-page-error">{display.pageError || pageError}</div>}
               {display.surface && (

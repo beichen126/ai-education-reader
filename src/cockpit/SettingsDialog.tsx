@@ -5,7 +5,7 @@ import { uiActions } from '../engine/ui-store'
 import { useSessions } from '../engine/sessions-store'
 import { exportBackupJson, exportConversationMd, exportMarkedOnlyMd, exportConversationBundle, importBackupText, BackupError } from '../export'
 import { type AppearanceMode } from '../theme/theme'
-import { setAppearance } from '../engine/settings-store'
+import { setAppearance, type PdfNavigationMode } from '../engine/settings-store'
 import { Modal, Button, Input } from '../dsh/primitives'
 import { getStorageDiagnostics, formatBytes, type StorageDiagnostics } from '../storage/diagnostics'
 import { clearAllLocalData } from '../storage/storage'
@@ -31,6 +31,7 @@ export function SettingsDialog() {
   const [showKey, setShowKey] = useState(false)
   const [model, setModel] = useState(s.model || DEFAULT_SETTINGS.model)
   const [visionCapability, setVisionCapability] = useState<VisionCapability>(s.visionCapability || 'auto')
+  const [pdfNavigationMode, setPdfNavigationMode] = useState<PdfNavigationMode>(s.pdfNavigationMode || 'paged')
   const [test, setTest] = useState<string | null>(null)
   const [testOk, setTestOk] = useState<boolean | null>(null)
   const [saved, setSaved] = useState(false)
@@ -48,7 +49,7 @@ export function SettingsDialog() {
   }, [])
   useEffect(() => { void loadStorage() }, [loadStorage])
 
-  const onSave = async () => { await saveSettings({ ...s, apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), appearance: s.appearance, visionCapability }); setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  const onSave = async () => { await saveSettings({ ...s, apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), appearance: s.appearance, visionCapability, pdfNavigationMode }); setSaved(true); setTimeout(() => setSaved(false), 1500) }
   const onTest = async () => {
     setTest('正在测试…'); setTestOk(null)
     const r = await testConnection({ apiKey: key.trim(), baseUrl: base.trim() })
@@ -134,6 +135,14 @@ export function SettingsDialog() {
           <button type="button" className={css.appearanceOpt} data-testid="appearance-light" aria-pressed={s.appearance === 'light'} data-selected={s.appearance === 'light'} onClick={() => void setAppearance('light')}>浅色</button>
           <button type="button" className={css.appearanceOpt} data-testid="appearance-dark" aria-pressed={s.appearance === 'dark'} data-selected={s.appearance === 'dark'} onClick={() => void setAppearance('dark')}>深色</button>
         </div>
+      </div>
+      <div className={css.exportSection} data-testid="settings-pdf-navigation">
+        <div className={css.exportTitle} id="settings-pdf-navigation-label">PDF 阅读方式</div>
+        <div className={css.appearanceRow} role="radiogroup" aria-labelledby="settings-pdf-navigation-label">
+          <button type="button" role="radio" className={css.appearanceOpt} data-testid="pdf-navigation-paged" aria-checked={pdfNavigationMode === 'paged'} data-selected={pdfNavigationMode === 'paged'} onClick={() => setPdfNavigationMode('paged')}>单页翻页</button>
+          <button type="button" role="radio" className={css.appearanceOpt} data-testid="pdf-navigation-continuous" aria-checked={pdfNavigationMode === 'continuous'} data-selected={pdfNavigationMode === 'continuous'} onClick={() => setPdfNavigationMode('continuous')}>连续上下滚动</button>
+        </div>
+        <div className={css.settingsHint}>连续滚动只渲染屏幕附近的页面，可随时切换并保持当前页；对消息中的静态图片没有影响。</div>
       </div>
       <div className={css.storageSection}>
         <div className={css.exportTitle}>本地存储</div>

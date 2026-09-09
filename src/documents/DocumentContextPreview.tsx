@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { closePdfSession, openPdfSession, type PdfSession } from '../pdf/pdf-session'
 import { PdfError, pdfErrorMessage } from '../pdf/pdf-service'
-import { useReaderDisplay } from './use-reader-display'
+import { usePdfViewport } from './pdf-viewport'
+import { useSettings } from '../engine/settings-store'
 import { createPdfPerformanceTelemetry, type PdfPerformanceTelemetry } from './pdf-performance-telemetry'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import type { ChapterNode, LearningDocument } from './document-types'
@@ -38,6 +39,7 @@ function PreviewTocRows({ nodes, onOpen, depth = 0 }: { nodes: ChapterNode[]; on
 }
 
 export function DocumentContextPreview({ document: sourceDoc, initialPage, onBack }: Props) {
+  const pdfNavigationMode = useSettings(s => s.pdfNavigationMode)
   const [session, setSession] = useState<PdfSession | null>(null)
   const [displayTelemetry, setDisplayTelemetry] = useState<PdfPerformanceTelemetry | null>(null)
   const sessionRef = useRef<PdfSession | null>(null)
@@ -53,7 +55,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
   const zoomGenerationRef = useRef(0)
   const [zoomBusy, setZoomBusy] = useState(false)
   const backRef = useRef<HTMLButtonElement | null>(null)
-  const display = useReaderDisplay(session, page, sourceDoc.pageCount, displayTelemetry)
+  const display = usePdfViewport({ session, documentKey: sourceDoc.id, pageCount: sourceDoc.pageCount, currentPage: page, mode: pdfNavigationMode, telemetry: displayTelemetry })
   const tocVisible = narrowViewport() ? tocOpen && !tocClosed : !tocClosed
 
   const clearZoom = useCallback(() => {
@@ -181,7 +183,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
             {status === 'loading' && <div className={css.status} data-testid="doc-context-preview-loading" aria-live="polite">正在打开 PDF 预览…</div>}
             {status === 'error' && <div className={css.error} data-testid="doc-context-preview-error" role="alert">{error || '无法打开该 PDF 预览。'}</div>}
             {session && status === 'ready' && (
-              <div ref={display.stageRef} className={css.stage} data-testid="doc-context-preview-stage">
+              <div ref={display.stageRef} className={css.stage} data-testid="doc-context-preview-stage" data-pdf-navigation-mode={display.mode}>
                 <button type="button" className={css.pageButton} data-testid="doc-context-preview-page" disabled={zoomBusy} onClick={openZoom} aria-label={'PDF 第 ' + page + ' 页，点击放大'}>
                   <canvas ref={display.canvasRef} className={css.canvas} data-testid="doc-context-preview-page-canvas" aria-label={'PDF 第 ' + page + ' 页'} data-render-width={display.surface ? String(display.surface.width) : undefined} data-render-height={display.surface ? String(display.surface.height) : undefined} />
                 </button>

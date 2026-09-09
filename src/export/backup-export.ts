@@ -12,6 +12,7 @@ import { listArtifacts } from '../artifacts/artifact-store'
 import { listCustomActions } from '../artifacts/custom-action-store'
 import { listPromptRecords } from '../prompts/prompt-store'
 import { getPromptPreferences } from '../prompts/prompt-preferences'
+import { normalizePdfNavigationMode } from '../engine/pdf-navigation-settings'
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer()
@@ -95,8 +96,8 @@ export async function buildBackup(): Promise<BackupV6> {
     const blob = await attachmentBlobOf(imgId, row.meta.mimeType)
     attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, data: await blobToBase64(blob) })
   }
-  const [apiBaseUrl, model, customSystemPrompt, customSystemPromptEnabled, appearance, visionCapability] = await Promise.all([
-    getSetting('apiBaseUrl'), getSetting('model'), getSetting('customSystemPrompt'), getSetting('customSystemPromptEnabled'), getSetting('appearance'), getSetting('visionCapability'),
+  const [apiBaseUrl, model, customSystemPrompt, customSystemPromptEnabled, appearance, visionCapability, pdfNavigationMode] = await Promise.all([
+    getSetting('apiBaseUrl'), getSetting('model'), getSetting('customSystemPrompt'), getSetting('customSystemPromptEnabled'), getSetting('appearance'), getSetting('visionCapability'), getSetting('pdfNavigationMode'),
   ])
   const settings = {
     apiBaseUrl: (typeof apiBaseUrl === 'string' ? apiBaseUrl : 'https://api.deepseek.com'),
@@ -105,6 +106,7 @@ export async function buildBackup(): Promise<BackupV6> {
     customSystemPromptEnabled: customSystemPromptEnabled === 'true',
     customArtifactActions: await listCustomActions(),
     visionCapability: (visionCapability === 'supports-image' || visionCapability === 'text-only') ? visionCapability : 'auto',
+    pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode),
   }
   const appearanceOut: 'system' | 'light' | 'dark' = (appearance === 'light' || appearance === 'dark') ? appearance : 'system'
   // Local Document Library: iterate ONE record at a time (metadata, one binary read, base64,

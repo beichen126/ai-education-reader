@@ -2,10 +2,12 @@ import { useSyncExternalStore } from 'react'
 import { getSetting, setSetting, saveSettingsAtomic } from '../storage/storage'
 import { DEFAULT_APPEARANCE, writeAppearanceHint, type AppearanceMode } from '../theme/theme'
 import { type VisionCapability } from '../api/deepseek'
+import { DEFAULT_PDF_NAVIGATION_MODE, normalizePdfNavigationMode, type PdfNavigationMode } from './pdf-navigation-settings'
 
 export type { VisionCapability }
-export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability }
-export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-v4-flash-vision-exp', customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto' }
+export type { PdfNavigationMode }
+export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode }
+export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-v4-flash-vision-exp', customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE }
 
 let state: Settings = { ...DEFAULT_SETTINGS }
 const subs = new Set<() => void>()
@@ -13,10 +15,10 @@ function set(next: Settings) { state = next; subs.forEach(f => f()) }
 function useSettings<T>(sel: (s: Settings) => T): T { return useSyncExternalStore(fn => { subs.add(fn); return () => { subs.delete(fn) } }, () => sel(state)) }
 export function getSettingsSnapshot(): Settings { return state }
 export async function initSettings(): Promise<void> {
-  const [base, key, model, sys, sysOn, appearance, visionCapability] = await Promise.all([getSetting('apiBaseUrl'), getSetting('apiKey'), getSetting('model'), getSetting('customSystemPrompt'), getSetting('customSystemPromptEnabled'), getSetting('appearance'), getSetting('visionCapability')])
+  const [base, key, model, sys, sysOn, appearance, visionCapability, pdfNavigationMode] = await Promise.all([getSetting('apiBaseUrl'), getSetting('apiKey'), getSetting('model'), getSetting('customSystemPrompt'), getSetting('customSystemPromptEnabled'), getSetting('appearance'), getSetting('visionCapability'), getSetting('pdfNavigationMode')])
   const resolvedAppearance: AppearanceMode = (appearance === 'light' || appearance === 'dark') ? appearance : DEFAULT_APPEARANCE
   const resolvedVision: VisionCapability = (visionCapability === 'supports-image' || visionCapability === 'text-only') ? visionCapability : 'auto'
-  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: model || DEFAULT_SETTINGS.model, customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision })
+  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: model || DEFAULT_SETTINGS.model, customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode) })
   writeAppearanceHint(resolvedAppearance)
 }
 export async function saveSettings(next: Settings): Promise<void> {
@@ -26,7 +28,7 @@ export async function saveSettings(next: Settings): Promise<void> {
   await saveSettingsAtomic({
     apiBaseUrl: next.apiBaseUrl, apiKey: next.apiKey, model: next.model,
     customSystemPrompt: next.customSystemPrompt, customSystemPromptEnabled: String(next.customSystemPromptEnabled),
-    appearance: next.appearance, visionCapability: next.visionCapability,
+    appearance: next.appearance, visionCapability: next.visionCapability, pdfNavigationMode: next.pdfNavigationMode,
   })
   set(next)
 }

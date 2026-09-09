@@ -61,7 +61,7 @@ export async function commitAcceptedUserMessage(conv: any, lastConversationId: s
  * failure can no longer leave a mixed configuration after reload (e.g. apiKey committed
  * but model not). Values commit first, then the caller publishes them as saved state.
  */
-export async function saveSettingsAtomic(values: { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string }): Promise<void> {
+export async function saveSettingsAtomic(values: { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string; pdfNavigationMode: string }): Promise<void> {
   await idbRunTxn(['settings'], (txn) => {
     const os = txn.objectStore('settings')
     os.put({ key: 'apiBaseUrl', value: values.apiBaseUrl })
@@ -71,6 +71,7 @@ export async function saveSettingsAtomic(values: { apiBaseUrl: string; apiKey: s
     os.put({ key: 'customSystemPromptEnabled', value: values.customSystemPromptEnabled })
     os.put({ key: 'appearance', value: values.appearance })
     os.put({ key: 'visionCapability', value: values.visionCapability })
+    os.put({ key: 'pdfNavigationMode', value: values.pdfNavigationMode })
   })
 }
 

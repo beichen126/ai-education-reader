@@ -15,6 +15,7 @@ import { DEFAULT_PROMPT_PREFERENCES } from '../prompts/prompt-preferences'
 import type { PromptDefinition, PromptSnapshot } from '../prompts/prompt-types'
 import { getBuiltinPrompt, getBuiltinProtocol } from '../prompts/prompt-registry'
 import { resolveProtocolCanonicalRoot } from '../prompts/protocol-lineage'
+import { isPdfNavigationMode } from '../engine/pdf-navigation-settings'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -229,6 +230,7 @@ export function parseAndValidate(input: unknown): Backup {
   if (settings.model !== undefined && !isStr(settings.model)) throw new BackupError('settings.model 必须是字符串')
   // v1.2.0: visionCapability must be one of the known values, else the backup is invalid.
   if ((settings as any).visionCapability !== undefined && (settings as any).visionCapability !== 'auto' && (settings as any).visionCapability !== 'supports-image' && (settings as any).visionCapability !== 'text-only') throw new BackupError('settings.visionCapability 非法')
+  if ((settings as any).pdfNavigationMode !== undefined && !isPdfNavigationMode((settings as any).pdfNavigationMode)) throw new BackupError('settings.pdfNavigationMode 非法')
 
   const convIds = new Set<string>()
   const attIds = new Set<string>()
@@ -511,6 +513,7 @@ export async function restoreBackup(backup: Backup): Promise<void> {
       { key: 'customArtifactActions', value: (backup.settings as { customArtifactActions?: unknown } | undefined)?.customArtifactActions || [] },
       // v1.2.0: restore the vision capability (old backups lack it -> default 'auto').
       { key: 'visionCapability', value: (backup.settings as { visionCapability?: unknown } | undefined)?.visionCapability || 'auto' },
+      { key: 'pdfNavigationMode', value: isPdfNavigationMode((backup.settings as { pdfNavigationMode?: unknown } | undefined)?.pdfNavigationMode) ? (backup.settings as { pdfNavigationMode: string }).pdfNavigationMode : 'paged' },
       // V3: restore the appearance + every persisted Draft row (unsent user data). The API
       // Key is NEVER restored (always empty). Draft rows re-create the unsent composer state.
       { key: 'appearance', value: (backup as BackupV3).appearance || 'system' },
