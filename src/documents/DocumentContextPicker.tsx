@@ -362,10 +362,11 @@ function ChapterTreeCheck({ nodes, checked, pageCount, bookmarkRangePreferences,
               {presentation ? (
                 <span className={css.treeDetails}>
                   <span className={css.treeRange} data-testid={'doc-context-actual-' + n.id}>{presentation[mode].label}</span>
-                  <select className={css.rangeMode} data-testid={'doc-context-mode-' + n.id} aria-label={n.title + ' 范围语义'} value={mode} onChange={e => onModeChange(n.id, e.target.value as BookmarkRangeEndMode)}>
-                    <option value="exclusive">左闭右开 {presentation.exclusive.label}</option>
-                    <option value="inclusive">左闭右闭 {presentation.inclusive.label}</option>
+                  <select className={css.rangeMode} data-testid={'doc-context-mode-' + n.id} aria-label={n.title + ' 范围语义'} aria-describedby={'doc-context-range-help-' + n.id} value={mode} onChange={e => onModeChange(n.id, e.target.value as BookmarkRangeEndMode)}>
+                    <option value="exclusive">[)</option>
+                    <option value="inclusive">[]</option>
                   </select>
+                  <span id={'doc-context-range-help-' + n.id} className={css.srOnly}>范围语义：左闭右开表示到下一章节起始页前一页；左闭右闭表示包含所示终点页。</span>
                 </span>
               ) : <span className={css.treeRange}>无法定位页码</span>}
             </div>
