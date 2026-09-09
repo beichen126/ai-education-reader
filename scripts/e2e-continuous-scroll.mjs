@@ -70,8 +70,16 @@ const scrollToPage = async pageNumber => {
   await page.waitForTimeout(700)
 }
 
+const waitForCurrentPage = async pageNumber => {
+  await page.waitForFunction(expected => {
+    const input = document.querySelector('[data-testid="reader-page-input"]')
+    return input?.value.trim() === expected
+  }, String(pageNumber), { timeout: 30000 })
+}
+
 await scrollToPage(100)
 await page.locator('[data-testid="reader-continuous-canvas-100"]').waitFor({ state: 'visible', timeout: 30000 })
+await waitForCurrentPage(100)
 assert((await page.locator('[data-testid="reader-page-input"]').inputValue()).trim() === '100', 'scroll center stabilizes current page at 100')
 await assertBounded('page 100')
 await page.locator('[data-testid="reader-continuous-page-button-100"]').click()
@@ -81,6 +89,7 @@ await page.keyboard.press('Escape')
 
 await scrollToPage(500)
 await page.locator('[data-testid="reader-continuous-canvas-500"]').waitFor({ state: 'visible', timeout: 30000 })
+await waitForCurrentPage(500)
 assert((await page.locator('[data-testid="reader-page-input"]').inputValue()).trim() === '500', 'scroll reaches the final page and updates current page')
 await assertBounded('page 500')
 
@@ -90,6 +99,7 @@ await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible
 await page.locator('[data-testid^="doc-open-"]').first().click()
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="reader-continuous-canvas-500"]').waitFor({ state: 'visible', timeout: 30000 })
+await waitForCurrentPage(500)
 assert((await page.locator('[data-testid="reader-page-input"]').inputValue()).trim() === '500', 'continuous current page survives close and reopen')
 await assertBounded('reopen at page 500')
 
