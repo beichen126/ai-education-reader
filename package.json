@@ -12,6 +12,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "docs:screenshots": "node scripts/capture-readme-assets.mjs",
+    "test:readme-contract": "node scripts/test-readme-contract.mjs",
     "test": "npm run test:all",
     "test:storage": "npx tsx scripts/test-storage.ts",
     "test:idb-lifecycle": "npx tsx scripts/test-idb-lifecycle.ts",

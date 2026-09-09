@@ -6,7 +6,7 @@ import { mkdirSync } from 'fs'
 import { openChapterBuilderForSource } from './chapter-entry.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const OUT = 'docs/assets/readme'
-const PREFIX = 'v203-'
+const PREFIX = process.env.README_SCREENSHOT_PREFIX || 'v210-'
 mkdirSync(OUT, { recursive: true })
 const browser = await chromium.launch({ channel: 'msedge', headless: true })
 const FILES = '[data-testid="sidebar-entry-files"], [data-testid="rail-files"]'
