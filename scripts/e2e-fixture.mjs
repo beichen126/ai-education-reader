@@ -39,6 +39,11 @@ export async function seedAndBoot(page, { convs = [], settings = {} }) {
   // hydration signal: composer attached + (if a conversation was seeded) its title visible.
   await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
   if (convs.length) await page.locator('text=' + convs[0].title).first().waitFor({ state: 'visible', timeout: 15000 })
+  const guide = page.locator('[data-testid="product-guide"]')
+  if (await guide.isVisible().catch(() => false)) {
+    await page.locator('[data-testid="product-guide-later"]').click()
+    await guide.waitFor({ state: 'hidden', timeout: 10000 })
+  }
   return seeded
 }
 /**

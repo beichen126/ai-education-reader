@@ -3,6 +3,7 @@
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot } from './e2e-fixture.mjs'
 import { openAppDb } from './e2e-idb.mjs'
+import { dismissProductGuide } from './e2e-navigation.mjs'
 
 const results = []
 const errors = []
@@ -75,12 +76,14 @@ assert(!!backupPath, 'enabled protocol override is exportable in the complete ba
 
 await page.locator('[data-testid="settings-clear-data"]').click()
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
+await dismissProductGuide(page)
 await page.getByRole('button', { name: /打开设置|设置/ }).first().click()
 const importInput = page.locator('input[type="file"][accept*=".json"]')
 await importInput.setInputFiles(backupPath)
 await page.locator('text=导入完成').waitFor({ state: 'visible', timeout: 20000 })
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
+await dismissProductGuide(page)
 const restoredPreference = await openAppDb(page, { store: 'settings', operation: 'get', key: 'promptPreferences' })
 const restoredPrompt = await openAppDb(page, { store: 'prompts', operation: 'get', key: overrideId })
 assert(restoredPreference?.value?.activeProtocolOverrideByDomain?.['ai-toc-structure'] === overrideId, 'backup restore preserves the active protocol mapping')

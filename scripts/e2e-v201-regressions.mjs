@@ -72,7 +72,7 @@ if (shouldRun(scenario)) {
   if (await expanded.isVisible().catch(() => false)) await page.locator('[data-testid="sidebar-collapse"]').click()
   await page.locator('[data-testid="rail-history"]').waitFor({ state: 'visible', timeout: 10000 })
   const order = await page.locator('[data-testid^="rail-"]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-testid')))
-  assert(order.join('|') === 'rail-history|rail-new-chat|rail-images|rail-files|rail-prompts|rail-fullscreen|rail-settings', 'V200-FCR-01 collapsed rail has the required prompt entry order')
+  assert(order.join('|') === 'rail-history|rail-new-chat|rail-images|rail-files|rail-prompts|rail-help|rail-fullscreen|rail-settings', 'V200-FCR-01 collapsed rail has the required prompt entry order')
   assert(await page.locator('[data-testid="rail-prompts"]').count() === 1, 'V200-FCR-01 collapsed rail exposes one prompt entry')
   if (await page.locator('[data-testid="rail-prompts"]').count() === 1) {
     await page.locator('[data-testid="rail-prompts"]').click()

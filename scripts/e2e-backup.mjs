@@ -2,6 +2,7 @@
 // clear app data, import the downloaded backup, reload, and verify restore.
 import { launchBrowser } from './e2e-browser.mjs'
 import { openAppDb } from './e2e-idb.mjs'
+import { dismissProductGuide } from './e2e-navigation.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const results = [], errors = []
 const assert = (c, m) => results.push((c ? 'PASS  ' : 'FAIL  ') + m)
@@ -79,6 +80,7 @@ await page.locator('[data-testid="settings-clear-data"]').click()
 // The confirm is auto-accepted; the page reloads. Wait for the composer to be back.
 await page.waitForFunction(() => document.readyState === 'complete')
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
+await dismissProductGuide(page)
 
 // ---- reopen settings, import the downloaded backup via the real UI ----
 await page.locator('button:has-text("打开设置")').first().click()
@@ -93,6 +95,7 @@ assert(impMsg > 0, 'import success message shown (导入完成)')
 // ---- reload and verify restore via IDB + attachment load ----
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
+await dismissProductGuide(page)
 const [convs, branches, arts, atts, apiKeyRow, appearanceRow] = await Promise.all([
   openAppDb(page, { store: 'conversations' }),
   openAppDb(page, { store: 'conversationBranches' }),
