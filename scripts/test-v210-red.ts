@@ -46,9 +46,10 @@ for (const heading of ['30 秒理解本产品', '与 Zotero 等 PDF 阅读器有
 }
 expect(fs.existsSync('src/help/product-guide.md'), 'V210-RED application product guide source exists')
 expect(fs.existsSync('src/documents/reader-progress-controller.ts'), 'V210-RED reader progress controller exists')
-expect(fs.existsSync('src/documents/continuous-pdf-viewport.tsx'), 'V210-RED continuous PDF viewport exists')
+expect(fs.existsSync('src/documents/pdf-viewport.ts') && fs.existsSync('src/pdf/continuous-render-controller.ts'), 'V210-RED continuous PDF viewport/controller exists')
 const settingsSource = fs.readFileSync('src/engine/settings-store.ts', 'utf8')
-expect(settingsSource.includes('PdfNavigationMode') && settingsSource.includes('continuous'), 'V210-RED settings define persistent paged/continuous navigation mode')
+const navigationSettingsSource = fs.readFileSync('src/engine/pdf-navigation-settings.ts', 'utf8')
+expect(settingsSource.includes('pdfNavigationMode') && navigationSettingsSource.includes("'paged' | 'continuous'"), 'V210-RED settings define persistent paged/continuous navigation mode')
 
 const prefs = await getPromptPreferences()
 expect(prefs.defaultConversationModeId === BUILTIN_PROMPT_IDS.conversationDefault, 'V210-RED clean install default preference remains canonical 默认')
