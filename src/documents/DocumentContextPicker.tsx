@@ -1,13 +1,14 @@
 
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { listDocumentSummaries, getDocumentContextDescriptor, setDocumentBookmarkRangePreferences, type DocumentContextDescriptor, type DocumentSummary, type BookmarkRangePreferenceUpdate } from './document-service'
+import { listDocumentSummaries, getDocument, getDocumentContextDescriptor, documentBinaryExists, setDocumentBookmarkRangePreferences, DocumentBinaryMissingError, type DocumentContextDescriptor, type DocumentSummary, type BookmarkRangePreferenceUpdate } from './document-service'
 import { buildChapterNodesSelection, findChapterById, selectableChapterRange } from './document-context'
 import type { BookmarkRangePreferenceDelta } from './reader-context'
 import { normalizePdfRanges, countPdfRangePages, pdfRangesText, needsPdfContextSoftConfirm, exceedsPdfContextHardLimit, validatePdfRange, MAX_PDF_CONTEXT_PAGES, type PdfRange, type PdfSelection } from '../pdf/pdf-types'
-import type { ChapterNode } from './document-types'
+import type { ChapterNode, LearningDocument } from './document-types'
 import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
 import { bookmarkRangePresentation, type BookmarkRangeEndMode } from '../pdf/bookmark-range'
+import { DocumentContextPreview } from './DocumentContextPreview'
 import css from './document-context-picker.module.css'
 
 type Props = {
@@ -41,6 +42,10 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
   const scoped = !!documentId
   const [stage, setStage] = useState<'document' | 'context'>(scoped ? 'context' : 'document')
   const [doc, setDoc] = useState<DocumentContextDescriptor | null>(null)
+  const [binaryAvailable, setBinaryAvailable] = useState<boolean | null>(null)
+  const [previewDoc, setPreviewDoc] = useState<LearningDocument | null>(null)
+  const [previewInitialPage, setPreviewInitialPage] = useState(1)
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const [docs, setDocs] = useState<DocumentSummary[] | null>(null)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<'toc' | 'manual'>('toc')
@@ -55,6 +60,9 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
   const preferenceStatesRef = useRef(new Map<string, PreferenceKeyState>())
   const preferenceQueuesRef = useRef(new Map<string, Promise<void>>())
   const mountedRef = useRef(true)
+  const contextBodyRef = useRef<HTMLDivElement | null>(null)
+  const previewFocusTargetRef = useRef<string | null>(null)
+  const previewScrollTopRef = useRef(0)
 
   useEffect(() => () => { mountedRef.current = false }, [])
 
@@ -68,6 +76,14 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scoped, documentId, stage])
 
+  useEffect(() => {
+    if (!doc) { setBinaryAvailable(null); return }
+    let active = true
+    setBinaryAvailable(null)
+    void documentBinaryExists(doc.id).then(exists => { if (active) setBinaryAvailable(exists) }).catch(() => { if (active) setBinaryAvailable(false) })
+    return () => { active = false }
+  }, [doc?.id])
+
   const selectDoc = async (id: string) => {
     const d = await getDocumentContextDescriptor(id)
     if (!d) { setBlockMsg('这份文档不存在或已被删除。'); return }
@@ -80,6 +96,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
   const backToDocs = () => {
     setDoc(null); setChecked(new Set()); setWholeChecked(false); setManualSel(null)
     setTab('toc'); setManualStart(''); setManualEnd(''); setManualError(null)
+    setBinaryAvailable(null); setPreviewError(null)
     setStage('document')
   }
 
@@ -264,6 +281,34 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
   }
   const finishAdd = (sel: PdfSelection) => { if (doc) onAdd(sel, doc.id, doc.fileName) }
 
+  const returnFromPreview = () => {
+    setPreviewDoc(null)
+    window.requestAnimationFrame(() => {
+      if (contextBodyRef.current) contextBodyRef.current.scrollTop = previewScrollTopRef.current
+      const target = previewFocusTargetRef.current
+      if (target) document.querySelector<HTMLElement>('[data-testid="' + target + '"]')?.focus()
+    })
+  }
+
+  const openPreview = async () => {
+    if (!doc || binaryAvailable !== true) return
+    previewFocusTargetRef.current = (document.activeElement as HTMLElement | null)?.dataset.testid || 'doc-context-preview'
+    previewScrollTopRef.current = contextBodyRef.current?.scrollTop ?? 0
+    setPreviewError(null)
+    try {
+      const loaded = await getDocument(doc.id)
+      if (!loaded || loaded.sourceBlob.size === 0) throw new DocumentBinaryMissingError(doc.id)
+      const ranges = normalizePdfRanges(selectionRef.current.ranges)
+      const requested = ranges[0]?.startPage ?? loaded.lastReadPage ?? 1
+      setPreviewInitialPage(Math.max(1, Math.min(loaded.pageCount, requested)))
+      setPreviewDoc(loaded)
+    } catch (e) {
+      setPreviewError(e instanceof DocumentBinaryMissingError ? '本地 PDF 数据不可用，请重新导入。' : '无法打开该 PDF 预览，请重试。')
+    }
+  }
+
+  if (previewDoc) return <DocumentContextPreview document={previewDoc} initialPage={previewInitialPage} onBack={returnFromPreview} />
+
   return (
     <div className={css.overlay} data-testid="doc-context-picker">
       <div className={css.panel}>
@@ -295,7 +340,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
               <button type="button" className={css.tab + (tab === 'manual' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-manual" onClick={() => { setTab('manual'); setWholeChecked(false) }}>页码</button>
             </div>
             {tab === 'toc' ? (
-              <div className={css.body} data-testid="doc-context-tree">
+              <div ref={contextBodyRef} className={css.body} data-testid="doc-context-tree">
                 <button type="button" className={css.whole + (wholeChecked ? ' ' + css.wholeOn : '')} data-testid="doc-context-whole" disabled={wholeBlocked} onClick={addWhole}>
                   <span>整份文档 · {doc.pageCount} 页</span>
                 </button>
@@ -307,7 +352,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
                 )}
               </div>
             ) : (
-              <div className={css.manualBody} data-testid="doc-context-manual">
+              <div ref={contextBodyRef} className={css.manualBody} data-testid="doc-context-manual">
                 <div className={css.fieldRow}><label>开始页</label><input className={css.input} data-testid="doc-context-ms" inputMode="numeric" value={manualStart} onChange={e => setManualStart(e.target.value)} /></div>
                 <div className={css.fieldRow}><label>结束页</label><input className={css.input} data-testid="doc-context-me" inputMode="numeric" value={manualEnd} onChange={e => setManualEnd(e.target.value)} /></div>
                 {manualError && <div className={css.limitHint} data-testid="doc-context-manual-error">{manualError}</div>}
@@ -324,9 +369,12 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
               </div>
               <div className={css.footerBtns}>
                 <button type="button" className={css.btn} data-testid="doc-context-cancel2" onClick={() => void requestCancel()}>取消</button>
-                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" onClick={() => void commit()}>加入当前对话</button>
+                <button type="button" className={css.btn} data-testid="doc-context-preview" disabled={!doc || binaryAvailable !== true} aria-describedby={binaryAvailable === false ? 'doc-context-preview-disabled' : undefined} onClick={() => void openPreview()}>预览</button>
+                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" disabled={!hasScope} onClick={() => void commit()}>加入当前对话</button>
               </div>
             </div>
+            {binaryAvailable === false && <div className={css.limitHint} id="doc-context-preview-disabled" data-testid="doc-context-preview-disabled">本地 PDF 数据不可用，请重新导入。</div>}
+            {previewError && <div className={css.blockMsg} data-testid="doc-context-preview-error" role="alert">{previewError}</div>}
           </>
         ) : null}
         {confirming && (
