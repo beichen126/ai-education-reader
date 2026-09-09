@@ -65,6 +65,23 @@ PDF 的目录、页码、笔记和来源仍然保留在本地，回答不会把�
 
 本产品不提供模型本身，也不替你托管 API；你仍需配置 DeepSeek 或其他兼容接口。它解决的是“资料发出以后还能不能回到原文、继续查别的本地资料”这个问题，而不是另一个模型聊天网站。
 
+## 第一次使用
+
+### 只想先看看产品
+
+打开[在线体验](https://beichen126.github.io/ai-education-reader/)，不配置 API 也可以：导入 PDF、打开资料库、阅读页面、整理目录和添加页面笔记。需要对话、生成笔记或题目、AI 提取目录时，再到设置中配置 API。
+
+### 需要使用 AI
+
+1. 准备 DeepSeek API Key，或一个兼容 OpenAI Chat Completions 的服务；
+2. 打开侧栏中的“设置”，填写 API Base URL、Key 和模型；
+3. 导入一份 PDF，等待它出现在“文件”资料库；
+4. 打开 Reader，选择当前页、章节或页码范围；
+5. 点击加入对话，输入问题并发送；
+6. 通过回答中的来源回到 PDF，继续做页面笔记或生成学习成果。
+
+API Key 是你自己的服务凭据。应用不提供模型额度，也没有产品后端中转；浏览器直接请求你配置的服务。
+
 ## FAQ
 
 下面先回答第一次使用时最容易遇到的问题；具体操作步骤和功能说明见后文。
@@ -203,39 +220,6 @@ AI 先读取你选择的目录页，再提出标题、层级和页码映射。�
 
 PDF 和图片不会在发送消息后消失。侧栏可以打开资料库、历史会话和设置；收起后仍保留原来的 rail 直接入口。资料库中的 PDF 可再次打开 Reader、选择 Context 或继续查看目录。桌面、平板和手机使用相同的资料—Reader—对话语义。
 
-## 页面展示
-
-下面只保留能说明产品工作方式的关键画面：首屏对话、资料库、页面选择、AI 目录检查和模式管理。移动端竖栏、深色模式、空白 Reader 和重复的侧栏状态不再占用正文空间。
-
-<p><img src="docs/assets/readme/v210-00-app-shell.webp" alt="打开产品后首先看到的 AI 对话工作区" width="720" loading="lazy"></p>
-
-<p><img src="docs/assets/readme/v210-02-document-library.webp" alt="本地资料库中的 PDF 文件入口" width="720" loading="lazy"></p>
-
-<p><img src="docs/assets/readme/v210-03-document-context-picker.webp" alt="按章节和页码选择加入当前对话的 Context" width="720" loading="lazy"></p>
-
-<p><img src="docs/assets/readme/v210-04-ai-toc-review.webp" alt="检查 AI 提取的目录标题、层级和页码映射" width="720" loading="lazy"></p>
-
-<p><img src="docs/assets/readme/v210-11-prompt-manager.webp" alt="管理会话模式、学习成果和快捷追问" width="720" loading="lazy"></p>
-
-<sub>图片来自当前 v2.1.0 开发线的确定性 PDF 示例，不包含个人资料或真实 API 内容。</sub>
-
-## 第一次使用
-
-### 只想先看看产品
-
-打开[在线体验](https://beichen126.github.io/ai-education-reader/)，不配置 API 也可以：导入 PDF、打开资料库、阅读页面、整理目录和添加页面笔记。需要对话、生成笔记或题目、AI 提取目录时，再到设置中配置 API。
-
-### 需要使用 AI
-
-1. 准备 DeepSeek API Key，或一个兼容 OpenAI Chat Completions 的服务；
-2. 打开侧栏中的“设置”，填写 API Base URL、Key 和模型；
-3. 导入一份 PDF，等待它出现在“文件”资料库；
-4. 打开 Reader，选择当前页、章节或页码范围；
-5. 点击加入对话，输入问题并发送；
-6. 通过回答中的来源回到 PDF，继续做页面笔记或生成学习成果。
-
-API Key 是你自己的服务凭据。应用不提供模型额度，也没有产品后端中转；浏览器直接请求你配置的服务。
-
 ## 导入和阅读 PDF
 
 从侧栏打开“文件”，选择 PDF 文件。导入完成后，资料库会显示文件名、页数、目录和最近阅读位置。点击“阅读”打开 Reader：
@@ -259,6 +243,22 @@ API Key 是你自己的服务凭据。应用不提供模型额度，也没有产
 5. 返回会话后，发送你的问题。
 
 Context 只描述本次消息需要的页面，不改变 PDF 的原始文件。一次最多选择 **120 页**；超过 **30 页**会先要求确认，超过 120 页会阻止发送。页面最终会在浏览器中渲染为模型可接收的图片上下文，实际是否能处理还取决于你配置的视觉模型和接口限制。
+
+## 页面展示
+
+下面只保留能说明产品工作方式的关键画面：首屏对话、资料库、页面选择、AI 目录检查和模式管理。移动端竖栏、深色模式、空白 Reader 和重复的侧栏状态不再占用正文空间。
+
+<p><img src="docs/assets/readme/v210-00-app-shell.webp" alt="打开产品后首先看到的 AI 对话工作区" width="720" loading="lazy"></p>
+
+<p><img src="docs/assets/readme/v210-02-document-library.webp" alt="本地资料库中的 PDF 文件入口" width="720" loading="lazy"></p>
+
+<p><img src="docs/assets/readme/v210-03-document-context-picker.webp" alt="按章节和页码选择加入当前对话的 Context" width="720" loading="lazy"></p>
+
+<p><img src="docs/assets/readme/v210-04-ai-toc-review.webp" alt="检查 AI 提取的目录标题、层级和页码映射" width="720" loading="lazy"></p>
+
+<p><img src="docs/assets/readme/v210-11-prompt-manager.webp" alt="管理会话模式、学习成果和快捷追问" width="720" loading="lazy"></p>
+
+<sub>图片来自当前 v2.1.0 开发线的确定性 PDF 示例，不包含个人资料或真实 API 内容。</sub>
 
 ## 数据、隐私与备份
 
