@@ -215,6 +215,7 @@ assert(ordinals[0] === 1 && ordinals[1] === 2, 'two concurrent saves allocate di
   if (!card) throw new Error('card missing')
   const renamed = await updateStudyCardTitle(card.id, '  我的标题  ')
   assert(!!renamed && renamed.title === '我的标题', 'the new title is trimmed and stored')
+  assert(!!renamed && renamed.updatedAt > card.updatedAt, 'every edit advances the revision token, even inside one millisecond')
   assert(!!renamed && renamed.titleMode === 'custom', 'renaming switches the title mode to custom')
   assert(!!renamed && renamed.autoTitleOrdinal === card.autoTitleOrdinal, 'renaming keeps the ordinal')
   assert(!!renamed && renamed.createdAt === card.createdAt && renamed.source.assistantMessageId === card.source.assistantMessageId, 'renaming keeps createdAt and the source')

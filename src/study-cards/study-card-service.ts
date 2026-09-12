@@ -226,6 +226,13 @@ export async function createStudyCardFromAssistantMessage(input: CreateStudyCard
   return result
 }
 
+/** `updatedAt` doubles as the optimistic-concurrency token, so it must be STRICTLY
+ *  increasing per card. Two edits inside the same millisecond would otherwise accept a
+ *  stale write (the token would compare equal) and could silently overwrite another tab. */
+function nextRevision(previousUpdatedAt: number): number {
+  return Math.max(Date.now(), previousUpdatedAt + 1)
+}
+
 /** Rename a card. Never changes createdAt, ordinal or source, and refuses to overwrite a
  *  newer revision from another tab. */
 export async function updateStudyCardTitle(id: StableId, title: string, expectedUpdatedAt?: number): Promise<StudyCard | undefined> {
@@ -233,7 +240,7 @@ export async function updateStudyCardTitle(id: StableId, title: string, expected
   if (!clean) return undefined
   return updateStudyCardRow(id, current => {
     if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) return undefined
-    return { ...current, title: clean.slice(0, MAX_STUDY_CARD_TITLE_LENGTH), titleMode: 'custom', updatedAt: Date.now() }
+    return { ...current, title: clean.slice(0, MAX_STUDY_CARD_TITLE_LENGTH), titleMode: 'custom', updatedAt: nextRevision(current.updatedAt) }
   })
 }
 
@@ -243,7 +250,7 @@ export async function updateStudyCardBody(id: StableId, markdown: string, expect
   if (markdown.length > MAX_STUDY_CARD_BODY_LENGTH) return undefined
   return updateStudyCardRow(id, current => {
     if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) return undefined
-    return { ...current, bodyMarkdown: markdown, updatedAt: Date.now() }
+    return { ...current, bodyMarkdown: markdown, updatedAt: nextRevision(current.updatedAt) }
   })
 }
 
