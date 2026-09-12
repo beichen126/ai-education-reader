@@ -52,9 +52,10 @@ await setSetting('apiKey', 'sk-secret')
 
 // ---- build current backup schema ----
 const backup = await buildBackup()
-assert(backup.version === 6, 'backup version is 6 (got ' + backup.version + ')')
+assert(backup.version === 7, 'backup version is 7 (got ' + backup.version + ')')
 const current = backup as any
 assert(Array.isArray(current.prompts) && current.promptPreferences?.version === 1, 'backup includes V6 prompt data')
+assert(Array.isArray(current.studyCards), 'backup includes V7 study cards')
 assert(current.branches.length === 2, 'backup includes both branches')
 assert(current.branchDrafts.length === 1 && current.branchDrafts[0].branchId === bB.id, 'backup includes branch draft')
 assert(current.artifacts.length === 2, 'backup includes both artifacts')
