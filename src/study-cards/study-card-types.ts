@@ -62,10 +62,17 @@ export type StudyCardPageRef = {
 
 export type StudyCardListSort = 'created-desc' | 'created-asc' | 'updated-desc' | 'last-opened-desc' | 'random'
 
+/** Which PDF source the library is filtered by. Same-named documents are never merged. */
+export type StudyCardFilterKey =
+  | { kind: 'all' }
+  | { kind: 'no-pdf' }
+  | { kind: 'document'; documentId: string }
+  | { kind: 'unlocated' }
+
 export type StudyCardPreferences = {
   sort?: StudyCardListSort
-  /** Last PDF filter; `null` means 全部来源. */
-  documentFilter?: string | null
+  /** Last PDF filter; null/undefined means 全部来源. */
+  documentFilter?: StudyCardFilterKey | null
 }
 
 export const MAX_STUDY_CARD_TITLE_LENGTH = 80
