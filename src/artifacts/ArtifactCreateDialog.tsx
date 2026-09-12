@@ -13,6 +13,8 @@ type Props = {
   onCancel: () => void
   busy?: boolean
   initialKind?: ArtifactKind
+  /** Opened from 「自定义提示词…」: the result format must be confirmed before generating. */
+  customEntry?: boolean
   error?: string
 }
 
@@ -26,7 +28,7 @@ function preferredTemplate(candidates: ArtifactPrompt[], kind: CreateArtifactKin
     ?? candidates[0]
 }
 
-export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, initialKind, error: genError }: Props) {
+export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, initialKind, customEntry, error: genError }: Props) {
   const initKind: CreateArtifactKind = initialKind === 'quiz' ? 'quiz' : 'note'
   const initialBuiltin = getBuiltinArtifactPrompt(initKind)
   const [kind, setKind] = useState<CreateArtifactKind>(initKind)
@@ -126,6 +128,7 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
     <div><div className={css.fieldLabel}>来源</div><div className={css.sourceLine}>{sourceLabel}</div></div>
     <div>
       <div className={css.fieldLabel}>类型</div>
+      {customEntry && <div className={css.cardMeta} data-testid="artifact-custom-format-hint">自定义提示词需要先确认结果格式：整理成笔记 = Markdown，生成题目 = Quiz。</div>}
       <div className={css.kindRow} role="radiogroup" aria-label="类型">
         {MODE_KINDS.map((item) => {
           const labels = { note: '整理成笔记', quiz: '生成题目' } as const

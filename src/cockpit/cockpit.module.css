@@ -203,3 +203,6 @@
 .ctxCancel:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .artifactSpinner { width: 2rem; height: 2rem; border-radius: 50%; border: 3px solid var(--dsw-alias-border-l2); border-top-color: var(--dsw-alias-label-secondary); animation: dsh-spin 0.8s linear infinite; }
 @keyframes dsh-spin { to { transform: rotate(360deg); } }
+/* Non-blocking card-save status: it never covers the conversation and can be dismissed. */
+.cardNotice { position: sticky; bottom: 8px; margin: 8px auto 0; max-width: min(46rem, 92%); display: flex; align-items: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+.cardNoticeClose { margin-left: auto; border: 0; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 16px; line-height: 1; cursor: pointer; }

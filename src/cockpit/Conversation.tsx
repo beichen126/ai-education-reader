@@ -27,7 +27,8 @@ import type { PdfSelection } from '../pdf/pdf-types'
 import { buildAttachmentDisplayItems, type AttachmentDisplayItem } from '../attachments/attachment-display'
 import { PdfContextCard } from './PdfContextCard'
 import { BranchBar } from '../branches/BranchBar'
-import { BranchMenu } from '../branches/BranchMenu'
+import { MessageActionMenu, type CardSaveState } from '../branches/MessageActionMenu'
+import { createStudyCardFromAssistantMessage } from '../study-cards/study-card-service'
 import { ArtifactCreateDialog } from '../artifacts/ArtifactCreateDialog'
 import { ArtifactLibrary } from '../artifacts/ArtifactLibrary'
 import { ArtifactEditor } from '../artifacts/ArtifactEditor'
@@ -103,9 +104,11 @@ export function Conversation() {
   const lastMsg0 = lastMsg
   const activeStreamingId = busy && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
   const [menuMsgId, setMenuMsgId] = useState<string | null>(null)
-  const [creating, setCreating] = useState<{ kind: CreateArtifactKind; messageId: string } | null>(null)
+  const [creating, setCreating] = useState<{ kind: CreateArtifactKind; messageId: string; customEntry?: boolean } | null>(null)
   const [creatingBusy, setCreatingBusy] = useState(false)
   const [creatingError, setCreatingError] = useState<string | undefined>(undefined)
+  const [cardSaves, setCardSaves] = useState<Record<string, { state: CardSaveState; title?: string; cardId?: string; error?: string }>>({})
+  const [cardNotice, setCardNotice] = useState<string | null>(null)
   const [artView, setArtView] = useState<'library' | null>(null)
   const [openArtifact, setOpenArtifact] = useState<StudyArtifact | null>(null)
   const [libArtifacts, setLibArtifacts] = useState<StudyArtifact[]>([])
@@ -172,6 +175,40 @@ export function Conversation() {
     }
   }
   function openLibrary() { void listArtifacts().then(setLibArtifacts); setArtView('library') }
+  /**
+   * Save ONE completed assistant reply as a study card (§8.2). No model call, no network,
+   * no prompt: the card body is exactly this message's content. The commit is owned by the
+   * service, so an unmount mid-flight still completes; only the UI update is guarded.
+   */
+  const mountedRef = useRef(true)
+  useEffect(() => () => { mountedRef.current = false }, [])
+  const saveCard = async (messageId: string) => {
+    const conversationId = session?.id
+    if (!conversationId || !activeThread) return
+    if (cardSaves[messageId]?.state === 'saving') return
+    const branchId = branchChat.activeBranchId
+    setCardSaves(previous => ({ ...previous, [messageId]: { ...previous[messageId], state: 'saving' } }))
+    try {
+      const result = await createStudyCardFromAssistantMessage({ conversationId, assistantMessageId: messageId, ...(branchId ? { branchId } : {}) })
+      if (result.kind === 'created' || result.kind === 'existing') {
+        if (mountedRef.current) {
+          setCardSaves(previous => ({ ...previous, [messageId]: { state: 'saved', title: result.card.title, cardId: result.card.id } }))
+          setCardNotice(result.kind === 'created' ? '已保存为学习卡片「' + result.card.title + '」' : '这条回复已经保存过，已打开原卡片「' + result.card.title + '」')
+        }
+      } else {
+        if (mountedRef.current) {
+          setCardSaves(previous => ({ ...previous, [messageId]: { state: 'failed', error: result.message } }))
+          setCardNotice(result.message)
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error && error.message ? error.message : '保存失败，请重试'
+      if (mountedRef.current) {
+        setCardSaves(previous => ({ ...previous, [messageId]: { state: 'failed', error: message } }))
+        setCardNotice('保存失败：' + message)
+      }
+    }
+  }
   return (
     <div className={css.conversation} data-testid="conversation">
       {!hasKey && (
@@ -221,7 +258,7 @@ export function Conversation() {
             const transition = previous ? transitionByBoundary.get(previous.id) : undefined
             return <Fragment key={m.id}>
               {transition && <PromptTransitionDivider transition={transition} onOpen={() => setInspectedTransition(transition)} />}
-              <MessageRow m={m} streamingId={activeStreamingId} convId={session?.id} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} onInspectQuickFollowUp={setInspectedQuickFollowUp} />
+              <MessageRow m={m} streamingId={activeStreamingId} convId={session?.id} branchId={branchChat.activeBranchId} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} cardSave={cardSaves[m.id]} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} onArtifactCustom={(mid) => { setCreatingError(undefined); setCreating({ kind: 'note', messageId: mid, customEntry: true }) }} onSaveCard={(mid) => void saveCard(mid)} onInspectQuickFollowUp={setInspectedQuickFollowUp} />
               {quickFollowUpAnchorId === m.id && activeThread && <QuickFollowUpBar items={quickFollowUps} disabled={busy || !!quickSendingId} sendingId={quickSendingId} onSend={(item) => void sendQuickFollowUp(item)} onInspect={setInspectedQuickFollowUp} onConfigure={() => uiActions.openPromptManager('quick-follow-up')} />}
             </Fragment>
             })}
@@ -230,7 +267,8 @@ export function Conversation() {
         <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" onClick={openLibrary}>学习成果</Button></div>
         <Composer sessionId={session?.id} busy={busy} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
       </div>
-      {creating && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', padding: '1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}><ArtifactCreateDialog sourceLabel={creatingSourceLabel(session, branchChat.activeBranchId, creating.messageId)} initialKind={creating.kind} busy={creatingBusy} error={creatingError} onSubmit={(i) => void onCreateArtifact(i)} onCancel={() => setCreating(null)} /></div></div>)}
+      {cardNotice && <div className={css.cardNotice} role="status" aria-live="polite" data-testid="card-save-status">{cardNotice}<button type="button" className={css.cardNoticeClose} aria-label="关闭提示" onClick={() => setCardNotice(null)}>×</button></div>}
+      {creating && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', padding: '1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}><ArtifactCreateDialog sourceLabel={creatingSourceLabel(session, branchChat.activeBranchId, creating.messageId)} initialKind={creating.kind} customEntry={creating.customEntry} busy={creatingBusy} error={creatingError} onSubmit={(i) => void onCreateArtifact(i)} onCancel={() => setCreating(null)} /></div></div>)}
       {inspectedTransition && <ConversationPromptInspector transition={inspectedTransition} positionLabel={inspectedTransition.afterMessageId ? '从下一条消息开始' : '会话开始'} onClose={() => setInspectedTransition(null)} />}
       {inspectedQuickFollowUp && <QuickFollowUpPromptDialog metadata={inspectedQuickFollowUp} onClose={() => setInspectedQuickFollowUp(null)} />}
       {artView === 'library' && <ArtifactLibraryOverlay artifacts={libArtifacts} onOpen={(a) => { setOpenArtifact(a); setArtView(null) }} onClose={() => setArtView(null)} />}
@@ -246,7 +284,7 @@ function PromptTransitionDivider({ transition, onOpen }: { transition: PromptTra
   </div>
 }
 
-function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu, onBranch, onArtifact, onInspectQuickFollowUp }: { m: TMessage; streamingId?: string; convId?: string; imgOffset: number; menuOpen?: boolean; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: CreateArtifactKind, messageId: string) => void; onInspectQuickFollowUp?: (metadata: QuickFollowUpMetadata) => void }) {
+function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, cardSave, onToggleMenu, onBranch, onArtifact, onArtifactCustom, onSaveCard, onInspectQuickFollowUp }: { m: TMessage; streamingId?: string; convId?: string; branchId?: string; imgOffset: number; menuOpen?: boolean; cardSave?: { state: CardSaveState; title?: string; cardId?: string; error?: string }; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: CreateArtifactKind, messageId: string) => void; onArtifactCustom?: (messageId: string) => void; onSaveCard?: (messageId: string) => void; onInspectQuickFollowUp?: (metadata: QuickFollowUpMetadata) => void }) {
   if (m.role === 'user') {
     return (
       <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>
@@ -271,8 +309,20 @@ function MessageRow({ m, streamingId, convId, imgOffset, menuOpen, onToggleMenu,
       {m.status && m.error && <div className={css.errorBanner} role="alert" data-testid="assistant-generation-error">{m.status === 'aborted' ? '已停止生成：' : '生成失败：'}{m.error}</div>}
       {stable && onToggleMenu && onBranch && onArtifact && (
         <div style={{ position: 'relative' }}>
-          <button type="button" aria-label="消息操作" title="从这里分支 / 学习成果" onClick={() => onToggleMenu(!menuOpen)} style={{ appearance: 'none', border: 0, background: 'transparent', color: 'var(--dsw-alias-label-tertiary)', cursor: 'pointer', fontSize: '0.8rem', padding: '0.1rem 0.375rem', borderRadius: '0.375rem' }}>⋯</button>
-          {menuOpen && <BranchMenu conversationId={convId || ''} branchId={undefined} messageId={m.id} onBranch={onBranch} onArtifact={onArtifact} onClose={() => onToggleMenu(false)} />}
+          <button type="button" aria-label="消息操作" data-testid="message-actions" title="从这里分支 / 特殊分支 / 学习卡片" aria-haspopup="menu" aria-expanded={!!menuOpen} onClick={() => onToggleMenu(!menuOpen)} style={{ appearance: 'none', border: 0, background: 'transparent', color: 'var(--dsw-alias-label-tertiary)', cursor: 'pointer', fontSize: '0.8rem', padding: '0.1rem 0.375rem', borderRadius: '0.375rem' }}>⋯</button>
+          {menuOpen && <MessageActionMenu
+            conversationId={convId || ''}
+            branchId={branchId}
+            message={m}
+            isStreaming={isStreaming}
+            cardState={cardSave?.state ?? 'idle'}
+            onCreateBranch={() => onBranch(m.id)}
+            onCreateArtifact={(kind) => onArtifact(kind, m.id)}
+            onCreateCustomArtifact={() => onArtifactCustom?.(m.id)}
+            onSaveCard={() => onSaveCard?.(m.id)}
+            onViewSavedCard={() => onSaveCard?.(m.id)}
+            onClose={() => onToggleMenu(false)}
+          />}
         </div>
       )}
     </div>
