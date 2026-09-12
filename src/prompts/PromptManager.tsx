@@ -131,6 +131,26 @@ function getModalFocusableElements(dialog: HTMLElement): HTMLElement[] {
   return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(isVisibleFocusable)
 }
 
+/** Stable fallback focus target in the app shell; never a synthetic body tabIndex. */
+const STABLE_SHELL_FOCUS = '[data-testid="sidebar-new-chat"], [data-testid="rail-new-chat"]'
+
+/**
+ * Focus a control that may only appear AFTER the overlay closes (Settings re-mounts when
+ * the manager closes). Retries for a few frames instead of giving up on the first miss.
+ */
+function focusWhenAvailable(selector: string, attempts = 16): void {
+  let remaining = attempts
+  const attempt = () => {
+    const element = document.querySelector<HTMLElement>(selector)
+    if (element && isVisibleFocusable(element) && !element.closest('[aria-hidden="true"]')) {
+      element.focus({ preventScroll: true })
+      return
+    }
+    if (remaining-- > 0) window.requestAnimationFrame(attempt)
+  }
+  window.requestAnimationFrame(attempt)
+}
+
 type BackgroundState = {
   element: HTMLElement
   inert: boolean
@@ -164,6 +184,7 @@ function restoreBackground(states: BackgroundState[]): void {
 
 export function PromptManager() {
   const requestedCategory = useUi(s => s.promptManagerCategory)
+  const requestedReturnTarget = useUi(s => s.promptManagerReturnTarget)
   const [catalog, setCatalog] = useState<PromptDefinition[]>([])
   const [protocolCatalog, setProtocolCatalog] = useState<PromptDefinition[]>([])
   const [preferences, setPreferences] = useState<PromptUserPreferences | null>(null)
@@ -181,6 +202,8 @@ export function PromptManager() {
   const [narrow, setNarrow] = useState(() => window.innerWidth <= 720)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const openerRef = useRef<HTMLElement | null>(null)
+  const returnTargetRef = useRef(requestedReturnTarget)
+  returnTargetRef.current = requestedReturnTarget
   const busyRef = useRef(busy)
   busyRef.current = busy
 
@@ -249,23 +272,20 @@ export function PromptManager() {
       document.removeEventListener('focusin', onFocusIn, true)
       document.removeEventListener('keydown', onKeyDown, true)
       restoreBackground(background)
+      const target = returnTargetRef.current
       const opener = openerRef.current
       openerRef.current = null
+      // 1. An explicit origin wins: Settings re-mounts when the manager closes, so the
+      //    original button is focused once it is back in the DOM.
+      if (target?.kind === 'settings') { focusWhenAvailable('[data-testid="' + target.controlId + '"]'); return }
+      if (target?.kind === 'app-control') { focusWhenAvailable('[data-testid="' + target.testId + '"]'); return }
+      // 2. Otherwise return to whatever opened the manager (message-level quick follow-up).
       if (opener?.isConnected && !opener.closest('[aria-hidden="true"]')) {
         opener.focus({ preventScroll: true })
         return
       }
-      const fallback = document.querySelector<HTMLElement>('[data-testid="rail-prompts"], [data-testid="sidebar-entry-prompts"]')
-      if (fallback && isVisibleFocusable(fallback) && !fallback.closest('[aria-hidden="true"]')) {
-        fallback.focus({ preventScroll: true })
-        return
-      }
-      const body = document.body
-      const previousTabIndex = body.getAttribute('tabindex')
-      body.setAttribute('tabindex', '-1')
-      body.focus({ preventScroll: true })
-      if (previousTabIndex === null) body.removeAttribute('tabindex')
-      else body.setAttribute('tabindex', previousTabIndex)
+      // 3. Final fallback is a stable app-shell control, never a temporary body tabIndex.
+      focusWhenAvailable(STABLE_SHELL_FOCUS)
     }
   }, [])
 
