@@ -1,5 +1,6 @@
 import { idbScan } from './idb'
 import { isOpfsAvailable, isStoragePersistent } from './binary-store'
+import { estimateStudyCardTextBytes } from '../study-cards/study-card-store'
 
 export type StorageDiagnostics = {
   originUsageBytes?: number
@@ -18,6 +19,9 @@ export type StorageDiagnostics = {
   idbBinaryCount: number
   idbBinaryBytes: number
   legacyBinaryCount: number
+  /** Study cards: count + estimated text footprint (never the binaries, which cards never store). */
+  studyCardCount: number
+  studyCardTextBytes: number
 }
 
 function trimZeros(s: string): string { if (s.includes('.')) s = s.replace(/0+$/, '').replace(/\.$/, ''); return s }
@@ -74,6 +78,13 @@ export async function getStorageDiagnostics(): Promise<StorageDiagnostics> {
   const opfsSupported = await isOpfsAvailable();
   let storagePersistent: boolean | undefined
   try { storagePersistent = await isStoragePersistent() } catch { /* unavailable */ }
+  // Refreshing diagnostics must never update a card's lastOpenedAt: this only reads rows.
+  let studyCardCount = 0; let studyCardTextBytes = 0;
+  try {
+    const estimate = await estimateStudyCardTextBytes()
+    studyCardCount = estimate.count
+    studyCardTextBytes = estimate.bodyBytes + estimate.titleBytes
+  } catch { /* scan failure -> zeros */ }
   return {
     ...(usage !== undefined ? { originUsageBytes: usage } : {}),
     ...(quota !== undefined ? { originQuotaBytes: quota } : {}),
@@ -83,5 +94,6 @@ export async function getStorageDiagnostics(): Promise<StorageDiagnostics> {
     ...(storagePersistent !== undefined ? { storagePersistent } : {}),
     opfsDocumentCount, opfsDocumentBytes, opfsAttachmentCount, opfsAttachmentBytes,
     idbBinaryCount, idbBinaryBytes, legacyBinaryCount,
+    studyCardCount, studyCardTextBytes,
   };
 }

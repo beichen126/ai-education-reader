@@ -223,6 +223,8 @@ export function SettingsDialog() {
             <div className={css.storageRow}><span className={css.storageLabel}>持久化存储</span><span className={css.storageValue}>{storage.storagePersistent === undefined ? '不支持' : (storage.storagePersistent ? '已授予' : '未授予')}</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>本站总占用</span><span className={css.storageValue}>{storage.originUsageBytes !== undefined ? formatBytes(storage.originUsageBytes) : '浏览器未提供'}</span></div>
             {storage.legacyBinaryCount > 0 && <div className={css.storageRow}><span className={css.storageLabel}>旧版 IndexedDB 二进制</span><span className={css.storageValue}>{storage.legacyBinaryCount} 个等待迁移</span></div>}
+            <div className={css.storageRow}><span className={css.storageLabel}>学习卡片</span><span className={css.storageValue} data-testid="storage-study-card-count">{storage.studyCardCount} 张</span></div>
+            <div className={css.storageRow}><span className={css.storageLabel}>学习卡片文本占用</span><span className={css.storageValue} data-testid="storage-study-card-bytes">{formatBytes(storage.studyCardTextBytes)}</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>图片附件</span><span className={css.storageValue}>{storage.attachmentCount} 张</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>图片附件占用</span><span className={css.storageValue}>{formatBytes(storage.attachmentBytes)}</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>本地文档</span><span className={css.storageValue}>{storage.documentCount} 份</span></div>
