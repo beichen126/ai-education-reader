@@ -10,7 +10,8 @@ function assert(condition: boolean, message: string) {
 }
 
 await idbClearAll()
-assert(DB_VERSION === 7, 'product guide does not require a DB version change')
+assert(DB_VERSION === 8, 'the current schema version is 8')
+assert(PRODUCT_GUIDE_VERSION.length > 0, 'the product guide still uses a version marker instead of a schema change')
 assert(await getProductGuideSeenVersion() === undefined, 'fresh storage has no product guide marker')
 await markProductGuideSeen()
 assert(await getProductGuideSeenVersion() === PRODUCT_GUIDE_VERSION, 'marker round-trips the current guide version')

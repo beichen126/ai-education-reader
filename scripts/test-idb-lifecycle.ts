@@ -55,10 +55,11 @@ const upgraded = await new Promise<IDBDatabase>((resolve, reject) => {
   req.onsuccess = () => resolve(req.result)
   req.onerror = () => reject(req.error)
 })
-assert(DB_VERSION === 7 && upgraded.version === 7, 'real v6 -> v7 fixture upgrades to DB_VERSION 7')
-assert(upgraded.objectStoreNames.contains('prompts'), 'v6 -> v7 upgrade creates prompts store')
+assert(DB_VERSION === 8 && upgraded.version === 8, 'real v6 fixture upgrades straight to DB_VERSION 8')
+assert(upgraded.objectStoreNames.contains('prompts'), 'the v7 upgrade creates the prompts store')
 const promptStore = upgraded.transaction('prompts', 'readonly').objectStore('prompts')
 assert(promptStore.keyPath === 'id' && promptStore.indexNames.contains('by_kind') && promptStore.indexNames.contains('by_updatedAt'), 'prompts store has keyPath=id and required indexes')
+assert(upgraded.objectStoreNames.contains('studyCards') && upgraded.objectStoreNames.contains('studyCardPageRefs'), 'the v8 upgrade creates the study card stores')
 upgraded.close()
 assert((await idbGet('settings', 'legacy-v6')).value === 'preserve-me', 'v6 data survives the schema upgrade')
 
