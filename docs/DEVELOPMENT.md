@@ -67,7 +67,70 @@ npm run test:e2e-bookmark-range
 
 发布门禁使用 `npm run test:release` 管理 preview 生命周期；不要通过删除 assertion 或把行为改成内部状态断言来“修复” E2E。
 
-### Build 和 release gate
+## 学习卡片（StudyCard）
+
+学习卡片与 `StudyArtifact` 是**两个不同的领域对象**，不要合并：
+
+| | StudyCard | StudyArtifact |
+|---|---|---|
+| 来源 | 一条已完成的 assistant 消息（message-bound） | 截止消息之前的上下文 + 提示词（prompt-bound） |
+| 生成 | 保存即 ready，不调用模型 | 调用模型，有 draft/generating/ready/error |
+| 提示词 | 没有 prompt | 冻结 prompt snapshot，可重试/编辑/导出 |
+
+持久化 shape（`src/study-cards/study-card-types.ts`，`schemaVersion: 1`）：
+
+```ts
+type StudyCard = {
+  schemaVersion: 1
+  id: string
+  title: string                      // 自动标题为 <会话名>-<序号>，重命名后 titleMode='custom'
+  titleMode: 'auto' | 'custom'
+  autoTitleOrdinal: number           // 按会话单调递增，删除不复用
+  bodyMarkdown: string               // 保存时那条 AI 回复正文的不可变快照
+  source: { conversationId, branchId?, userMessageId?, assistantMessageId, conversationTitleSnapshot, capturedAt }
+  documentRefs: { documentId?, fileNameSnapshot, pageNumbers: number[], relation: 'turn' | 'prior-context' }[]
+  documentIds: string[]              // 由有 documentId 的 refs 去重得到，供 multiEntry 索引
+  createdAt: number
+  updatedAt: number                  // 严格递增，兼作乐观并发 token
+  lastOpenedAt?: number
+}
+```
+
+不变量：
+
+- 卡片正文只冻结该轮 AI 回复，不复制整段对话、不重新调用模型、没有 generating 状态；
+- 来源只来自结构化关系（`pdfContexts` / PDF 页附件），**不解析正文里的“第 3 页”**；
+- 卡片不保存任何二进制、object URL 或 base64；
+- 卡片删除不删除会话/消息/PDF/附件/学习成果；来源删除不删除卡片；
+- `source.assistantMessageId` 有唯一索引，保证重复保存幂等。
+
+## 存储：IndexedDB v8
+
+```
+DB_VERSION = 8
+studyCards(keyPath=id)
+  by_createdAt / by_updatedAt / by_lastOpenedAt
+  by_source_conversation   = source.conversationId
+  by_source_message        = source.assistantMessageId  (unique)
+  by_document              = documentIds                (multiEntry)
+studyCardPageRefs(keyPath=id)           # 派生索引：`${documentId}:${pageNumber}:${cardId}`
+  by_document_page = [documentId, pageNumber] (composite)
+  by_card / by_document
+```
+
+- v7 → v8 升级只创建空 store/index，不复制不改写既有数据；
+- `studyCardPageRefs` 是**派生数据**，权威数据永远是卡片本身：`rebuildStudyCardPageRefs()` 可随时重建；
+- 卡片写入（创建/编辑/删除）都在同一个 readwrite 事务里同时维护卡片行与派生页行；
+- `listStudyCardsByDocumentPage(documentId, page)` 只匹配卡片真实引用的页码，走复合索引，不扫描全部卡片。
+
+## Backup V7
+
+- `BackupV7 = Omit<BackupV6,'version'> & { version: 7; studyCards: StudyCard[]; studyCardPreferences? }`（用 Omit 重建，避免 `6 & 7` 交叉类型）；
+- 导出：只导出通过 validator 的卡片；**不导出**派生页索引与 API Key；非法卡片让整个导出失败并指出卡片 id；
+- 导入：V1–V6 → `studyCards = []`；V7 → 逐卡严格校验，重复 card id 或两张卡指向同一 AI 回复**整包拒绝**；卡片与由卡片重建的派生页行在同一个替换事务中写入；任一卡片失败则旧本地数据保持不变；
+- 来源会话/PDF 不存在允许导入（detached card）。
+
+## Build 和 release gate
 
 代码改动至少运行 typecheck、相关 domain 测试、相关 browser E2E 和 build。进入发布前还要运行：
 
