@@ -104,9 +104,12 @@
 .sidebarEntries { display: flex; gap: 8px; padding: 2px 12px 4px; }
 .entryBtn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 38px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
 .entryBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.sidebarFoot { display: flex; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--dsw-alias-border-l2); }
+.sidebarFoot { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--dsw-alias-border-l2); }
 .footBtn { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 13px; cursor: pointer; }
 .footBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
+/* Help is the last visible sidebar action and stays visually secondary so it never
+   competes with 新建会话 / 文件 for emphasis. */
+.footBtnQuiet { flex: 1 0 100%; border-color: transparent; color: var(--dsw-alias-label-tertiary); }
 .railBtn { width: 100%; min-height: 40px; display: flex; align-items: center; justify-content: center; border: none; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; border-radius: 8px; }
 .railBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .railSpacer { flex: 1; }
