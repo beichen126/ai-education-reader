@@ -7,7 +7,8 @@ import { documentUiActions } from '../documents/document-ui-store'
 import { layoutStore, useLayoutStore } from '../engine/layout-store'
 import { NEW_TITLE } from '../engine/types'
 import { displayTitle, sanitizeTitle, MAX_TITLE_LEN } from '../engine/session-title'
-import { IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, IconClockOutline16, IconFullscreenOutline16, IconFolderOpenOutline16, IconQuestionOutline14, Input } from '../dsh/primitives'
+import { IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, IconClockOutline16, IconFullscreenOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconQuestionOutline14, Input } from '../dsh/primitives'
+import { learningUiActions } from '../study-cards/learning-ui-store'
 import { IconPhoto16 } from './composer-icons'
 import css from './cockpit.module.css'
 
@@ -40,6 +41,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label="新建会话" title="新建会话" onClick={() => sessionsActions.newChat()}><IconNewChatOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-images" aria-label="图片资料" title="图片资料" onClick={() => galleryActions.open(currentConv?.id, 0)}><IconPhoto16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-files" aria-label="本地文件" title="本地文件" onClick={() => documentUiActions.openLibrary()}><IconFolderOpenOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-cards" aria-label="学习卡片" title="学习卡片" onClick={() => learningUiActions.openLibrary('cards')}><IconListPenOutline16 /></button>
         <div className={css.railSpacer} />
         <button type="button" className={css.railBtn} data-testid="rail-fullscreen" aria-label={fsTitle} title={fsTitle} onClick={toggle}><IconFullscreenOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-settings" aria-label="设置" title="设置" onClick={uiActions.openSettings}><IconSettingsOutline16 /></button>
@@ -67,6 +69,12 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         </button>
         <button type="button" className={css.entryBtn} data-testid="sidebar-entry-files" onClick={() => documentUiActions.openLibrary()}>
           <IconFolderOpenOutline16 /> <span>文件</span>
+        </button>
+      </div>
+      <div className={css.sidebarSection}>学习</div>
+      <div className={css.sidebarEntries}>
+        <button type="button" className={css.entryBtn} data-testid="sidebar-entry-cards" onClick={() => learningUiActions.openLibrary('cards')}>
+          <IconListPenOutline16 /> <span>学习卡片</span>
         </button>
       </div>
       <div className={css.sidebarSection}>会话</div>
