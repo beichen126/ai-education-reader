@@ -136,19 +136,21 @@ const STABLE_SHELL_FOCUS = '[data-testid="sidebar-new-chat"], [data-testid="rail
 
 /**
  * Focus a control that may only appear AFTER the overlay closes (Settings re-mounts when
- * the manager closes). Retries for a few frames instead of giving up on the first miss.
+ * the manager closes). Tries immediately, then retries on a TIMER — `requestAnimationFrame`
+ * is throttled in headless/background pages, which made the old implementation give up
+ * after a single frame and silently lose the focus round-trip on CI.
  */
-function focusWhenAvailable(selector: string, attempts = 16): void {
-  let remaining = attempts
+function focusWhenAvailable(selector: string, timeoutMs = 600): void {
+  const deadline = Date.now() + timeoutMs
   const attempt = () => {
     const element = document.querySelector<HTMLElement>(selector)
     if (element && isVisibleFocusable(element) && !element.closest('[aria-hidden="true"]')) {
       element.focus({ preventScroll: true })
       return
     }
-    if (remaining-- > 0) window.requestAnimationFrame(attempt)
+    if (Date.now() < deadline) window.setTimeout(attempt, 16)
   }
-  window.requestAnimationFrame(attempt)
+  attempt()
 }
 
 type BackgroundState = {

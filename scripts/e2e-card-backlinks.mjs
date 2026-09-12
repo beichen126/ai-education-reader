@@ -101,9 +101,15 @@ await page.locator('[data-testid="card-item"]').first().click()
 await page.locator('[data-testid="card-viewer"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(await page.locator('[data-testid="card-source-pdf-open"]').count() === 1, 'a live source PDF offers 打开第 N 页')
 assert(await page.locator('[data-testid="card-source-pdf-page"]').count() === 3, 'non-contiguous-capable page chips are offered per real page')
+// The Reader applies the requested page after it has loaded the document metadata, so wait
+// for the real settled value instead of sampling the input immediately.
+const waitForReaderPage = async expected => {
+  await page.waitForFunction(value => document.querySelector('[data-testid="reader-page-input"]')?.value.trim() === value, String(expected), { timeout: 30000 })
+}
 await page.locator('[data-testid="card-source-pdf-open"]').click()
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 30000 })
 assert(await page.locator('[data-testid="learning-center"]').count() === 0, 'jumping to a PDF closes the learning centre so the page is visible')
+await waitForReaderPage(3)
 assert((await page.locator('[data-testid="reader-page-input"]').inputValue()).trim() === '3', 'the card opens the first real source page')
 // A specific chip jumps to that exact page (close the Reader first: it covers the sidebar).
 await page.locator('[data-testid="reader-close"]').click()
