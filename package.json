@@ -196,6 +196,7 @@
     "test:e2e-v210-range-control": "node scripts/e2e-v210-range-control.mjs",
     "test:e2e-continuous-scroll": "node scripts/e2e-continuous-scroll.mjs",
     "test:e2e-settings-navigation-lifecycle": "node scripts/e2e-settings-navigation-lifecycle.mjs",
+    "test:study-card-performance": "node scripts/benchmark-study-cards.mjs",
     "test:e2e-pdf-renderer-ownership": "node scripts/e2e-pdf-renderer-ownership.mjs",
     "test:e2e-sidebar-information-architecture": "node scripts/e2e-sidebar-information-architecture.mjs",
     "test:e2e-study-cards": "node scripts/e2e-study-cards.mjs",
