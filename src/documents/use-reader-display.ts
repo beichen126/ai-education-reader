@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { readSessionPageViewport, renderSessionPageSurface, renderSessionPage, type PdfSession } from '../pdf/pdf-session'
 import { ReaderRenderController, type CachedSurface, type DisplayGeometry } from '../pdf/reader-render-controller'
+import { notePdfRendererAttach, notePdfRendererCall } from './pdf-performance-telemetry'
 import type { PdfPerformanceTelemetry } from './pdf-performance-telemetry'
 
 export type ReaderDisplayApi = {
@@ -20,12 +21,15 @@ export type ReaderDisplayApi = {
   /** Produce a full-resolution (MAX_RENDER_EDGE) Blob URL for the zoom viewer. */
   requestZoomUrl(pageOverride?: number): Promise<string>
   clearPageError(): void
+  /** True while this renderer owns the viewport. An inactive renderer is inert: no
+   *  controller, no viewport read, no render, no geometry observer, no canvas blit. */
+  active: boolean
 }
 
 const STAGE_PADDING = 24 // 12px each side of the reader stage
 export { isZoomStale, type ZoomRequestContext } from './zoom-ownership'
 
-export function useReaderDisplay(session: PdfSession | null, page: number, pageCount: number, telemetry: PdfPerformanceTelemetry | null = null, onFirstPixelReady?: () => void): ReaderDisplayApi {
+export function useReaderDisplay(session: PdfSession | null, page: number, pageCount: number, telemetry: PdfPerformanceTelemetry | null = null, onFirstPixelReady?: () => void, enabled = true): ReaderDisplayApi {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const stageRef = useRef<HTMLDivElement | null>(null)
   const controllerRef = useRef<ReaderRenderController | null>(null)
@@ -38,19 +42,21 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
   const surfaceSessionRef = useRef<PdfSession | null>(session)
   const surfaceBelongsToSession = surfaceSessionRef.current === session
   if (!surfaceBelongsToSession) surfaceSessionRef.current = session
+  const active = enabled && session !== null
 
   // ---- bind a controller to the session (recreated on document switch) ----
   useEffect(() => {
     setSurface(null)
     setPageError(null)
-    if (!session) {
+    if (!active || !session) {
       controllerRef.current?.cancelAll()
       controllerRef.current = null
+      setRendering(false)
       return
     }
     const backend = {
-      readViewport1: (n: number) => readSessionPageViewport(session, n),
-      startRender: (n: number, scale: number) => renderSessionPageSurface(session, n, scale),
+      readViewport1: (n: number) => { notePdfRendererCall('paged', 'readViewport'); return readSessionPageViewport(session, n) },
+      startRender: (n: number, scale: number) => { notePdfRendererCall('paged', 'startRender'); return renderSessionPageSurface(session, n, scale) },
     }
     let ctrl: ReaderRenderController | null = null
     ctrl = new ReaderRenderController(backend, { cacheCapacity: 5, pageCount }, {
@@ -62,26 +68,29 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
       onRenderStart: () => { if (controllerRef.current === ctrl) telemetry?.mark('first-render-start') },
     })
     controllerRef.current = ctrl
+    notePdfRendererAttach('paged', 'attach')
     return () => {
+      notePdfRendererAttach('paged', 'detach')
       if (controllerRef.current === ctrl) { ctrl.cancelAll(); controllerRef.current = null }
     }
-  }, [session, telemetry])
+  }, [active, session, telemetry])
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { controllerRef.current?.setPageCount(pageCount) }, [pageCount])
+  useEffect(() => { if (active) controllerRef.current?.setPageCount(pageCount) }, [active, pageCount])
 
   // ---- blit the ready surface onto the visible canvas (after it is mounted) ----
   useEffect(() => {
-    if (!surface) return
+    if (!active || !surface) return
     const canvas = canvasRef.current
     if (!canvas) return
     canvas.width = surface.width
     canvas.height = surface.height
     const ctx = canvas.getContext('2d')
     if (ctx) { ctx.drawImage(surface.surface, 0, 0); telemetry?.mark('first-pixel-ready'); onFirstPixelReady?.() }
-  }, [surface, telemetry, onFirstPixelReady])
+  }, [active, surface, telemetry, onFirstPixelReady])
 
   // ---- measure the initial stage synchronously; later resize stays debounced ----
   useLayoutEffect(() => {
+    if (!active) return
     const el = stageRef.current
     if (!el) return
     let timer: number | null = null
@@ -100,17 +109,17 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
     }
     window.addEventListener('resize', measure)
     return () => window.removeEventListener('resize', measure)
-  }, [session, telemetry])
+  }, [active, session, telemetry])
 
   // ---- push geometry + navigate: the controller decides cache / cancel / prefetch ----
   useEffect(() => {
     const ctrl = controllerRef.current
-    if (!ctrl || !session) return
+    if (!active || !ctrl || !session) return
     ctrl.setGeometry(geometry)
     ctrl.setPageCount(pageCount)
     setPageError(null)
     ctrl.requestForeground(page)
-  }, [page, pageCount, geometry, session])
+  }, [active, page, pageCount, geometry, session])
 
   const requestZoomUrl = useCallback(async (pageOverride?: number): Promise<string> => {
     const sess = session
@@ -124,5 +133,5 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
 
   // Effects clear the previous surface after commit; hide it synchronously during
   // the transition so a new document can never render the old page in the gap.
-  return { canvasRef, stageRef, rendering, surface: surfaceBelongsToSession ? surface : null, pageError, requestZoomUrl, clearPageError }
+  return { canvasRef, stageRef, rendering: active ? rendering : false, surface: active && surfaceBelongsToSession ? surface : null, pageError: active ? pageError : null, requestZoomUrl, clearPageError, active }
 }
