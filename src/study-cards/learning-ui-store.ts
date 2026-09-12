@@ -31,7 +31,7 @@ function notify() { subs.forEach(fn => fn()) }
 function set(next: LearningUiState) { state = next; notify() }
 
 export const learningUiActions = {
-  openLibrary(tab: 'cards' | 'artifacts' = 'cards') { lastTab = tab; set({ view: 'library', tab }); notify() },
+  openLibrary(tab: 'cards' | 'artifacts' = 'cards') { lastTab = tab; set({ view: 'library', tab }) },
   close() { set({ view: 'closed' }) },
   backToLibrary(tab?: 'cards' | 'artifacts') { const next = tab ?? lastTab; lastTab = next; set({ view: 'library', tab: next }) },
   openCard(cardId: string, context: CardListContext) { set({ view: 'card', cardId, context }) },
@@ -45,12 +45,13 @@ export function useLearningUi<T>(select: (state: LearningUiState) => T): T {
   return useSyncExternalStore(fn => { subs.add(fn); return () => { subs.delete(fn) } }, () => select(state))
 }
 
-const PREFERENCES_KEY = 'studyCardPreferences'
+/** Settings key holding the user's explicit card list preferences (rebuildable). */
+export const STUDY_CARD_PREFERENCES_KEY = 'studyCardPreferences'
 
 /** Restore the last explicit filter/sort choice. Unknown or legacy values are dropped. */
 export async function loadStudyCardPreferences(): Promise<{ sort: StudyCardSortMode; filter: StudyCardFilterKey }> {
   let stored: StudyCardPreferences | undefined
-  try { stored = (await getSetting(PREFERENCES_KEY)) as StudyCardPreferences | undefined } catch { stored = undefined }
+  try { stored = (await getSetting(STUDY_CARD_PREFERENCES_KEY)) as StudyCardPreferences | undefined } catch { stored = undefined }
   const sorts: StudyCardSortMode[] = ['created-desc', 'created-asc', 'updated-desc', 'last-opened-desc', 'random']
   const sort = stored && stored.sort && sorts.includes(stored.sort) ? stored.sort : DEFAULT_STUDY_CARD_SORT
   const filter = normalizeFilterKey(stored?.documentFilter) ?? { kind: 'all' }
@@ -58,7 +59,7 @@ export async function loadStudyCardPreferences(): Promise<{ sort: StudyCardSortM
 }
 
 export async function persistStudyCardPreferences(next: { sort: StudyCardSortMode; filter: StudyCardFilterKey }): Promise<void> {
-  try { await setSetting(PREFERENCES_KEY, { sort: next.sort, documentFilter: next.filter }) } catch { /* a preference is rebuildable: best effort */ }
+  try { await setSetting(STUDY_CARD_PREFERENCES_KEY, { sort: next.sort, documentFilter: next.filter }) } catch { /* a preference is rebuildable: best effort */ }
 }
 
 export function normalizeFilterKey(value: unknown): StudyCardFilterKey | undefined {

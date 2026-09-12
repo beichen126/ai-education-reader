@@ -4,7 +4,7 @@ import { listDocumentRecords, readDocumentSourceBlob } from '../documents/docume
 import { listDocumentNotes } from '../documents/document-note-service'
 import type { Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
-import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupDocument, type BackupV3, type BackupDraft, type BackupV6, type BackupBranchDraft, type BackupActiveBranch } from './backup-types'
+import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupDocument, type BackupV3, type BackupDraft, type BackupV6, type BackupV7, type BackupBranchDraft, type BackupActiveBranch } from './backup-types'
 import { readBinary } from '../storage/binary-store'
 import { BackupError, parseAndValidate } from './backup-import'
 import { allBranches, getActiveBranch } from '../branches/branch-store'
@@ -13,6 +13,9 @@ import { listCustomActions } from '../artifacts/custom-action-store'
 import { listPromptRecords } from '../prompts/prompt-store'
 import { getPromptPreferences } from '../prompts/prompt-preferences'
 import { normalizePdfNavigationMode } from '../engine/pdf-navigation-settings'
+import { listStudyCards } from '../study-cards/study-card-service'
+import { validateStudyCard } from '../study-cards/study-card-validation'
+import { STUDY_CARD_PREFERENCES_KEY } from '../study-cards/learning-ui-store'
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer()
@@ -35,7 +38,7 @@ async function attachmentBlobOf(id: string, mime: string): Promise<Blob> {
   return blob.type ? blob : blob.slice(0, blob.size, mime || 'application/octet-stream')
 }
 
-export async function buildBackup(): Promise<BackupV6> {
+export async function buildBackup(): Promise<BackupV7> {
   const conversations = (await listConversations()).map((conversation) => ({
     ...conversation,
     promptTransitions: conversation.promptTransitions ?? [],
@@ -123,7 +126,19 @@ export async function buildBackup(): Promise<BackupV6> {
   const artifacts = await listArtifacts()
   const prompts = await listPromptRecords()
   const promptPreferences = await getPromptPreferences()
-  const backup: BackupV6 = { format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents, documentNotes, drafts, appearance: appearanceOut, branches, branchDrafts, artifacts, activeBranches, prompts, promptPreferences }
+  // Study cards are exported as primary data. The derived page index is NOT exported: it is
+  // rebuilt from the cards on import. A card that no longer validates FAILS the whole export
+  // and names itself, so a "complete" backup can never silently drop user data.
+  const studyCards = (await listStudyCards()).map(card => {
+    try { return validateStudyCard(card) }
+    catch { throw new BackupError('学习卡片数据不合法，无法生成完整备份：卡片 ' + card?.id?.slice(0, 8)) }
+  })
+  const studyCardPreferences = await getSetting(STUDY_CARD_PREFERENCES_KEY)
+  const backup: BackupV7 = {
+    format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents, documentNotes, drafts, appearance: appearanceOut, branches, branchDrafts, artifacts, activeBranches, prompts, promptPreferences,
+    studyCards,
+    ...(studyCardPreferences && typeof studyCardPreferences === 'object' ? { studyCardPreferences: studyCardPreferences as BackupV7['studyCardPreferences'] } : {}),
+  }
   // Final self-validation (finding 9.4D.2-0.2): the assembled object MUST pass the SAME
   // pure reference-integrity validator used for import (no JSON round-trip). A "complete"
   // backup that references a missing attachment/document/draft is rejected here, not shipped.

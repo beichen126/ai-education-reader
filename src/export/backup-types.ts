@@ -5,6 +5,7 @@ import type { ConversationBranch } from '../branches/branch-types'
 import type { CustomArtifactAction, StudyArtifact } from '../artifacts/artifact-types'
 import type { PromptDefinition, PromptUserPreferences } from '../prompts/prompt-types'
 import type { PdfNavigationMode } from '../engine/pdf-navigation-settings'
+import type { StudyCard, StudyCardPreferences } from '../study-cards/study-card-types'
 
 export type BackupSettings = { apiBaseUrl: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; customArtifactActions?: CustomArtifactAction[]; visionCapability?: 'auto' | 'supports-image' | 'text-only'; pdfNavigationMode?: PdfNavigationMode }
 /** Persisted composer-draft user data (unsent text + images). Must survive a complete backup. */
@@ -74,8 +75,15 @@ export type BackupV6 = Omit<BackupV5, 'version'> & {
   prompts: PromptDefinition[]
   promptPreferences: PromptUserPreferences
 }
-export type Backup = BackupV1 | BackupV2 | BackupV3 | BackupV4 | BackupV5 | BackupV6
+/** V7: 学习卡片 become first-class backup data. Built from an Omit of V6 so the two
+ *  `version` literals never intersect into `6 & 7`. */
+export type BackupV7 = Omit<BackupV6, 'version'> & {
+  version: 7
+  studyCards: StudyCard[]
+  studyCardPreferences?: StudyCardPreferences
+}
+export type Backup = BackupV1 | BackupV2 | BackupV3 | BackupV4 | BackupV5 | BackupV6 | BackupV7
 export const BACKUP_FORMAT = 'ai-education-reader-backup'
 /** Stage 0-6 product backups used this identifier; imports must still accept it. */
 export const LEGACY_BACKUP_FORMAT = 'dsh-eink-backup'
-export const BACKUP_VERSION = 6
+export const BACKUP_VERSION = 7
