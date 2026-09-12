@@ -7,6 +7,7 @@ import { isArtifactSourceLive } from '../artifacts/artifact-service'
 import { getArtifact } from '../artifacts/artifact-store'
 import type { StudyArtifact } from '../artifacts/artifact-types'
 import { listDocumentSummaries } from '../documents/document-service'
+import { listConversations } from '../storage/storage'
 import {
   DEFAULT_STUDY_CARD_SORT, STUDY_CARD_SORT_MODES, buildStudyCardFilterOptions, createStudyCardSeed,
   selectStudyCards, studyCardPlainText, type StudyCardSortMode,
@@ -57,6 +58,8 @@ export function LearningCenter() {
   const [pageCounts, setPageCounts] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  /** Read-only diagnostics computed with the list, never on every render (§11.4). */
+  const [diagnostics, setDiagnostics] = useState<{ detached: number; missingDocuments: number } | null>(null)
   const [filter, setFilter] = useState<StudyCardFilterKey>({ kind: 'all' })
   const [sort, setSort] = useState<StudyCardSortMode>(DEFAULT_STUDY_CARD_SORT)
   const [seed, setSeed] = useState(() => createStudyCardSeed())
@@ -78,10 +81,22 @@ export function LearningCenter() {
 
   const reload = useCallback(async () => {
     try {
-      const [next, documents] = await Promise.all([listStudyCards(), listDocumentSummaries().catch(() => [])])
+      const [next, documents, conversations] = await Promise.all([
+        listStudyCards(),
+        listDocumentSummaries().catch(() => []),
+        listConversations().catch(() => []),
+      ])
       setCards(next)
       setDocumentNames(new Map<string, string>(documents.map(document => [document.id, document.fileName] as [string, string])))
       setPageCounts(new Map<string, number>(documents.map(document => [document.id, document.pageCount] as [string, number])))
+      // Detached sources are a property of the data, so they are counted here instead of
+      // making the Settings dialog walk every card on every open.
+      const conversationIds = new Set(conversations.map(conversation => conversation.id))
+      const documentIds = new Set(documents.map(document => document.id))
+      setDiagnostics({
+        detached: next.filter(card => !conversationIds.has(card.source.conversationId)).length,
+        missingDocuments: next.filter(card => card.documentRefs.some(ref => ref.documentId && !documentIds.has(ref.documentId))).length,
+      })
       setError(null)
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : '学习卡片读取失败')
@@ -166,6 +181,13 @@ export function LearningCenter() {
               </div>
               {loading && <div className={css.empty} data-testid="card-list-loading">正在读取学习卡片…</div>}
               {error && <div className={css.error} data-testid="card-list-error" role="alert">{error}</div>}
+              {diagnostics && (diagnostics.detached > 0 || diagnostics.missingDocuments > 0) && (
+                <div className={css.hint} data-testid="learning-diagnostics">
+                  {diagnostics.detached > 0 && <span data-testid="learning-diagnostics-detached">{diagnostics.detached} 张卡片的原会话已删除，正文仍可读。</span>}
+                  {diagnostics.detached > 0 && diagnostics.missingDocuments > 0 && ' '}
+                  {diagnostics.missingDocuments > 0 && <span data-testid="learning-diagnostics-documents">{diagnostics.missingDocuments} 张卡片的来源 PDF 已删除，仍可按快照查看。</span>}
+                </div>
+              )}
               {!loading && !error && selected.length === 0 && (
                 <div className={css.empty} data-testid="card-list-empty">
                   {cards.length === 0 ? '还没有学习卡片。在 AI 回复的「⋯」菜单里选择「保存本轮回复为学习卡片」。' : '没有符合当前筛选条件的学习卡片。'}

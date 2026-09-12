@@ -174,10 +174,42 @@ assert((await page.locator('[data-testid="card-viewer"]').innerText()).includes(
 assert(await page.locator('[data-testid="card-source-deleted"]').count() === 1, 'the deleted conversation is reported instead of faked')
 assert(await page.locator('[data-testid="card-back-to-conversation"]').count() === 0, 'a deleted source offers no back link')
 assert((await page.locator('[data-testid="card-source-conversation"]').innerText()) === '回链会话', 'the conversation title snapshot is preserved')
+await page.locator('[data-testid="card-back"]').click()
+await page.waitForTimeout(400)
+assert(await page.locator('[data-testid="learning-diagnostics-detached"]').count() === 1, 'the learning centre reports how many cards lost their source conversation')
+assert((await page.locator('[data-testid="learning-diagnostics-detached"]').innerText()).includes('1 张卡片'), 'the detached count is the real number of cards')
 await page.locator('[data-testid="learning-center-close"]').click()
 await page.locator('[data-testid="learning-center"]').waitFor({ state: 'hidden', timeout: 10000 })
 
-// ---- 5. a deleted document keeps the snapshot and disables the jump ----
+// ---- 5. a clamped page range says so instead of silently landing on a wrong page ----
+await page.evaluate(async ({ documentId }) => {
+  const db = await new Promise((resolve, reject) => { const request = indexedDB.open('ai-education-reader'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error) })
+  const tx = db.transaction('documents', 'readwrite')
+  const store = tx.objectStore('documents')
+  const get = store.get(documentId)
+  get.onsuccess = () => store.put({ ...get.result, pageCount: 4 })
+  await new Promise((resolve, reject) => { tx.oncomplete = resolve; tx.onerror = () => reject(tx.error) })
+  db.close()
+}, { documentId })
+await page.reload({ waitUntil: 'networkidle' })
+await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
+await page.locator('[data-testid="sidebar-entry-cards"]').click()
+await page.locator('[data-testid="learning-center"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.locator('[data-testid="card-item"]').first().click()
+await page.locator('[data-testid="card-viewer"]').waitFor({ state: 'visible', timeout: 10000 })
+assert((await page.locator('[data-testid="card-sources"]').innerText()).includes('第 3–5 页'), 'the card keeps its original page snapshot even after the document shrinks')
+await page.locator('[data-testid="card-source-pdf-page"][data-page="5"]').click()
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 30000 })
+await page.waitForTimeout(800)
+assert((await page.locator('[data-testid="reader-page-input"]').inputValue()).trim() === '4', 'a page beyond the current document is clamped to the last real page')
+assert(await page.locator('[data-testid="card-source-clamp-note"]').isVisible(), 'the clamp is explained instead of silently locating the wrong page')
+assert((await page.locator('[data-testid="card-source-clamp-note"]').innerText()).includes('4'), 'the clamp note states the real page count')
+await page.locator('[data-testid="learning-center-close"]').click()
+await page.locator('[data-testid="learning-center"]').waitFor({ state: 'hidden', timeout: 10000 })
+await page.locator('[data-testid="reader-close"]').click()
+await page.locator('[data-testid="document-reader"]').waitFor({ state: 'detached', timeout: 10000 })
+
+// ---- 6. a deleted document keeps the snapshot and disables the jump ----
 await page.evaluate(async () => {
   const db = await new Promise((resolve, reject) => { const request = indexedDB.open('ai-education-reader'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error) })
   const tx = db.transaction('documents', 'readwrite')
@@ -198,7 +230,7 @@ assert((await page.locator('[data-testid="card-sources"]').innerText()).includes
 await page.locator('[data-testid="learning-center-close"]').click()
 await page.locator('[data-testid="learning-center"]').waitFor({ state: 'hidden', timeout: 10000 })
 
-// ---- 6. the card still exists: deleting sources never deletes cards ----
+// ---- 7. the card still exists: deleting sources never deletes cards ----
 assert((await openAppDb(page, { store: 'studyCards' })).length === 1, 'deleting the conversation and the PDF never deletes the card')
 
 assert(errors.length === 0, 'backlinks produced no page errors or unhandled rejections')

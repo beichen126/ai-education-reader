@@ -1,6 +1,7 @@
 // BYOK settings onboarding e2e (commit 3): desktop dialog width, BYOK explanation,
 // DeepSeek platform link, responsive no-overflow at 360px, editable fields.
 import { chromium } from 'playwright-core'
+import { dismissProductGuide } from './e2e-navigation.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const results = [], errors = []
 const assert = (c, m) => results.push((c ? 'PASS  ' : 'FAIL  ') + m)
@@ -10,6 +11,8 @@ const page = await ctx.newPage()
 page.on('pageerror', e => errors.push('pageerror: ' + e.message))
 await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
+// A fresh profile has no API key, so the first-entry Product Guide covers the sidebar.
+await dismissProductGuide(page)
 await page.locator('[data-testid="sidebar-settings"]').click()
 await page.getByText('设置').first().waitFor({ state: 'visible', timeout: 10000 }).catch(()=>{})
 
