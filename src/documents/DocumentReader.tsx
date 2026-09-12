@@ -11,6 +11,8 @@ import { getDocumentNote, saveDocumentNote } from './document-note-service'
 import { useSessions, getSessionsCurrent, sessionsActions } from '../engine/sessions-store'
 import { listConversations } from '../storage/storage'
 import { allBranches } from '../branches/branch-store'
+import { listStudyCardsByDocumentPage, type StudyCard } from '../study-cards/study-card-service'
+import { learningUiActions } from '../study-cards/learning-ui-store'
 import { formatBytes } from '../storage/diagnostics'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { renderPdfContextRanges, PdfContextRenderError, type ContextRenderProgress } from '../pdf/pdf-context-render'
@@ -492,10 +494,14 @@ export function DocumentReader() {
   }, [notesOpen, noteLoading, currentNoteKey])
 
   // Reverse provenance is a pure, ON-DEMAND query (Stage 2 §5.6): the reader does not
-  // read conversations or branches while the panel is closed, and a page turn only ever
-  // re-queries the exact (documentId, page) pair the user is looking at.
+  // read conversations, branches or cards while the panel is closed, and a page turn only
+  // ever re-queries the exact (documentId, page) pair the user is looking at.
+  // Stage 7 splits the panel into two independent categories: 会话 and 学习卡片.
   const sessionsListRef = useSessions(s => s.list)
   const [relatedRevision, setRelatedRevision] = useState(0)
+  const [relatedCards, setRelatedCards] = useState<StudyCard[]>([])
+  const [relatedConvState, setRelatedConvState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [relatedCardState, setRelatedCardState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   useEffect(() => {
     if (!relatedOpen) return
     if (!docId || !doc) return
@@ -504,15 +510,29 @@ export function DocumentReader() {
     const timer = window.setTimeout(() => {
       const targetPage = page
       const targetDocId = doc.id
+      setRelatedConvState('loading')
+      setRelatedCardState('loading')
+      // One category failing never blocks the other.
       void Promise.all([listConversations(), allBranches()]).then(([conversations, branches]) => {
         if (cancelled) return
         setRelatedConversations(findConversationsByDocumentPage(targetDocId, targetPage, conversations, branches))
+        setRelatedConvState('ready')
       }).catch(() => {
         if (cancelled) return
         setRelatedConversations([])
-        setRelatedError('相关对话读取失败，可关闭面板后重试。')
+        setRelatedConvState('error')
+        setRelatedError('会话读取失败，可关闭面板后重试。')
       })
-    }, 150)
+      void listStudyCardsByDocumentPage(targetDocId, targetPage).then(cards => {
+        if (cancelled) return
+        setRelatedCards(cards)
+        setRelatedCardState('ready')
+      }).catch(() => {
+        if (cancelled) return
+        setRelatedCards([])
+        setRelatedCardState('error')
+      })
+    }, 200)
     return () => { cancelled = true; window.clearTimeout(timer) }
   }, [relatedOpen, relatedRevision, docId, doc?.id, page, sessionsListRef])
   // Closing the panel drops the previous result; nothing is queried while it is closed.
@@ -520,11 +540,24 @@ export function DocumentReader() {
     if (relatedOpen) return
     setRelatedConversations([])
     setRelatedError(null)
+    setRelatedCards([])
+    setRelatedConvState('idle')
+    setRelatedCardState('idle')
   }, [relatedOpen])
   const openRelatedPanel = () => {
     setRelatedOpen(open => {
       if (!open) setRelatedRevision(value => value + 1)
       return !open
+    })
+  }
+  const openRelatedCard = (card: StudyCard) => {
+    const documentId = card.documentRefs.find(ref => ref.documentId)?.documentId ?? ''
+    learningUiActions.openCard(card.id, {
+      filter: documentId ? { kind: 'document', documentId } : { kind: 'all' },
+      query: '',
+      sort: 'created-desc',
+      seed: 1,
+      orderedIds: relatedCards.map(item => item.id),
     })
   }
 
@@ -1020,7 +1053,7 @@ export function DocumentReader() {
           )}
           {doc && (
             <button className={css.relatedBtn} data-testid="reader-related-toggle" aria-expanded={relatedOpen} onClick={openRelatedPanel}>
-              关于此页{relatedOpen && relatedConversations.length > 0 ? ' ' + relatedConversations.length : ''}
+              关于此页{relatedOpen && (relatedConversations.length + relatedCards.length) > 0 ? ' ' + (relatedConversations.length + relatedCards.length) : ''}
             </button>
           )}
           <button ref={tocToggleRef} className={css.tocToggle} data-testid="reader-toc-toggle" aria-expanded={tocPanelClosed ? false : (isNarrowViewport() ? tocOpen : true)} aria-controls={loadError ? undefined : 'reader-toc-panel'} onClick={toggleToc}>目录</button>
@@ -1031,6 +1064,10 @@ export function DocumentReader() {
       {relatedOpen && (
         <div className={css.relatedPanel} data-testid="reader-related-conversations">
           <div className={css.relatedTitle}>关于此页 · 第 {page} 页</div>
+          <div className={css.relatedGroupTitle} data-testid="reader-related-conversations-group">会话{relatedConvState === 'ready' ? '（' + relatedConversations.length + '）' : ''}</div>
+          {relatedConvState === 'loading' && <div className={css.relatedMeta} data-testid="reader-related-conversations-loading">正在读取会话…</div>}
+          {relatedConvState === 'error' && <div className={css.relatedError} data-testid="reader-related-conversations-error">会话读取失败</div>}
+          {relatedConvState === 'ready' && relatedConversations.length === 0 && <div className={css.relatedMeta} data-testid="reader-related-conversations-empty">这一页还没有相关会话。</div>}
           {relatedConversations.map((hit) => (
             <button type="button" className={css.relatedItem} data-testid="reader-related-item" key={hit.conversationId + ':' + hit.messageId + ':' + hit.documentId + ':' + hit.pageNumber} onClick={() => void openRelatedConversation(hit)}>
               <span className={css.relatedConversation}>{hit.conversationTitle}</span>
@@ -1038,7 +1075,16 @@ export function DocumentReader() {
               {hit.messagePreview && <span className={css.relatedPreview}>“{hit.messagePreview}”</span>}
             </button>
           ))}
-          {relatedConversations.length === 0 && !relatedError && <div className={css.relatedMeta} data-testid="reader-related-empty">这一页还没有相关会话。</div>}
+          <div className={css.relatedGroupTitle} data-testid="reader-related-cards-group">学习卡片{relatedCardState === 'ready' ? '（' + relatedCards.length + '）' : ''}</div>
+          {relatedCardState === 'loading' && <div className={css.relatedMeta} data-testid="reader-related-cards-loading">正在读取学习卡片…</div>}
+          {relatedCardState === 'error' && <div className={css.relatedError} data-testid="reader-related-cards-error">学习卡片读取失败</div>}
+          {relatedCardState === 'ready' && relatedCards.length === 0 && <div className={css.relatedMeta} data-testid="reader-related-cards-empty">这一页还没有学习卡片。</div>}
+          {relatedCards.map(card => (
+            <button type="button" className={css.relatedItem} data-testid="reader-related-card" data-card-id={card.id} key={card.id} onClick={() => openRelatedCard(card)}>
+              <span className={css.relatedConversation}>{card.title}</span>
+              <span className={css.relatedMeta}>{card.source.conversationTitleSnapshot || '学习卡片'}</span>
+            </button>
+          ))}
           {relatedError && <div className={css.relatedError} data-testid="reader-related-error">{relatedError}</div>}
         </div>
       )}
