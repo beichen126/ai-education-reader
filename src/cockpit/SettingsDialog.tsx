@@ -5,6 +5,7 @@ import { uiActions } from '../engine/ui-store'
 import { useSessions } from '../engine/sessions-store'
 import { exportBackupJson, exportConversationMd, exportMarkedOnlyMd, exportConversationBundle, importBackupText, BackupError } from '../export'
 import { type AppearanceMode } from '../theme/theme'
+import type { PromptKind } from '../prompts/prompt-types'
 import { setAppearance, setPdfNavigationMode, type PdfNavigationMode } from '../engine/settings-store'
 import { Modal, Button, Input } from '../dsh/primitives'
 import { getStorageDiagnostics, formatBytes, type StorageDiagnostics } from '../storage/diagnostics'
@@ -13,6 +14,15 @@ import { releaseAllPreviews } from '../engine/attachment-service'
 import css from './cockpit.module.css'
 
 export const APP_NAME = 'AI Education Reader'
+
+/** The four prompt-management entries Settings owns. System protocols are deliberately NOT
+ *  one of them: they stay reachable only by a user who opens the 系统协议 category. */
+export const SETTINGS_PROMPT_ENTRIES: { controlId: string; label: string; category?: PromptKind }[] = [
+  { controlId: 'settings-prompts-all', label: '全部提示词' },
+  { controlId: 'settings-prompts-conversation-mode', label: '会话模式', category: 'conversation-mode' },
+  { controlId: 'settings-prompts-artifact', label: '学习成果', category: 'artifact' },
+  { controlId: 'settings-prompts-quick-follow-up', label: '快捷追问', category: 'quick-follow-up' },
+]
 
 function ShowHideLabel(props: { visible: boolean; onToggle: () => void; onClear: () => void }) {
   const { visible, onToggle, onClear } = props
@@ -186,6 +196,22 @@ export function SettingsDialog() {
             <button type="button" className={css.keyToggle} data-testid="settings-pdf-navigation-retry" onClick={() => void applyPdfNavigation(pdfFailure.mode)}>重试</button>
           </div>
         )}
+      </div>
+      <div className={css.exportSection} data-testid="settings-prompts">
+        <div className={css.exportTitle}>提示词管理</div>
+        <div className={css.exportRow}>
+          {SETTINGS_PROMPT_ENTRIES.map(entry => (
+            <Button
+              key={entry.controlId}
+              variant="outline"
+              data-testid={entry.controlId}
+              onClick={() => uiActions.openPromptManager(entry.category, { kind: 'settings', controlId: entry.controlId })}
+            >
+              {entry.label}
+            </Button>
+          ))}
+        </div>
+        <div className={css.settingsHint}>打开提示词管理后可按分类查看、编辑、复制或停用提示词；系统协议只在提示词管理的“系统协议”分类里查看。</div>
       </div>
       <div className={css.storageSection}>
         <div className={css.exportTitle}>本地存储</div>
