@@ -72,7 +72,7 @@ if (shouldRun(scenario)) {
   if (await expanded.isVisible().catch(() => false)) await page.locator('[data-testid="sidebar-collapse"]').click()
   await page.locator('[data-testid="rail-history"]').waitFor({ state: 'visible', timeout: 10000 })
   const order = await page.locator('[data-testid^="rail-"]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-testid')))
-  assert(order.join('|') === 'rail-history|rail-new-chat|rail-images|rail-files|rail-fullscreen|rail-settings|rail-help', 'V200-FCR-01 collapsed rail follows the v2.2.0 order with help last')
+  assert(order.join('|') === 'rail-history|rail-new-chat|rail-images|rail-files|rail-cards|rail-fullscreen|rail-settings|rail-help', 'V200-FCR-01 collapsed rail follows the v2.2.0 order with help last (got ' + order.join('|') + ')')
   assert(await page.locator('[data-testid="rail-prompts"]').count() === 0, 'V200-FCR-01 the collapsed rail no longer carries a prompt entry')
   assert(order[order.length - 1] === 'rail-help', 'V200-FCR-01 help is the last collapsed-rail action')
   await page.locator('[data-testid="rail-settings"]').click()
