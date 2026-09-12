@@ -24,6 +24,7 @@ import { DocumentReader } from './documents/DocumentReader'
 import { migrateLegacyPrompts } from './prompts/prompt-migration'
 import { migratePromptSimplification } from './prompts/prompt-simplification'
 import { ProductGuideDialog } from './help/ProductGuideDialog'
+import { LearningCenter } from './study-cards/LearningCenter'
 import { getProductGuideSeenVersion, markProductGuideSeen, PRODUCT_GUIDE_VERSION } from './help/product-guide-state'
 import { documentUiActions } from './documents/document-ui-store'
 
@@ -112,6 +113,7 @@ export function App() {
       />
       {settingsOpen && <SettingsDialog />}
       {promptManagerOpen && <PromptManager />}
+      <LearningCenter />
       <Gallery />
       <DocumentLibrary />
       <DocumentReader />
