@@ -1,11 +1,11 @@
-import { useState, useCallback, useEffect } from 'react'
-import { useSettings, saveSettings, DEFAULT_SETTINGS } from '../engine/settings-store'
+import { useState, useCallback, useEffect, useRef } from 'react'
+import { useSettings, patchSettings, DEFAULT_SETTINGS, useSettingsMutation } from '../engine/settings-store'
 import { testConnection, type VisionCapability } from '../api/deepseek'
 import { uiActions } from '../engine/ui-store'
 import { useSessions } from '../engine/sessions-store'
 import { exportBackupJson, exportConversationMd, exportMarkedOnlyMd, exportConversationBundle, importBackupText, BackupError } from '../export'
 import { type AppearanceMode } from '../theme/theme'
-import { setAppearance, type PdfNavigationMode } from '../engine/settings-store'
+import { setAppearance, setPdfNavigationMode, type PdfNavigationMode } from '../engine/settings-store'
 import { Modal, Button, Input } from '../dsh/primitives'
 import { getStorageDiagnostics, formatBytes, type StorageDiagnostics } from '../storage/diagnostics'
 import { clearAllLocalData } from '../storage/storage'
@@ -31,7 +31,32 @@ export function SettingsDialog() {
   const [showKey, setShowKey] = useState(false)
   const [model, setModel] = useState(s.model || DEFAULT_SETTINGS.model)
   const [visionCapability, setVisionCapability] = useState<VisionCapability>(s.visionCapability || 'auto')
-  const [pdfNavigationMode, setPdfNavigationMode] = useState<PdfNavigationMode>(s.pdfNavigationMode || 'paged')
+  // PDF navigation is committed the moment the user chooses it. `pdfPending` only carries
+  // the optimistic visual until the IndexedDB transaction resolves; the durable value is
+  // always `s.pdfNavigationMode` from the committed store.
+  const [pdfPending, setPdfPending] = useState<PdfNavigationMode | null>(null)
+  const [pdfFailure, setPdfFailure] = useState<{ mode: PdfNavigationMode; message: string } | null>(null)
+  const mountedRef = useRef(true)
+  useEffect(() => () => { mountedRef.current = false }, [])
+  const mutation = useSettingsMutation()
+  const pdfNavigationMode = pdfPending ?? s.pdfNavigationMode
+  const pdfBusy = pdfPending !== null && pdfPending !== s.pdfNavigationMode
+  const applyPdfNavigation = (next: PdfNavigationMode) => {
+    setPdfFailure(null)
+    setPdfPending(next)
+    return setPdfNavigationMode(next).then(
+      () => { if (mountedRef.current) setPdfPending(null) },
+      (error: unknown) => {
+        // Roll the visible selection back to the committed value and offer a retry.
+        const message = error instanceof Error && error.message ? error.message : '保存失败'
+        if (mountedRef.current) { setPdfPending(null); setPdfFailure({ mode: next, message }) }
+      },
+    )
+  }
+  const choosePdfNavigation = (next: PdfNavigationMode) => {
+    if (next === pdfNavigationMode && !pdfFailure) return
+    void applyPdfNavigation(next)
+  }
   const [test, setTest] = useState<string | null>(null)
   const [testOk, setTestOk] = useState<boolean | null>(null)
   const [saved, setSaved] = useState(false)
@@ -49,7 +74,15 @@ export function SettingsDialog() {
   }, [])
   useEffect(() => { void loadStorage() }, [loadStorage])
 
-  const onSave = async () => { await saveSettings({ ...s, apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), appearance: s.appearance, visionCapability, pdfNavigationMode }); setSaved(true); setTimeout(() => setSaved(false), 1500) }
+  // The API form saves ONLY API-scoped fields. It must never write the PDF navigation mode
+  // (committed on click) or a stale appearance snapshot.
+  const onSave = async () => {
+    setSaved(false)
+    try {
+      await patchSettings({ apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), visionCapability })
+      setSaved(true); setTimeout(() => setSaved(false), 1500)
+    } catch { /* mutation state carries the visible failure */ }
+  }
   const onTest = async () => {
     setTest('正在测试…'); setTestOk(null)
     const r = await testConnection({ apiKey: key.trim(), baseUrl: base.trim() })
@@ -110,8 +143,11 @@ export function SettingsDialog() {
       <div className={css.settingsHint}>API Key 保存在当前浏览器本地（IndexedDB），不进源码、不走 Git。发送消息时，所选文本与图片会直接发送到你配置的 API 服务（默认 https://api.deepseek.com）。本项目自身没有中转服务器。</div>
       <div className={css.settingsActions}>
         <Button variant="outline" onClick={onTest}>{test ?? '测试连接'}</Button>
-        <Button variant="primary" onClick={onSave}>{saved ? '已保存' : '保存'}</Button>
+        <Button variant="primary" onClick={onSave}>{saved ? '已保存' : '保存 API 设置'}</Button>
       </div>
+      {mutation.status === 'error' && mutation.error && (
+        <div className={css.testResult} data-ok="false" data-testid="settings-mutation-error">设置保存失败：{mutation.error}</div>
+      )}
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
       <div className={css.settingsHint}>“测试连接”仅调用 GET /models 验证服务可达与 Key 有效，不会发送聊天内容或文档。</div>
       <div className={css.exportSection}>
@@ -135,14 +171,21 @@ export function SettingsDialog() {
           <button type="button" className={css.appearanceOpt} data-testid="appearance-light" aria-pressed={s.appearance === 'light'} data-selected={s.appearance === 'light'} onClick={() => void setAppearance('light')}>浅色</button>
           <button type="button" className={css.appearanceOpt} data-testid="appearance-dark" aria-pressed={s.appearance === 'dark'} data-selected={s.appearance === 'dark'} onClick={() => void setAppearance('dark')}>深色</button>
         </div>
+        <div className={css.settingsHint}>选择后自动保存。</div>
       </div>
       <div className={css.exportSection} data-testid="settings-pdf-navigation">
         <div className={css.exportTitle} id="settings-pdf-navigation-label">PDF 阅读方式</div>
         <div className={css.appearanceRow} role="radiogroup" aria-labelledby="settings-pdf-navigation-label">
-          <button type="button" role="radio" className={css.appearanceOpt} data-testid="pdf-navigation-paged" aria-checked={pdfNavigationMode === 'paged'} data-selected={pdfNavigationMode === 'paged'} onClick={() => setPdfNavigationMode('paged')}>单页翻页</button>
-          <button type="button" role="radio" className={css.appearanceOpt} data-testid="pdf-navigation-continuous" aria-checked={pdfNavigationMode === 'continuous'} data-selected={pdfNavigationMode === 'continuous'} onClick={() => setPdfNavigationMode('continuous')}>连续上下滚动</button>
+          <button type="button" role="radio" className={css.appearanceOpt} data-testid="pdf-navigation-paged" aria-checked={pdfNavigationMode === 'paged'} aria-busy={pdfBusy || undefined} data-selected={pdfNavigationMode === 'paged'} onClick={() => choosePdfNavigation('paged')}>单页翻页</button>
+          <button type="button" role="radio" className={css.appearanceOpt} data-testid="pdf-navigation-continuous" aria-checked={pdfNavigationMode === 'continuous'} aria-busy={pdfBusy || undefined} data-selected={pdfNavigationMode === 'continuous'} onClick={() => choosePdfNavigation('continuous')}>连续上下滚动</button>
         </div>
-        <div className={css.settingsHint}>连续滚动只渲染屏幕附近的页面，可随时切换并保持当前页；对消息中的静态图片没有影响。</div>
+        <div className={css.settingsHint}>选择后自动保存。连续滚动只渲染屏幕附近的页面，可随时切换并保持当前页；对消息中的静态图片没有影响。</div>
+        {pdfFailure && (
+          <div className={css.testResult} data-ok="false" data-testid="settings-pdf-navigation-error">
+            阅读方式保存失败：{pdfFailure.message}
+            <button type="button" className={css.keyToggle} data-testid="settings-pdf-navigation-retry" onClick={() => void applyPdfNavigation(pdfFailure.mode)}>重试</button>
+          </div>
+        )}
       </div>
       <div className={css.storageSection}>
         <div className={css.exportTitle}>本地存储</div>
