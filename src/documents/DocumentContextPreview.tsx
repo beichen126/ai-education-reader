@@ -202,17 +202,19 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
                 {display.mode !== 'continuous' && <button type="button" className={css.pageButton} data-testid="doc-context-preview-page" disabled={zoomBusy} onClick={() => openZoom()} aria-label={'PDF 第 ' + page + ' 页，点击放大'}>
                   <canvas ref={display.canvasRef} className={css.canvas} data-testid="doc-context-preview-page-canvas" aria-label={'PDF 第 ' + page + ' 页'} data-render-width={display.surface ? String(display.surface.width) : undefined} data-render-height={display.surface ? String(display.surface.height) : undefined} />
                 </button>}
-                {display.mode === 'continuous' && display.continuousPages && (
+                {display.mode === 'continuous' && display.continuousWindow && (
                   <div className={css.continuousStack} data-testid="doc-context-preview-continuous-scroll" role="region" aria-label="PDF 连续阅读">
-                    {display.continuousPages.map(view => (
-                      <section key={view.pageNumber} ref={view.pageRef} className={css.continuousPage} data-testid={'doc-context-preview-continuous-page-' + view.pageNumber} data-page-number={view.pageNumber} data-mounted={String(view.mounted)} style={view.style}>
-                        {view.mounted && view.surface ? (
+                    <div className={css.continuousSpacer} data-testid="doc-context-preview-continuous-top-spacer" style={{ height: display.continuousWindow.topSpacer + 'px' }} />
+                    {display.continuousWindow.pages.map(view => (
+                      <section key={view.pageNumber} className={css.continuousPage} data-testid={'doc-context-preview-continuous-page-' + view.pageNumber} data-page-number={view.pageNumber} data-mounted="true" style={view.style}>
+                        {view.surface ? (
                           <button type="button" className={css.continuousPageButton} data-testid={'doc-context-preview-continuous-page-button-' + view.pageNumber} disabled={zoomBusy} onClick={() => openZoom(view.pageNumber)}>
                             <canvas ref={view.canvasRef} className={css.continuousCanvas} data-testid={'doc-context-preview-continuous-canvas-' + view.pageNumber} aria-label={'PDF 第 ' + view.pageNumber + ' 页'} width={view.surface.width} height={view.surface.height} />
                           </button>
-                        ) : view.mounted && view.error ? <div className={css.error} role="alert">{view.error}</div> : <span className={css.continuousPlaceholder}>第 {view.pageNumber} 页</span>}
+                        ) : view.error ? <div className={css.error} role="alert">{view.error}</div> : <span className={css.continuousPlaceholder}>第 {view.pageNumber} 页</span>}
                       </section>
                     ))}
+                    <div className={css.continuousSpacer} data-testid="doc-context-preview-continuous-bottom-spacer" style={{ height: display.continuousWindow.bottomSpacer + 'px' }} />
                   </div>
                 )}
                 {display.rendering && <div className={css.rendering} aria-live="polite">正在渲染第 {page} 页…</div>}

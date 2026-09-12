@@ -491,20 +491,42 @@ export function DocumentReader() {
     return () => window.clearTimeout(focusTimer)
   }, [notesOpen, noteLoading, currentNoteKey])
 
-  // Reverse provenance is a pure data query. Reader only loads the current records,
-  // filters by the exact document/page pair, and renders the lightweight result list.
+  // Reverse provenance is a pure, ON-DEMAND query (Stage 2 §5.6): the reader does not
+  // read conversations or branches while the panel is closed, and a page turn only ever
+  // re-queries the exact (documentId, page) pair the user is looking at.
+  const sessionsListRef = useSessions(s => s.list)
+  const [relatedRevision, setRelatedRevision] = useState(0)
   useEffect(() => {
+    if (!relatedOpen) return
+    if (!docId || !doc) return
     let cancelled = false
-    setRelatedOpen(false)
     setRelatedError(null)
-    if (!docId || !doc) { setRelatedConversations([]); return () => { cancelled = true } }
+    const timer = window.setTimeout(() => {
+      const targetPage = page
+      const targetDocId = doc.id
+      void Promise.all([listConversations(), allBranches()]).then(([conversations, branches]) => {
+        if (cancelled) return
+        setRelatedConversations(findConversationsByDocumentPage(targetDocId, targetPage, conversations, branches))
+      }).catch(() => {
+        if (cancelled) return
+        setRelatedConversations([])
+        setRelatedError('相关对话读取失败，可关闭面板后重试。')
+      })
+    }, 150)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [relatedOpen, relatedRevision, docId, doc?.id, page, sessionsListRef])
+  // Closing the panel drops the previous result; nothing is queried while it is closed.
+  useEffect(() => {
+    if (relatedOpen) return
     setRelatedConversations([])
-    void Promise.all([listConversations(), allBranches()]).then(([conversations, branches]) => {
-      if (cancelled) return
-      setRelatedConversations(findConversationsByDocumentPage(doc.id, page, conversations, branches))
-    }).catch(() => { if (!cancelled) setRelatedConversations([]) })
-    return () => { cancelled = true }
-  }, [docId, doc?.id, page])
+    setRelatedError(null)
+  }, [relatedOpen])
+  const openRelatedPanel = () => {
+    setRelatedOpen(open => {
+      if (!open) setRelatedRevision(value => value + 1)
+      return !open
+    })
+  }
 
   // ---- Invalidate any PENDING zoom render on navigation (Agent G, G2): every page turn / doc
   //      switch (and reader close) bumps the zoom generation, so a zoom that is still rendering
@@ -996,9 +1018,9 @@ export function DocumentReader() {
               {ctxBusy ? '处理中' : '加入对话'}
             </button>
           )}
-          {relatedConversations.length > 0 && (
-            <button className={css.relatedBtn} data-testid="reader-related-toggle" onClick={() => setRelatedOpen(o => !o)}>
-              相关对话 {relatedConversations.length}
+          {doc && (
+            <button className={css.relatedBtn} data-testid="reader-related-toggle" aria-expanded={relatedOpen} onClick={openRelatedPanel}>
+              关于此页{relatedOpen && relatedConversations.length > 0 ? ' ' + relatedConversations.length : ''}
             </button>
           )}
           <button ref={tocToggleRef} className={css.tocToggle} data-testid="reader-toc-toggle" aria-expanded={tocPanelClosed ? false : (isNarrowViewport() ? tocOpen : true)} aria-controls={loadError ? undefined : 'reader-toc-panel'} onClick={toggleToc}>目录</button>
@@ -1006,9 +1028,9 @@ export function DocumentReader() {
           <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>关闭</button>
         </div>
       </div>
-      {relatedOpen && relatedConversations.length > 0 && (
+      {relatedOpen && (
         <div className={css.relatedPanel} data-testid="reader-related-conversations">
-          <div className={css.relatedTitle}>包含第 {page} 页的对话</div>
+          <div className={css.relatedTitle}>关于此页 · 第 {page} 页</div>
           {relatedConversations.map((hit) => (
             <button type="button" className={css.relatedItem} data-testid="reader-related-item" key={hit.conversationId + ':' + hit.messageId + ':' + hit.documentId + ':' + hit.pageNumber} onClick={() => void openRelatedConversation(hit)}>
               <span className={css.relatedConversation}>{hit.conversationTitle}</span>
@@ -1016,6 +1038,7 @@ export function DocumentReader() {
               {hit.messagePreview && <span className={css.relatedPreview}>“{hit.messagePreview}”</span>}
             </button>
           ))}
+          {relatedConversations.length === 0 && !relatedError && <div className={css.relatedMeta} data-testid="reader-related-empty">这一页还没有相关会话。</div>}
           {relatedError && <div className={css.relatedError} data-testid="reader-related-error">{relatedError}</div>}
         </div>
       )}
@@ -1073,17 +1096,19 @@ export function DocumentReader() {
                   <canvas ref={display.canvasRef} className={css.pageCanvas} data-testid="reader-page-img" aria-label={'PDF 第 ' + page + ' 页'} data-render-width={String(display.surface.width)} data-render-height={String(display.surface.height)} width={display.surface.width} height={display.surface.height} />
                 </button>
               )}
-              {display.mode === 'continuous' && display.continuousPages && (
+              {display.mode === 'continuous' && display.continuousWindow && (
                 <div className={css.continuousStack} data-testid="reader-continuous-scroll" role="region" aria-label="PDF 连续阅读">
-                  {display.continuousPages.map(view => (
-                    <section key={view.pageNumber} ref={view.pageRef} className={css.continuousPage} data-testid={'reader-continuous-page-' + view.pageNumber} data-page-number={view.pageNumber} data-mounted={String(view.mounted)} style={view.style}>
-                      {view.mounted && view.surface ? (
+                  <div className={css.continuousSpacer} data-testid="reader-continuous-top-spacer" style={{ height: display.continuousWindow.topSpacer + 'px' }} />
+                  {display.continuousWindow.pages.map(view => (
+                    <section key={view.pageNumber} className={css.continuousPage} data-testid={'reader-continuous-page-' + view.pageNumber} data-page-number={view.pageNumber} data-mounted="true" style={view.style}>
+                      {view.surface ? (
                         <button type="button" className={css.continuousPageButton} data-testid={'reader-continuous-page-button-' + view.pageNumber} disabled={zoomBusy} onClick={() => openZoom(view.pageNumber)}>
                           <canvas ref={view.canvasRef} className={css.continuousCanvas} data-testid={'reader-continuous-canvas-' + view.pageNumber} aria-label={'PDF 第 ' + view.pageNumber + ' 页'} width={view.surface.width} height={view.surface.height} data-render-width={String(view.surface.width)} data-render-height={String(view.surface.height)} />
                         </button>
-                      ) : view.mounted && view.error ? <div className={css.errorBox} role="alert">{view.error}</div> : <span className={css.continuousPlaceholder}>第 {view.pageNumber} 页</span>}
+                      ) : view.error ? <div className={css.errorBox} role="alert">{view.error}</div> : <span className={css.continuousPlaceholder}>第 {view.pageNumber} 页</span>}
                     </section>
                   ))}
+                  <div className={css.continuousSpacer} data-testid="reader-continuous-bottom-spacer" style={{ height: display.continuousWindow.bottomSpacer + 'px' }} />
                 </div>
               )}
             </main>
