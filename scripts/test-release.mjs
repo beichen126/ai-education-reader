@@ -39,6 +39,7 @@ const CORE_E2E = [
   'e2e-product-guide',
   'e2e-continuous-scroll',
   'e2e-settings-navigation-lifecycle',
+  'e2e-pdf-renderer-ownership',
   'e2e-v201-regressions',
   'e2e-v202-message-state',
   'e2e-v202-rejection',
