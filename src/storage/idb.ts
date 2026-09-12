@@ -1,6 +1,6 @@
 export const DB_NAME = 'ai-education-reader'
-export const DB_VERSION = 7
-export const STORES = ['settings', 'conversations', 'attachments', 'annotations', 'documents', 'documentNotes', 'conversationBranches', 'artifacts', 'prompts'] as const
+export const DB_VERSION = 8
+export const STORES = ['settings', 'conversations', 'attachments', 'annotations', 'documents', 'documentNotes', 'conversationBranches', 'artifacts', 'prompts', 'studyCards', 'studyCardPageRefs'] as const
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
@@ -50,6 +50,22 @@ function openDb(): Promise<IDBDatabase> {
       const prompts = req.transaction!.objectStore('prompts')
       if (!prompts.indexNames.contains('by_kind')) prompts.createIndex('by_kind', 'kind')
       if (!prompts.indexNames.contains('by_updatedAt')) prompts.createIndex('by_updatedAt', 'updatedAt')
+      // v2.2.0 v7 -> v8: study cards are their own first-class store. The upgrade only
+      // creates empty stores/indexes; existing data is never rewritten or copied.
+      if (!db.objectStoreNames.contains('studyCards')) db.createObjectStore('studyCards', { keyPath: 'id' })
+      const cards = req.transaction!.objectStore('studyCards')
+      if (!cards.indexNames.contains('by_createdAt')) cards.createIndex('by_createdAt', 'createdAt')
+      if (!cards.indexNames.contains('by_updatedAt')) cards.createIndex('by_updatedAt', 'updatedAt')
+      if (!cards.indexNames.contains('by_lastOpenedAt')) cards.createIndex('by_lastOpenedAt', 'lastOpenedAt')
+      if (!cards.indexNames.contains('by_source_conversation')) cards.createIndex('by_source_conversation', 'source.conversationId')
+      if (!cards.indexNames.contains('by_source_message')) cards.createIndex('by_source_message', 'source.assistantMessageId', { unique: true })
+      if (!cards.indexNames.contains('by_document')) cards.createIndex('by_document', 'documentIds', { multiEntry: true })
+      // Derived page index: one row per (documentId, page, card), rebuilt from the cards.
+      if (!db.objectStoreNames.contains('studyCardPageRefs')) db.createObjectStore('studyCardPageRefs', { keyPath: 'id' })
+      const pageRefs = req.transaction!.objectStore('studyCardPageRefs')
+      if (!pageRefs.indexNames.contains('by_document_page')) pageRefs.createIndex('by_document_page', ['documentId', 'pageNumber'])
+      if (!pageRefs.indexNames.contains('by_card')) pageRefs.createIndex('by_card', 'cardId')
+      if (!pageRefs.indexNames.contains('by_document')) pageRefs.createIndex('by_document', 'documentId')
     }
     req.onsuccess = () => {
       const db = req.result
@@ -77,9 +93,14 @@ function openDb(): Promise<IDBDatabase> {
 function asPromise(req: IDBRequest<any>): Promise<any> { return new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error) }) }
 function tx(db: IDBDatabase, name: string, mode: IDBTransactionMode) { return db.transaction(name, mode).objectStore(name) }
 
+/** Open (and, if needed, upgrade) the application database. Exported so a domain store can
+ *  compose its own multi-store transaction, exactly like the document-note helper below. */
+export function openIdb(): Promise<IDBDatabase> { return openDb() }
+
 /** Resolve only when a readwrite transaction COMMITS; reject on error/abort.
  *  Request success is NOT the same as transaction commit — a write is only durable
  *  after oncomplete. Awaiting this primitive guarantees the write is truly committed. */
+export function idbTxnDone(txn: IDBTransaction): Promise<void> { return txnDone(txn) }
 function txnDone(txn: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     let done = false
@@ -297,7 +318,7 @@ export async function idbClearAll(): Promise<void> {
 }
 
 export async function closeDb(): Promise<void> { if (dbPromise) { const db = await dbPromise; try { db.close() } catch { /* ignore */ } dbPromise = null } }
-export async function idbReplaceAll(records: { settings: any[]; conversations: any[]; attachments: any[]; annotations: any[]; documents?: any[]; documentNotes?: any[]; conversationBranches?: any[]; artifacts?: any[]; prompts?: any[] }): Promise<void> {
+export async function idbReplaceAll(records: { settings: any[]; conversations: any[]; attachments: any[]; annotations: any[]; documents?: any[]; documentNotes?: any[]; conversationBranches?: any[]; artifacts?: any[]; prompts?: any[]; studyCards?: any[]; studyCardPageRefs?: any[] }): Promise<void> {
   const db = await openDb()
   const txn = db.transaction(STORES, 'readwrite')
   const stores = STORES
@@ -312,5 +333,7 @@ export async function idbReplaceAll(records: { settings: any[]; conversations: a
   if (records.conversationBranches) put('conversationBranches', records.conversationBranches)
   if (records.artifacts) put('artifacts', records.artifacts)
   if (records.prompts) put('prompts', records.prompts)
+  if (records.studyCards) put('studyCards', records.studyCards)
+  if (records.studyCardPageRefs) put('studyCardPageRefs', records.studyCardPageRefs)
   await txnDone(txn)
 }
