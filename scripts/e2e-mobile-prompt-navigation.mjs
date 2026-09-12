@@ -108,10 +108,14 @@ for (const size of [
   const nav = page.locator('[data-testid="mobile-history-drawer"]')
   await nav.waitFor({ state: 'visible', timeout: 5000 })
   assert(await nav.getAttribute('role') === 'navigation' && await nav.getAttribute('aria-label') === '主导航', size.width + 'px main navigation drawer has role/name')
-  assert(await nav.locator('[data-testid="sidebar-entry-images"]').count() === 1 && await nav.locator('[data-testid="sidebar-entry-files"]').count() === 1 && await nav.locator('[data-testid="sidebar-entry-prompts"]').count() === 1, size.width + 'px drawer keeps direct access to image/file/prompt actions')
+  assert(await nav.locator('[data-testid="sidebar-entry-images"]').count() === 1 && await nav.locator('[data-testid="sidebar-entry-files"]').count() === 1, size.width + 'px drawer keeps direct access to image/file actions')
+  assert(await nav.locator('[data-testid="sidebar-entry-prompts"]').count() === 0, size.width + 'px drawer no longer carries a first-level prompt entry')
+  assert(await nav.locator('[data-testid="sidebar-settings"]').count() === 1, size.width + 'px drawer owns the Settings entry that reaches prompts')
   await measureNoOverflow(page, size.width + 'px navigation')
 
-  await nav.locator('[data-testid="sidebar-entry-prompts"]').click()
+  await nav.locator('[data-testid="sidebar-settings"]').click()
+  await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+  await page.locator('[data-testid="settings-prompts-all"]').click()
   const manager = page.locator('[data-testid="prompt-manager"]')
   await manager.waitFor({ state: 'visible', timeout: 10000 })
   assert(await manager.getAttribute('role') === 'dialog' && await manager.getAttribute('aria-label') === '提示词管理', size.width + 'px Prompt Manager has a named dialog')
@@ -155,11 +159,15 @@ for (const size of [
     assert(await customRow.count() === 0, 'keyboard CRUD deletes the custom prompt')
     await page.keyboard.press('Escape')
     await waitFor(() => manager.count().then((count) => count === 0), 5000)
-    assert(await page.locator('[data-testid="sidebar-entry-prompts"]').evaluate((el) => el === document.activeElement), 'Prompt Manager Escape restores focus to its opener')
+    assert(await page.locator('[data-testid="settings-prompts-all"]').evaluate((el) => el === document.activeElement), 'Prompt Manager Escape returns to Settings with the origin control focused')
+    await page.keyboard.press('Escape')
+    await waitFor(() => page.locator('[data-testid="settings-prompts"]').count().then((count) => count === 0), 5000)
     keyboardCrudDone = true
   } else {
     await page.keyboard.press('Escape')
     await waitFor(() => manager.count().then((count) => count === 0), 5000)
+    await page.keyboard.press('Escape')
+    await waitFor(() => page.locator('[data-testid="settings-prompts"]').count().then((count) => count === 0), 5000)
   }
 
   const drawer = page.locator('[data-testid="mobile-history-drawer"]')

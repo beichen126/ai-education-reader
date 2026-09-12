@@ -17,8 +17,10 @@ await seedAndBoot(page, {
   settings: { apiKey: '', model: 'deepseek-chat', lastConversationId: 'v210-red-conversation' },
 })
 
-const promptEntry = page.locator('[data-testid="sidebar-entry-prompts"], [data-testid="rail-prompts"]').first()
+const promptEntry = page.locator('[data-testid="sidebar-settings"]')
 await promptEntry.click()
+await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.locator('[data-testid="settings-prompts-conversation-mode"]').click()
 const manager = page.locator('[data-testid="prompt-manager"]')
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-conversation-mode"]').click()

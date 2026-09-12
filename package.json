@@ -192,6 +192,7 @@
     "test:e2e-continuous-scroll": "node scripts/e2e-continuous-scroll.mjs",
     "test:e2e-settings-navigation-lifecycle": "node scripts/e2e-settings-navigation-lifecycle.mjs",
     "test:e2e-pdf-renderer-ownership": "node scripts/e2e-pdf-renderer-ownership.mjs",
+    "test:e2e-sidebar-information-architecture": "node scripts/e2e-sidebar-information-architecture.mjs",
     "test:regressions": "npm run test:v201-red-domain && npm run test:v201-stage2 && npm run test:v202-red && npm run test:v203-red && npm run test:quick-follow-up-anchor",
     "test:release-runner": "node scripts/test-release-runner.mjs",
     "test:e2e-protocol-overrides": "node scripts/e2e-protocol-overrides.mjs",

@@ -40,14 +40,9 @@ await page.evaluate(() => new Promise((resolve, reject) => {
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('[data-testid="composer-materials-input"]').waitFor({ state: 'attached', timeout: 20000 })
 
-const openFromSidebar = async () => {
-  const direct = page.locator('[data-testid="sidebar-entry-prompts"]')
-  if (await direct.isVisible().catch(() => false)) { await direct.click(); return }
-  await page.locator('[data-testid="rail-history"]').click()
-  await page.locator('[data-testid="sidebar-entry-prompts"]').click()
-}
-
-await openFromSidebar()
+await page.locator('[data-testid="sidebar-settings"]').click()
+await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.locator('[data-testid="settings-prompts-artifact"]').click()
 const manager = page.locator('[data-testid="prompt-manager"]')
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-artifact"]').click()
@@ -65,10 +60,11 @@ const migratedRow = await page.evaluate((id) => new Promise((resolve) => {
 }), 'legacy-action-' + now)
 assert(migratedRow?.kind === 'custom' && migratedRow?.content.includes('迁移测试'), 'hidden migrated Artifact prompt remains durable with its original content')
 
-await page.locator('[data-testid="prompt-manager-close"]').click()
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('[data-testid="composer-materials-input"]').waitFor({ state: 'attached', timeout: 20000 })
-await openFromSidebar()
+await page.locator('[data-testid="sidebar-settings"]').click()
+await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.locator('[data-testid="settings-prompts-artifact"]').click()
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-artifact"]').click()
 await page.locator('[data-testid="prompt-search"]').fill(migratedName)

@@ -1,5 +1,6 @@
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot } from './e2e-fixture.mjs'
+import { openPromptManager, closePromptManager } from './e2e-navigation.mjs'
 
 const results = []
 const errors = []
@@ -16,9 +17,7 @@ await seedAndBoot(page, {
   settings: { apiKey: 'sk-test', model: 'deepseek-chat', lastConversationId: 'v203-prompt' },
 })
 
-const direct = page.locator('[data-testid="sidebar-entry-prompts"]')
-if (await direct.isVisible().catch(() => false)) await direct.click()
-else { await page.locator('[data-testid="rail-history"]').click(); await direct.click() }
+await openPromptManager(page)
 const manager = page.locator('[data-testid="prompt-manager"]')
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-row"]').first().waitFor({ state: 'visible', timeout: 10000 })
@@ -44,7 +43,7 @@ assert(await page.locator('[data-testid="protocol-inspector"]').count() === 1, '
 await page.locator('[data-testid="prompt-category-all"]').click()
 assert(await page.locator('[data-testid="protocol-inspector"]').count() === 0, 'leaving protocol category clears protocol detail')
 
-await page.locator('[data-testid="prompt-manager-close"]').click()
+await closePromptManager(page)
 const messageMenu = page.locator('button[aria-label="消息操作"]').first()
 await messageMenu.waitFor({ state: 'visible', timeout: 10000 })
 await messageMenu.click()

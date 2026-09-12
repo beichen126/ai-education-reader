@@ -72,15 +72,16 @@ if (shouldRun(scenario)) {
   if (await expanded.isVisible().catch(() => false)) await page.locator('[data-testid="sidebar-collapse"]').click()
   await page.locator('[data-testid="rail-history"]').waitFor({ state: 'visible', timeout: 10000 })
   const order = await page.locator('[data-testid^="rail-"]').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('data-testid')))
-  assert(order.join('|') === 'rail-history|rail-new-chat|rail-images|rail-files|rail-prompts|rail-help|rail-fullscreen|rail-settings', 'V200-FCR-01 collapsed rail has the required prompt entry order')
-  assert(await page.locator('[data-testid="rail-prompts"]').count() === 1, 'V200-FCR-01 collapsed rail exposes one prompt entry')
-  if (await page.locator('[data-testid="rail-prompts"]').count() === 1) {
-    await page.locator('[data-testid="rail-prompts"]').click()
-    assert(await page.locator('[data-testid="prompt-manager"]').isVisible(), 'V200-FCR-01 rail prompt entry opens Prompt Manager directly')
-    assert(await page.locator('[data-testid="rail-history"]').isVisible(), 'V200-FCR-01 direct open keeps the rail collapsed')
-    await page.keyboard.press('Escape')
-    assert(await page.locator('[data-testid="rail-prompts"]').evaluate((element) => element === document.activeElement), 'V200-FCR-01 Escape restores focus to the collapsed rail opener')
-  }
+  assert(order.join('|') === 'rail-history|rail-new-chat|rail-images|rail-files|rail-fullscreen|rail-settings|rail-help', 'V200-FCR-01 collapsed rail follows the v2.2.0 order with help last')
+  assert(await page.locator('[data-testid="rail-prompts"]').count() === 0, 'V200-FCR-01 the collapsed rail no longer carries a prompt entry')
+  assert(order[order.length - 1] === 'rail-help', 'V200-FCR-01 help is the last collapsed-rail action')
+  await page.locator('[data-testid="rail-settings"]').click()
+  await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+  await page.locator('[data-testid="settings-prompts-all"]').click()
+  assert(await page.locator('[data-testid="prompt-manager"]').isVisible(), 'V200-FCR-01 Settings opens Prompt Manager while the rail stays collapsed')
+  assert(await page.locator('[data-testid="rail-history"]').isVisible(), 'V200-FCR-01 direct open keeps the rail collapsed')
+  await page.keyboard.press('Escape')
+  assert(await page.locator('[data-testid="settings-prompts-all"]').evaluate((element) => element === document.activeElement), 'V200-FCR-01 Escape returns to Settings with the origin button focused')
   await context.close()
 }
 
@@ -115,7 +116,9 @@ if (shouldRun(scenario)) {
 scenario = 'V200-FCR-05'
 if (shouldRun(scenario)) {
   const { context, page } = await openScenario('v201-focus', [msg('focus-u1', 'user', '焦点测试')])
-  await page.locator('[data-testid="sidebar-entry-prompts"]').click()
+  await page.locator('[data-testid="sidebar-settings"]').click()
+  await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+  await page.locator('[data-testid="settings-prompts-conversation-mode"]').click()
   const manager = page.locator('[data-testid="prompt-manager"]')
   await manager.waitFor({ state: 'visible', timeout: 10000 })
   assert(await manager.evaluate((element) => element.contains(document.activeElement)), 'V200-FCR-05 opening Prompt Manager moves focus into the dialog')
@@ -126,7 +129,7 @@ if (shouldRun(scenario)) {
   for (let i = 0; i < 30; i++) await page.keyboard.press('Tab')
   assert(await manager.evaluate((element) => element.contains(document.activeElement)), 'V200-FCR-05 repeated Tab never escapes to the background')
   await page.keyboard.press('Escape')
-  assert(await page.locator('[data-testid="sidebar-entry-prompts"]').evaluate((element) => element === document.activeElement), 'V200-FCR-05 Escape restores focus to the expanded opener')
+  assert(await page.locator('[data-testid="settings-prompts-conversation-mode"]').evaluate((element) => element === document.activeElement), 'V200-FCR-05 Escape returns to Settings with the expanded origin focused')
   await context.close()
 }
 

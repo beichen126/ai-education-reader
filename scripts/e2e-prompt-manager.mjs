@@ -1,6 +1,7 @@
 // Stage 9 browser gate: local Prompt Manager CRUD, catalog projection and mobile navigation.
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot } from './e2e-fixture.mjs'
+import { openPromptManager as openManagerFromSettings, closePromptManager as closeManagerFromSettings } from './e2e-navigation.mjs'
 
 const results = []
 const errors = []
@@ -26,14 +27,7 @@ await seedAndBoot(page, {
   settings: { apiKey: 'sk-test', model: 'deepseek-chat', lastConversationId: 'prompt-manager-conversation' },
 })
 
-const openFromSidebar = async () => {
-  const direct = page.locator('[data-testid="sidebar-entry-prompts"]')
-  if (await direct.isVisible().catch(() => false)) { await direct.click(); return }
-  await page.locator('[data-testid="rail-history"]').click()
-  await page.locator('[data-testid="sidebar-entry-prompts"]').click()
-}
-
-await openFromSidebar()
+await openManagerFromSettings(page)
 const manager = page.locator('[data-testid="prompt-manager"]')
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 assert(await manager.getAttribute('aria-label') === '提示词管理', 'Prompt Manager exposes a named dialog')
@@ -59,7 +53,7 @@ const copiedName = '默认'
 await page.locator('[data-testid="prompt-manager-close"]').click()
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('[data-testid="composer-materials-input"]').waitFor({ state: 'attached', timeout: 25000 })
-await openFromSidebar()
+await openManagerFromSettings(page)
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 // Prompt catalog hydration is IndexedDB-backed; wait for the real rows before
 // asserting reload/search rather than racing the manager's loading shell.
@@ -116,14 +110,15 @@ assert(await page.locator('[data-testid="prompt-row"]').filter({ hasText: '阶�
 
 assert(externalRequests === 0, 'opening and using Prompt Manager makes no network request')
 page.off('request', requestListener)
-await page.locator('[data-testid="prompt-manager-close"]').click()
+await closeManagerFromSettings(page)
 
 await page.setViewportSize({ width: 390, height: 844 })
 await page.locator('[data-testid="rail-history"]').waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="rail-history"]').click()
 const nav = page.locator('[data-testid="mobile-history-drawer"]')
 assert(await nav.getAttribute('role') === 'navigation' && await nav.getAttribute('aria-label') === '主导航', 'mobile drawer is announced as main navigation')
-await nav.locator('[data-testid="sidebar-entry-prompts"]').click()
+await openManagerFromSettings(page)
+assert(await page.locator('[data-testid="sidebar-entry-prompts"], [data-testid="rail-prompts"]').count() === 0, 'the removed sidebar prompt entry is gone')
 assert(await manager.getAttribute('data-mobile-step') === 'categories', 'mobile Prompt Manager starts at category step')
 await page.locator('[data-testid="prompt-category-conversation-mode"]').click()
 assert(await manager.getAttribute('data-mobile-step') === 'list', 'mobile category selection opens the list step')

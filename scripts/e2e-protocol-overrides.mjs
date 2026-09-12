@@ -3,7 +3,7 @@
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot } from './e2e-fixture.mjs'
 import { openAppDb } from './e2e-idb.mjs'
-import { dismissProductGuide } from './e2e-navigation.mjs'
+import { dismissProductGuide, closePromptManager } from './e2e-navigation.mjs'
 
 const results = []
 const errors = []
@@ -22,10 +22,9 @@ await seedAndBoot(page, {
 })
 
 const openManager = async () => {
-  const direct = page.locator('[data-testid="sidebar-entry-prompts"]')
-  if (await direct.isVisible().catch(() => false)) { await direct.click(); return }
-  await page.locator('[data-testid="rail-history"]').click()
-  await page.locator('[data-testid="sidebar-entry-prompts"]').click()
+  await page.locator('[data-testid="sidebar-settings"]').click()
+  await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+  await page.locator('[data-testid="settings-prompts-all"]').click()
 }
 
 await openAppDb(page, {
@@ -65,7 +64,7 @@ await page.getByText('实验协议已启用。新请求开始前会冻结当前�
 const activeBeforeBackup = await openAppDb(page, { store: 'settings', operation: 'get', key: 'promptPreferences' })
 assert(activeBeforeBackup?.value?.activeProtocolOverrideByDomain?.['ai-toc-structure'] === overrideId, 'enable writes exactly one active override mapping')
 
-await page.locator('[data-testid="prompt-manager-close"]').click()
+await closePromptManager(page)
 await page.getByRole('button', { name: /打开设置|设置/ }).first().click()
 await page.locator('text=数据与导出').waitFor({ state: 'visible', timeout: 8000 })
 const dlPromise = page.waitForEvent('download', { timeout: 15000 })

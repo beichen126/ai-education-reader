@@ -2,6 +2,7 @@
 // -> next message uses the selected immutable snapshot -> reload keeps the mode.
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot, installMockModel, getLastRequestBody } from './e2e-fixture.mjs'
+import { closePromptManager } from './e2e-navigation.mjs'
 
 const results = []
 const errors = []
@@ -39,8 +40,9 @@ await seedAndBoot(page, {
   settings: { apiKey: 'sk-test', model: 'deepseek-chat', apiBaseUrl: 'https://api.deepseek.com', lastConversationId: conversationId },
 })
 
-const promptEntry = page.locator('[data-testid="sidebar-entry-prompts"], [data-testid="rail-prompts"]').first()
-await promptEntry.click()
+await page.locator('[data-testid="sidebar-settings"]').click()
+await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.locator('[data-testid="settings-prompts-conversation-mode"]').click()
 const manager = page.locator('[data-testid="prompt-manager"]')
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-conversation-mode"]').click()
@@ -56,7 +58,7 @@ await page.locator('[data-testid="prompt-editor-content"]').fill('你是一位�
 await page.locator('[data-testid="prompt-save"]').click()
 await page.locator('[data-testid="prompt-row"]').filter({ hasText: '数学证明教练' }).waitFor({ state: 'visible', timeout: 10000 })
 assert(await page.locator('[data-testid="prompt-row"]').count() === 2, 'creating custom mode adds a second management row')
-await page.locator('[data-testid="prompt-manager-close"]').click()
+await closePromptManager(page)
 
 const modeTrigger = page.locator('button[aria-label="切换对话模式"]')
 await modeTrigger.waitFor({ state: 'visible', timeout: 10000 })
