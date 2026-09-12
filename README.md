@@ -283,7 +283,7 @@ Context 只描述本次消息需要的页面，不改变 PDF 的原始文件。�
 
 <p><img src="docs/assets/readme/v210-11-prompt-manager.webp" alt="管理会话模式、学习成果和快捷追问" width="720" loading="lazy"></p>
 
-<sub>图片来自当前 v2.2.0 开发线的确定性 PDF 示例，不包含个人资料或真实 API 内容。</sub>
+<sub>图片来自仓库内确定性 PDF 示例，不包含个人资料或真实 API 内容。</sub>
 
 ## 数据、隐私与备份
 
