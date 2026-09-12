@@ -215,7 +215,7 @@ export function PromptManager() {
     const active = document.activeElement
     openerRef.current = active instanceof HTMLElement && !dialog.contains(active) ? active : null
     const background = setBackgroundInert(dialog)
-    let frame = 0
+    let cancelled = false
     const focusables = () => getModalFocusableElements(dialog)
     const focusFirst = () => {
       const target = focusables()[0]
@@ -264,13 +264,23 @@ export function PromptManager() {
     }
     document.addEventListener('focusin', onFocusIn, true)
     document.addEventListener('keydown', onKeyDown, true)
-    frame = window.requestAnimationFrame(() => {
+    // Move focus into the dialog. This MUST NOT rely on requestAnimationFrame: headless and
+    // background pages throttle rAF, so the dialog could open with focus still outside it
+    // (an intermittent CI failure). Try immediately, then retry on a timer.
+    let initialFocusTimer = 0
+    const focusInitial = () => {
+      if (cancelled) return
       const close = dialog.querySelector<HTMLElement>('[data-testid="prompt-manager-close"]')
-      if (close && isVisibleFocusable(close)) close.focus({ preventScroll: true })
-      else focusFirst()
-    })
+      if (close && isVisibleFocusable(close)) { close.focus({ preventScroll: true }); return }
+      const first = focusables()[0]
+      if (first) { first.focus({ preventScroll: true }); return }
+      dialog.focus({ preventScroll: true })
+    }
+    focusInitial()
+    initialFocusTimer = window.setTimeout(focusInitial, 0)
     return () => {
-      window.cancelAnimationFrame(frame)
+      cancelled = true
+      window.clearTimeout(initialFocusTimer)
       document.removeEventListener('focusin', onFocusIn, true)
       document.removeEventListener('keydown', onKeyDown, true)
       restoreBackground(background)
