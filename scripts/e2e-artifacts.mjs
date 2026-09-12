@@ -1,6 +1,6 @@
 // Study Artifact E2E: Note (source cutoff + edit/reload) + Quiz (valid). Real UI + mock model.
 import { launchBrowser } from './e2e-browser.mjs'
-import { msg, seedAndBoot, installMockModel, getLastRequestBody, getRouteHits } from './e2e-fixture.mjs'
+import { msg, seedAndBoot, installMockModel, getLastRequestBody, getRouteHits, openSpecialBranchMenu } from './e2e-fixture.mjs'
 function getRouteHitsCompletions() { return getRouteHits().completions }
 const results = [], errors = []
 const assert = (c, m) => results.push((c ? 'PASS  ' : 'FAIL  ') + m)
@@ -34,9 +34,8 @@ await page.evaluate(() => new Promise((resolve, reject) => {
 // ---- Note from A1 (index 0 assistant): markdown -> REAL rendered preview (A7) ----
 const NOTE_MD = '# 标题一\n\n- 要点甲\n- **要点乙**\n\n> 引用一\n\n$$E = mc^2$$\n'
 await installMockModel(page, [NOTE_MD])
-await page.locator('button[aria-label="消息操作"]').nth(0).click()
-await page.locator('text=整理成笔记').waitFor({ state: 'visible', timeout: 5000 })
-await page.locator('text=整理成笔记').click()
+await openSpecialBranchMenu(page, 0)
+await page.locator('[data-testid="message-action-note"]').click()
 await page.locator('text=创建学习成果').waitFor({ state: 'visible', timeout: 5000 })
 assert(true, 'Note dialog opens from the message menu (mode = 整理成笔记)')
 // Default preset prompt present + editable.
@@ -116,9 +115,8 @@ await page.waitForTimeout(400)
 // ---- Quiz from A2 (index 1 assistant): valid structured quiz ----
 const quizJSON = JSON.stringify({ questions: [{ id: 'q1', type: 'single-choice', question: '2+2=?', options: ['3', '4', '5'], answer: 1, explanation: '2+2=4' }] })
 await installMockModel(page, [quizJSON])
-await page.locator('button[aria-label="消息操作"]').nth(1).click()
-await page.locator('text=生成题目').waitFor({ state: 'visible', timeout: 5000 })
-await page.locator('text=生成题目').click()
+await openSpecialBranchMenu(page, 1)
+await page.locator('[data-testid="message-action-quiz"]').click()
 await page.locator('text=创建学习成果').waitFor({ state: 'visible', timeout: 5000 })
 await page.waitForTimeout(600)
 try {
@@ -161,9 +159,8 @@ await page.waitForTimeout(400)
 // ---- Invalid quiz: malformed model output must NOT be saved as ready ----
 const badQuiz = JSON.stringify({ questions: [{ id: 'q1', type: 'single-choice', question: '坏题', options: ['A','B'], answer: 9 }] })
 await installMockModel(page, [badQuiz])
-await page.locator('button[aria-label="消息操作"]').nth(0).click()
-await page.locator('text=生成题目').waitFor({ state: 'visible', timeout: 5000 })
-await page.locator('text=生成题目').click()
+await openSpecialBranchMenu(page, 0)
+await page.locator('[data-testid="message-action-quiz"]').click()
 await page.locator('text=创建学习成果').waitFor({ state: 'visible', timeout: 5000 })
 await page.waitForTimeout(500)
 await page.locator('button:has-text("生成")').filter({ hasText: /^生成$/ }).last().click()

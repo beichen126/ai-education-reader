@@ -90,6 +90,20 @@ export async function installMockModel(page, deltas, finishReason = 'stop') {
 export function openMessageActions(page, index = 0) {
   return page.locator('button[aria-label="消息操作"]').nth(index).click()
 }
+/** Open the message menu AND its 开启特殊分支 submenu (v2.2.0 nested structure). */
+export async function openSpecialBranchMenu(page, index = 0) {
+  await openMessageActions(page, index)
+  await page.locator('[data-testid="message-action-special"]').waitFor({ state: 'visible', timeout: 5000 })
+  await page.locator('[data-testid="message-action-special"]').click()
+  await page.locator('[data-testid="message-action-special-menu"]').waitFor({ state: 'visible', timeout: 5000 })
+  return page.locator('[data-testid="message-action-special-menu"]')
+}
+/** Save the indexed assistant reply as a study card through the real menu. */
+export async function saveCardFromMessage(page, index = 0) {
+  await openMessageActions(page, index)
+  await page.locator('[data-testid="message-action-save-card"]').waitFor({ state: 'visible', timeout: 5000 })
+  await page.locator('[data-testid="message-action-save-card"]').click()
+}
 export async function createBranchFromMessage(page, index = 0) {
   await openMessageActions(page, index)
   await page.locator('text=从这里分支').waitFor({ state: 'visible', timeout: 5000 })
