@@ -22,6 +22,9 @@ import { learningUiActions, loadStudyCardPreferences, persistStudyCardPreference
 import css from './study-card.module.css'
 
 const SEARCH_DEBOUNCE_MS = 200
+/** The list mounts at most this many rows at once, so a 5000-card library never renders
+ *  5000 DOM nodes. Search and filters are the way to reach the rest. */
+const LIST_PAGE_SIZE = 200
 
 function formatPages(pages: readonly number[]): string {
   if (pages.length === 0) return ''
@@ -122,6 +125,11 @@ export function LearningCenter() {
   const filterOptions = useMemo(() => buildStudyCardFilterOptions(cards, documentNames), [cards, documentNames])
   const selected = useMemo(() => selectStudyCards(cards, { filter, query: debouncedQuery, sort, seed }), [cards, debouncedQuery, filter, seed, sort])
   const orderedIds = useMemo(() => selected.map(card => card.id), [selected])
+  // The frozen prev/next order always covers the WHOLE result set; only the rendered rows
+  // are capped, so "下一张" can still walk past the mounted window.
+  const [visibleCount, setVisibleCount] = useState(LIST_PAGE_SIZE)
+  useEffect(() => { setVisibleCount(LIST_PAGE_SIZE) }, [debouncedQuery, filter, seed, sort])
+  const visibleCards = useMemo(() => selected.slice(0, visibleCount), [selected, visibleCount])
 
   // ---- open / close ----
   const openCard = (cardId: string) => learningUiActions.openCard(cardId, { filter, query: debouncedQuery, sort, seed, orderedIds })
@@ -194,7 +202,7 @@ export function LearningCenter() {
                 </div>
               )}
               <ul className={css.list} data-testid="card-list">
-                {selected.map(card => (
+                {visibleCards.map(card => (
                   <li key={card.id}>
                     <button type="button" className={css.item} data-testid="card-item" data-card-id={card.id} aria-current={false} onClick={() => openCard(card.id)}>
                       <span className={css.itemTitle} data-testid="card-item-title">{card.title}</span>
@@ -209,6 +217,12 @@ export function LearningCenter() {
                   </li>
                 ))}
               </ul>
+              {selected.length > visibleCards.length && (
+                <div className={css.hint} data-testid="card-list-more">
+                  已显示 {visibleCards.length} / {selected.length} 张卡片；用上面的搜索或来源筛选缩小范围。
+                  <button type="button" className={css.reroll} data-testid="card-list-more-button" onClick={() => setVisibleCount(count => count + LIST_PAGE_SIZE)}>再显示 {LIST_PAGE_SIZE} 张</button>
+                </div>
+              )}
             </div>
           </div>
         )}
