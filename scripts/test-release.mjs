@@ -43,6 +43,7 @@ const CORE_E2E = [
   'e2e-sidebar-information-architecture',
   'e2e-study-cards',
   'e2e-learning-center',
+  'e2e-card-backlinks',
   'e2e-v201-regressions',
   'e2e-v202-message-state',
   'e2e-v202-rejection',
