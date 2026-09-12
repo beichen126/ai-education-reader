@@ -3,7 +3,7 @@ import type { Annotation } from '../annotations/annotation-types'
 import { ANNOTATION_VERSION } from '../annotations/annotation-types'
 import type { Attachment } from '../engine/types'
 import { persistBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
-import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupV1, type BackupV2, type BackupV3, type BackupV4, type BackupV5, type BackupV6, type BackupDraft, type BackupBranchDraft, type BackupActiveBranch, type BackupAppearance } from './backup-types'
+import { BACKUP_FORMAT, LEGACY_BACKUP_FORMAT, BACKUP_VERSION, type Backup, type BackupV1, type BackupV2, type BackupV3, type BackupV4, type BackupV5, type BackupV6, type BackupV7, type BackupDraft, type BackupBranchDraft, type BackupActiveBranch, type BackupAppearance } from './backup-types'
 import { buildEffectiveMessageIds, validateBranchGraph } from '../branches/branch-path'
 import { validateArtifact, validateQuizDocument } from '../artifacts/artifact-validation'
 import type { ConversationBranch } from '../branches/branch-types'
@@ -16,6 +16,9 @@ import type { PromptDefinition, PromptSnapshot } from '../prompts/prompt-types'
 import { getBuiltinPrompt, getBuiltinProtocol } from '../prompts/prompt-registry'
 import { resolveProtocolCanonicalRoot } from '../prompts/protocol-lineage'
 import { isPdfNavigationMode } from '../engine/pdf-navigation-settings'
+import { validateStudyCard } from '../study-cards/study-card-validation'
+import { buildStudyCardPageRefs } from '../study-cards/study-card-store'
+import { STUDY_CARD_PREFERENCES_KEY } from '../study-cards/learning-ui-store'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -214,16 +217,46 @@ function validateV6PromptData(input: BackupV6): void {
   }
 }
 
-export function parseAndValidate(input: unknown): Backup {
-  if (!isObj(input)) throw new BackupError('不是一个有效的备份对象')
+/**
+ * Strict per-card validation for a V7 package. A card that cannot be validated is named so
+ * the user knows exactly which one to remove; duplicate ids or two cards pointing at the
+ * same assistant message reject the WHOLE package (the store's unique index would otherwise
+ * fail mid-transaction).
+ */
+function validateV7StudyCards(input: Record<string, any>): void {
+  const raw = input.studyCards
+  if (!Array.isArray(raw)) throw new BackupError('v7 备份缺少 studyCards 数组')
+  const ids = new Set<string>()
+  const sourceMessages = new Set<string>()
+  raw.forEach((card, index) => {
+    let validated
+    try {
+      validated = validateStudyCard(card)
+    } catch (error) {
+      const id = isObj(card) && typeof card.id === 'string' ? card.id : '#' + index
+      throw new BackupError('学习卡片不合法（' + String(id).slice(0, 8) + '）：' + (error instanceof Error ? error.message : String(error)))
+    }
+    if (ids.has(validated.id)) throw new BackupError('备份中存在重复的学习卡片 id：' + validated.id.slice(0, 8))
+    ids.add(validated.id)
+    if (sourceMessages.has(validated.source.assistantMessageId)) throw new BackupError('备份中存在指向同一条 AI 回复的重复学习卡片：' + validated.source.assistantMessageId.slice(0, 8))
+    sourceMessages.add(validated.source.assistantMessageId)
+  })
+  if (input.studyCardPreferences !== undefined && !isObj(input.studyCardPreferences)) throw new BackupError('studyCardPreferences 非法')
+}
+
+export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) throw new BackupError('不是一个有效的备份对象')
   if (input.format !== BACKUP_FORMAT && input.format !== LEGACY_BACKUP_FORMAT) throw new BackupError('格式不匹配：不是本产品的备份文件（支持 ' + BACKUP_FORMAT + ' 与 ' + LEGACY_BACKUP_FORMAT + '）')
-  if (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4 && input.version !== 5 && input.version !== 6) throw new BackupError('版本不支持：当前仅支持 v1 / v2 / v3 / v4 / v5 / v6')
+  if (input.version !== 1 && input.version !== 2 && input.version !== 3 && input.version !== 4 && input.version !== 5 && input.version !== 6 && input.version !== 7) throw new BackupError('版本不支持：当前仅支持 v1 / v2 / v3 / v4 / v5 / v6 / v7')
   const isV3 = input.version >= 3
   const isV4 = input.version >= 4
-  const isV6 = input.version === 6
+  const isV6 = input.version >= 6
+  const isV7 = input.version === 7
   if (!Array.isArray(input.conversations)) throw new BackupError('缺少 conversations 数组')
   if (!Array.isArray(input.annotations)) throw new BackupError('缺少 annotations 数组')
   if (!Array.isArray(input.attachments)) throw new BackupError('缺少 attachments 数组')
+  // V7 study cards: validated individually, and the whole package is rejected when two
+  // cards collide on id or on the unique source message (never a partial import).
+  if (isV7) validateV7StudyCards(input)
 
   const settings = isObj(input.settings) ? input.settings : {}
   if (settings.apiBaseUrl !== undefined && !isStr(settings.apiBaseUrl)) throw new BackupError('settings.apiBaseUrl 必须是字符串')
@@ -477,7 +510,12 @@ export async function restoreBackup(backup: Backup): Promise<void> {
   // binary is staged or the existing durable database can be replaced.
   backup = parseAndValidate(backup)
   const v2 = 'documents' in backup ? (backup as BackupV2) : null;
-  const v6 = backup.version === 6 ? (backup as BackupV6) : null;
+  const v6 = backup.version >= 6 ? (backup as BackupV6) : null;
+  const v7 = backup.version === 7 ? (backup as BackupV7) : null;
+  // V1-V6 packages simply have no cards (studyCards = []), and the old local card set is
+  // replaced exactly like every other store.
+  const studyCards = (v7?.studyCards ?? []).map(card => validateStudyCard(card));
+  const studyCardPageRefs = buildStudyCardPageRefs(studyCards);
   const staged: { ref: StoredBinary; path: string | null }[] = [];
   const oldRefs: StoredBinary[] = [];
   try {
@@ -520,6 +558,9 @@ export async function restoreBackup(backup: Backup): Promise<void> {
       // V6: prompt preferences are one durable snapshot. Legacy backups reset to the
       // current defaults rather than inheriting preferences from the old local database.
       { key: 'promptPreferences', value: v6?.promptPreferences ?? DEFAULT_PROMPT_PREFERENCES },
+      // V7: the card list preference is a rebuildable UI preference; an older package
+      // resets it instead of inheriting the previous local choice.
+      { key: STUDY_CARD_PREFERENCES_KEY, value: v7?.studyCardPreferences ?? {} },
       ...((backup as BackupV3).drafts || []).map((d: BackupDraft) => ({ key: 'draft:' + d.conversationId, value: { version: 1, text: d.text, imageIds: d.imageIds } })),
       ...((backup as BackupV4).branchDrafts || []).map((d: BackupBranchDraft) => ({ key: 'draft-branch:' + d.branchId, value: { version: 1, text: d.text, imageIds: d.imageIds } })),
       ...((backup as BackupV4).activeBranches || []).map((ab: BackupActiveBranch) => ({ key: 'activeBranch:' + ab.conversationId, value: ab.branchId })),
@@ -531,7 +572,7 @@ export async function restoreBackup(backup: Backup): Promise<void> {
     // E. One atomic IDB replacement.
     const conversations = backup.conversations.map(normalizeConversationPdfContexts)
     const branches = ((backup as BackupV4).branches || []).map(branch => ({ ...branch, messages: branch.messages.map(normalizeMessagePdfContexts) }))
-    await idbReplaceAll({ settings, conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows, documentNotes: (backup as BackupV5).documentNotes || [], conversationBranches: branches, artifacts: restoreArtifacts((backup as BackupV4).artifacts || []), prompts: v6?.prompts || [] });
+    await idbReplaceAll({ settings, conversations, attachments: attachRows, annotations: backup.annotations as Annotation[], documents: documentRows, documentNotes: (backup as BackupV5).documentNotes || [], conversationBranches: branches, artifacts: restoreArtifacts((backup as BackupV4).artifacts || []), prompts: v6?.prompts || [], studyCards, studyCardPageRefs });
   } catch (e) {
     // Rollback: delete every staged OPFS file. Old IDB is untouched.
     for (const s of staged) { if (s.path) { try { await deleteBinary(s.ref) } catch { /* orphan */ } } }

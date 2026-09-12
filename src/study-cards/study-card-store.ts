@@ -24,6 +24,12 @@ function toCard(row: unknown): StudyCard | undefined {
   }
 }
 
+/** Derived page rows for a set of cards. Exported so a backup import can rebuild the
+ *  derived index from the authoritative cards inside the SAME replacing transaction. */
+export function buildStudyCardPageRefs(cards: readonly StudyCard[]): StudyCardPageRef[] {
+  return cards.flatMap(pageRefRowsFor)
+}
+
 function pageRefRowsFor(card: StudyCard): StudyCardPageRef[] {
   const rows: StudyCardPageRef[] = []
   for (const ref of card.documentRefs) {
