@@ -1,4 +1,7 @@
-import { buildEffectivePathThrough } from '../branches/branch-path'
+import { buildEffectiveMessageIds, buildEffectivePathThrough } from '../branches/branch-path'
+import { listBranchesByConversation } from '../branches/branch-store'
+import { sessionsActions } from '../engine/sessions-store'
+import { getConversation } from '../storage/storage'
 import { isCompletedAssistantMessage, newStableId, type Conversation, type Message, type StableId } from '../engine/types'
 import { openIdb } from '../storage/idb'
 import type { ConversationBranch } from '../branches/branch-types'
@@ -265,3 +268,32 @@ export async function markStudyCardOpened(id: StableId, openedAt: number): Promi
 }
 
 export async function deleteStudyCard(id: StableId): Promise<void> { await deleteStudyCardRow(id) }
+
+export type StudyCardSourceStatus = 'live' | 'conversation-deleted' | 'branch-deleted' | 'message-deleted'
+
+/**
+ * Whether a card still has a real, exact place to jump back to (§10.1). Nothing is
+ * guessed from titles: the conversation, the branch (when recorded) and the assistant
+ * message must all still resolve on the effective path.
+ */
+export async function getStudyCardSourceStatus(card: StudyCard): Promise<StudyCardSourceStatus> {
+  const conversation = await getConversation(card.source.conversationId)
+  if (!conversation) return 'conversation-deleted'
+  let branches: ConversationBranch[] = []
+  try { branches = await listBranchesByConversation(card.source.conversationId) } catch { branches = [] }
+  if (card.source.branchId) {
+    if (!branches.some(branch => branch.id === card.source.branchId)) return 'branch-deleted'
+    const ids = buildEffectiveMessageIds(conversation, branches, card.source.branchId)
+    if (!ids || !ids.includes(card.source.assistantMessageId)) return 'message-deleted'
+    return 'live'
+  }
+  if (!conversation.messages.some(message => message.id === card.source.assistantMessageId)) return 'message-deleted'
+  return 'live'
+}
+
+/** Jump back to the exact conversation, branch and assistant message. */
+export async function openStudyCardSource(card: StudyCard): Promise<boolean> {
+  const status = await getStudyCardSourceStatus(card)
+  if (status !== 'live') return false
+  return sessionsActions.openAtMessage(card.source.conversationId, card.source.assistantMessageId, card.source.branchId)
+}
