@@ -33,7 +33,13 @@ await page.locator('[data-testid="settings-prompts-all"]').click()
 await page.locator('[data-testid="prompt-manager"]').waitFor({ state: 'visible', timeout: 10000 })
 await page.waitForTimeout(500)
 await shot(page, '11-prompt-manager.webp')
+// Closing the manager returns to Settings (v2.2.0), so Settings must be closed as well
+// before the rest of the flow can interact with the app.
 await page.locator('[data-testid="prompt-manager-close"]').click()
+await page.locator('[data-testid="prompt-manager"]').waitFor({ state: 'hidden', timeout: 10000 })
+await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.keyboard.press('Escape')
+await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'hidden', timeout: 10000 })
 await page.waitForTimeout(400)
 await openLibrary(page)
 await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/outline-sample.pdf')
