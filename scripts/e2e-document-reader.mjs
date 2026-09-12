@@ -159,7 +159,6 @@ await page.locator('[data-testid="sidebar-settings"]').click()
 await page.getByText('AI Education Reader · v' + APP_VERSION).waitFor({ state: 'visible', timeout: 10000 })
 assert(await page.locator('[data-testid="settings-pdf-navigation"]').isVisible(), 'H: settings exposes PDF navigation mode')
 await page.locator('[data-testid="pdf-navigation-continuous"]').click()
-await page.getByRole('button', { name: '保存', exact: true }).click()
 await page.waitForFunction(() => new Promise(resolve => {
   const req = indexedDB.open('ai-education-reader')
   req.onsuccess = () => { const db = req.result; const r = db.transaction('settings', 'readonly').objectStore('settings').get('pdfNavigationMode'); r.onsuccess = () => resolve(r.result?.value === 'continuous'); r.onerror = () => resolve(false) }
@@ -167,7 +166,6 @@ await page.waitForFunction(() => new Promise(resolve => {
 }), null, { timeout: 10000 })
 assert(await page.locator('[data-testid="pdf-navigation-continuous"]').getAttribute('aria-checked') === 'true', 'H: continuous mode selection is reflected in Settings')
 await page.locator('[data-testid="pdf-navigation-paged"]').click()
-await page.getByRole('button', { name: '保存', exact: true }).click()
 await page.waitForFunction(() => new Promise(resolve => {
   const req = indexedDB.open('ai-education-reader')
   req.onsuccess = () => { const db = req.result; const r = db.transaction('settings', 'readonly').objectStore('settings').get('pdfNavigationMode'); r.onsuccess = () => resolve(r.result?.value === 'paged'); r.onerror = () => resolve(false) }

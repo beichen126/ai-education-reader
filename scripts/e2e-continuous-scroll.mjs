@@ -31,7 +31,6 @@ await dismissProductGuide(page)
 await page.locator('[data-testid="sidebar-settings"]').click()
 await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="pdf-navigation-continuous"]').click()
-await page.getByRole('button', { name: '保存', exact: true }).click()
 await page.keyboard.press('Escape')
 await openDocumentLibrary(page)
 

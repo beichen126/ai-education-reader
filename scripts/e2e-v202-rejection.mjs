@@ -73,7 +73,7 @@ assert(await branchComposer.inputValue() === 'branch no-key draft', 'branch no-k
 await page.getByRole('button', { name: '打开设置' }).click()
 const settings = page.getByRole('dialog', { name: '设置' })
 await settings.locator('input').nth(1).fill('sk-test')
-await settings.getByRole('button', { name: '保存', exact: true }).click()
+await settings.getByRole('button', { name: '保存 API 设置', exact: true }).click()
 await settings.getByRole('button', { name: '关闭' }).click()
 
 // Force the next branch acceptance transaction to fail. This is a browser-only
