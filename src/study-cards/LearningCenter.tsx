@@ -13,8 +13,10 @@ import {
 } from './study-card-sorting'
 import type { StudyCard, StudyCardDocumentRef, StudyCardFilterKey } from './study-card-types'
 import {
-  deleteStudyCard, getStudyCard, listStudyCards, markStudyCardOpened, updateStudyCardTitle,
+  deleteStudyCard, getStudyCard, getStudyCardSourceStatus, listStudyCards, markStudyCardOpened,
+  openStudyCardSource, updateStudyCardTitle, type StudyCardSourceStatus,
 } from './study-card-service'
+import { documentUiActions } from '../documents/document-ui-store'
 import { learningUiActions, loadStudyCardPreferences, persistStudyCardPreferences, useLearningUi, type CardListContext } from './learning-ui-store'
 import css from './study-card.module.css'
 
@@ -52,6 +54,7 @@ export function LearningCenter() {
   const state = useLearningUi(s => s)
   const [cards, setCards] = useState<StudyCard[]>([])
   const [documentNames, setDocumentNames] = useState<Map<string, string>>(new Map())
+  const [pageCounts, setPageCounts] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<StudyCardFilterKey>({ kind: 'all' })
@@ -78,6 +81,7 @@ export function LearningCenter() {
       const [next, documents] = await Promise.all([listStudyCards(), listDocumentSummaries().catch(() => [])])
       setCards(next)
       setDocumentNames(new Map<string, string>(documents.map(document => [document.id, document.fileName] as [string, string])))
+      setPageCounts(new Map<string, number>(documents.map(document => [document.id, document.pageCount] as [string, number])))
       setError(null)
     } catch (e) {
       setError(e instanceof Error && e.message ? e.message : '学习卡片读取失败')
@@ -128,6 +132,7 @@ export function LearningCenter() {
             cardId={state.cardId}
             context={state.context}
             documentNames={documentNames}
+            pageCounts={pageCounts}
             onBack={() => learningUiActions.backToLibrary('cards')}
             onChanged={() => void reload()}
           />
@@ -202,7 +207,7 @@ function parseFilterValue(value: string): StudyCardFilterKey {
   return { kind: 'all' }
 }
 
-function CardDetail({ cardId, context, documentNames, onBack, onChanged }: { cardId: string; context: CardListContext; documentNames: Map<string, string>; onBack: () => void; onChanged: () => void }) {
+function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChanged }: { cardId: string; context: CardListContext; documentNames: Map<string, string>; pageCounts: Map<string, number>; onBack: () => void; onChanged: () => void }) {
   const orderedIds = context.orderedIds
   const [card, setCard] = useState<StudyCard | null>(null)
   const [missing, setMissing] = useState(false)
@@ -210,6 +215,8 @@ function CardDetail({ cardId, context, documentNames, onBack, onChanged }: { car
   const [renaming, setRenaming] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sourceStatus, setSourceStatus] = useState<StudyCardSourceStatus | null>(null)
+  const [clampNote, setClampNote] = useState<string | null>(null)
   const openedRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -219,9 +226,34 @@ function CardDetail({ cardId, context, documentNames, onBack, onChanged }: { car
       setCard(found ?? null)
       setMissing(!found)
       setTitle(found?.title ?? '')
+      if (found) {
+        void getStudyCardSourceStatus(found).then(status => { if (active) setSourceStatus(status) }).catch(() => { if (active) setSourceStatus(null) })
+      }
     })
     return () => { active = false }
   }, [cardId])
+
+  /** Open the first real source page; clamp + say so when the document changed. */
+  const openSourcePage = (ref: StudyCardDocumentRef, page: number) => {
+    if (!ref.documentId || !documentNames.has(ref.documentId)) return
+    const total = pageCounts.get(ref.documentId)
+    const requested = Math.max(1, Math.trunc(page) || 1)
+    const target = total !== undefined ? Math.min(requested, total) : requested
+    const clamped = total !== undefined && target !== requested
+    documentUiActions.openReader(ref.documentId, target)
+    // Normally the centre steps aside so the user lands on the PDF. When the document
+    // changed under the card, the centre stays visible long enough to explain the clamp.
+    if (clamped) setClampNote('这份 PDF 现在只有 ' + total + ' 页，已定位到第 ' + target + ' 页；卡片快照仍保留原来的页码。')
+    else { setClampNote(null); learningUiActions.close() }
+  }
+  const backToConversation = async () => {
+    if (!card) return
+    setError(null)
+    const opened = await openStudyCardSource(card)
+    if (opened) { learningUiActions.close(); return }
+    setSourceStatus(await getStudyCardSourceStatus(card))
+    setError('原会话或这条回复已删除，无法回链。')
+  }
 
   // Opening a card really shown to the user marks lastOpenedAt exactly once per card.
   useEffect(() => {
@@ -301,14 +333,41 @@ function CardDetail({ cardId, context, documentNames, onBack, onChanged }: { car
         <MarkdownBlocks content={card.bodyMarkdown} messageId={'study-card-' + card.id} />
       </div>
       <div className={css.sourceList} data-testid="card-sources">
-        <div className={css.sourceRow}><strong>来源会话</strong><span data-testid="card-source-conversation">{card.source.conversationTitleSnapshot || '学习卡片'}</span></div>
-        {card.documentRefs.map((ref, i) => (
-          <div className={css.sourceRow} key={(ref.documentId ?? 'no-id') + ':' + i} data-testid="card-source-pdf" data-document-id={ref.documentId ?? ''} data-document-missing={ref.documentId ? String(!documentNames.has(ref.documentId)) : 'true'}>
-            <strong>来源 PDF</strong>
-            <span>{formatDocumentRef(ref)}</span>
-            {(!ref.documentId || !documentNames.has(ref.documentId)) && <span>（已删除，仅保留快照）</span>}
-          </div>
-        ))}
+        <div className={css.sourceRow}>
+          <strong>来源会话</strong>
+          <span data-testid="card-source-conversation">{card.source.conversationTitleSnapshot || '学习卡片'}</span>
+          {sourceStatus === 'live' && <button type="button" className={css.small} data-testid="card-back-to-conversation" onClick={() => void backToConversation()}>返回原会话</button>}
+          {sourceStatus !== null && sourceStatus !== 'live' && (
+            <span data-testid="card-source-deleted">
+              {sourceStatus === 'conversation-deleted' ? '原会话已删除' : sourceStatus === 'branch-deleted' ? '原分支已删除' : '原回复已删除'}
+            </span>
+          )}
+        </div>
+        {card.documentRefs.map((ref, i) => {
+          const available = !!ref.documentId && documentNames.has(ref.documentId) && pageCounts.has(ref.documentId as string)
+          return (
+            <div className={css.sourceRow} key={(ref.documentId ?? 'no-id') + ':' + i} data-testid="card-source-pdf" data-document-id={ref.documentId ?? ''} data-document-missing={String(!available)}>
+              <strong>来源 PDF</strong>
+              <span>{formatDocumentRef(ref)}</span>
+              {!available && <span data-testid="card-source-pdf-missing">（已删除，仅保留快照）</span>}
+              {available && (
+                <>
+                  <button type="button" className={css.small} data-testid="card-source-pdf-open" onClick={() => openSourcePage(ref, ref.pageNumbers[0])}>
+                    打开第 {ref.pageNumbers[0]} 页
+                  </button>
+                  {ref.pageNumbers.length > 1 && (
+                    <span className={css.chips} data-testid="card-source-pdf-pages">
+                      {ref.pageNumbers.map(page => (
+                        <button key={page} type="button" className={css.chip} data-testid="card-source-pdf-page" data-page={page} onClick={() => openSourcePage(ref, page)}>第 {page} 页</button>
+                      ))}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+          )
+        })}
+        {clampNote && <div className={css.hint} data-testid="card-source-clamp-note">{clampNote}</div>}
         {card.documentRefs.length === 0 && <div className={css.sourceRow} data-testid="card-source-none">这张卡片没有 PDF 来源。</div>}
         <div className={css.sourceRow}><span>创建 {timestampLabel(card.createdAt)}</span>{card.lastOpenedAt !== undefined && <span>· 最近打开 {timestampLabel(card.lastOpenedAt)}</span>}</div>
       </div>
