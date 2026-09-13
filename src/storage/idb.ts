@@ -12,7 +12,8 @@ export class IdbOpenError extends Error {
 
 function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise
-  dbPromise = new Promise<IDBDatabase>((resolve, reject) => {
+  let openingPromise: Promise<IDBDatabase>
+  openingPromise = new Promise<IDBDatabase>((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     let settled = false
     const settle = (fn: () => void) => { if (!settled) { settled = true; fn() } }
@@ -69,25 +70,31 @@ function openDb(): Promise<IDBDatabase> {
     }
     req.onsuccess = () => {
       const db = req.result
+      // `onblocked` rejects promptly, but the browser is still allowed to finish
+      // that same open request after the blocker closes. Do not leak the late
+      // connection: it is no longer owned by any caller and could block the next
+      // schema upgrade indefinitely.
+      if (settled) { try { db.close() } catch { /* ignore */ }; return }
       // When a NEWER app version opens the DB, this old tab must release its
       // connection and invalidate the cache so a later call re-opens at the new version.
-      db.onversionchange = () => { try { db.close() } catch { /* ignore */ }; if (dbPromise) dbPromise = null }
+      db.onversionchange = () => { try { db.close() } catch { /* ignore */ }; if (dbPromise === openingPromise) dbPromise = null }
       settle(() => resolve(db))
     }
     req.onerror = () => {
       // A rejected open must not stay cached forever: reset so a later call can retry.
-      dbPromise = null
+      if (dbPromise === openingPromise) dbPromise = null
       settle(() => reject(req.error))
     }
     req.onblocked = () => {
       // A blocked upgrade (another tab still holds an old version) must settle the
       // open deterministically instead of leaving it pending forever. Clear the cache
       // so a later retry can attempt the open again once the old tab releases.
-      dbPromise = null
+      if (dbPromise === openingPromise) dbPromise = null
       settle(() => reject(new IdbOpenError('IndexedDB 版本升级被其他页面阻塞，请关闭其它标签页后重试。')))
     }
   })
-  return dbPromise
+  dbPromise = openingPromise
+  return openingPromise
 }
 
 function asPromise(req: IDBRequest<any>): Promise<any> { return new Promise((resolve, reject) => { req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error) }) }

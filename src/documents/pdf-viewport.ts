@@ -292,7 +292,7 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
     for (const page of [...canvasRefCallbacks.current.keys()]) {
       if (!keep.has(page)) { canvasRefCallbacks.current.delete(page); canvasRefs.current.delete(page) }
     }
-  }, [window])
+  }, [viewWindow])
 
   const scrollToPage = useCallback((targetPage: number, align: 'start' | 'center' = 'center') => {
     const root = stageRef.current

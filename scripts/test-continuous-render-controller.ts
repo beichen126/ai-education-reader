@@ -90,6 +90,17 @@ function makeBackend() {
   assert((fake.cancels.get(2) ?? 0) > cancelBefore, 'off-window render task is cancelled')
   assert(errors.length === 0, 'stale cancellation is not surfaced as a page error')
 
+  // A page can leave and re-enter the virtual window before its cancelled
+  // RenderTask rejection settles. The replacement must not be suppressed or
+  // deleted by the old promise for the same page.
+  controller.setTargetPages([20])
+  await waitUntil(() => (fake.renders.get(20) ?? 0) === 1)
+  controller.setTargetPages([21])
+  controller.setTargetPages([20])
+  await waitUntil(() => ready.includes(20))
+  assert((fake.renders.get(20) ?? 0) === 2 && ready.includes(20), 'rapid leave/re-enter starts and publishes a replacement render')
+  assert(errors.length === 0, 'rapid leave/re-enter keeps stale cancellation silent')
+
   const beforeWindow = ready.length
   controller.setTargetPages(Array.from({ length: 11 }, (_, index) => 100 + index))
   await waitUntil(() => ready.filter(page => page >= 100 && page <= 110).length >= 11)

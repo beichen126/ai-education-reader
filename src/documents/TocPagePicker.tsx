@@ -32,6 +32,9 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   const [rangeError, setRangeError] = useState<string | null>(null)
   const [continuousMode, setContinuousMode] = useState(false)
   const dragRef = useRef<{ anchor: number; mode: 'add' | 'remove'; snapshot: Set<number> } | null>(null)
+  // A pointer drag is followed by a synthetic click on its release target. Once
+  // the range has moved, consume that click or it would invert the endpoint.
+  const suppressClickRef = useRef(false)
   const urlOwnerRef = useRef<string[]>([])
   const genRef = useRef(0)
   const renderedRef = useRef<Set<number>>(new Set())
@@ -46,6 +49,21 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
 
   // Revoke all thumbnails + invalidate the queue on unmount.
   useEffect(() => () => { genRef.current++; observerRef.current?.disconnect(); for (const u of urlOwnerRef.current) revoke(u); urlOwnerRef.current = []; pendingRef.current.clear(); queueRef.current = []; renderedRef.current.clear() }, [])
+
+  // Releasing outside a thumbnail must end the gesture as well; otherwise merely
+  // hovering cards afterwards would keep extending the old selection.
+  useEffect(() => {
+    const finish = () => {
+      dragRef.current = null
+      window.setTimeout(() => { suppressClickRef.current = false }, 0)
+    }
+    document.addEventListener('pointerup', finish)
+    document.addEventListener('pointercancel', finish)
+    return () => {
+      document.removeEventListener('pointerup', finish)
+      document.removeEventListener('pointercancel', finish)
+    }
+  }, [])
 
   // A bounded render worker: pulls the next queued page and renders ONE thumbnail.
   const pump = useRef<() => void>(() => {});
@@ -117,11 +135,11 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   const dragStart = (n: number) => { dragRef.current = { anchor: n, mode: selected.has(n) ? 'remove' : 'add', snapshot: new Set(selected) } }
   const dragOver = (n: number) => {
     const d = dragRef.current; if (!d) return
+    if (n !== d.anchor) suppressClickRef.current = true
     const start = Math.min(d.anchor, n), end = Math.max(d.anchor, n)
     setSelected(() => { const next = new Set(d.snapshot); for (let k = start; k <= end; k++) { if (d.mode === 'add') next.add(k); else next.delete(k) } return next })
     ensureLoaded(end)
   }
-  const dragEnd = () => { dragRef.current = null }
   const scrollToStart = (s: number) => { const el = thumbRefs.current[s]; if (el) el.scrollIntoView({ block: 'start' }) }
 
   const selectedText = useMemo(() => {
@@ -158,10 +176,10 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
         <div className={css.grid} data-testid="toc-picker-grid">
           {Array.from({ length: Math.min(loadedCount, pageCount) }, (_, i) => i + 1).map(n => (
             <button key={n} type="button" ref={(el) => { thumbRefs.current[n] = el }} className={css.thumb + (selected.has(n) ? ' ' + css.selected : '')} data-testid={'toc-thumb-' + n} data-page={n} data-selected={selected.has(n) ? '1' : '0'}
-              onClick={() => toggle(n)}
+              onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return } toggle(n) }}
               onPointerDown={(e) => { if (continuousMode || e.pointerType === 'mouse') { e.preventDefault(); dragStart(n) } }}
               onPointerEnter={(e) => { if (dragRef.current) dragOver(n) }}
-              onPointerUp={() => dragEnd()}>
+              >
               <span className={css.thumbNum}>{n}</span>
               {thumbs[n] ? <img className={css.thumbImg} src={thumbs[n]} alt={'第 ' + n + ' 页'} /> : <span className={css.thumbLoad}>…</span>}
               <span className={css.check}>{selected.has(n) ? '✓' : ''}</span>

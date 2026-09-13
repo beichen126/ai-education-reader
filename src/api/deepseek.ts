@@ -129,58 +129,58 @@ export async function testConnection(args: { apiKey: string; baseUrl: string }):
  */
 export class SSEParser {
   private buf = ''
-  private pendingCR = false
   feed(text: string): string[] {
-    if (this.pendingCR) {
-      // A held trailing '\r' is a line ending. Normalize it to '\n' and keep the FULL
-      // incoming text: if that text starts with '\n' it is the second newline of a CRLF
-      // split across chunks (so the blank separator is preserved); otherwise the held CR
-      // was a bare-CR line ending and the text starts a new line.
-      this.buf += '\n' + text
-      this.pendingCR = false
-    } else {
-      this.buf += text
-    }
+    // Keep raw framing in the buffer. In particular, a CR at the end of one
+    // network chunk plus an LF at the start of the next is ONE CRLF newline,
+    // not the blank line between two SSE events.
+    this.buf += text
     return this.drain()
   }
-  private consumeNewlines(): void {
-    // Collapse '\n', '\r\n' and bare '\r' into a single '\n', keeping a trailing lone
-    // '\r' pending in case the next chunk supplies the '\n' (CRLF split across chunks).
-    let out = ''
-    let i = 0
-    const n = this.buf.length
-    while (i < n) {
-      const ch = this.buf[i]
+  private dataOf(block: string): string {
+    return block.split(/\r\n|\r|\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
+  }
+  private findSeparator(allowTrailingCR: boolean): { index: number; length: number } | null {
+    let previousEnd = -1
+    let sequenceStart = -1
+    for (let index = 0; index < this.buf.length;) {
+      const ch = this.buf[index]
+      let length = 0
       if (ch === '\r') {
-        if (i + 1 >= n) { this.pendingCR = true; break }
-        out += '\n'
-        if (this.buf[i + 1] === '\n') i++
-        i++
+        if (index + 1 >= this.buf.length && !allowTrailingCR) return null
+        length = this.buf[index + 1] === '\n' ? 2 : 1
+      } else if (ch === '\n') length = 1
+      else {
+        previousEnd = -1
+        sequenceStart = -1
+        index++
         continue
       }
-      if (ch === '\n') { out += '\n'; i++; continue }
-      out += ch; i++
+      if (previousEnd === index) return { index: sequenceStart, length: index + length - sequenceStart }
+      sequenceStart = index
+      previousEnd = index + length
+      index += length
     }
-    this.buf = out
+    return null
   }
-  private drain(): string[] {
-    this.consumeNewlines()
+  private drain(allowTrailingCR = false): string[] {
     const events: string[] = []
     for (;;) {
-      const sep = this.buf.indexOf('\n\n')
-      if (sep === -1) break
-      const block = this.buf.slice(0, sep)
-      this.buf = this.buf.slice(sep + 2)
-      const data = block.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trimStart()).join('\n')
+      // One empty line terminates an event. Each line ending may independently
+      // be CRLF, LF, or bare CR. The scanner consumes CRLF atomically instead of
+      // allowing regexp backtracking to reinterpret it as CR + LF.
+      const separator = this.findSeparator(allowTrailingCR)
+      if (!separator) break
+      const block = this.buf.slice(0, separator.index)
+      this.buf = this.buf.slice(separator.index + separator.length)
+      const data = this.dataOf(block)
       if (data) events.push(data)
     }
     return events
   }
   /** Flush any remaining trailing event when the stream ends (no trailing blank line). */
   finish(): string[] {
-    if (this.pendingCR) { this.buf += '\n'; this.pendingCR = false }
-    const events = this.drain()
-    const trailing = this.buf.split('\n').filter(l => l.startsWith('data:')).map(l => l.slice(5).trimStart()).join('\n')
+    const events = this.drain(true)
+    const trailing = this.dataOf(this.buf)
     this.buf = ''
     if (trailing) events.push(trailing)
     return events

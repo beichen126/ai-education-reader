@@ -49,6 +49,25 @@ async function createV6Fixture(): Promise<void> {
 }
 
 await createV6Fixture()
+
+// --- blocked upgrade: a rejected open may later succeed after the blocker closes.
+// The late connection has no owner and must be closed, or it will block future schema
+// upgrades/deletion even though the caller already received an error. ---
+const blocker = await new Promise<IDBDatabase>((resolve, reject) => {
+  const req = indexedDB.open(DB_NAME, 6)
+  req.onsuccess = () => resolve(req.result)
+  req.onerror = () => reject(req.error)
+})
+let blockedRejected = false
+try { await idbPut('settings', { key: 'must-not-commit', value: true }) } catch { blockedRejected = true }
+assert(blockedRejected, 'blocked schema upgrade rejects promptly')
+blocker.close()
+await new Promise(resolve => setTimeout(resolve, 10))
+let lateConnectionClosed = true
+try { await deleteDatabase(DB_NAME) } catch { lateConnectionClosed = false }
+assert(lateConnectionClosed, 'late success after a blocked open closes its unowned connection')
+
+await createV6Fixture()
 await idbPut('settings', { key: 'upgrade-trigger', value: true })
 const upgraded = await new Promise<IDBDatabase>((resolve, reject) => {
   const req = indexedDB.open(DB_NAME)

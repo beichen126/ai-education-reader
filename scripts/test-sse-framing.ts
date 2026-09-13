@@ -10,9 +10,19 @@ const doneEvent = () => 'data: [DONE]\n\n'
 {
   const p = new SSEParser()
   const a = p.feed('data: {"a":1}\r');
-  const b = p.feed('\ndata: [DONE]\n\n');
+  const b = p.feed('\n\r\ndata: [DONE]\r\n\r\n');
   assert(a.length === 0, 'CRLF: no event from the half (trailing CR held)')
   assert(b.length === 2 && b[0] === '{"a":1}' && b[1] === '[DONE]', 'CRLF split -> event + done (got ' + JSON.stringify(b) + ')')
+}
+
+// --- one CRLF is only a line ending, not an event boundary. This matters for
+// legal multi-line data fields whose joined payload is parsed as one JSON value. ---
+{
+  const p = new SSEParser()
+  const a = p.feed('data: {"a":1,\r')
+  const b = p.feed('\ndata: "b":2}\r\n\r\n')
+  assert(a.length === 0, 'multi-line CRLF: split line ending does not emit early')
+  assert(b.length === 1 && JSON.parse(b[0]).a === 1 && JSON.parse(b[0]).b === 2, 'multi-line CRLF data remains one event (got ' + JSON.stringify(b) + ')')
 }
 
 // --- bare CR line ending (no LF) ---
@@ -40,6 +50,18 @@ const doneEvent = () => 'data: [DONE]\n\n'
     if (!(ev.length === 2 && ev[0].includes('你好世界') && ev[1] === '[DONE]')) { ok = false; break }
   }
   assert(ok, 'any byte split point reconstructs the event + [DONE]')
+}
+
+// --- arbitrary split point with CRLF framing, including every CR|LF boundary ---
+{
+  const full = delta('你好世界').replace(/\n/g, '\r\n') + doneEvent().replace(/\n/g, '\r\n')
+  let ok = true
+  for (let split = 1; split < full.length; split++) {
+    const p = new SSEParser()
+    const ev = [...p.feed(full.slice(0, split)), ...p.feed(full.slice(split)), ...p.finish()]
+    if (!(ev.length === 2 && ev[0].includes('你好世界') && ev[1] === '[DONE]')) { ok = false; break }
+  }
+  assert(ok, 'any CRLF byte split point reconstructs the event + [DONE]')
 }
 
 // --- malformed non-empty JSON must throw bad-json (not silently empty) ---
