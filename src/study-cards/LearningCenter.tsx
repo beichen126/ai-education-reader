@@ -152,6 +152,7 @@ export function LearningCenter() {
           <ArtifactDetail artifactId={state.artifactId} onBack={() => learningUiActions.closeArtifact()} />
         ) : state.view === 'card' ? (
           <CardDetail
+            key={state.cardId}
             cardId={state.cardId}
             context={state.context}
             documentNames={documentNames}
@@ -365,7 +366,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
         <button type="button" className={css.small} data-testid="card-rename" disabled={busy} onClick={() => setRenaming(true)}>重命名</button>
         <button type="button" className={css.small + ' ' + css.danger} data-testid="card-delete" disabled={busy} onClick={() => void remove()}>删除</button>
       </div>
-      <div className={css.detailBody}>
+      <div className={css.detailBody} data-testid="card-detail-body">
         <MarkdownBlocks content={card.bodyMarkdown} messageId={'study-card-' + card.id} />
       </div>
       <div className={css.sourceList} data-testid="card-sources">

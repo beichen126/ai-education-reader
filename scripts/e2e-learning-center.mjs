@@ -19,8 +19,8 @@ page.on('unhandledrejection', reason => errors.push('unhandledrejection: ' + Str
 page.on('dialog', dialog => { void dialog.accept() })
 
 const now = Date.now()
-const REPLY_ONE = '# 特征值\n\n矩阵 A 的特征值满足 det(A-λI)=0。'
-const REPLY_TWO = '## 二次型\n\n对称矩阵总可以对角化。'
+const REPLY_ONE = '# 特征值\n\n矩阵 A 的特征值满足 det(A-λI)=0。\n\n' + Array.from({ length: 80 }, (_, index) => '第 ' + (index + 1) + ' 条推导说明：特征向量描述线性变换保持方向的性质。').join('\n\n')
+const REPLY_TWO = '## 二次型\n\n对称矩阵总可以对角化。\n\n' + Array.from({ length: 60 }, (_, index) => '第 ' + (index + 1) + ' 条二次型说明：合同变换可以把实对称矩阵化为标准形。').join('\n\n')
 const REPLY_THREE = '### 相似矩阵\n\n相似矩阵有相同的特征多项式。'
 await seedAndBoot(page, {
   convs: [
@@ -118,6 +118,14 @@ await page.locator('[data-testid="card-item"]').first().click()
 await page.locator('[data-testid="card-viewer"]').waitFor({ state: 'visible', timeout: 10000 })
 assert((await page.locator('[data-testid="card-viewer"]').innerText()).includes('det(A-λI)=0'), 'the detail renders the card Markdown')
 assert(await page.locator('[data-testid="card-viewer"] h1').count() >= 1, 'Markdown headings are really rendered, not escaped')
+const detailBody = page.locator('[data-testid="card-detail-body"]')
+const detailScroll = await detailBody.evaluate(element => ({ clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, before: element.scrollTop }))
+assert(detailScroll.scrollHeight > detailScroll.clientHeight, 'a long card forms its own vertical scroll area')
+await detailBody.evaluate(element => { element.scrollTop = element.scrollHeight })
+assert(await detailBody.evaluate(element => element.scrollTop) > detailScroll.before, 'the card body can scroll vertically')
+const centerBox = await center.boundingBox()
+const nextBox = await page.locator('[data-testid="card-next"]').boundingBox()
+assert(!!centerBox && !!nextBox && nextBox.y + nextBox.height <= centerBox.y + centerBox.height + 1, 'card navigation remains inside the dialog below a long body')
 assert((await page.locator('[data-testid="card-source-conversation"]').innerText()) === '学习中心测试', 'the detail shows the source conversation snapshot')
 assert(await page.locator('[data-testid="card-source-pdf"]').count() === 1, 'the detail lists the real source PDF')
 assert((await page.locator('[data-testid="card-source-pdf"]').first().innerText()).includes('本轮上下文'), 'the source PDF states its relation')
@@ -133,9 +141,11 @@ await page.locator('[data-testid="card-item"]').first().click()
 await page.locator('[data-testid="card-viewer"]').waitFor({ state: 'visible', timeout: 10000 })
 assert((await page.locator('[data-testid="card-position"]').innerText()).startsWith('1 / 3'), 'the detail reports its position in the list')
 assert(await page.locator('[data-testid="card-prev"]').isDisabled(), 'the first card has no previous')
+await page.locator('[data-testid="card-detail-body"]').evaluate(element => { element.scrollTop = element.scrollHeight })
 await page.locator('[data-testid="card-next"]').click()
 await page.waitForTimeout(400)
 assert((await page.locator('[data-testid="card-position"]').innerText()).startsWith('2 / 3'), 'next moves to the second card')
+assert(await page.locator('[data-testid="card-detail-body"]').evaluate(element => element.scrollTop) === 0, 'switching cards starts the new card at the top')
 assert(!(await page.locator('[data-testid="card-next"]').isDisabled()), 'the middle card can still advance')
 
 // ---- 4. rename is optimistic-concurrency safe and never changes createdAt/ordinal ----
