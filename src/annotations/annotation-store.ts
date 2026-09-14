@@ -15,19 +15,19 @@ export function useMessageAnnotations(conversationId: string, messageId: string)
   return useSyncExternalStore((fn) => { subs.add(fn); return () => { subs.delete(fn) } }, () => getSnapshot(conversationId, messageId))
 }
 export async function refreshMessageAnnotations(conversationId: string, messageId: string): Promise<void> { cache.set(key(conversationId, messageId), await loadMessageAnnotations(conversationId, messageId)); notify() }
-export async function toggleMessageSelection(conversationId: string, messageId: string, segments: TextSelectionSegment[], canonicalOf: (a: TextAnchor) => string): Promise<void> {
-  cache.set(key(conversationId, messageId), await toggleTextSelection(conversationId, messageId, segments, canonicalOf)); notify()
+export async function toggleMessageSelection(conversationId: string, messageId: string, segments: TextSelectionSegment[], canonicalOf: (a: TextAnchor) => string, branchId?: string): Promise<void> {
+  cache.set(key(conversationId, messageId), await toggleTextSelection(conversationId, messageId, segments, canonicalOf, branchId)); notify()
 }
 export function setMessageAnnotations(conversationId: string, messageId: string, anns: Annotation[]): void { cache.set(key(conversationId, messageId), anns); notify() }
 export function dropMessageAnnotations(conversationId: string, messageId: string): void { cache.delete(key(conversationId, messageId)); notify() }
 export function clearAnnotationCache(): void { cache.clear(); notify() }
 export { deleteConvAnnotations }
-export async function toggleTableCellsMessage(conversationId: string, messageId: string, tableId: string, bounds: TableBounds): Promise<void> {
-  cache.set(key(conversationId, messageId), await toggleTableCellsAnnotation(conversationId, messageId, tableId, bounds)); notify()
+export async function toggleTableCellsMessage(conversationId: string, messageId: string, tableId: string, bounds: TableBounds, branchId?: string): Promise<void> {
+  cache.set(key(conversationId, messageId), await toggleTableCellsAnnotation(conversationId, messageId, tableId, bounds, branchId)); notify()
 }
-export async function toggleWholeTableMessage(conversationId: string, messageId: string, tableId: string): Promise<void> {
-  cache.set(key(conversationId, messageId), await toggleWholeTableAnnotation(conversationId, messageId, tableId)); notify()
+export async function toggleWholeTableMessage(conversationId: string, messageId: string, tableId: string, branchId?: string): Promise<void> {
+  cache.set(key(conversationId, messageId), await toggleWholeTableAnnotation(conversationId, messageId, tableId, branchId)); notify()
 }
-export async function toggleMathMessage(conversationId: string, messageId: string, mathId: string, mathKind: 'inline' | 'block'): Promise<void> {
-  cache.set(key(conversationId, messageId), await toggleMathAnnotation(conversationId, messageId, mathId, mathKind)); notify()
+export async function toggleMathMessage(conversationId: string, messageId: string, mathId: string, mathKind: 'inline' | 'block', branchId?: string): Promise<void> {
+  cache.set(key(conversationId, messageId), await toggleMathAnnotation(conversationId, messageId, mathId, mathKind, branchId)); notify()
 }

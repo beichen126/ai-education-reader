@@ -59,6 +59,14 @@ const EMPTY_DOC_STATE = {
   pageInput: '',
 }
 
+const READER_ZOOM_STEPS = [0.5, 0.67, 0.8, 1, 1.25, 1.5] as const
+
+function neighbouringReaderZoom(current: number, direction: -1 | 1): number {
+  const index = READER_ZOOM_STEPS.findIndex(step => Math.abs(step - current) < 0.001)
+  const base = index >= 0 ? index : READER_ZOOM_STEPS.findIndex(step => step >= current)
+  return READER_ZOOM_STEPS[Math.max(0, Math.min(READER_ZOOM_STEPS.length - 1, base + direction))] ?? 1
+}
+
 export function DocumentReader() {
   const ui = useDocumentUi(x => x)
   const pdfNavigationMode = useSettings(s => s.pdfNavigationMode)
@@ -76,6 +84,7 @@ export function DocumentReader() {
   const [pageCount, setPageCount] = useState(0)
   const urlOwnerRef = useRef(createUrlOwner())
   const [pageInput, setPageInput] = useState('')
+  const [readerZoom, setReaderZoom] = useState(1)
   const pageInputRef = useRef<HTMLInputElement | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
   const [progressError, setProgressError] = useState<string | null>(null)
@@ -566,6 +575,7 @@ export function DocumentReader() {
   //      never installs a Blob for a page the user already left. Installed zoom URLs are
   //      separately revoked in the docId effect cleanup / reader-close branch above. ----
   useEffect(() => { zoomGenRef.current++ }, [page, docId])
+  useEffect(() => { setReaderZoom(1) }, [docId])
 
   // ---- Reader正文 display render: now handled by useReaderDisplay (viewport-aware
   //      scale, real RenderTask cancel, bounded cache, neighbor prefetch). No JPEG Blob. ----
@@ -1143,10 +1153,18 @@ export function DocumentReader() {
                 </button>
               )}
               {display.mode === 'continuous' && display.continuousWindow && (
-                <div className={css.continuousStack} data-testid="reader-continuous-scroll" role="region" aria-label="PDF 连续阅读">
+                <div
+                  ref={display.continuousStackRef}
+                  className={css.continuousStack}
+                  data-testid="reader-continuous-scroll"
+                  data-reader-zoom={Math.round(readerZoom * 100)}
+                  role="region"
+                  aria-label="PDF 连续阅读"
+                  style={{ width: `min(${readerZoom * 100}%, ${Math.round(960 * readerZoom)}px)` }}
+                >
                   <div className={css.continuousSpacer} data-testid="reader-continuous-top-spacer" style={{ height: display.continuousWindow.topSpacer + 'px' }} />
                   {display.continuousWindow.pages.map(view => (
-                    <section key={view.pageNumber} className={css.continuousPage} data-testid={'reader-continuous-page-' + view.pageNumber} data-page-number={view.pageNumber} data-mounted="true" style={view.style}>
+                    <section key={view.pageNumber} className={css.continuousPage} data-testid={'reader-continuous-page-' + view.pageNumber} data-page-number={view.pageNumber} data-mounted="true" data-render-state={view.surface ? 'ready' : view.error ? 'error' : 'loading'} style={view.style}>
                       {view.surface ? (
                         <button type="button" className={css.continuousPageButton} data-testid={'reader-continuous-page-button-' + view.pageNumber} disabled={zoomBusy} onClick={() => openZoom(view.pageNumber)}>
                           <canvas ref={view.canvasRef} className={css.continuousCanvas} data-testid={'reader-continuous-canvas-' + view.pageNumber} aria-label={'PDF 第 ' + view.pageNumber + ' 页'} width={view.surface.width} height={view.surface.height} data-render-width={String(view.surface.width)} data-render-height={String(view.surface.height)} />
@@ -1263,6 +1281,13 @@ export function DocumentReader() {
           <span className={css.counterTotal}>/ {pageCount}</span>
         </div>
         <button className={css.navBtn} data-testid="reader-next" disabled={pageCount === 0 || page >= pageCount} onClick={() => go(page + 1, pageCount)}>下一页</button>
+        {display.mode === 'continuous' && (
+          <div className={css.readerZoom} role="group" aria-label="PDF 阅读缩放">
+            <button type="button" className={css.zoomStepBtn} data-testid="reader-zoom-out" aria-label="缩小 PDF" disabled={readerZoom <= READER_ZOOM_STEPS[0]} onClick={() => setReaderZoom(value => neighbouringReaderZoom(value, -1))}>−</button>
+            <button type="button" className={css.zoomValueBtn} data-testid="reader-zoom-value" title="恢复 100%" onClick={() => setReaderZoom(1)}>{Math.round(readerZoom * 100)}%</button>
+            <button type="button" className={css.zoomStepBtn} data-testid="reader-zoom-in" aria-label="放大 PDF" disabled={readerZoom >= READER_ZOOM_STEPS[READER_ZOOM_STEPS.length - 1]} onClick={() => setReaderZoom(value => neighbouringReaderZoom(value, 1))}>＋</button>
+          </div>
+        )}
       </div>
       {viewerUrl && (
         <ZoomableImageDialog

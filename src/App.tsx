@@ -25,6 +25,7 @@ import { migrateLegacyPrompts } from './prompts/prompt-migration'
 import { migratePromptSimplification } from './prompts/prompt-simplification'
 import { ProductGuideDialog } from './help/ProductGuideDialog'
 import { LearningCenter } from './study-cards/LearningCenter'
+import { migrateAnnotationsToStudyCards } from './annotations/annotation-migration'
 import { getProductGuideSeenVersion, markProductGuideSeen, PRODUCT_GUIDE_VERSION } from './help/product-guide-state'
 import { documentUiActions } from './documents/document-ui-store'
 
@@ -73,6 +74,7 @@ export function App() {
     void migrateLegacyBinaryStorage().catch((e) => console.warn('binary migration failed', e))
     // Agent B (B2): non-blocking backfill of lastReadAt + recordVersion bump for old doc rows.
     void backfillDocumentMetadata().catch((e) => console.warn('document metadata backfill failed', e))
+    void migrateAnnotationsToStudyCards().catch((e) => console.warn('annotation migration failed', e))
     // P2: conservative attachment-graph reachability cleanup after boot (best-effort, never
     // blocks boot, never deletes fresh/in-flight data, no modal — diagnostics only).
     void cleanupOrphanAttachments().catch(() => {})

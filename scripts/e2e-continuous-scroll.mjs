@@ -95,6 +95,24 @@ assert(await page.locator('[data-testid="reader-continuous-top-spacer"]').count(
 assert(await page.locator('[data-testid="reader-continuous-bottom-spacer"]').count() === 1, 'the stack has a bottom spacer')
 await assertBounded('500 pages initial')
 
+// The virtual layout must measure the real capped page stack, not the much wider
+// reader stage. Otherwise a normal PDF page becomes a tall dark slab between canvases.
+const initialPageBox = await page.locator('[data-testid^="reader-continuous-page-"][data-page-number]').first().boundingBox()
+assert(!!initialPageBox && initialPageBox.height / initialPageBox.width > 1.15 && initialPageBox.height / initialPageBox.width < 1.6,
+  'continuous page height follows the real PDF aspect ratio instead of the full stage width')
+
+// Reader zoom is independent of browser zoom and can go below 100% so a wide screen
+// can show more document content at once.
+const initialStackBox = await page.locator('[data-testid="reader-continuous-scroll"]').boundingBox()
+await page.locator('[data-testid="reader-zoom-out"]').click()
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-zoom-value"]')?.textContent?.trim() === '80%')
+await page.waitForTimeout(250)
+const smallerStackBox = await page.locator('[data-testid="reader-continuous-scroll"]').boundingBox()
+assert((await page.locator('[data-testid="reader-zoom-value"]').innerText()).trim() === '80%', 'continuous Reader zooms below 100%')
+assert(!!initialStackBox && !!smallerStackBox && smallerStackBox.width < initialStackBox.width * 0.85, 'zooming out visibly reduces the PDF page width')
+await page.locator('[data-testid="reader-zoom-value"]').click()
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-zoom-value"]')?.textContent?.trim() === '100%')
+
 let peakCanvases = await safe(() => canvasCount(), 0)
 let peakMounted = stackPageCount
 const trackPeak = async () => {
@@ -112,6 +130,17 @@ for (let step = 0; step < 12; step++) {
 await page.waitForTimeout(600)
 const afterWheel = Number(await currentPageValue())
 assert(afterWheel > 1, 'real wheel scrolling advances the current page (' + afterWheel + ')')
+const visiblePagesReady = await safe(async () => {
+  await page.waitForFunction(() => {
+    const stage = document.querySelector('[data-testid="reader-viewport"]')?.getBoundingClientRect()
+    if (!stage) return false
+    const visible = Array.from(document.querySelectorAll('[data-testid^="reader-continuous-page-"][data-page-number]'))
+      .filter(element => { const box = element.getBoundingClientRect(); return box.bottom > stage.top && box.top < stage.bottom })
+    return visible.length > 0 && visible.every(element => element.getAttribute('data-render-state') !== 'loading')
+  }, null, { timeout: 30000 })
+  return true
+}, false)
+assert(visiblePagesReady === true, 'pages visible during scrolling render instead of leaving dark placeholder slabs')
 assert(peakMounted <= 11 && peakCanvases <= 11, 'wheel scrolling keeps the DOM bounded (peak ' + peakMounted + ' sections / ' + peakCanvases + ' canvases)')
 await assertBounded('after wheel scrolling')
 

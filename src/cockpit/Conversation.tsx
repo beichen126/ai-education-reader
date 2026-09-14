@@ -1,6 +1,6 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
 import { uiActions, useUi } from '../engine/ui-store'
@@ -28,7 +28,9 @@ import { buildAttachmentDisplayItems, type AttachmentDisplayItem } from '../atta
 import { PdfContextCard } from './PdfContextCard'
 import { BranchBar } from '../branches/BranchBar'
 import { MessageActionMenu, type CardSaveState } from '../branches/MessageActionMenu'
-import { createStudyCardFromAssistantMessage } from '../study-cards/study-card-service'
+import { createStudyCardFromAssistantMessage, getStudyCard } from '../study-cards/study-card-service'
+import type { StudyCardRating } from '../study-cards/study-card-types'
+import { learningUiActions } from '../study-cards/learning-ui-store'
 import { ArtifactCreateDialog } from '../artifacts/ArtifactCreateDialog'
 import { ArtifactLibrary } from '../artifacts/ArtifactLibrary'
 import { ArtifactEditor } from '../artifacts/ArtifactEditor'
@@ -47,6 +49,8 @@ import { sendTextChat } from '../api/deepseek'
 import { listPromptCatalog } from '../prompts/prompt-service'
 import { sortEnabledQuickFollowUps } from '../prompts/quick-follow-up'
 import { quickFollowUpAnchor } from './quick-follow-up-anchor'
+import { estimateContextUsage, estimateTextTokens, formatEstimatedTokens } from '../engine/context-usage'
+import { buildConversationTurns, type ConversationTurn } from './conversation-turns'
 import type { CreateArtifactKind, StudyArtifact, QuizDocument } from '../artifacts/artifact-types'
 import type { ArtifactPromptBundleSnapshot, QuickFollowUpPrompt } from '../prompts/prompt-types'
 import type { Message as TMessage } from '../engine/types'
@@ -62,9 +66,32 @@ export function Conversation() {
   const hasKey = useSettings(s => !!s.apiKey)
   const listRef = useRef<HTMLDivElement | null>(null)
   const atBottomRef = useRef(true)
-  const onScroll = () => { const el = listRef.current; if (!el) return; atBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 60 }
   const branchChat = useBranchChat(session)
   const messages = branchChat.effectiveMessages
+  const turns = useMemo(() => buildConversationTurns(messages), [messages])
+  const [activeTurnId, setActiveTurnId] = useState<string | undefined>(undefined)
+  const scrollFrameRef = useRef<number | null>(null)
+  const onScroll = () => {
+    const el = listRef.current
+    if (!el) return
+    atBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 60
+    if (scrollFrameRef.current !== null) return
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null
+      const current = listRef.current
+      if (!current) return
+      const centre = current.getBoundingClientRect().top + Math.min(current.clientHeight * 0.42, 320)
+      const nodes = new Map(Array.from(current.querySelectorAll<HTMLElement>('[data-message-id]')).map(item => [item.dataset.messageId, item]))
+      let nearest: { id: string; distance: number } | undefined
+      for (const turn of turns) {
+        const node = nodes.get(turn.anchorMessageId)
+        if (!node) continue
+        const distance = Math.abs(node.getBoundingClientRect().top - centre)
+        if (!nearest || distance < nearest.distance) nearest = { id: turn.id, distance }
+      }
+      if (nearest?.id !== activeTurnId) setActiveTurnId(nearest?.id)
+    })
+  }
   const imageOffsetByMsg: Record<string, number> = {}
   { let off = 0; for (const m of messages) { if (m.role === 'user') { imageOffsetByMsg[m.id] = off; off += m.images.length } } }
   const lastMsg = messages[messages.length - 1]
@@ -75,6 +102,8 @@ export function Conversation() {
     if (el && atBottomRef.current) el.scrollTop = el.scrollHeight
     lastRef.current = sig
   }, [sig])
+  useEffect(() => { setActiveTurnId(turns[0]?.id) }, [session?.id, branchChat.activeBranchId, turns.length])
+  useEffect(() => () => { if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current) }, [])
   // Consume a one-shot navigation intent only after the selected conversation/thread
   // has rendered its message DOM. Branch targets additionally wait for branch data
   // belonging to this conversation; an empty pre-load state is not treated as missing.
@@ -107,7 +136,7 @@ export function Conversation() {
   const [creating, setCreating] = useState<{ kind: CreateArtifactKind; messageId: string; customEntry?: boolean } | null>(null)
   const [creatingBusy, setCreatingBusy] = useState(false)
   const [creatingError, setCreatingError] = useState<string | undefined>(undefined)
-  const [cardSaves, setCardSaves] = useState<Record<string, { state: CardSaveState; title?: string; cardId?: string; error?: string }>>({})
+  const [cardSaves, setCardSaves] = useState<Record<string, { state: CardSaveState; title?: string; cardId?: string; rating?: StudyCardRating; error?: string }>>({})
   const [cardNotice, setCardNotice] = useState<string | null>(null)
   const [artView, setArtView] = useState<'library' | null>(null)
   const [openArtifact, setOpenArtifact] = useState<StudyArtifact | null>(null)
@@ -139,6 +168,11 @@ export function Conversation() {
     }).catch(() => { if (!cancelled) setQuickFollowUps([]) })
     return () => { cancelled = true }
   }, [promptManagerOpen])
+  useEffect(() => {
+    if (!cardNotice) return
+    const timer = window.setTimeout(() => setCardNotice(null), 3200)
+    return () => window.clearTimeout(timer)
+  }, [cardNotice])
   const quickFollowUpAnchorId = quickFollowUpAnchor(messages, activeStreamingId)
   const sendQuickFollowUp = async (item: QuickFollowUpPrompt) => {
     if (!session || !activeThread || !quickFollowUpAnchorId || busy || quickSendingId) return
@@ -182,18 +216,24 @@ export function Conversation() {
    */
   const mountedRef = useRef(true)
   useEffect(() => () => { mountedRef.current = false }, [])
-  const saveCard = async (messageId: string) => {
+  const saveCard = async (messageId: string, rating?: StudyCardRating) => {
     const conversationId = session?.id
     if (!conversationId || !activeThread) return
     if (cardSaves[messageId]?.state === 'saving') return
     const branchId = branchChat.activeBranchId
     setCardSaves(previous => ({ ...previous, [messageId]: { ...previous[messageId], state: 'saving' } }))
     try {
-      const result = await createStudyCardFromAssistantMessage({ conversationId, assistantMessageId: messageId, ...(branchId ? { branchId } : {}) })
+      const result = await createStudyCardFromAssistantMessage({ conversationId, assistantMessageId: messageId, ...(branchId ? { branchId } : {}), ...(rating !== undefined ? { rating } : {}) })
       if (result.kind === 'created' || result.kind === 'existing') {
+        const card = result.card
         if (mountedRef.current) {
-          setCardSaves(previous => ({ ...previous, [messageId]: { state: 'saved', title: result.card.title, cardId: result.card.id } }))
-          setCardNotice(result.kind === 'created' ? '已保存为学习卡片「' + result.card.title + '」' : '这条回复已经保存过，已打开原卡片「' + result.card.title + '」')
+          setCardSaves(previous => ({ ...previous, [messageId]: { state: 'saved', title: card.title, cardId: card.id, rating: card.rating } }))
+          if (result.kind === 'existing' && rating === undefined) {
+            learningUiActions.openCard(card.id, { filter: { kind: 'all' }, query: '', sort: 'created-desc', seed: 1, orderedIds: [card.id] })
+          }
+          setCardNotice(rating !== undefined
+            ? '已保存学习卡片「' + card.title + '」并评为 ' + rating + ' 分'
+            : result.kind === 'created' ? '已保存为学习卡片「' + card.title + '」' : '这条回复已经保存过，已打开原卡片「' + card.title + '」')
         }
       } else {
         if (mountedRef.current) {
@@ -208,6 +248,18 @@ export function Conversation() {
         setCardNotice('保存失败：' + message)
       }
     }
+  }
+  const viewSavedCard = async (messageId: string) => {
+    const saved = cardSaves[messageId]
+    if (!saved?.cardId) { void saveCard(messageId); return }
+    const current = await getStudyCard(saved.cardId)
+    if (!current) {
+      setCardSaves(previous => ({ ...previous, [messageId]: { state: 'idle' } }))
+      await saveCard(messageId)
+      return
+    }
+    learningUiActions.openCard(saved.cardId, { filter: { kind: 'all' }, query: '', sort: 'created-desc', seed: 1, orderedIds: [saved.cardId] })
+    setCardNotice('已打开学习卡片「' + (saved.title || '未命名卡片') + '」')
   }
   return (
     <div className={css.conversation} data-testid="conversation">
@@ -238,6 +290,7 @@ export function Conversation() {
       />)}
       {/* Composer sits inside the scroll body, position:sticky bottom:0 (as in DSH), so the
           mobile browser's native focus scroll lifts it above the on-screen keyboard. */}
+      <div className={css.messagesShell}>
       <div className={css.messages} ref={listRef} onScroll={onScroll}>
         <div className={css.messagesInner}>
           {!session || messages.length === 0 ? (
@@ -258,14 +311,21 @@ export function Conversation() {
             const transition = previous ? transitionByBoundary.get(previous.id) : undefined
             return <Fragment key={m.id}>
               {transition && <PromptTransitionDivider transition={transition} onOpen={() => setInspectedTransition(transition)} />}
-              <MessageRow m={m} streamingId={activeStreamingId} convId={session?.id} branchId={branchChat.activeBranchId} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} cardSave={cardSaves[m.id]} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} onArtifactCustom={(mid) => { setCreatingError(undefined); setCreating({ kind: 'note', messageId: mid, customEntry: true }) }} onSaveCard={(mid) => void saveCard(mid)} onInspectQuickFollowUp={setInspectedQuickFollowUp} />
+              <MessageRow m={m} streamingId={activeStreamingId} convId={session?.id} branchId={branchChat.activeBranchId} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} cardSave={cardSaves[m.id]} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} onArtifactCustom={(mid) => { setCreatingError(undefined); setCreating({ kind: 'note', messageId: mid, customEntry: true }) }} onSaveCard={(mid, rating) => void saveCard(mid, rating)} onViewSavedCard={(mid) => void viewSavedCard(mid)} onInspectQuickFollowUp={setInspectedQuickFollowUp} />
               {quickFollowUpAnchorId === m.id && activeThread && <QuickFollowUpBar items={quickFollowUps} disabled={busy || !!quickSendingId} sendingId={quickSendingId} onSend={(item) => void sendQuickFollowUp(item)} onInspect={setInspectedQuickFollowUp} onConfigure={() => uiActions.openPromptManager('quick-follow-up')} />}
             </Fragment>
             })}
           </>}
         </div>
         <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" onClick={openLibrary}>学习成果</Button></div>
-        <Composer sessionId={session?.id} busy={busy} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
+        <Composer sessionId={session?.id} busy={busy} thread={activeThread} contextMessages={messages} promptTexts={promptPath?.transitions.map(transition => transition.snapshot.content) ?? []} onBranchSent={() => void branchChat.refresh()} />
+      </div>
+      {turns.length > 1 && <ConversationTurnRail turns={turns} activeId={activeTurnId} onSelect={(turn) => {
+        const el = listRef.current
+        const target = Array.from(el?.querySelectorAll<HTMLElement>('[data-message-id]') ?? []).find(item => item.dataset.messageId === turn.anchorMessageId)
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setActiveTurnId(turn.id)
+      }} />}
       </div>
       {cardNotice && <div className={css.cardNotice} role="status" aria-live="polite" data-testid="card-save-status">{cardNotice}<button type="button" className={css.cardNoticeClose} aria-label="关闭提示" onClick={() => setCardNotice(null)}>×</button></div>}
       {creating && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', padding: '1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}><ArtifactCreateDialog sourceLabel={creatingSourceLabel(session, branchChat.activeBranchId, creating.messageId)} initialKind={creating.kind} customEntry={creating.customEntry} busy={creatingBusy} error={creatingError} onSubmit={(i) => void onCreateArtifact(i)} onCancel={() => setCreating(null)} /></div></div>)}
@@ -284,7 +344,7 @@ function PromptTransitionDivider({ transition, onOpen }: { transition: PromptTra
   </div>
 }
 
-function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, cardSave, onToggleMenu, onBranch, onArtifact, onArtifactCustom, onSaveCard, onInspectQuickFollowUp }: { m: TMessage; streamingId?: string; convId?: string; branchId?: string; imgOffset: number; menuOpen?: boolean; cardSave?: { state: CardSaveState; title?: string; cardId?: string; error?: string }; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: CreateArtifactKind, messageId: string) => void; onArtifactCustom?: (messageId: string) => void; onSaveCard?: (messageId: string) => void; onInspectQuickFollowUp?: (metadata: QuickFollowUpMetadata) => void }) {
+function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, cardSave, onToggleMenu, onBranch, onArtifact, onArtifactCustom, onSaveCard, onViewSavedCard, onInspectQuickFollowUp }: { m: TMessage; streamingId?: string; convId?: string; branchId?: string; imgOffset: number; menuOpen?: boolean; cardSave?: { state: CardSaveState; title?: string; cardId?: string; rating?: StudyCardRating; error?: string }; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: CreateArtifactKind, messageId: string) => void; onArtifactCustom?: (messageId: string) => void; onSaveCard?: (messageId: string, rating?: StudyCardRating) => void; onViewSavedCard?: (messageId: string) => void; onInspectQuickFollowUp?: (metadata: QuickFollowUpMetadata) => void }) {
   if (m.role === 'user') {
     return (
       <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>
@@ -302,7 +362,7 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
       {isStreaming ? (
         <div className={css.assistantBody}>{m.content}</div>
       ) : m.content ? (
-        <div className={css.assistantBody}><AnnotatedMarkdown content={m.content} messageId={m.id} conversationId={convId || ''} /></div>
+        <div className={css.assistantBody}><AnnotatedMarkdown content={m.content} messageId={m.id} conversationId={convId || ''} branchId={branchId} /></div>
       ) : (
         <div className={css.assistantBody} data-empty></div>
       )}
@@ -316,11 +376,12 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
             message={m}
             isStreaming={isStreaming}
             cardState={cardSave?.state ?? 'idle'}
+            cardRating={cardSave?.rating}
             onCreateBranch={() => onBranch(m.id)}
             onCreateArtifact={(kind) => onArtifact(kind, m.id)}
             onCreateCustomArtifact={() => onArtifactCustom?.(m.id)}
-            onSaveCard={() => onSaveCard?.(m.id)}
-            onViewSavedCard={() => onSaveCard?.(m.id)}
+            onSaveCard={(rating) => onSaveCard?.(m.id, rating)}
+            onViewSavedCard={() => onViewSavedCard?.(m.id)}
             onClose={() => onToggleMenu(false)}
           />}
         </div>
@@ -461,7 +522,7 @@ function PendingThumb({ id, onRemove, onOpen }: { id: string; onRemove: () => vo
   )
 }
 
-function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string | undefined; busy: boolean; thread?: { type: 'root' | 'branch'; conversationId: string; branchId?: string }; onBranchSent?: () => void }) {
+function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBranchSent }: { sessionId: string | undefined; busy: boolean; thread?: { type: 'root' | 'branch'; conversationId: string; branchId?: string }; contextMessages: readonly TMessage[]; promptTexts: readonly string[]; onBranchSent?: () => void }) {
   // Draft is keyed by thread (root conversation or branch), so switching A<->B shows each one's own text/images.
   const isBranch = thread?.type === 'branch'
   const key = isBranch ? branchThreadKey(thread!.branchId!) : (sessionId ?? '__none__')
@@ -540,6 +601,15 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
   }, [attachMenuOpen])
   const text = draft.text
   const picIds = draft.imageIds
+  const customSystemPrompt = useSettings(s => s.customSystemPromptEnabled ? s.customSystemPrompt : '')
+  const baseContextUsage = useMemo(() => estimateContextUsage({ messages: contextMessages, promptTexts, systemPrompt: customSystemPrompt }), [contextMessages, promptTexts, customSystemPrompt])
+  // Typing only measures the small draft delta; it never rescans a long conversation on
+  // every keystroke.
+  const contextUsage = useMemo(() => ({
+    estimatedTextTokens: baseContextUsage.estimatedTextTokens + estimateTextTokens(text),
+    imageCount: picIds.length || baseContextUsage.imageCount,
+    messageCount: baseContextUsage.messageCount + ((text.trim() || picIds.length) ? 1 : 0),
+  }), [baseContextUsage, text, picIds])
   const metas = useAttachmentMetas(picIds)
   const composerItems = buildAttachmentDisplayItems(picIds, metas)
   const removeGroup = (item: Extract<AttachmentDisplayItem, { type: 'pdf-group' }>) => {
@@ -648,14 +718,41 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}
       {pdfPanel.open && <PdfPanel initialFile={pdfPanel.file} onClose={() => setPdfPanel({ open: false })} onAddToDraft={addPdfToDraft} />}
       {libPickerOpen && <DocumentContextPicker documentId={undefined} onCancel={() => { setLibPickerOpen(false); setLibMsg(null) }} onAdd={(selection, docId, fileName) => { void addFromLibrary(selection, docId, fileName) }} />}
-      {libBusy && (
-        <div className={css.ctxHint} data-testid="composer-ctx-progress">
-          <span>正在准备 AI Context {libBusy.done} / {libBusy.total} 页</span>
-          <button type="button" className={css.ctxCancel} data-testid="composer-ctx-cancel" onClick={cancelLib}>取消</button>
+      <div className={css.composerStatusRow}>
+        <div>
+          {libBusy && (
+            <div className={css.ctxHint} data-testid="composer-ctx-progress">
+              <span>正在准备 AI Context {libBusy.done} / {libBusy.total} 页</span>
+              <button type="button" className={css.ctxCancel} data-testid="composer-ctx-cancel" onClick={cancelLib}>取消</button>
+            </div>
+          )}
+          {libMsg && <div className={css.ctxHint} data-testid="composer-ctx-msg">{libMsg}</div>}
         </div>
-      )}
-      {libMsg && <div className={css.ctxHint} data-testid="composer-ctx-msg">{libMsg}</div>}
+        {sessionId && <div className={css.contextUsage} data-testid="composer-context-usage" title="文本 token 为本地估算；图片占用由模型决定。发送时仅保留最近一轮含图消息。" aria-label={'已占用上下文，约 ' + contextUsage.estimatedTextTokens + ' tokens，' + contextUsage.imageCount + ' 张图'}>
+          已占用上下文 · 约 {formatEstimatedTokens(contextUsage.estimatedTextTokens)} tokens{contextUsage.imageCount > 0 ? ' · ' + contextUsage.imageCount + ' 张图' : ''}
+        </div>}
+      </div>
     </div>
+  )
+}
+
+function ConversationTurnRail({ turns, activeId, onSelect }: { turns: readonly ConversationTurn[]; activeId?: string; onSelect: (turn: ConversationTurn) => void }) {
+  return (
+    <nav className={css.turnRail} aria-label="对话轮次导航" data-testid="conversation-turn-rail">
+      {turns.map((turn, index) => (
+        <button
+          key={turn.id}
+          type="button"
+          className={css.turnRailMark}
+          style={{ '--turn-weight': turn.weight } as CSSProperties}
+          aria-label={'跳转到第 ' + (index + 1) + ' 轮：' + turn.preview}
+          aria-current={activeId === turn.id ? 'true' : undefined}
+          title={'第 ' + (index + 1) + ' 轮 · ' + turn.preview}
+          data-testid="conversation-turn-mark"
+          onClick={() => onSelect(turn)}
+        />
+      ))}
+    </nav>
   )
 }
 

@@ -1,4 +1,5 @@
 import type { StableId } from '../engine/types'
+import type { Annotation } from '../annotations/annotation-types'
 
 /**
  * StudyCard — 学习卡片 (v2.2.0 §1.1 / §7.1).
@@ -14,6 +15,7 @@ export const STUDY_CARD_SCHEMA_VERSION = 1
 
 export type StudyCardTitleMode = 'auto' | 'custom'
 export type StudyCardRating = 1 | 2 | 3 | 4 | 5
+export type StudyCardCollectionMode = 'saved' | 'marked'
 export type StudyCardDocumentRelation = 'turn' | 'prior-context'
 
 export type StudyCardDocumentRef = {
@@ -53,6 +55,10 @@ export type StudyCard = {
   lastOpenedAt?: number
   /** Optional user rating. Missing means the card has not been rated yet. */
   rating?: StudyCardRating
+  /** Missing on v2.2 cards means an explicitly saved card. */
+  collectionMode?: StudyCardCollectionMode
+  /** Canonical mark storage. Legacy rows are migrated from the annotations store. */
+  annotations?: Annotation[]
 }
 
 /** Derived index row so "cards about this page" never scans every card (§10.4). */

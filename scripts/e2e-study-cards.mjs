@@ -35,6 +35,17 @@ await seedAndBoot(page, {
   settings: { apiKey: '', model: 'deepseek-chat', lastConversationId: 'cards-chat' },
 })
 
+// ---- 0. conversation retrieval affordances ----
+const rail = page.locator('[data-testid="conversation-turn-rail"]')
+await rail.waitFor({ state: 'visible', timeout: 10000 })
+assert(await rail.locator('[data-testid="conversation-turn-mark"]').count() === 3, 'the right rail exposes one marker per conversation round')
+await rail.locator('[data-testid="conversation-turn-mark"]').nth(1).click()
+assert(await rail.locator('[data-testid="conversation-turn-mark"]').nth(1).getAttribute('aria-current') === 'true', 'clicking a rail marker selects that round')
+const contextUsage = page.locator('[data-testid="composer-context-usage"]')
+await contextUsage.waitFor({ state: 'visible', timeout: 10000 })
+assert((await contextUsage.innerText()).includes('已占用上下文 · 约'), 'the composer shows a local context usage estimate on the right')
+assert((await contextUsage.getAttribute('title')).includes('本地估算'), 'the context indicator explains its estimate and image policy')
+
 // ---- 1. menu structure ----
 await openMessageActions(page, 0)
 const menu = page.locator('[data-testid="message-action-menu"]')
@@ -85,6 +96,8 @@ await page.locator('[data-testid="message-action-save-card"]').click()
 await page.locator('[data-testid="card-save-status"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(getRouteHits().completions === before, 'saving a card makes ZERO model requests')
 assert((await page.locator('[data-testid="card-save-status"]').innerText()).includes('已保存为学习卡片'), 'a non-blocking status reports the save')
+await page.locator('[data-testid="card-save-status"]').waitFor({ state: 'hidden', timeout: 6000 })
+assert(await page.locator('[data-testid="card-save-status"]').count() === 0, 'the card status dismisses itself')
 
 const cards = await openAppDb(page, { store: 'studyCards' })
 assert(cards.length === 1, 'exactly one card row exists (got ' + cards.length + ')')
@@ -101,7 +114,11 @@ const saveButton = page.locator('[data-testid="message-action-save-card"]')
 assert((await saveButton.innerText()).includes('查看已保存卡片'), 'a saved reply offers 查看已保存卡片 instead of creating a duplicate')
 assert(await saveButton.getAttribute('data-card-state') === 'saved', 'the button reflects the saved state')
 await saveButton.click()
-await page.waitForTimeout(600)
+await page.locator('[data-testid="learning-center"]').waitFor({ state: 'visible', timeout: 10000 })
+assert(await page.locator('[data-testid="card-detail-body"]').count() === 1, '查看已保存卡片 opens the saved card detail')
+assert(await page.locator('[data-testid="message-action-menu"]').count() === 0, 'opening a saved card closes the message menu')
+await page.locator('[data-testid="learning-center-close"]').click()
+await page.locator('[data-testid="learning-center"]').waitFor({ state: 'hidden', timeout: 10000 })
 assert((await openAppDb(page, { store: 'studyCards' })).length === 1, 're-opening the saved card never creates a second one')
 
 // ---- 6. streaming / failed / empty replies cannot be saved ----
@@ -116,9 +133,11 @@ const composer = page.locator('textarea[aria-label="输入消息"]')
 await composer.fill('未发送的草稿')
 await openMessageActions(page, 0)
 await page.locator('[data-testid="message-action-save-card"]').click()
-await page.waitForTimeout(600)
+await page.locator('[data-testid="learning-center"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(await composer.inputValue() === '未发送的草稿', 'saving a card never clears the composer draft')
 assert((await openAppDb(page, { store: 'studyCards' })).length === 1, 'saving without an API key still creates exactly one card')
+await page.locator('[data-testid="learning-center-close"]').click()
+await page.locator('[data-testid="learning-center"]').waitFor({ state: 'hidden', timeout: 10000 })
 
 // ---- 8. a branch reply records the real branch ----
 // The no-key steps above proved saving needs no API key; branching needs one to send.
@@ -145,14 +164,39 @@ assert(branchMenuAppeared === true, 'the branch reply exposes its own message me
 if (branchMenuAppeared) {
   const branchMenus = await page.locator('button[aria-label="消息操作"]').count()
   await openMessageActions(page, branchMenus - 1)
-  await page.locator('[data-testid="message-action-save-card"]').click()
+  assert(await page.locator('[data-testid="message-action-card-rating"] button').count() === 5, 'the save menu offers five friendly star choices')
+  await page.locator('[data-testid="message-action-card-rating-4"]').click()
   await page.waitForTimeout(800)
   const afterBranch = await openAppDb(page, { store: 'studyCards' })
   assert(afterBranch.length === 2, 'the branch reply becomes a second card (got ' + afterBranch.length + ')')
   const branchCard = afterBranch.find(card => card.bodyMarkdown === '分支回答正文')
   assert(!!branchCard, 'the branch card body is the branch reply')
+  assert(branchCard?.rating === 4, 'choosing a star saves the card with that rating in one action')
   assert(!!branchCard && typeof branchCard.source.branchId === 'string' && branchCard.source.branchId.length > 0, 'a branch reply records its real branch id, never root')
 }
+
+// ---- 9. old separate marks merge into an existing card on boot (no duplicate/stall) ----
+await openAppDb(page, { store: 'annotations', operation: 'put', value: {
+  id: 'legacy-mark-a1', conversationId: 'cards-chat', messageId: 'c-a1', version: 1,
+  createdAt: now, updatedAt: now,
+  target: { type: 'text', anchor: { scope: 'block', blockId: 'p-0' }, start: 0, end: 2, quote: { exact: '# ', prefix: '', suffix: '特征值' } },
+} })
+await page.reload({ waitUntil: 'networkidle' })
+await page.locator('[data-testid="composer-context-usage"]').waitFor({ state: 'visible', timeout: 20000 })
+await page.waitForFunction(() => new Promise(resolve => {
+  const request = indexedDB.open('ai-education-reader')
+  request.onsuccess = () => {
+    const db = request.result
+    const txn = db.transaction(['studyCards', 'annotations'], 'readonly')
+    const cards = txn.objectStore('studyCards').getAll()
+    const annotations = txn.objectStore('annotations').getAll()
+    txn.oncomplete = () => resolve(cards.result.some(card => card.source?.assistantMessageId === 'c-a1' && card.annotations?.some(annotation => annotation.id === 'legacy-mark-a1')) && annotations.result.every(annotation => annotation.id !== 'legacy-mark-a1'))
+  }
+  request.onerror = () => resolve(false)
+}), null, { timeout: 10000 })
+const migratedCards = await openAppDb(page, { store: 'studyCards' })
+assert(migratedCards.filter(card => card.source?.assistantMessageId === 'c-a1').length === 1, 'a legacy mark enriches its existing study card without creating a duplicate')
+assert((await openAppDb(page, { store: 'annotations' })).every(annotation => annotation.id !== 'legacy-mark-a1'), 'the legacy mark row is removed only after the card commit')
 
 assert(errors.length === 0, 'card saving produced no page errors or unhandled rejections')
 console.log(results.join('\n'))

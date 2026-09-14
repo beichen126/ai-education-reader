@@ -9,8 +9,9 @@ import { extractStudyCardReference, type StudyCardAttachmentMeta } from './study
 import { validateStudyCard } from './study-card-validation'
 import {
   MAX_STUDY_CARD_BODY_LENGTH, MAX_STUDY_CARD_TITLE_LENGTH, STUDY_CARD_SCHEMA_VERSION,
-  type StudyCard, type StudyCardDocumentRef, type StudyCardRating,
+  type StudyCard, type StudyCardCollectionMode, type StudyCardDocumentRef, type StudyCardRating,
 } from './study-card-types'
+import type { Annotation } from '../annotations/annotation-types'
 import {
   countStudyCards, deleteStudyCardRow, estimateStudyCardTextBytes, getStudyCard, getStudyCardBySourceMessage,
   listStudyCardPageRefs, listStudyCards, listStudyCardsByDocument, listStudyCardsByDocumentPage,
@@ -32,6 +33,10 @@ export type CreateStudyCardInput = {
   assistantMessageId: StableId
   /** Present only when the user supplied an explicit title; otherwise the auto title wins. */
   title?: string
+  /** Optional 1–5 score committed in the same transaction as the save. */
+  rating?: StudyCardRating
+  /** Internal mark flow auto-collects the reply; ordinary saves default to `saved`. */
+  collectionMode?: StudyCardCollectionMode
 }
 
 export type CreateStudyCardResult =
@@ -130,7 +135,16 @@ export async function createStudyCardFromAssistantMessage(input: CreateStudyCard
           existingRequest.onsuccess = () => {
             const existingRow = existingRequest.result
             if (existingRow !== undefined) {
-              try { finish({ kind: 'existing', card: validateStudyCard(existingRow) }) } catch (error) { fail(error) }
+              try {
+                const existing = validateStudyCard(existingRow)
+                const shouldPromote = (input.collectionMode ?? 'saved') === 'saved' && existing.collectionMode === 'marked'
+                const shouldRate = input.rating !== undefined && existing.rating !== input.rating
+                if (shouldPromote || shouldRate) {
+                  const changed = validateStudyCard({ ...existing, ...(shouldPromote ? { collectionMode: 'saved' } : {}), ...(shouldRate ? { rating: input.rating } : {}), updatedAt: nextRevision(existing.updatedAt) })
+                  cards.put(changed)
+                  finish({ kind: 'existing', card: changed })
+                } else finish({ kind: 'existing', card: existing })
+              } catch (error) { fail(error) }
               return
             }
             const ordinalRequest = cards.index('by_source_conversation').getAll(input.conversationId)
@@ -203,6 +217,9 @@ export async function createStudyCardFromAssistantMessage(input: CreateStudyCard
                     documentIds: [...new Set(reference.documentRefs.map(ref => ref.documentId).filter((id): id is string => !!id))].sort(),
                     createdAt: now,
                     updatedAt: now,
+                    collectionMode: input.collectionMode ?? 'saved',
+                    annotations: [],
+                    ...(input.rating !== undefined ? { rating: input.rating } : {}),
                   }
                   const validated = validateStudyCard(card)
                   cards.put(validated)
@@ -243,7 +260,7 @@ export async function updateStudyCardTitle(id: StableId, title: string, expected
   if (!clean) return undefined
   return updateStudyCardRow(id, current => {
     if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) return undefined
-    return { ...current, title: clean.slice(0, MAX_STUDY_CARD_TITLE_LENGTH), titleMode: 'custom', updatedAt: nextRevision(current.updatedAt) }
+    return { ...current, title: clean.slice(0, MAX_STUDY_CARD_TITLE_LENGTH), titleMode: 'custom', collectionMode: 'saved', updatedAt: nextRevision(current.updatedAt) }
   })
 }
 
@@ -253,7 +270,7 @@ export async function updateStudyCardRating(id: StableId, rating: StudyCardRatin
   return updateStudyCardRow(id, current => {
     if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) return undefined
     if (current.rating === rating) return current
-    return { ...current, rating, updatedAt: nextRevision(current.updatedAt) }
+    return { ...current, rating, collectionMode: 'saved', updatedAt: nextRevision(current.updatedAt) }
   })
 }
 
@@ -263,8 +280,14 @@ export async function updateStudyCardBody(id: StableId, markdown: string, expect
   if (markdown.length > MAX_STUDY_CARD_BODY_LENGTH) return undefined
   return updateStudyCardRow(id, current => {
     if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) return undefined
-    return { ...current, bodyMarkdown: markdown, updatedAt: nextRevision(current.updatedAt) }
+    return { ...current, bodyMarkdown: markdown, collectionMode: 'saved', updatedAt: nextRevision(current.updatedAt) }
   })
+}
+
+/** Marking and collecting are one record: the exact annotation geometry lives inside
+ * the StudyCard row, so the conversation and learning centre always render the same data. */
+export async function updateStudyCardAnnotations(id: StableId, annotations: readonly Annotation[]): Promise<StudyCard | undefined> {
+  return updateStudyCardRow(id, current => ({ ...current, annotations: [...annotations], updatedAt: nextRevision(current.updatedAt) }))
 }
 
 /** Record that the detail really opened. Never rewinds and never touches updatedAt. */
@@ -277,7 +300,14 @@ export async function markStudyCardOpened(id: StableId, openedAt: number): Promi
   return updated ?? getStudyCard(id)
 }
 
-export async function deleteStudyCard(id: StableId): Promise<void> { await deleteStudyCardRow(id) }
+export async function deleteStudyCard(id: StableId): Promise<void> {
+  const card = await getStudyCard(id)
+  await deleteStudyCardRow(id)
+  if (card?.annotations?.length) {
+    const { dropMessageAnnotations } = await import('../annotations/annotation-store')
+    dropMessageAnnotations(card.source.conversationId, card.source.assistantMessageId)
+  }
+}
 
 export type StudyCardSourceStatus = 'live' | 'conversation-deleted' | 'branch-deleted' | 'message-deleted'
 

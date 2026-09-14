@@ -49,6 +49,7 @@ export type PdfViewportApi = ReaderDisplayApi & {
   mode: PdfNavigationMode
   currentPage: number
   pageCount: number
+  continuousStackRef: React.RefObject<HTMLDivElement | null>
   continuousWindow?: ContinuousWindowView
   continuousPageErrors?: ReadonlyMap<number, string>
   scrollToPage?: (page: number, align?: 'start' | 'center') => void
@@ -86,6 +87,7 @@ function pickTargets(window: VirtualWindow, centrePage: number, limit: number): 
 
 type ContinuousViewportApi = {
   stageRef: React.RefObject<HTMLDivElement | null>
+  continuousStackRef: React.RefObject<HTMLDivElement | null>
   rendering: boolean
   surface: CachedSurface | null
   pageError: string | null
@@ -104,6 +106,7 @@ type ContinuousViewportApi = {
 function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }): ContinuousViewportApi {
   const { enabled, session, documentKey, pageCount, currentPage, telemetry } = props
   const stageRef = useRef<HTMLDivElement | null>(null)
+  const continuousStackRef = useRef<HTMLDivElement | null>(null)
   const controllerRef = useRef<ContinuousRenderController | null>(null)
   const layoutRef = useRef<ContinuousLayoutModel | null>(null)
   const canvasRefs = useRef(new Map<number, HTMLCanvasElement>())
@@ -218,7 +221,13 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
     let timer: number | null = null
     const measure = () => {
       const layout = ensureLayout()
-      const width = Math.max(1, element.clientWidth - STAGE_PADDING)
+      // The page stack is capped on wide screens. Measuring the scroll stage here used
+      // to make the layout model believe every page was much wider (and therefore much
+      // taller) than the rendered 960px stack, leaving page-sized dark gaps between
+      // canvases. The real stack width is the single source of truth for offsets,
+      // placeholders and render scale.
+      const stack = continuousStackRef.current
+      const width = Math.max(1, stack?.clientWidth || element.clientWidth - STAGE_PADDING)
       const height = Math.max(1, element.clientHeight)
       // A width change resets every measured height, so re-anchor on the logical page.
       const widthChanged = Math.abs(layout.getContentWidth() - width) > 0.5
@@ -235,7 +244,10 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
     const observer = typeof ResizeObserver !== 'undefined'
       ? new ResizeObserver(() => { if (timer !== null) window.clearTimeout(timer); timer = window.setTimeout(measure, 120) })
       : null
-    if (observer) observer.observe(element)
+    if (observer) {
+      observer.observe(element)
+      if (continuousStackRef.current) observer.observe(continuousStackRef.current)
+    }
     else window.addEventListener('resize', measure)
     return () => { observer?.disconnect(); if (timer !== null) window.clearTimeout(timer); if (!observer) window.removeEventListener('resize', measure) }
   }, [bumpLayout, documentKey, enabled, ensureLayout, session])
@@ -283,7 +295,13 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
   // ---- the controller renders only the mounted window (at most 7 canvases) ----
   useEffect(() => {
     if (!enabled) return
-    controllerRef.current?.setTargetPages(pickTargets(viewWindow, currentPage, MAX_CANVAS_PAGES))
+    const root = stageRef.current
+    const layout = layoutRef.current
+    // During a wheel gesture `currentPage` intentionally settles with a short delay.
+    // Render around the actual viewport centre so visible pages never become blank
+    // placeholders merely because the footer page number has not settled yet.
+    const visibleCentre = root && layout ? layout.pageAtViewportCenter(root.scrollTop) : currentPage
+    controllerRef.current?.setTargetPages(pickTargets(viewWindow, visibleCentre, MAX_CANVAS_PAGES))
   }, [currentPage, enabled, viewWindow])
 
   // ---- keep the per-page canvas callback map bounded by the mounted window ----
@@ -384,6 +402,7 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
   const centrePage = pageCount > 0 ? clampPage(currentPage, pageCount) : 0
   return {
     stageRef,
+    continuousStackRef,
     rendering,
     surface: centrePage ? surfaces.get(centrePage) ?? null : null,
     pageError: centrePage ? pageErrors.get(centrePage) ?? null : null,
@@ -415,5 +434,5 @@ export function usePdfViewport(props: PdfViewportProps): PdfViewportApi {
   if (props.mode === 'continuous') {
     return { ...continuous, ...shared, active: true }
   }
-  return { ...display, ...shared }
+  return { ...display, ...shared, continuousStackRef: continuous.continuousStackRef }
 }

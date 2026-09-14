@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Message } from '../engine/types'
 import type { CreateArtifactKind } from '../artifacts/artifact-types'
+import type { StudyCardRating } from '../study-cards/study-card-types'
 import css from './branch.module.css'
 
 export type CardSaveState = 'idle' | 'saving' | 'saved' | 'failed'
@@ -11,10 +12,11 @@ export type MessageActionMenuProps = {
   message: Message
   isStreaming: boolean
   cardState: CardSaveState
+  cardRating?: StudyCardRating
   onCreateBranch(): void
   onCreateArtifact(kind: CreateArtifactKind): void
   onCreateCustomArtifact(): void
-  onSaveCard(): void
+  onSaveCard(rating?: StudyCardRating): void
   onViewSavedCard(): void
   onClose(): void
 }
@@ -30,7 +32,7 @@ type MenuItem = { testId: string; label: string; action: () => void; disabled?: 
  *   保存本轮回复为学习卡片
  */
 export function MessageActionMenu(props: MessageActionMenuProps) {
-  const { message, isStreaming, cardState, onCreateBranch, onCreateArtifact, onCreateCustomArtifact, onSaveCard, onViewSavedCard, onClose } = props
+  const { message, isStreaming, cardState, cardRating, onCreateBranch, onCreateArtifact, onCreateCustomArtifact, onSaveCard, onViewSavedCard, onClose } = props
   const ref = useRef<HTMLDivElement | null>(null)
   const [specialOpen, setSpecialOpen] = useState(false)
   // Only a completed, non-empty, non-streaming assistant reply can become a card.
@@ -105,10 +107,30 @@ export function MessageActionMenu(props: MessageActionMenuProps) {
         data-card-state={cardState}
         disabled={!canSaveCard || cardState === 'saving'}
         title={canSaveCard ? undefined : '只能保存已完成且非空的 AI 回复'}
-        onClick={() => { if (saved) onViewSavedCard(); else onSaveCard() }}
+        onClick={() => { if (saved) onViewSavedCard(); else onSaveCard(); onClose() }}
       >
         {cardLabel}
       </button>
+      {canSaveCard && cardState !== 'saving' && (
+        <div className={css.cardRatingQuick} role="group" aria-label={saved ? '快速修改学习卡片评分' : '保存学习卡片并评分'} data-testid="message-action-card-rating">
+          <span>{saved ? '快速评分' : '保存并评分'}</span>
+          <span className={css.cardRatingStars}>
+            {([1, 2, 3, 4, 5] as StudyCardRating[]).map(value => (
+              <button
+                key={value}
+                type="button"
+                className={css.cardRatingStar}
+                data-testid={'message-action-card-rating-' + value}
+                data-active={value <= (cardRating ?? 0) ? 'true' : 'false'}
+                aria-label={(saved ? '修改为 ' : '保存并设置为 ') + value + ' 分'}
+                aria-pressed={cardRating === value}
+                title={value + ' 分'}
+                onClick={() => { onSaveCard(value); onClose() }}
+              >★</button>
+            ))}
+          </span>
+        </div>
+      )}
     </div>
   )
 }

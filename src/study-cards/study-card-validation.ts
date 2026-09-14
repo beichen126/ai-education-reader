@@ -1,8 +1,9 @@
 import {
   MAX_STUDY_CARD_BODY_LENGTH, MAX_STUDY_CARD_DOCUMENT_REFS, MAX_STUDY_CARD_PAGES_PER_REF,
   MAX_STUDY_CARD_TITLE_LENGTH, STUDY_CARD_SCHEMA_VERSION,
-  type StudyCard, type StudyCardDocumentRef, type StudyCardDocumentRelation, type StudyCardRating, type StudyCardSource, type StudyCardTitleMode,
+  type StudyCard, type StudyCardCollectionMode, type StudyCardDocumentRef, type StudyCardDocumentRelation, type StudyCardRating, type StudyCardSource, type StudyCardTitleMode,
 } from './study-card-types'
+import { ANNOTATION_VERSION, type Annotation, type AnnotationTarget } from '../annotations/annotation-types'
 
 export class StudyCardValidationError extends Error {
   readonly code: string
@@ -18,6 +19,7 @@ const FORBIDDEN_PAYLOAD = /(?:data:[a-z0-9.+-]+\/[a-z0-9.+-]+;base64,|blob:[a-z]
 
 const TITLE_MODES: StudyCardTitleMode[] = ['auto', 'custom']
 const RELATIONS: StudyCardDocumentRelation[] = ['turn', 'prior-context']
+const COLLECTION_MODES: StudyCardCollectionMode[] = ['saved', 'marked']
 
 function fail(code: string, message: string): never { throw new StudyCardValidationError(code, message) }
 
@@ -82,6 +84,40 @@ function assertNoBinaryPayload(text: string, code: string, message: string): voi
   if (FORBIDDEN_PAYLOAD.test(text)) fail(code, message)
 }
 
+function validateAnnotationTarget(input: unknown): AnnotationTarget {
+  if (!input || typeof input !== 'object') fail('annotation-target', '标记目标非法')
+  const raw = input as Record<string, unknown>
+  if (raw.type === 'text') {
+    const anchor = raw.anchor as Record<string, unknown> | undefined
+    const quote = raw.quote as Record<string, unknown> | undefined
+    if (!anchor || !quote || !Number.isInteger(raw.start) || !Number.isInteger(raw.end) || (raw.start as number) < 0 || (raw.end as number) <= (raw.start as number)) fail('annotation-text', '文字标记非法')
+    const parsedAnchor = anchor.scope === 'block'
+      ? { scope: 'block' as const, blockId: requireNonEmptyString(anchor.blockId, 'annotation-anchor', '文字标记锚点非法') }
+      : anchor.scope === 'table-cell' && Number.isInteger(anchor.row) && Number.isInteger(anchor.column)
+        ? { scope: 'table-cell' as const, tableId: requireNonEmptyString(anchor.tableId, 'annotation-anchor', '表格标记锚点非法'), row: anchor.row as number, column: anchor.column as number }
+        : fail('annotation-anchor', '文字标记锚点非法')
+    return { type: 'text', anchor: parsedAnchor, start: raw.start as number, end: raw.end as number, quote: { exact: requireString(quote.exact, 'annotation-quote', '标记引文非法'), prefix: requireString(quote.prefix, 'annotation-quote', '标记引文非法'), suffix: requireString(quote.suffix, 'annotation-quote', '标记引文非法') } }
+  }
+  if (raw.type === 'math') return { type: 'math', mathId: requireNonEmptyString(raw.mathId, 'annotation-math', '公式标记非法'), mathKind: raw.mathKind === 'inline' || raw.mathKind === 'block' ? raw.mathKind : fail('annotation-math', '公式标记非法') }
+  if (raw.type === 'table') return { type: 'table', tableId: requireNonEmptyString(raw.tableId, 'annotation-table', '表格标记非法') }
+  if (raw.type === 'table-cells') {
+    const bounds = raw.bounds as Record<string, unknown> | undefined
+    if (!bounds || !Number.isInteger(bounds.rowStart) || !Number.isInteger(bounds.rowEnd) || !Number.isInteger(bounds.columnStart) || !Number.isInteger(bounds.columnEnd) || (bounds.rowStart as number) < 0 || (bounds.columnStart as number) < 0 || (bounds.rowEnd as number) < (bounds.rowStart as number) || (bounds.columnEnd as number) < (bounds.columnStart as number)) fail('annotation-table', '表格区域标记非法')
+    return { type: 'table-cells', tableId: requireNonEmptyString(raw.tableId, 'annotation-table', '表格标记非法'), bounds: { rowStart: bounds.rowStart as number, rowEnd: bounds.rowEnd as number, columnStart: bounds.columnStart as number, columnEnd: bounds.columnEnd as number } }
+  }
+  fail('annotation-target', '标记目标类型非法')
+}
+
+function validateAnnotation(input: unknown, source: StudyCardSource): Annotation {
+  if (!input || typeof input !== 'object') fail('annotation-shape', '标记必须是对象')
+  const raw = input as Record<string, unknown>
+  const conversationId = requireNonEmptyString(raw.conversationId, 'annotation-conversation', '标记会话非法')
+  const messageId = requireNonEmptyString(raw.messageId, 'annotation-message', '标记消息非法')
+  if (conversationId !== source.conversationId || messageId !== source.assistantMessageId) fail('annotation-source', '标记与学习卡片来源不一致')
+  if (raw.version !== ANNOTATION_VERSION) fail('annotation-version', '标记版本非法')
+  return { id: requireNonEmptyString(raw.id, 'annotation-id', '标记 id 非法'), conversationId, messageId, target: validateAnnotationTarget(raw.target), createdAt: requireFiniteTime(raw.createdAt, 'annotation-created', '标记时间非法'), updatedAt: requireFiniteTime(raw.updatedAt, 'annotation-updated', '标记时间非法'), version: ANNOTATION_VERSION }
+}
+
 /**
  * Strict validator. Unknown fields are DROPPED (never spread), so a hand-edited or
  * foreign row can never smuggle extra state into the store, and callers never need an
@@ -118,6 +154,7 @@ export function validateStudyCard(input: unknown): StudyCard {
     }
   }
 
+  const source = validateSource(raw.source)
   const card: StudyCard = {
     schemaVersion: STUDY_CARD_SCHEMA_VERSION,
     id: requireNonEmptyString(raw.id, 'id', '学习卡片 id 不能为空'),
@@ -125,7 +162,7 @@ export function validateStudyCard(input: unknown): StudyCard {
     titleMode: titleMode as StudyCardTitleMode,
     autoTitleOrdinal,
     bodyMarkdown,
-    source: validateSource(raw.source),
+    source,
     documentRefs,
     documentIds: derivedDocumentIds,
     createdAt: requireFiniteTime(raw.createdAt, 'created-at', '学习卡片缺少合法创建时间'),
@@ -135,6 +172,15 @@ export function validateStudyCard(input: unknown): StudyCard {
   if (raw.rating !== undefined) {
     if (typeof raw.rating !== 'number' || !Number.isInteger(raw.rating) || raw.rating < 1 || raw.rating > 5) fail('rating', '学习卡片评分必须是 1–5 的整数')
     card.rating = raw.rating as StudyCardRating
+  }
+  if (raw.collectionMode !== undefined) {
+    if (typeof raw.collectionMode !== 'string' || !COLLECTION_MODES.includes(raw.collectionMode as StudyCardCollectionMode)) fail('collection-mode', '学习卡片收集方式非法')
+    card.collectionMode = raw.collectionMode as StudyCardCollectionMode
+  }
+  if (raw.annotations !== undefined) {
+    if (!Array.isArray(raw.annotations)) fail('annotations', '学习卡片标记必须是数组')
+    const seen = new Set<string>()
+    card.annotations = raw.annotations.map(item => validateAnnotation(item, source)).filter(annotation => !seen.has(annotation.id) && !!seen.add(annotation.id))
   }
   return card
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { MarkdownBlocks } from '../markdown/MarkdownBlocks'
 import { mapSelection } from './selection-mapper'
 import { resolveToRange, resolveByExact } from './range-resolver'
@@ -10,8 +10,9 @@ import { containsNode, ownedMath } from './ownership'
 import type { SelectionMapping } from './selection-types'
 import css from './annotate.module.css'
 
-export function AnnotatedMarkdown({ content, messageId, conversationId }: { content: string; messageId: string; conversationId: string }) {
+export function AnnotatedMarkdown({ content, messageId, conversationId, branchId }: { content: string; messageId: string; conversationId: string; branchId?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null)
+  const highlightOwnerId = messageId + ':' + useId()
   const [pending, setPending] = useState<SelectionMapping | null>(null)
   const annotations = useMessageAnnotations(conversationId, messageId)
   const { blocks, canonicalOf } = useMemo(() => buildBlockMap(content, messageId), [content, messageId])
@@ -33,9 +34,9 @@ export function AnnotatedMarkdown({ content, messageId, conversationId }: { cont
         return r
       }).filter((r): r is Range => !!r)
     } catch { ranges = [] }
-    try { setMessageRanges(messageId, ranges) } catch { /* never crash the app on a bad highlight range */ }
-    return () => { try { removeMessageRanges(messageId) } catch {} }
-  }, [annotations, messageId, content, hasHl])
+    try { setMessageRanges(highlightOwnerId, ranges) } catch { /* never crash the app on a bad highlight range */ }
+    return () => { try { removeMessageRanges(highlightOwnerId) } catch {} }
+  }, [annotations, messageId, content, hasHl, highlightOwnerId])
 
   useEffect(() => {
     let pressedMath: { id: string; kind: 'inline' | 'block' } | null = null
@@ -78,14 +79,14 @@ export function AnnotatedMarkdown({ content, messageId, conversationId }: { cont
     return () => { document.removeEventListener('selectionchange', onSelChange); document.removeEventListener('pointerdown', onPointerDown); document.removeEventListener('pointerup', onSelChange); document.removeEventListener('touchend', onSelChange) }
   }, [messageId, content, canonicalOf])
 
-  const markCrossCell = () => { if (!pending || pending.kind !== 'table-cross-cell') return; const a = pending.startCell, b = pending.endCell; const bounds = normalizeBounds(a.row, a.column, b.row, b.column); void toggleTableCellsMessage(conversationId, messageId, pending.tableId, bounds); window.getSelection()?.removeAllRanges(); setPending(null) }
+  const markCrossCell = () => { if (!pending || pending.kind !== 'table-cross-cell') return; const a = pending.startCell, b = pending.endCell; const bounds = normalizeBounds(a.row, a.column, b.row, b.column); void toggleTableCellsMessage(conversationId, messageId, pending.tableId, bounds, branchId); window.getSelection()?.removeAllRanges(); setPending(null) }
   const onMathAction = (mathId: string, kind: 'inline' | 'block') => { setPending({ kind: 'math', mathId, mathKind: kind }) }
   function doToggle() {
     try {
     if (!pending) return
-    if (pending.kind === 'math') { void toggleMathMessage(conversationId, messageId, pending.mathId, pending.mathKind); window.getSelection()?.removeAllRanges(); setPending(null); return }
+    if (pending.kind === 'math') { void toggleMathMessage(conversationId, messageId, pending.mathId, pending.mathKind, branchId); window.getSelection()?.removeAllRanges(); setPending(null); return }
     if (pending.kind !== 'text') return
-    toggleMessageSelection(conversationId, messageId, pending.segments, canonicalOf)
+    toggleMessageSelection(conversationId, messageId, pending.segments, canonicalOf, branchId)
     window.getSelection()?.removeAllRanges()
     setPending(null)
     } catch { try { window.getSelection()?.removeAllRanges() } catch {}; setPending(null) }
@@ -93,7 +94,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId }: { cont
   const mathCovered = pending && pending.kind === 'math' ? hasMath(annotations, pending.mathId) : false
   const fullyCovered = pending && pending.kind === 'text' ? shouldToggleAll(pending.segments.map((s) => ({ anchor: s.cell ? { scope: 'table-cell', tableId: s.cell.tableId, row: s.cell.row, column: s.cell.column } : { scope: 'block', blockId: s.blockId }, start: s.start, end: s.end })), annotations) === 'remove' : mathCovered
 
-  const onTableAction = (tableId: string) => { void toggleWholeTableMessage(conversationId, messageId, tableId) }
+  const onTableAction = (tableId: string) => { void toggleWholeTableMessage(conversationId, messageId, tableId, branchId) }
   return (
     <div ref={wrapRef} className={css.wrap} data-highlight={hasHl}>
       <MarkdownBlocks content={content} messageId={messageId} annotations={annotations} onTableAction={onTableAction} onMathAction={onMathAction} />
@@ -109,4 +110,3 @@ export function AnnotatedMarkdown({ content, messageId, conversationId }: { cont
     </div>
   )
 }
-

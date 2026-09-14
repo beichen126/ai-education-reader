@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { MarkdownBlocks } from '../markdown/MarkdownBlocks'
+import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
 import { ArtifactLibrary } from '../artifacts/ArtifactLibrary'
 import { ArtifactEditor } from '../artifacts/ArtifactEditor'
 import { QuizViewer } from '../artifacts/QuizViewer'
@@ -210,6 +210,7 @@ export function LearningCenter() {
                       <span className={css.itemSummary}>{studyCardPlainText(card.bodyMarkdown).slice(0, 240)}</span>
                       <span className={css.itemMeta}>
                         {card.rating !== undefined && <span className={css.ratingBadge} data-testid="card-item-rating" aria-label={'评分 ' + card.rating + ' 分'}>★ {card.rating}/5</span>}
+                        {!!card.annotations?.length && <span className={css.ratingBadge} data-testid="card-item-marks">已标记 {card.annotations.length} 处</span>}
                         <span data-testid="card-item-conversation">{card.source.conversationTitleSnapshot || '学习卡片'}</span>
                         {card.documentRefs.length > 0 && <span data-testid="card-item-sources">{card.documentRefs.map(ref => ref.fileNameSnapshot).join('、')}</span>}
                         <span>创建 {timestampLabel(card.createdAt)}</span>
@@ -411,7 +412,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
         {card.rating !== undefined && <button type="button" className={css.ratingClear} data-testid="card-rating-clear" disabled={busy} onClick={() => void commitRating(undefined)}>清除</button>}
       </div>
       <div className={css.detailBody} data-testid="card-detail-body">
-        <MarkdownBlocks content={card.bodyMarkdown} messageId={'study-card-' + card.id} />
+        <AnnotatedMarkdown content={card.bodyMarkdown} messageId={card.source.assistantMessageId} conversationId={card.source.conversationId} branchId={card.source.branchId} />
       </div>
       <div className={css.sourceList} data-testid="card-sources">
         <div className={css.sourceRow}>
