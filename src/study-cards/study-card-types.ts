@@ -13,6 +13,7 @@ import type { StableId } from '../engine/types'
 export const STUDY_CARD_SCHEMA_VERSION = 1
 
 export type StudyCardTitleMode = 'auto' | 'custom'
+export type StudyCardRating = 1 | 2 | 3 | 4 | 5
 export type StudyCardDocumentRelation = 'turn' | 'prior-context'
 
 export type StudyCardDocumentRef = {
@@ -50,6 +51,8 @@ export type StudyCard = {
   createdAt: number
   updatedAt: number
   lastOpenedAt?: number
+  /** Optional user rating. Missing means the card has not been rated yet. */
+  rating?: StudyCardRating
 }
 
 /** Derived index row so "cards about this page" never scans every card (§10.4). */
@@ -60,7 +63,7 @@ export type StudyCardPageRef = {
   cardId: string
 }
 
-export type StudyCardListSort = 'created-desc' | 'created-asc' | 'updated-desc' | 'last-opened-desc' | 'random'
+export type StudyCardListSort = 'created-desc' | 'created-asc' | 'updated-desc' | 'last-opened-desc' | 'rating-desc' | 'random'
 
 /** Which PDF source the library is filtered by. Same-named documents are never merged. */
 export type StudyCardFilterKey =

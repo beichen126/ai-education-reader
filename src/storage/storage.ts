@@ -2,6 +2,7 @@ import { idbGet, idbGetAll, idbGetAllKeys, idbPut, idbDelete, idbGetAllByIndex, 
 import { normalizeConversationPdfContexts, type Attachment, type DraftDisposition } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import type { StoredBinary } from './binary-store'
+import { MAX_STUDY_CARD_TITLE_LENGTH } from '../study-cards/study-card-types'
 
 // Persisted attachment row (Stage 9.4D). Blob bytes live in OPFS-first storage via
 // a StoredBinary reference (binary); legacy rows carry a Blob inline (blob).
@@ -30,6 +31,39 @@ export async function getConversation(id: string): Promise<any> { const conv = a
 export async function listConversations(): Promise<any[]> { const all = await idbGetAll('conversations'); return all.map(normalizeConversationPdfContexts).sort((a, b) => b.updatedAt - a.updatedAt) }
 export async function saveConversation(conv: any): Promise<void> { await idbPut('conversations', normalizeConversationPdfContexts(conv)) }
 export async function deleteConversation(id: string): Promise<void> { await idbDelete('conversations', id) }
+
+/**
+ * Persist a conversation rename and update its card metadata in the same transaction.
+ * Auto-generated card titles follow the conversation name; titles explicitly edited by
+ * the user stay untouched. Every card keeps the latest conversation name as its fallback
+ * snapshot in case the source conversation is deleted later.
+ */
+export async function saveConversationRenameAndSyncCards(conv: any): Promise<void> {
+  const normalized = normalizeConversationPdfContexts(conv)
+  await idbRunTxn(['conversations', 'studyCards'], txn => {
+    txn.objectStore('conversations').put(normalized)
+    const cards = txn.objectStore('studyCards')
+    const request = cards.index('by_source_conversation').openCursor(IDBKeyRange.only(normalized.id))
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (!cursor) return
+      const current = cursor.value as any
+      const source = current && typeof current.source === 'object' && current.source
+        ? { ...current.source, conversationTitleSnapshot: normalized.title }
+        : current.source
+      const ordinal = current.autoTitleOrdinal
+      const title = current.titleMode === 'auto' && Number.isInteger(ordinal) && ordinal >= 1
+        ? (String(normalized.title).trim() + '-' + ordinal).slice(0, MAX_STUDY_CARD_TITLE_LENGTH)
+        : current.title
+      const changed = title !== current.title || source?.conversationTitleSnapshot !== current.source?.conversationTitleSnapshot
+      if (changed) {
+        const previousRevision = Number.isFinite(current.updatedAt) ? current.updatedAt : 0
+        cursor.update({ ...current, title, source, updatedAt: Math.max(Date.now(), previousRevision + 1) })
+      }
+      cursor.continue()
+    }
+  })
+}
 
 /** The durable settings key holding the last-active conversation id. */
 export const LAST_CONVERSATION_ID_KEY = 'lastConversationId'

@@ -12,10 +12,10 @@ import {
   DEFAULT_STUDY_CARD_SORT, STUDY_CARD_SORT_MODES, buildStudyCardFilterOptions, createStudyCardSeed,
   selectStudyCards, studyCardPlainText, type StudyCardSortMode,
 } from './study-card-sorting'
-import type { StudyCard, StudyCardDocumentRef, StudyCardFilterKey } from './study-card-types'
+import type { StudyCard, StudyCardDocumentRef, StudyCardFilterKey, StudyCardRating } from './study-card-types'
 import {
   deleteStudyCard, getStudyCard, getStudyCardSourceStatus, listStudyCards, markStudyCardOpened,
-  openStudyCardSource, updateStudyCardTitle, type StudyCardSourceStatus,
+  openStudyCardSource, updateStudyCardRating, updateStudyCardTitle, type StudyCardSourceStatus,
 } from './study-card-service'
 import { documentUiActions } from '../documents/document-ui-store'
 import { learningUiActions, loadStudyCardPreferences, persistStudyCardPreferences, useLearningUi, type CardListContext } from './learning-ui-store'
@@ -209,6 +209,7 @@ export function LearningCenter() {
                       <span className={css.itemTitle} data-testid="card-item-title">{card.title}</span>
                       <span className={css.itemSummary}>{studyCardPlainText(card.bodyMarkdown).slice(0, 240)}</span>
                       <span className={css.itemMeta}>
+                        {card.rating !== undefined && <span className={css.ratingBadge} data-testid="card-item-rating" aria-label={'评分 ' + card.rating + ' 分'}>★ {card.rating}/5</span>}
                         <span data-testid="card-item-conversation">{card.source.conversationTitleSnapshot || '学习卡片'}</span>
                         {card.documentRefs.length > 0 && <span data-testid="card-item-sources">{card.documentRefs.map(ref => ref.fileNameSnapshot).join('、')}</span>}
                         <span>创建 {timestampLabel(card.createdAt)}</span>
@@ -254,6 +255,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
   const [error, setError] = useState<string | null>(null)
   const [sourceStatus, setSourceStatus] = useState<StudyCardSourceStatus | null>(null)
   const [clampNote, setClampNote] = useState<string | null>(null)
+  const [hoverRating, setHoverRating] = useState<StudyCardRating | null>(null)
   const openedRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -318,6 +320,21 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
     } finally { setBusy(false); setRenaming(false) }
   }
 
+  const commitRating = async (rating: StudyCardRating | undefined) => {
+    if (!card || busy || card.rating === rating) return
+    setBusy(true)
+    try {
+      const updated = await updateStudyCardRating(card.id, rating, card.updatedAt)
+      if (updated) { setCard(updated); setError(null); onChanged() }
+      else setError('卡片已在其它标签页中被修改，请重新打开后再评分。')
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : '评分保存失败')
+    } finally {
+      setBusy(false)
+      setHoverRating(null)
+    }
+  }
+
   const remove = async () => {
     if (!card || !globalThis.confirm('删除这张学习卡片？（不会删除原会话、PDF 或学习成果）')) return
     setBusy(true)
@@ -360,11 +377,38 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
             onBlur={() => { if (renaming) void commitRename() }}
           />
         ) : (
-          <button type="button" className={css.itemTitle} data-testid="card-title" title="点击重命名" onClick={() => setRenaming(true)}>{card.title}</button>
+          <button type="button" className={css.itemTitle + ' ' + css.titleButton} data-testid="card-title" title="点击重命名" onClick={() => setRenaming(true)}>{card.title}</button>
         )}
         <div className={css.spacer} />
         <button type="button" className={css.small} data-testid="card-rename" disabled={busy} onClick={() => setRenaming(true)}>重命名</button>
         <button type="button" className={css.small + ' ' + css.danger} data-testid="card-delete" disabled={busy} onClick={() => void remove()}>删除</button>
+      </div>
+      <div className={css.ratingRow} data-testid="card-rating">
+        <span className={css.ratingLabel}>给这张卡片评分</span>
+        <span className={css.ratingStars} role="group" aria-label="学习卡片评分" onMouseLeave={() => setHoverRating(null)}>
+          {([1, 2, 3, 4, 5] as StudyCardRating[]).map(value => {
+            const active = value <= (hoverRating ?? card.rating ?? 0)
+            return (
+              <button
+                key={value}
+                type="button"
+                className={css.ratingButton}
+                data-testid={'card-rating-' + value}
+                data-active={active ? 'true' : 'false'}
+                aria-label={'设置为 ' + value + ' 分'}
+                aria-pressed={card.rating === value}
+                title={value + ' 分'}
+                disabled={busy}
+                onMouseEnter={() => setHoverRating(value)}
+                onFocus={() => setHoverRating(value)}
+                onBlur={() => setHoverRating(null)}
+                onClick={() => void commitRating(value)}
+              >★</button>
+            )
+          })}
+        </span>
+        <span className={css.ratingValue} data-testid="card-rating-value" aria-live="polite">{card.rating === undefined ? '未评分' : card.rating + ' / 5'}</span>
+        {card.rating !== undefined && <button type="button" className={css.ratingClear} data-testid="card-rating-clear" disabled={busy} onClick={() => void commitRating(undefined)}>清除</button>}
       </div>
       <div className={css.detailBody} data-testid="card-detail-body">
         <MarkdownBlocks content={card.bodyMarkdown} messageId={'study-card-' + card.id} />

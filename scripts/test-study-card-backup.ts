@@ -7,7 +7,7 @@ import { parseAndValidate, restoreBackup } from '../src/export/backup-import.ts'
 import { saveConversation, getConversation, setSetting, getSetting } from '../src/storage/storage.ts'
 import { idbClearAll, closeDb, idbGetAll } from '../src/storage/idb.ts'
 import {
-  createStudyCardFromAssistantMessage, listStudyCards, listStudyCardPageRefs, getStudyCardBySourceMessage,
+  createStudyCardFromAssistantMessage, listStudyCards, listStudyCardPageRefs, getStudyCardBySourceMessage, updateStudyCardRating,
 } from '../src/study-cards/study-card-service.ts'
 import { STUDY_CARD_PREFERENCES_KEY } from '../src/study-cards/learning-ui-store.ts'
 import { BUILTIN_PROMPT_IDS } from '../src/prompts/prompt-registry.ts'
@@ -44,6 +44,7 @@ async function seedCards(): Promise<{ conversationId: string; cardIds: string[] 
 await idbClearAll()
 const seeded = await seedCards()
 assert((await listStudyCards()).length === 2, 'two cards are seeded')
+await updateStudyCardRating(seeded.cardIds[0], 5)
 
 // ---- 1. export carries every validated card and nothing derived ----
 const backup = await buildBackup()
@@ -53,6 +54,7 @@ assert(backup.studyCards.every(card => card.schemaVersion === 1 && card.bodyMark
 assert(!('studyCardPageRefs' in backup), 'the derived page index is never exported')
 assert(backup.settings && !('apiKey' in (backup.settings as object)), 'the API key is never exported')
 assert(backup.studyCards.every(card => !JSON.stringify(card).includes('base64')), 'cards never carry binaries')
+assert(backup.studyCards.some(card => card.rating === 5), 'the export carries an optional card rating')
 
 // Preferences round-trip separately from the cards themselves.
 await setSetting(STUDY_CARD_PREFERENCES_KEY, { sort: 'last-opened-desc', documentFilter: { kind: 'document', documentId: 'doc-bk' } })
@@ -66,6 +68,7 @@ await restoreBackup(backupWithPrefs)
 const restored = await listStudyCards()
 assert(restored.length === 2, 'importing a V7 package restores both cards')
 assert(restored.map(card => card.title).sort().join('|') === '备份会话-1|备份会话-2', 'restored cards keep their titles and ordinals')
+assert(restored.some(card => card.rating === 5), 'a card rating survives backup restore')
 const restoredFirst = restored.find(card => card.source.assistantMessageId === 'bk-a1')
 assert(!!restoredFirst && restoredFirst.bodyMarkdown === '# 第一张\n\n正文一。', 'a restored card keeps its exact body')
 assert((await getStudyCardBySourceMessage('bk-a1'))?.id === restoredFirst?.id, 'the unique source-message index is restored')

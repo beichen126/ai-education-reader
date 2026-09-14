@@ -9,7 +9,7 @@ import { extractStudyCardReference, type StudyCardAttachmentMeta } from './study
 import { validateStudyCard } from './study-card-validation'
 import {
   MAX_STUDY_CARD_BODY_LENGTH, MAX_STUDY_CARD_TITLE_LENGTH, STUDY_CARD_SCHEMA_VERSION,
-  type StudyCard, type StudyCardDocumentRef,
+  type StudyCard, type StudyCardDocumentRef, type StudyCardRating,
 } from './study-card-types'
 import {
   countStudyCards, deleteStudyCardRow, estimateStudyCardTextBytes, getStudyCard, getStudyCardBySourceMessage,
@@ -244,6 +244,16 @@ export async function updateStudyCardTitle(id: StableId, title: string, expected
   return updateStudyCardRow(id, current => {
     if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) return undefined
     return { ...current, title: clean.slice(0, MAX_STUDY_CARD_TITLE_LENGTH), titleMode: 'custom', updatedAt: nextRevision(current.updatedAt) }
+  })
+}
+
+/** Set or clear a 1–5 rating with the same optimistic-concurrency guard as edits. */
+export async function updateStudyCardRating(id: StableId, rating: StudyCardRating | undefined, expectedUpdatedAt?: number): Promise<StudyCard | undefined> {
+  if (rating !== undefined && (!Number.isInteger(rating) || rating < 1 || rating > 5)) return undefined
+  return updateStudyCardRow(id, current => {
+    if (expectedUpdatedAt !== undefined && current.updatedAt !== expectedUpdatedAt) return undefined
+    if (current.rating === rating) return current
+    return { ...current, rating, updatedAt: nextRevision(current.updatedAt) }
   })
 }
 

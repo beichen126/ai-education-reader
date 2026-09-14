@@ -1,7 +1,7 @@
 import {
   MAX_STUDY_CARD_BODY_LENGTH, MAX_STUDY_CARD_DOCUMENT_REFS, MAX_STUDY_CARD_PAGES_PER_REF,
   MAX_STUDY_CARD_TITLE_LENGTH, STUDY_CARD_SCHEMA_VERSION,
-  type StudyCard, type StudyCardDocumentRef, type StudyCardDocumentRelation, type StudyCardSource, type StudyCardTitleMode,
+  type StudyCard, type StudyCardDocumentRef, type StudyCardDocumentRelation, type StudyCardRating, type StudyCardSource, type StudyCardTitleMode,
 } from './study-card-types'
 
 export class StudyCardValidationError extends Error {
@@ -132,6 +132,10 @@ export function validateStudyCard(input: unknown): StudyCard {
     updatedAt: requireFiniteTime(raw.updatedAt, 'updated-at', '学习卡片缺少合法修改时间'),
   }
   if (raw.lastOpenedAt !== undefined) card.lastOpenedAt = requireFiniteTime(raw.lastOpenedAt, 'last-opened-at', '学习卡片最近打开时间非法')
+  if (raw.rating !== undefined) {
+    if (typeof raw.rating !== 'number' || !Number.isInteger(raw.rating) || raw.rating < 1 || raw.rating > 5) fail('rating', '学习卡片评分必须是 1–5 的整数')
+    card.rating = raw.rating as StudyCardRating
+  }
   return card
 }
 

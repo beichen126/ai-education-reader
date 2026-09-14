@@ -17,6 +17,7 @@ export const STUDY_CARD_SORT_MODES: { id: StudyCardSortMode; label: string }[] =
   { id: 'created-asc', label: '创建时间（旧→新）' },
   { id: 'updated-desc', label: '最近修改' },
   { id: 'last-opened-desc', label: '最近打开' },
+  { id: 'rating-desc', label: '评分（高→低）' },
   { id: 'random', label: '随机顺序' },
 ]
 
@@ -153,6 +154,14 @@ export function sortStudyCards(cards: readonly StudyCard[], mode: StudyCardSortM
         if (aOpened === undefined) return 1
         if (bOpened === undefined) return -1
         return bOpened - aOpened || byId(a, b)
+      })
+    case 'rating-desc':
+      // Rated cards come first; unrated cards retain a useful newest-first order.
+      return list.sort((a, b) => {
+        if (a.rating === undefined && b.rating === undefined) return b.createdAt - a.createdAt || byId(a, b)
+        if (a.rating === undefined) return 1
+        if (b.rating === undefined) return -1
+        return b.rating - a.rating || b.updatedAt - a.updatedAt || byId(a, b)
       })
     case 'random': return shuffleWithSeed(list.sort(byId), seed)
   }

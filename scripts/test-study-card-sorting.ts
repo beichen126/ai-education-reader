@@ -1,4 +1,4 @@
-// v2.2.0 Stage 6 domain gate: card filtering, search and the six frozen sort orders.
+// v2.2.0 Stage 6 domain gate: card filtering, search and the frozen sort orders.
 import {
   buildStudyCardFilterOptions, matchesStudyCardFilter, matchesStudyCardQuery, sortStudyCards,
   shuffleWithSeed, studyCardPlainText, studyCardSearchText, createStudyCardSeed, STUDY_CARD_SORT_MODES,
@@ -28,8 +28,8 @@ const withDoc = (id: string, documentId: string, fileName: string, created: numb
     ...extra,
   })
 
-// ---- 1. the six declared orders exist ----
-assert(STUDY_CARD_SORT_MODES.map(mode => mode.id).join('|') === 'created-desc|created-asc|updated-desc|last-opened-desc|random', 'the five sort choices are declared in order')
+// ---- 1. the declared orders exist ----
+assert(STUDY_CARD_SORT_MODES.map(mode => mode.id).join('|') === 'created-desc|created-asc|updated-desc|last-opened-desc|rating-desc|random', 'the six sort choices are declared in order')
 
 // ---- 2. deterministic orders ----
 {
@@ -51,7 +51,17 @@ assert(STUDY_CARD_SORT_MODES.map(mode => mode.id).join('|') === 'created-desc|cr
   assert(ordered === 'acb', 'last-opened-desc puts never-opened cards last (got ' + ordered + ')')
 }
 
-// ---- 4. equal keys fall back to a stable id tie-breaker ----
+// ---- 4. rating order puts high scores first and unrated cards last ----
+{
+  const high = card('high', { rating: 5, updatedAt: 100 })
+  const medium = card('medium', { rating: 3, updatedAt: 300 })
+  const unrated = card('unrated', { createdAt: 9999 })
+  const sameNew = card('same-new', { rating: 3, updatedAt: 500 })
+  const ordered = sortStudyCards([unrated, medium, high, sameNew], 'rating-desc', 1).map(item => item.id).join('|')
+  assert(ordered === 'high|same-new|medium|unrated', 'rating-desc orders score, then revision, with unrated last (got ' + ordered + ')')
+}
+
+// ---- 5. equal keys fall back to a stable id tie-breaker ----
 {
   const x = card('x', { createdAt: 5 })
   const y = card('y', { createdAt: 5 })
@@ -59,7 +69,7 @@ assert(STUDY_CARD_SORT_MODES.map(mode => mode.id).join('|') === 'created-desc|cr
   assert(sortStudyCards([x, y], 'created-desc', 1).map(item => item.id).join('') === 'xy', 'the tie-breaker does not depend on input order')
 }
 
-// ---- 5. seeded random is stable and does not touch the input ----
+// ---- 6. seeded random is stable and does not touch the input ----
 {
   const cards = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => card(id, { createdAt: Number(id.charCodeAt(0)) }))
   const first = sortStudyCards(cards, 'random', 42).map(item => item.id).join('')
@@ -74,7 +84,7 @@ assert(STUDY_CARD_SORT_MODES.map(mode => mode.id).join('|') === 'created-desc|cr
   assert(typeof createStudyCardSeed() === 'number', 'a fresh random seed can be created')
 }
 
-// ---- 6. PDF filter options carry real counts ----
+// ---- 7. PDF filter options carry real counts ----
 {
   const cards = [
     withDoc('a', 'doc-1', '高等数学.pdf', 1),
@@ -95,7 +105,7 @@ assert(STUDY_CARD_SORT_MODES.map(mode => mode.id).join('|') === 'created-desc|cr
   assert(!!deleted && deleted.label.includes('已删除的讲义.pdf'), 'the deleted document filter shows the file name snapshot')
 }
 
-// ---- 7. filters never mix same-named documents ----
+// ---- 8. filters never mix same-named documents ----
 {
   const live = withDoc('a', 'doc-1', '同名.pdf', 1)
   const other = withDoc('b', 'doc-9', '同名.pdf', 2)
@@ -109,7 +119,7 @@ assert(STUDY_CARD_SORT_MODES.map(mode => mode.id).join('|') === 'created-desc|cr
   assert(matchesStudyCardFilter(live, { kind: 'all' }), '全部来源 matches everything')
 }
 
-// ---- 8. search covers title, body, conversation snapshot and file names ----
+// ---- 9. search covers title, body, conversation snapshot and file names ----
 {
   const target = withDoc('a', 'doc-1', '高等数学.pdf', 1, {
     title: '特征值复习',

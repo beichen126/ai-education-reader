@@ -13,7 +13,7 @@
 [隐私与备份](#数据隐私与备份) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v2.2.2-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v2.2.3-green?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
 ![BYOK](https://img.shields.io/badge/BYOK-self--hosted-green?style=flat-square)

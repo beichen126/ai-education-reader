@@ -3,6 +3,7 @@ import { initStore, sessionsActions } from '../src/engine/sessions-store.ts'
 import { getConversation } from '../src/storage/storage.ts'
 import { displayTitle, sanitizeTitle, MAX_TITLE_LEN } from '../src/engine/session-title.ts'
 import { NEW_TITLE, type Conversation } from '../src/engine/types.ts'
+import { createStudyCardFromAssistantMessage, getStudyCard } from '../src/study-cards/study-card-service.ts'
 
 let pass=0, fail=0
 function assert(c:boolean,m:string){ if(c){pass++;console.log('  ok: '+m)}else{fail++;console.log('  FAIL: '+m)} }
@@ -94,6 +95,30 @@ async function mkConv(title: string, msgs: any[]): Promise<Conversation> {
   assert(displayTitle(after) === '考研笔记', 'after rename, displayTitle returns the formal renamed title')
 }
 
+// 8) Conversation renames propagate to auto card titles without overwriting a card title
+// the user explicitly customized. The source snapshot follows the live name for both.
+{
+  const id = await sessionsActions.newChat()
+  await sessionsActions.setTitle(id, '旧会话名')
+  await sessionsActions.addAssistant(id, '自动标题卡片正文')
+  let conversation = (await getConversation(id))!
+  const autoMessageId = conversation.messages.at(-1)!.id
+  const autoResult = await createStudyCardFromAssistantMessage({ conversationId: id, assistantMessageId: autoMessageId })
+  await sessionsActions.addAssistant(id, '自定义标题卡片正文')
+  conversation = (await getConversation(id))!
+  const customMessageId = conversation.messages.at(-1)!.id
+  const customResult = await createStudyCardFromAssistantMessage({ conversationId: id, assistantMessageId: customMessageId, title: '我的固定卡片标题' })
+  assert(autoResult.kind === 'created' && autoResult.card.title === '旧会话名-1', 'precondition: the first card has an auto title')
+  assert(customResult.kind === 'created' && customResult.card.titleMode === 'custom', 'precondition: the second card has a custom title')
+
+  await sessionsActions.setTitle(id, '新会话名')
+  const autoCard = autoResult.kind === 'created' ? await getStudyCard(autoResult.card.id) : undefined
+  const customCard = customResult.kind === 'created' ? await getStudyCard(customResult.card.id) : undefined
+  assert(autoCard?.title === '新会话名-1', 'conversation rename updates the auto card title')
+  assert(autoCard?.source.conversationTitleSnapshot === '新会话名', 'auto card source snapshot follows the renamed conversation')
+  assert(customCard?.title === '我的固定卡片标题', 'conversation rename preserves a user-customized card title')
+  assert(customCard?.source.conversationTitleSnapshot === '新会话名', 'custom card source snapshot follows the renamed conversation')
+}
+
 console.log('\nRESULT pass='+pass+' fail='+fail)
 process.exit(fail===0?0:1)
-

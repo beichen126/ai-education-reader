@@ -74,6 +74,11 @@ function baseCard(overrides: Partial<StudyCard> = {}): StudyCard {
   const withOpened = validateStudyCard(baseCard({ lastOpenedAt: 1700000009999 }))
   assert(withOpened.lastOpenedAt === 1700000009999, 'a finite lastOpenedAt is kept')
   assert(throws(() => validateStudyCard({ ...baseCard(), lastOpenedAt: 'yesterday' as never })), 'a non-numeric lastOpenedAt is rejected')
+  assert(validateStudyCard(baseCard({ rating: 5 })).rating === 5, 'a 1–5 rating is preserved')
+  assert(validateStudyCard(baseCard()).rating === undefined, 'an unrated legacy card remains valid')
+  assert(throws(() => validateStudyCard({ ...baseCard(), rating: 0 })), 'rating 0 is rejected')
+  assert(throws(() => validateStudyCard({ ...baseCard(), rating: 6 })), 'rating 6 is rejected')
+  assert(throws(() => validateStudyCard({ ...baseCard(), rating: 2.5 })), 'a fractional rating is rejected')
 }
 
 // ---- 5. body rules ----

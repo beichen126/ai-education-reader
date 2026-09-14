@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { type Conversation, type Message, type Attachment, type StableId, type DraftDisposition, type QuickFollowUpMetadata, newStableId, NEW_TITLE } from './types'
 import { sanitizeTitle } from './session-title'
-import { getSetting, setSetting, getConversation, saveConversation, deleteConversation, listConversations, commitAcceptedUserMessage } from '../storage/storage'
+import { getSetting, setSetting, getConversation, saveConversation, saveConversationRenameAndSyncCards, deleteConversation, listConversations, commitAcceptedUserMessage } from '../storage/storage'
 import { getSettingsSnapshot } from './settings-store'
 import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, isVisionModel, exceedsVisionImageCount } from '../api/deepseek'
 import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
@@ -222,7 +222,7 @@ export const sessionsActions = {
     // Never store an empty / whitespace-only title; a no-op rename just returns.
     if (!clean) return
     const updated: Conversation = { ...conv, title: clean, updatedAt: Date.now() }
-    upsertState(updated); await saveConversation(updated)
+    upsertState(updated); await saveConversationRenameAndSyncCards(updated)
   },
   async remove(id: string) {
     // If a reply stream is actively generating for THIS conversation, abort it. It must

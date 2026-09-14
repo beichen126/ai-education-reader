@@ -111,12 +111,12 @@ function SessionRow({ session, active, busy, narrow }: { session: ChatSession; a
     return (
       <div className={css.sessionRowWrap + (active ? ' ' + css.sessionRowWrapActive : '')}>
         <div className={css.rowRename}>
-          <input className={css.rowRenameInput} autoFocus value={renameVal} maxLength={MAX_TITLE_LEN}
+          <input className={css.rowRenameInput} data-testid="session-rename-input" autoFocus value={renameVal} maxLength={MAX_TITLE_LEN}
             onChange={e => setRenameVal(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitRename() } else if (e.key === 'Escape') { e.preventDefault(); cancelRename() } }}
             onBlur={cancelRename}
           />
-          <button className={css.rowRenameBtn} onMouseDown={e => e.preventDefault()} onClick={commitRename}>确定</button>
+          <button className={css.rowRenameBtn} data-testid="session-rename-confirm" onMouseDown={e => e.preventDefault()} onClick={commitRename}>确定</button>
           <button className={css.rowRenameBtn} onMouseDown={e => e.preventDefault()} onClick={cancelRename}>取消</button>
         </div>
       </div>

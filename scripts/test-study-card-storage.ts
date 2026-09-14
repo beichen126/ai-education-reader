@@ -8,7 +8,7 @@ import { closeDb, DB_VERSION, STORES, idbClearAll } from '../src/storage/idb.ts'
 import {
   createStudyCardFromAssistantMessage, getStudyCard, getStudyCardBySourceMessage, listStudyCards,
   listStudyCardsByDocument, listStudyCardsByDocumentPage, updateStudyCardTitle, updateStudyCardBody,
-  markStudyCardOpened, deleteStudyCard, countStudyCards, listStudyCardPageRefs,
+  updateStudyCardRating, markStudyCardOpened, deleteStudyCard, countStudyCards, listStudyCardPageRefs,
 } from '../src/study-cards/study-card-service.ts'
 
 let pass = 0
@@ -226,11 +226,16 @@ assert(ordinals[0] === 1 && ordinals[1] === 2, 'two concurrent saves allocate di
   assert(!!body && body.bodyMarkdown === '编辑后的正文', 'the body can be edited')
   assert(!!body && body.source.assistantMessageId === 'ea-1', 'editing the body never drifts the source snapshot')
   assert(await updateStudyCardBody(card.id, '   ') === undefined, 'an empty body edit is rejected')
+  const rated = await updateStudyCardRating(card.id, 4, body?.updatedAt)
+  assert(rated?.rating === 4 && rated.updatedAt > (body?.updatedAt ?? 0), 'a card rating is stored and advances the revision')
+  assert(await updateStudyCardRating(card.id, 6 as never, rated?.updatedAt) === undefined, 'an out-of-range rating is rejected')
+  const clearedRating = await updateStudyCardRating(card.id, undefined, rated?.updatedAt)
+  assert(clearedRating?.rating === undefined, 'a card rating can be cleared')
   const opened = await markStudyCardOpened(card.id, 5000)
   assert(!!opened && opened.lastOpenedAt === 5000, 'markStudyCardOpened records the open time')
   const earlier = await markStudyCardOpened(card.id, 4000)
   assert(!!earlier && earlier.lastOpenedAt === 5000, 'an older open time never rewinds lastOpenedAt')
-  assert((await getStudyCard(card.id))?.updatedAt === body?.updatedAt, 'markStudyCardOpened does not touch updatedAt')
+  assert((await getStudyCard(card.id))?.updatedAt === clearedRating?.updatedAt, 'markStudyCardOpened does not touch updatedAt')
 }
 
 // ---- 9. deleting a card never touches its sources ----

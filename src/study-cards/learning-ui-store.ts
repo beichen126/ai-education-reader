@@ -52,7 +52,7 @@ export const STUDY_CARD_PREFERENCES_KEY = 'studyCardPreferences'
 export async function loadStudyCardPreferences(): Promise<{ sort: StudyCardSortMode; filter: StudyCardFilterKey }> {
   let stored: StudyCardPreferences | undefined
   try { stored = (await getSetting(STUDY_CARD_PREFERENCES_KEY)) as StudyCardPreferences | undefined } catch { stored = undefined }
-  const sorts: StudyCardSortMode[] = ['created-desc', 'created-asc', 'updated-desc', 'last-opened-desc', 'random']
+  const sorts: StudyCardSortMode[] = ['created-desc', 'created-asc', 'updated-desc', 'last-opened-desc', 'rating-desc', 'random']
   const sort = stored && stored.sort && sorts.includes(stored.sort) ? stored.sort : DEFAULT_STUDY_CARD_SORT
   const filter = normalizeFilterKey(stored?.documentFilter) ?? { kind: 'all' }
   return { sort, filter }
