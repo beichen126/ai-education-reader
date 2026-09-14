@@ -15,11 +15,23 @@ export function Gallery() {
   if (!g.open) return null
   const count = imageIds.length
   return (
-    <div className={css.overlay}>
-      <div className={css.head}><span className={css.title}>图片</span><button className={css.closeBtn} onClick={galleryActions.close}>关闭</button></div>
+    <div className={css.overlay} data-testid="gallery">
+      <div className={css.head}>
+        <div className={css.headInner}>
+          <div className={css.heading}>
+            <span className={css.title}>图片</span>
+            <span className={css.count} data-testid="gallery-count">共 {count} 张</span>
+          </div>
+          <button type="button" className={css.closeBtn} onClick={galleryActions.close}>关闭</button>
+        </div>
+      </div>
       {count === 0 ? <div className={css.empty}>当前会话暂无图片资料</div> :
         g.view === 'list' ? (
-          <div className={css.grid}>{imageIds.map((id, i) => <Thumb key={id} id={id} index={i} />)}</div>
+          <div className={css.galleryScroll}>
+            <div className={css.grid} data-testid="gallery-grid" aria-label={'当前会话图片，共 ' + count + ' 张'}>
+              {imageIds.map((id, i) => <Thumb key={id} id={id} index={i} />)}
+            </div>
+          </div>
         ) : (
           <GalleryViewer imageIds={imageIds} index={clampIndex(g.index, count)} />
         )}
@@ -28,7 +40,12 @@ export function Gallery() {
 }
 function Thumb({ id, index }: { id: string; index: number }) {
   const { url, error } = useAttachmentPreview(id)
-  return <button className={css.thumb} onClick={() => galleryActions.openViewer(index)}>{url ? <img src={url} alt="" /> : <span className={css.missing}>{error ? '图片已丢失' : '…'}</span>}</button>
+  return (
+    <button type="button" className={css.thumb} data-testid="gallery-thumbnail" aria-label={'查看第 ' + (index + 1) + ' 张图片'} onClick={() => galleryActions.openViewer(index)}>
+      {url ? <img src={url} alt="" /> : <span className={css.missing}>{error ? '图片已丢失' : '…'}</span>}
+      <span className={css.index} aria-hidden="true">{index + 1}</span>
+    </button>
+  )
 }
 function GalleryViewer({ imageIds, index }: { imageIds: string[]; index: number }) {
   const id = imageIds[index]

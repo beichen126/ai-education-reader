@@ -41,6 +41,7 @@ const CORE_E2E = [
   'e2e-settings-navigation-lifecycle',
   'e2e-pdf-renderer-ownership',
   'e2e-sidebar-information-architecture',
+  'e2e-gallery-layout',
   'e2e-study-cards',
   'e2e-learning-center',
   'e2e-card-backlinks',
