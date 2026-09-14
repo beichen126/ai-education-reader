@@ -254,10 +254,14 @@ await page.waitForTimeout(600)
 const cardsAfterConversationRename = (await openAppDb(page, { store: 'studyCards' })).filter(card => card.source.conversationId === 'lc-chat')
 assert(cardsAfterConversationRename.filter(card => card.titleMode === 'auto').every(card => card.title.startsWith('重命名后的会话-')), 'conversation rename updates every auto card title')
 assert(cardsAfterConversationRename.some(card => card.title === '我的二次型笔记' && card.titleMode === 'custom'), 'conversation rename preserves a manually renamed card title')
-assert(cardsAfterConversationRename.every(card => card.source.conversationTitleSnapshot === '重命名后的会话'), 'conversation rename refreshes every card source snapshot')
-await page.locator('[data-testid="sidebar-entry-cards"]').click()
-await page.locator('[data-testid="learning-center"]').waitFor({ state: 'visible', timeout: 10000 })
-assert((await itemTitles()).some(title => title.startsWith('重命名后的会话-')), 'the learning-centre list immediately shows the propagated title')
+  assert(cardsAfterConversationRename.every(card => card.source.conversationTitleSnapshot === '重命名后的会话'), 'conversation rename refreshes every card source snapshot')
+  await page.locator('[data-testid="sidebar-entry-cards"]').click()
+  await page.locator('[data-testid="learning-center"]').waitFor({ state: 'visible', timeout: 10000 })
+  // The dialog shell becomes visible before its async IndexedDB refresh settles. Wait for
+  // the propagated row instead of racing the first paint against that read.
+  await safe(() => page.waitForFunction(() => Array.from(document.querySelectorAll('[data-testid="card-item-title"]'))
+    .some(element => element.textContent?.startsWith('重命名后的会话-')), undefined, { timeout: 10000 }))
+  assert((await itemTitles()).some(title => title.startsWith('重命名后的会话-')), 'the learning-centre list immediately shows the propagated title')
 
 // ---- 9. artifacts remain reachable globally, but the tabs stay separate ----
 await page.locator('[data-testid="learning-tab-artifacts"]').click()
