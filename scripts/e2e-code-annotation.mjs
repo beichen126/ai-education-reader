@@ -122,6 +122,21 @@ const readUnifiedAnnotations = () => page.evaluate(() => new Promise(resolve => 
   }
 }))
 
+const waitForUnifiedTarget = targetType => page.waitForFunction(type => new Promise(resolve => {
+  const req = indexedDB.open('ai-education-reader')
+  req.onerror = () => resolve(false)
+  req.onsuccess = () => {
+    const db = req.result
+    const get = db.transaction('studyCards', 'readonly').objectStore('studyCards').getAll()
+    get.onsuccess = () => {
+      const found = (get.result || []).some(card => (card.annotations || []).some(annotation => annotation.target?.type === type))
+      try { db.close() } catch {}
+      resolve(found)
+    }
+    get.onerror = () => { try { db.close() } catch {}; resolve(false) }
+  }
+}), targetType, { timeout: 10000 })
+
 const readHighlightSnapshot = () => page.evaluate(() => {
   const highlight = typeof CSS !== 'undefined' && CSS.highlights?.get('study-highlight')
   return {
@@ -142,11 +157,13 @@ assert(beforeHighlights.supported && expected.every((exact) => beforeHighlights.
 // Math remains atomic: its own action creates a math annotation, not a text range.
 await message.locator('[data-math][data-annotatable="false"]').evaluate((el) => el.click())
 await page.getByRole('button', { name: '标记公式', exact: true }).click()
+await waitForUnifiedTarget('math')
 const withMath = await readUnifiedAnnotations()
 assert(withMath.annotations.some(a => a.messageId === 'code-assistant' && a.target?.type === 'math'), 'math annotation remains an atomic math target')
 
 // The table action remains wired after the expanded code coverage.
 await message.locator('[data-table-action]').click()
+await waitForUnifiedTarget('table')
 const withTable = await readUnifiedAnnotations()
 assert(withTable.annotations.some(a => a.messageId === 'code-assistant' && a.target?.type === 'table'), 'table annotation action still persists a table target')
 
