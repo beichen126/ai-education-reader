@@ -103,14 +103,22 @@ await selectAndMark(codeBlocks.nth(3), '完整区块 😀\n  缩进 CJK', 'whole
 await selectAndMark(message.locator('p code'), '内联 code 😀  空格', 'inline code selection')
 await selectAndMark(message.locator('p[data-block-type="paragraph"]').first(), '普通 Markdown 文本', 'ordinary Markdown text selection')
 
-const readAnnotations = () => page.evaluate(() => new Promise(resolve => {
+// v2.3 stores marks canonically on the source StudyCard. The old annotations
+// object store is migration input only and must not be used as the persistence
+// oracle for marks created by the current UI.
+const readUnifiedAnnotations = () => page.evaluate(() => new Promise(resolve => {
   const req = indexedDB.open('ai-education-reader')
-  req.onerror = () => resolve([])
+  req.onerror = () => resolve({ cards: [], annotations: [] })
   req.onsuccess = () => {
     const db = req.result
-    const get = db.transaction('annotations', 'readonly').objectStore('annotations').getAll()
-    get.onsuccess = () => { try { db.close() } catch {}; resolve(get.result || []) }
-    get.onerror = () => resolve([])
+    const get = db.transaction('studyCards', 'readonly').objectStore('studyCards').getAll()
+    get.onsuccess = () => {
+      const cards = get.result || []
+      const annotations = cards.flatMap(card => Array.isArray(card.annotations) ? card.annotations : [])
+      try { db.close() } catch {}
+      resolve({ cards, annotations })
+    }
+    get.onerror = () => resolve({ cards: [], annotations: [] })
   }
 }))
 
@@ -125,21 +133,22 @@ const readHighlightSnapshot = () => page.evaluate(() => {
   }
 })
 
-const beforeReload = await readAnnotations()
-assert(expected.every((exact) => beforeReload.some(a => a.messageId === 'code-assistant' && a.target?.type === 'text' && a.target.quote?.exact === exact)), 'all code and inline-code annotations persist before reload')
+const beforeReload = await readUnifiedAnnotations()
+assert(beforeReload.cards.length === 1 && beforeReload.cards[0]?.collectionMode === 'marked', 'current marks share one marked learning card')
+assert(expected.every((exact) => beforeReload.annotations.some(a => a.messageId === 'code-assistant' && a.target?.type === 'text' && a.target.quote?.exact === exact)), 'all code and inline-code annotations persist on the learning card before reload')
 const beforeHighlights = await readHighlightSnapshot()
 assert(beforeHighlights.supported && expected.every((exact) => beforeHighlights.ranges.some(range => range.text === exact && range.width > 0 && range.height > 0)), 'all saved selections have visible CSS Highlights before reload')
 
 // Math remains atomic: its own action creates a math annotation, not a text range.
 await message.locator('[data-math][data-annotatable="false"]').evaluate((el) => el.click())
 await page.getByRole('button', { name: '标记公式', exact: true }).click()
-const withMath = await readAnnotations()
-assert(withMath.some(a => a.messageId === 'code-assistant' && a.target?.type === 'math'), 'math annotation remains an atomic math target')
+const withMath = await readUnifiedAnnotations()
+assert(withMath.annotations.some(a => a.messageId === 'code-assistant' && a.target?.type === 'math'), 'math annotation remains an atomic math target')
 
 // The table action remains wired after the expanded code coverage.
 await message.locator('[data-table-action]').click()
-const withTable = await readAnnotations()
-assert(withTable.some(a => a.messageId === 'code-assistant' && a.target?.type === 'table'), 'table annotation action still persists a table target')
+const withTable = await readUnifiedAnnotations()
+assert(withTable.annotations.some(a => a.messageId === 'code-assistant' && a.target?.type === 'table'), 'table annotation action still persists a table target')
 
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('[data-message-id="code-assistant"]').first().waitFor({ state: 'visible', timeout: 15000 })
@@ -155,10 +164,11 @@ await page.waitForFunction(({ messageId, expected }) => {
 
 const afterReloadHighlights = await readHighlightSnapshot()
 assert(afterReloadHighlights.supported && expected.every((exact) => afterReloadHighlights.ranges.some(range => range.text === exact && range.width > 0 && range.height > 0)), 'reload re-registers CSS Highlights covering every exact code selection')
-const afterReload = await readAnnotations()
-assert(expected.every((exact) => afterReload.some(a => a.messageId === 'code-assistant' && a.target?.type === 'text' && a.target.quote?.exact === exact)), 'reload preserves every code and inline-code annotation')
-assert(afterReload.some(a => a.messageId === 'code-assistant' && a.target?.type === 'math'), 'reload preserves the atomic math annotation')
-assert(afterReload.some(a => a.messageId === 'code-assistant' && a.target?.type === 'table'), 'reload preserves the table annotation')
+const afterReload = await readUnifiedAnnotations()
+assert(afterReload.cards.length === 1, 'reload keeps one canonical learning card for the marked reply')
+assert(expected.every((exact) => afterReload.annotations.some(a => a.messageId === 'code-assistant' && a.target?.type === 'text' && a.target.quote?.exact === exact)), 'reload preserves every code and inline-code annotation')
+assert(afterReload.annotations.some(a => a.messageId === 'code-assistant' && a.target?.type === 'math'), 'reload preserves the atomic math annotation')
+assert(afterReload.annotations.some(a => a.messageId === 'code-assistant' && a.target?.type === 'table'), 'reload preserves the table annotation')
 assert(await message.locator('[data-math][data-annotatable="false"]').count() === 1, 'reload keeps math atomic')
 assert(await message.locator('[data-table-id]').count() === 1, 'reload keeps table rendering')
 

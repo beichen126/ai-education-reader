@@ -119,8 +119,10 @@ assert(await note.inputValue() === 'ORIGINAL_EXISTING_NOTE', 'retry success rest
 await page.locator('[data-testid="reader-notes-toggle"]').click()
 await page.evaluate(() => { window.__v203FailNoteReads = 1 })
 // Force the page-2 read after arming the fault; page 2 has no persisted note.
-await page.locator('[data-testid="reader-page-input"]').fill('2')
-await page.locator('[data-testid="reader-page-input"]').press('Enter')
+// Use the navigation control here so a heavily loaded CI runner cannot press
+// Enter before React has committed the controlled input's latest value.
+await page.locator('[data-testid="reader-next"]').click()
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-page-input"]')?.value === '2', null, { timeout: NOTE_STATE_TIMEOUT })
 await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'unknown', null, { timeout: NOTE_STATE_TIMEOUT })
 assert(await page.locator('[data-testid="reader-notes"]').count() === 0, 'empty note read failure keeps the editor closed before retry')
 await page.locator('[data-testid="reader-notes-toggle"]').click()
