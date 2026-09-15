@@ -9,8 +9,8 @@
 //     sourceImageIndex (which image in the current request the row came from).
 //     The physical PDF page (tocPage) is ALWAYS derived locally from the page
 //     batch by the app — it is NEVER taken from the model.
-//   - Transcription and structure are STRICT JSONL: any malformed non-blank line
-//     makes the whole result invalid (no partial rows, no silent data loss).
+//   - Common JSON wrappers are normalized, then every row is validated: one malformed
+//     row makes the whole result invalid (no partial rows, no silent data loss).
 //   - AI is never the persistence authority: this module only produces a draft
 //     that a human reviews before saving.
 import { newStableId } from '../engine/types'
@@ -64,18 +64,28 @@ function normalizePageLabel(v: unknown): string | null {
 }
 
 /**
- * STRICT JSONL transcription parse. Blank lines are allowed; a whole response
- * wrapped in a single ```jsonl fence is accepted; EVERY malformed non-blank line
+ * Strict transcription parse with compatibility for common model wrappers. Blank
+ * lines are allowed; JSON/JSONL fences, a JSON array, and {rows/items/entries:[...]}
+ * are accepted. EVERY malformed row
  * produces a precise diagnostic and the WHOLE result is invalid (never silently
  * drops a row). sourceImageIndex is REQUIRED: missing/non-integer/<1 => invalid.
  * No "scraping" from prose. Never partially persists.
  */
-export function parseTocJsonl(text: string): TocJsonlParseResult {
+export function parseTocJsonl(text: string, options: { defaultSourceImageIndex?: number } = {}): TocJsonlParseResult {
   let body = String(text ?? '').trim()
-  const fence = /^```(?:jsonl)?\s*([\s\S]*?)\s*```$/i.exec(body)
+  const fence = /^```(?:jsonl?|javascript)?\s*([\s\S]*?)\s*```$/i.exec(body)
   if (fence) body = fence[1].trim()
   if (body === '') return { ok: false, line: 0, diagnostics: ['空响应'] }
-  const lines = body.split(/\r?\n/)
+  let candidates: unknown[] | null = null
+  try {
+    const whole = JSON.parse(body)
+    if (Array.isArray(whole)) candidates = whole
+    else if (isRecord(whole)) {
+      const wrapped = whole.rows ?? whole.items ?? whole.entries
+      candidates = Array.isArray(wrapped) ? wrapped : [whole]
+    }
+  } catch { /* genuine JSONL is parsed line by line below */ }
+  const lines = candidates ? candidates.map((value) => JSON.stringify(value)) : body.split(/\r?\n/)
   const rows: TocTranscriptionLine[] = []
   const diagnostics: string[] = []
   for (let idx = 0; idx < lines.length; idx++) {
@@ -87,7 +97,9 @@ export function parseTocJsonl(text: string): TocJsonlParseResult {
     if (typeof json.title !== 'string' || json.title.trim() === '') { diagnostics.push('第 ' + (idx + 1) + ' 行缺少有效 title'); continue }
     const pl = normalizePageLabel(json.pageLabel)
     if (pl === null) { diagnostics.push('第 ' + (idx + 1) + ' 行缺少 pageLabel'); continue }
-    const sii = json.sourceImageIndex
+    const suppliedIndex = json.sourceImageIndex ?? json.source_image_index
+    const numericIndex = typeof suppliedIndex === 'string' && /^\d+$/.test(suppliedIndex.trim()) ? Number(suppliedIndex) : suppliedIndex
+    const sii = numericIndex == null ? options.defaultSourceImageIndex : numericIndex
     if (!Number.isInteger(sii) || (sii as number) < 1) { diagnostics.push('第 ' + (idx + 1) + ' 行缺少合法的 sourceImageIndex'); continue }
     rows.push({
       title: normalizeTitle(json.title),
@@ -115,15 +127,18 @@ export type TocPageMapFailure =
 /**
  * LOCAL provenance: map each transcription row's sourceImageIndex to a physical
  * PDF page using the request's page batch (1-based index into `pageBatch`).
- * A sourceImageIndex outside [1, pageBatch.length] invalidates the WHOLE batch —
- * the app NEVER guesses/coerces a page. Returns NEW rows with tocPage resolved.
+ * A model occasionally echoes the explicitly shown physical PDF page instead of
+ * the requested image index. That value is accepted only when it exactly matches
+ * one page in this batch; ambiguous/out-of-range values still invalidate the batch.
  */
 export function mapTocSourcePages(rows: TocLocalRow[], pageBatch: number[]): TocPageMapFailure {
   const diagnostics: string[] = []
   const out: TocTranscriptionRow[] = []
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i]
-    const idx = r.sourceImageIndex
+    const supplied = r.sourceImageIndex
+    const exactPhysicalIndex = pageBatch.indexOf(supplied)
+    const idx = supplied >= 1 && supplied <= pageBatch.length ? supplied : exactPhysicalIndex + 1
     if (!Number.isInteger(idx) || idx < 1 || idx > pageBatch.length) {
       diagnostics.push('第 ' + (i + 1) + ' 行 sourceImageIndex 超出当前请求图片范围');
       continue
@@ -175,13 +190,21 @@ export function parseTocStructure(text: string): TocStructureParseResult {
   try { json = JSON.parse(body) } catch {
     return { ok: false, line: 0, diagnostics: [{ code: 'MALFORMED_OUTPUT', message: '结构分析结果不是合法 JSON' }] }
   }
-  if (!isRecord(json) || !Array.isArray(json.levels)) {
+  const rawLevels = Array.isArray(json)
+    ? json
+    : isRecord(json) && Array.isArray(json.levels)
+      ? json.levels
+      : isRecord(json) && isRecord(json.result) && Array.isArray(json.result.levels)
+        ? json.result.levels
+        : null
+  if (!rawLevels) {
     return { ok: false, line: 0, diagnostics: [{ code: 'MALFORMED_OUTPUT', message: '结构分析结果必须是 {levels:[...]} 对象' }] }
   }
   const diagnostics: TocStructureDiagnostic[] = []
   const levels: number[] = []
-  for (let i = 0; i < json.levels.length; i++) {
-    const level = json.levels[i]
+  for (let i = 0; i < rawLevels.length; i++) {
+    const rawLevel = rawLevels[i]
+    const level = typeof rawLevel === 'string' && /^\d+$/.test(rawLevel.trim()) ? Number(rawLevel) : rawLevel
     if (!Number.isInteger(level) || (level as number) < 1) {
       diagnostics.push({ code: 'INVALID_LEVEL', message: '第 ' + (i + 1) + ' 项 level 必须是正整数', rowIndex: i })
     } else {
@@ -199,6 +222,26 @@ export function normalizeTocLevels(levels: number[]): number[] {
   if (levels.length === 0) return []
   const min = Math.min(...levels)
   return levels.map(l => l - min + 1)
+}
+
+/** Build a reviewable local hierarchy when the optional AI structure pass fails.
+ * Visual indentation is model-observed but row-aligned; ranks are normalized and
+ * illegal jumps are clamped. With no useful indentation, a flat outline is safest. */
+export function inferFallbackTocLevels(rows: TocTranscriptionRow[]): number[] {
+  const observed = rows
+    .map(row => row.visualIndent)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0)
+  const ranks = [...new Set(observed)].sort((a, b) => a - b)
+  if (ranks.length < 2) return rows.map(() => 1)
+  const levels: number[] = []
+  let previous = 1
+  for (const row of rows) {
+    const rank = typeof row.visualIndent === 'number' ? ranks.indexOf(row.visualIndent) + 1 : previous
+    const next = Math.max(1, Math.min(rank > 0 ? rank : previous, previous + 1))
+    levels.push(next)
+    previous = next
+  }
+  return normalizeTocLevels(levels)
 }
 
 export type TocStructureValidation = {

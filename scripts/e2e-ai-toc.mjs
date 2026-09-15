@@ -101,7 +101,7 @@ const restoreBtn = await page.locator('[data-testid="reader-toc-restore"]').coun
 // no-outline has no native outline -> no restore button
 assert(restoreBtn === 0, 'E: manual/ai-toc PDF without native outline shows no 恢复原始目录')
 
-// --- F: a failed repair returns no partial draft and does not rerun Vision ---
+// --- F: a failed hierarchy repair keeps the faithful transcription as a review draft ---
 await page.evaluate(() => { (globalThis).__dshAllCalls = []; (globalThis).__dshStructureCalls = []; (globalThis).__dshMockAiToc = (req) => {
   (globalThis).__dshAllCalls.push({ phase: req.phase, attempt: req.attempt, repair: req.repair })
   if (req.phase === 'structure') {
@@ -117,17 +117,17 @@ await page.locator('[data-testid="toc-picker"]').waitFor({ state: 'visible', tim
 await page.locator('[data-testid="toc-thumb-7"]').click()
 await page.locator('[data-testid="toc-thumb-8"]').click()
 await page.locator('[data-testid="toc-picker-start"]').click()
-await page.locator('[data-testid="ai-toc-progress-error"]').waitFor({ state: 'visible', timeout: 20000 })
-assert(await page.locator('[data-testid="toc-review"]').count() === 0, 'F: failed repair opens no partial review draft')
-assert((await page.locator('[data-testid="ai-toc-progress-error"]').textContent()).includes('层级数量'), 'F: final failure explains the structure count mismatch')
+await page.locator('[data-testid="toc-review"]').waitFor({ state: 'visible', timeout: 20000 })
+assert((await page.locator('[data-testid="toc-review-notice"]').textContent()).includes('层级分析未通过'), 'F: fallback review clearly asks the user to check hierarchy')
+assert(await page.locator('[data-testid^="toc-review-item-"]').count() === 2, 'F: fallback preserves all transcribed rows')
 const failedStructureCalls = await page.evaluate(() => (globalThis).__dshStructureCalls)
 assert(failedStructureCalls.length === 2 && failedStructureCalls[1].repair === true, 'F: failed repair stops after exactly one repair attempt')
 const failedAllCalls = await page.evaluate(() => (globalThis).__dshAllCalls)
 assert(failedAllCalls.filter(c => c.phase === 'transcribe').length === 1, 'F: failed repair does not rerun Vision transcription')
-assert(await page.locator('[data-testid^="reader-chapter-"]').count() === 2, 'F: failed repair leaves the previously saved TOC unchanged')
+assert(await page.locator('[data-testid^="reader-chapter-"]').count() === 2, 'F: opening fallback review leaves the previously saved TOC unchanged')
 
 // --- G: abort stops extraction without retry or opening a partial review ---
-await page.locator('[data-testid="ai-toc-progress-close"]').click()
+await page.locator('[data-testid="toc-review-close"]').click()
 await page.evaluate(() => { (globalThis).__dshAllCalls = []; (globalThis).__dshMockAiToc = (req) => {
   (globalThis).__dshAllCalls.push({ phase: req.phase, attempt: req.attempt, repair: req.repair })
   if (req.phase === 'structure') return '{"levels":[1,1]}'

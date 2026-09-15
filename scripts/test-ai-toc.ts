@@ -3,7 +3,7 @@
 import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary, normalizeTitle, normalizeTocLevels,
-  describeTocStructureFailure, buildTocStructureRepairPrompt, buildTocStructureInput,
+  describeTocStructureFailure, buildTocStructureRepairPrompt, buildTocStructureInput, inferFallbackTocLevels,
 } from '../src/documents/ai-toc.ts'
 import {
   exactLabelToPage, labelsArePlainNumeric, buildInitialMapping, numericOffsetFromAnchor,
@@ -37,6 +37,15 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   const r = parseTocJsonl('```jsonl\n{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":2}\n```')
   assert(r.ok === true && r.ok && r.rows.length === 2, 'whole fenced JSONL accepted');
 }
+// --- common compatible model wrappers are accepted without dropping malformed rows ---
+{
+  const array = parseTocJsonl('```json\n[{"title":"A","pageLabel":"1","sourceImageIndex":"1"},{"title":"B","pageLabel":2,"source_image_index":2}]\n```')
+  assert(array.ok && array.rows.length === 2 && array.rows[1].sourceImageIndex === 2, 'JSON array/fence and compatible index fields are normalized')
+  const wrapped = parseTocJsonl('{"rows":[{"title":"A","pageLabel":"1"}]}', { defaultSourceImageIndex: 1 })
+  assert(wrapped.ok && wrapped.rows[0].sourceImageIndex === 1, 'single-image batch can safely supply the only source index')
+  const invalidWrapped = parseTocJsonl('{"items":[{"title":"A","pageLabel":"1","sourceImageIndex":1},{"title":"","pageLabel":"2","sourceImageIndex":1}]}')
+  assert(!invalidWrapped.ok, 'wrapper compatibility remains all-or-nothing when a row is malformed')
+}
 // --- normalizeTitle ---
 { assert(normalizeTitle('  第  一章  ') === '第 一章', 'normalizeTitle collapses + trims') }
 
@@ -48,8 +57,11 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   assert(m.ok === true, 'mapping ok');
   if (m.ok) assert(m.rows[0].tocPage === 7 && m.rows[1].tocPage === 8, 'tocPage derived locally (7,8)');
 }
-// --- invalid sourceImageIndex invalidates batch (never coerced) ---
+// --- an exact physical-page echo is recovered; unknown indices still invalidate ---
 {
+  const physical = parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":8}');
+  const physicalMapped = mapTocSourcePages(assignLocalRowIds(physical.ok ? physical.rows : []), [7, 8]);
+  assert(physicalMapped.ok && physicalMapped.rows[0].tocPage === 8, 'physical page echoed by model maps only on an exact current-batch match');
   const tl = parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B","pageLabel":"2","sourceImageIndex":9}');
   const rows = assignLocalRowIds(tl.ok ? tl.rows : []);
   const m = mapTocSourcePages(rows, [7, 8]);
@@ -67,10 +79,16 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   if (!bad.ok) assert(bad.diagnostics.some(d => d.code === 'MALFORMED_OUTPUT'), 'malformed output diagnostic is explicit');
   const empty = parseTocStructure('  ');
   assert(empty.ok === false && !empty.ok && empty.diagnostics.some(d => d.code === 'EMPTY_OUTPUT'), 'empty structure output diagnostic is explicit');
-  const invalidLevel = parseTocStructure('{"levels":[1,"2"]}');
+  const numericStringLevel = parseTocStructure('{"levels":[1,"2"]}');
+  assert(numericStringLevel.ok === true && numericStringLevel.levels.join(',') === '1,2', 'numeric-string levels are normalized');
+  const invalidLevel = parseTocStructure('{"levels":[1,"two"]}');
   assert(invalidLevel.ok === false && !invalidLevel.ok && invalidLevel.diagnostics.some(d => d.code === 'INVALID_LEVEL'), 'invalid level diagnostic is explicit');
   const old = parseTocStructure('{"id":"r0001","level":1}');
   assert(old.ok === false, 'legacy per-row id/level output is rejected');
+  const direct = parseTocStructure('[1,"2"]');
+  assert(direct.ok && direct.levels.join(',') === '1,2', 'direct level arrays are normalized');
+  const wrapped = parseTocStructure('{"result":{"levels":[1,2]}}');
+  assert(wrapped.ok && wrapped.levels.length === 2, 'nested result wrapper is normalized');
 }
 // --- structure input is stable and excludes local provenance metadata ---
 {
@@ -125,6 +143,17 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
 }
 // --- normalization: pure min->1 shift, deterministic, no semantic reorder ---
 { assert(normalizeTocLevels([3,4,5]).join(',') === '1,2,3', 'levels 3,4,5 -> 1,2,3') }
+
+// --- failed remote structure analysis has a deterministic, valid local fallback ---
+{
+  const rows = [
+    { id:'r1', title:'A', pageLabel:'1', tocPage:7, sourceImageIndex:1, rowOrder:0, visualIndent:0 },
+    { id:'r2', title:'A.1', pageLabel:'2', tocPage:7, sourceImageIndex:1, rowOrder:1, visualIndent:20 },
+    { id:'r3', title:'A.1.a', pageLabel:'3', tocPage:7, sourceImageIndex:1, rowOrder:2, visualIndent:80 },
+  ] as any
+  assert(inferFallbackTocLevels(rows).join(',') === '1,2,3', 'fallback ranks indentation and clamps hierarchy jumps')
+  assert(inferFallbackTocLevels(rows.map((r: any) => ({ ...r, visualIndent: undefined }))).join(',') === '1,1,1', 'fallback is conservatively flat without indentation evidence')
+}
 
 // --- FINDING 10: within-window identical rows are PRESERVED (no global adjacent dedupe) ---
 {

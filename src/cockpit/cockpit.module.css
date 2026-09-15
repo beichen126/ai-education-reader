@@ -30,17 +30,16 @@
 .modeDivider button { appearance: none; border: 0; background: transparent; color: var(--dsw-alias-label-link, #2b7bd8); cursor: pointer; font: inherit; padding: 2px 4px; border-radius: 4px; white-space: nowrap; }
 .modeDivider button:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .modeDivider button:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
-.quickFollowUpBar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 2px 4px 4px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
-.quickFollowUpTitle { flex: none; }
-.quickFollowUpItems { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.quickFollowUpAction { display: inline-flex; align-items: stretch; }
-.quickFollowUpButton, .quickFollowUpInspect, .quickFollowUpMore, .quickFollowUpConfigure { appearance: none; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-secondary); cursor: pointer; font: inherit; }
+.quickFollowUpBar { display: flex; align-items: flex-start; gap: 8px; padding: 2px 4px 4px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.quickFollowUpTitle { flex: none; padding-top: 6px; }
+.quickFollowUpItems { flex: 1 1 0; min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.quickFollowUpAction { flex: none; display: inline-flex; align-items: stretch; }
+.quickFollowUpButton, .quickFollowUpInspect, .quickFollowUpConfigure { appearance: none; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-secondary); cursor: pointer; font: inherit; }
 .quickFollowUpButton { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 5px 10px; border-radius: 8px 0 0 8px; }
 .quickFollowUpInspect { padding: 5px 6px; border-left: 0; border-radius: 0 8px 8px 0; }
-.quickFollowUpMore, .quickFollowUpConfigure { padding: 5px 10px; border-radius: 8px; }
-.quickFollowUpButton:hover, .quickFollowUpInspect:hover, .quickFollowUpMore:hover, .quickFollowUpConfigure:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
-.quickFollowUpButton:disabled, .quickFollowUpInspect:disabled, .quickFollowUpMore:disabled { cursor: wait; opacity: .6; }
-.quickFollowUpMoreList { display: flex; flex-wrap: wrap; gap: 6px; flex-basis: 100%; padding: 6px 0 0; }
+.quickFollowUpConfigure { padding: 5px 10px; border-radius: 8px; }
+.quickFollowUpButton:hover, .quickFollowUpInspect:hover, .quickFollowUpConfigure:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.quickFollowUpButton:disabled, .quickFollowUpInspect:disabled { cursor: wait; opacity: .6; }
 .quickFollowUpHistory { display: inline-flex; align-items: center; gap: 6px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .quickFollowUpHistory button { appearance: none; border: 0; background: transparent; color: var(--dsw-alias-label-link, #2b7bd8); cursor: pointer; font: inherit; padding: 0; }
 .quickFollowUpOverlay { position: fixed; inset: 0; z-index: 120; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, .4); }

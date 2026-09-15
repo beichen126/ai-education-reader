@@ -8,7 +8,7 @@
 // sourceImageIndex — the model NEVER returns a PDF page number. Each request embeds
 // 【图片 k/N · PDF physical page P】 text identity before every image so the vision
 // model can only report which image a row came from.
-import { renderSessionPage } from '../pdf/pdf-session'
+import { renderSessionThumbnail } from '../pdf/pdf-session'
 import type { PdfSession } from '../pdf/pdf-session'
 import { sendTextChat } from '../api/deepseek'
 import { resolveCurrentProtocol } from '../prompts/prompt-resolution'
@@ -16,10 +16,11 @@ import { compileMachineProtocolMessages } from '../prompts/protocol-request'
 import type { StableId } from '../engine/types'
 import type { ProtocolPromptSnapshot } from '../prompts/prompt-types'
 import {
-  parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
+  parseTocJsonl, parseTocStructure, validateTocStructure,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary,
-  TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT, describeTocStructureFailure, buildTocStructureRepairPrompt,
+  TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT, buildTocStructureRepairPrompt,
   buildTocStructureInput,
+  inferFallbackTocLevels,
   type TocTranscriptionRow, type TocLocalRow, type TocTranscriptionLine,
   type TocStructureDiagnostic,
 } from './ai-toc'
@@ -32,7 +33,7 @@ import {
 export type { AiTocTiming } from './ai-toc-timing'
 
 export type AiTocExtractionResult =
-  | { ok: true; items: MappedTocItem[]; labels: string[] | null; labelsPlainNumeric: boolean; timing: AiTocTiming }
+  | { ok: true; items: MappedTocItem[]; labels: string[] | null; labelsPlainNumeric: boolean; warning?: string; timing: AiTocTiming }
   | { ok: false; error: string; diagnostics?: AiTocFailureDiagnostics; timing: AiTocTiming }
 
 /** Developer-facing, non-sensitive runtime diagnostics. The UI uses `error`,
@@ -59,6 +60,8 @@ export type AiTocProgress =
 const PREV_TAIL_SIZE = 4
 const LARGE_TOC_WINDOW = 8
 const SMALL_TOC_MAX = 8
+const AI_TOC_RENDER_EDGE = 1400
+const AI_TOC_RENDER_CONCURRENCY = 3
 
 type AiTocMockRequest = {
   pages: number[]
@@ -88,8 +91,8 @@ function buildTailContext(prevRows: TocTranscriptionRow[]): string {
  * `signal` is an AbortSignal: when aborted, no further request is started and
  * the result is { ok:false, error:'已取消' } (never a network-or-cors mislabel).
  * Retry contract: a malformed/schema-invalid transcription is retried once;
- * structure validation gets one diagnostic repair attempt, then aborts without
- * returning a partial draft.
+ * structure validation gets one diagnostic repair attempt. If hierarchy still
+ * fails, the faithful transcription opens as a locally structured review draft.
  */
 export async function extractAiToc(opts: {
   session: PdfSession
@@ -109,12 +112,11 @@ export async function extractAiToc(opts: {
 
   // Freeze both machine protocols before rendering or making the first model
   // request. Every window and retry reuses these detached snapshots.
-  const [transcriptionProtocol, structureProtocol] = await Promise.all([
+  const [transcriptionProtocol, structureProtocol, labels] = await Promise.all([
     resolveCurrentProtocol('ai-toc-transcription', totalStartMs),
     resolveCurrentProtocol('ai-toc-structure', totalStartMs),
+    getPageLabels(),
   ])
-
-  const labels = await getPageLabels()
 
   const mock = (globalThis as any).__dshMockAiToc as ((request: AiTocMockRequest) => string | undefined) | undefined
   const isMock = typeof mock === 'function'
@@ -125,16 +127,26 @@ export async function extractAiToc(opts: {
   const pageDataUrls: Record<number, string> = {}
   const renderingStartMs = aiTocNowMs()
   const finishRendering = () => { timing.renderingMs = elapsedAiTocMs(renderingStartMs) }
-  for (let ri = 0; ri < selectedPages.length; ri++) {
-    const n = selectedPages[ri]
-    if (signal?.aborted) { finishRendering(); return abortedAiTocResult('rendering', timing, totalStartMs) }
-    onProgress?.({ phase: 'rendering', completed: ri, total: selectedPages.length, currentPage: n })
-    try {
-      const r = await renderSessionPage(session, n)
-      const url = await new Promise<string>((resolve, reject) => { const fr = new FileReader(); fr.onload = () => resolve(String(fr.result)); fr.onerror = () => reject('render'); fr.readAsDataURL(r.blob) })
-      pageDataUrls[n] = url
-    } catch { finishRendering(); return timedAiTocResult({ ok: false, error: '第 ' + n + ' 页渲染失败，无法用于目录识别。' }, timing, totalStartMs) }
+  let renderCursor = 0
+  let renderCompleted = 0
+  let renderFailure: number | null = null
+  const renderWorker = async () => {
+    while (renderCursor < selectedPages.length && renderFailure == null && !signal?.aborted) {
+      const n = selectedPages[renderCursor++]
+      onProgress?.({ phase: 'rendering', completed: renderCompleted, total: selectedPages.length, currentPage: n })
+      try {
+        const rendered = await renderSessionThumbnail(session, n, AI_TOC_RENDER_EDGE)
+        const url = await new Promise<string>((resolve, reject) => { const fr = new FileReader(); fr.onload = () => resolve(String(fr.result)); fr.onerror = () => reject(new Error('render')); fr.readAsDataURL(rendered.blob) })
+        if (signal?.aborted) return
+        pageDataUrls[n] = url
+        renderCompleted++
+        onProgress?.({ phase: 'rendering', completed: renderCompleted, total: selectedPages.length, currentPage: n })
+      } catch { renderFailure = n }
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(AI_TOC_RENDER_CONCURRENCY, selectedPages.length) }, () => renderWorker()))
+  if (signal?.aborted) { finishRendering(); return abortedAiTocResult('rendering', timing, totalStartMs) }
+  if (renderFailure != null) { finishRendering(); return timedAiTocResult({ ok: false, error: '第 ' + renderFailure + ' 页渲染失败，无法用于目录识别。' }, timing, totalStartMs) }
   finishRendering()
 
   // Window strategy: small TOC (<=8 pages) sent ONCE so the model sees full
@@ -195,7 +207,6 @@ export async function extractAiToc(opts: {
   const structureInput = buildTocStructureInput(allRows)
   let structureRaw: string | undefined
   let lastStructureDiagnostics: TocStructureDiagnostic[] = []
-  let lastStructureAttempt = 0
   for (let attempt = 0; attempt < 2; attempt++) {
     if (signal?.aborted) return abortedAiTocResult('structuring', timing, totalStartMs)
     onProgress?.({ phase: 'structuring', repair: attempt === 1 })
@@ -216,21 +227,19 @@ export async function extractAiToc(opts: {
       else {
         const userContent = repair ? structureInput + '\n\n' + repairPrompt : structureInput
         const messages = await compileMachineProtocolMessages({ domain: 'ai-toc-structure', protocol: structureProtocol, content: userContent })
-        const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal });
+        const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal, reasoningEffort: 'low' });
         structureRaw = res.content;
       }
       const sp = parseTocStructure(structureRaw || '');
       if (sp.ok === false) {
         finishStructureAttempt()
         lastStructureDiagnostics = sp.diagnostics
-        lastStructureAttempt = attempt + 1
         continue
       }
       const sv = validateTocStructure(allRows, sp.levels);
       if (!sv.ok) {
         finishStructureAttempt()
         lastStructureDiagnostics = sv.diagnostics
-        lastStructureAttempt = attempt + 1
         continue
       }
       const leveled = allRows.map((r, i) => ({ title: r.title, level: sv.levels[i], pageLabel: r.pageLabel, tocPage: r.tocPage }));
@@ -247,13 +256,24 @@ export async function extractAiToc(opts: {
       // Keep raw transport/provider errors out of the UI and console: they can
       // contain endpoint or provider details. The stable code remains actionable.
       lastStructureDiagnostics = [{ code: 'API_ERROR', message: '结构分析请求失败' }]
-      lastStructureAttempt = attempt + 1
     }
   }
+  // Transcription is the expensive, provenance-sensitive part. Do not discard it
+  // merely because the optional hierarchy response was malformed twice: open the
+  // normal human review with a conservative deterministic hierarchy instead.
+  onProgress?.({ phase: 'mapping' })
+  const mappingStartMs = aiTocNowMs()
+  const fallbackLevels = inferFallbackTocLevels(allRows)
+  const fallbackRows = allRows.map((r, i) => ({ title: r.title, level: fallbackLevels[i], pageLabel: r.pageLabel, tocPage: r.tocPage }))
+  const items = buildInitialMapping(fallbackRows, labels)
+  timing.mappingMs = elapsedAiTocMs(mappingStartMs)
+  onProgress?.({ phase: 'done' })
   return timedAiTocResult({
-    ok: false,
-    error: describeTocStructureFailure(lastStructureDiagnostics),
-    diagnostics: { stage: 'structuring' as const, attempt: lastStructureAttempt, diagnostics: lastStructureDiagnostics },
+    ok: true,
+    items,
+    labels,
+    labelsPlainNumeric: labelsArePlainNumeric(labels),
+    warning: 'AI 已完成目录文字识别，但层级分析未通过校验。已生成可编辑草稿，请重点检查层级后再保存。',
   }, timing, totalStartMs)
 }
 
@@ -271,7 +291,7 @@ async function transcribeBatch(opts: {
   if (isMock) {
     const raw = mock!({ pages: batch, phase: 'transcribe' });
     if (typeof raw !== 'string') return [];
-    const pr = parseTocJsonl(raw);
+    const pr = parseTocJsonl(raw, batch.length === 1 ? { defaultSourceImageIndex: 1 } : {});
     if (!pr.ok) { const d = (pr as { diagnostics: string[] }).diagnostics; throw new Error(d.length ? d[0] : '目录识别结果格式异常，请重试。'); }
     // Mock rows use a pageBatch-appropriate sourceImageIndex; assign local ids.
     return pr.rows.map((r: TocTranscriptionLine, i: number) => ({ ...r, id: 'r' + String(i + 1).padStart(4, '0'), rowOrder: i }));
@@ -285,8 +305,8 @@ async function transcribeBatch(opts: {
     images.push({ id: 'ai-toc-page-' + physicalPage + '-' + k, dataUrl: pageDataUrls[physicalPage] })
   }
   const messages = await compileMachineProtocolMessages({ domain: 'ai-toc-transcription', protocol, content: contentLines.join('\n'), images })
-  const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal });
-  const pr = parseTocJsonl(res.content);
+  const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal, reasoningEffort: 'low' });
+  const pr = parseTocJsonl(res.content, batch.length === 1 ? { defaultSourceImageIndex: 1 } : {});
   if (!pr.ok) { const d = (pr as { diagnostics: string[] }).diagnostics; throw new Error(d.length ? d[0] : '目录识别结果格式异常，请重试。'); }
   return pr.rows.map((r: TocTranscriptionLine, i: number) => ({ ...r, id: 'r' + String(i + 1).padStart(4, '0'), rowOrder: i }));
 }

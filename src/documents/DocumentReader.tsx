@@ -172,6 +172,7 @@ export function DocumentReader() {
   const [aiTocExtracting, setAiTocExtracting] = useState(false)
   const [aiTocMsg, setAiTocMsg] = useState<string | null>(null)
   const [aiTocItems, setAiTocItems] = useState<MappedTocItem[] | null>(null)
+  const [aiTocWarning, setAiTocWarning] = useState<string | null>(null)
   // Finding 9.4D.2-0.6: AI TOC progress dialog state (real phase progress, hide/cancel/error/retry).
   const [aiTocProgress, setAiTocProgress] = useState<AiTocProgress | null>(null)
   const [aiTocDialogHidden, setAiTocDialogHidden] = useState(false)
@@ -299,7 +300,7 @@ export function DocumentReader() {
       aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
       aiTocGenRef.current++
       setTocPickerOpen(false); setAiTocExtracting(false); setAiTocMsg(null)
-      setAiTocItems(null); setTocReviewOpen(false)
+      setAiTocItems(null); setAiTocWarning(null); setTocReviewOpen(false)
       setAiTocProgress(null); setAiTocDialogHidden(false); setAiTocError(null); lastAiTocPagesRef.current = []
       return
     }
@@ -328,7 +329,7 @@ export function DocumentReader() {
       aiTocAbortRef.current?.abort(); aiTocAbortRef.current = null
       aiTocGenRef.current++
       setTocPickerOpen(false); setAiTocExtracting(false); setAiTocMsg(null)
-      setAiTocItems(null); setTocReviewOpen(false)
+      setAiTocItems(null); setAiTocWarning(null); setTocReviewOpen(false)
       setAiTocProgress(null); setAiTocDialogHidden(false); setAiTocError(null); lastAiTocPagesRef.current = []
       try {
         const perfMode = (globalThis as typeof globalThis & { __dshPdfPerformanceMode?: 'legacy' | 'split' }).__dshPdfPerformanceMode ?? 'split'
@@ -790,7 +791,7 @@ export function DocumentReader() {
     const controller = new AbortController()
     aiTocAbortRef.current = controller
     setTocPickerOpen(false)
-    setAiTocExtracting(true); setAiTocMsg(null)
+    setAiTocExtracting(true); setAiTocMsg(null); setAiTocWarning(null)
     setAiTocProgress(null); setAiTocDialogHidden(false); setAiTocError(null)
     lastAiTocPagesRef.current = selectedPages
     const gen = ++aiTocGenRef.current
@@ -807,6 +808,7 @@ export function DocumentReader() {
       if (gen !== aiTocGenRef.current || docIdRef.current !== ownedDocId) return
       if (!res.ok) { setAiTocError((res as { error: string }).error); return }
       setAiTocItems(res.items)
+      setAiTocWarning(res.warning ?? null)
       setAiTocMsg(null); setAiTocError(null)
       setTocReviewOpen(true)
     } catch {
@@ -1302,6 +1304,7 @@ export function DocumentReader() {
         <TocReview
           pageCount={pageCount}
           items={aiTocItems}
+          notice={aiTocWarning ?? undefined}
           onJump={(p) => go(p, pageCount)}
           onSave={saveAiToc}
           onClose={() => setTocReviewOpen(false)}

@@ -10,6 +10,7 @@ function assert(condition: boolean, message: string): void {
 assert(DEFAULT_DEEPSEEK_REASONING_EFFORT === 'max', 'DeepSeek default reasoning effort is max')
 assert(deepSeekRequestOptions('', 'deepseek-v4-pro').reasoning_effort === 'max', 'DeepSeek model gets max even through a custom-compatible endpoint')
 assert(deepSeekRequestOptions('https://api.deepseek.com', 'custom-model').reasoning_effort === 'max', 'DeepSeek endpoint gets max for its configured model')
+assert(deepSeekRequestOptions('https://api.deepseek.com', 'custom-model', 'low').reasoning_effort === 'low', 'caller can lower DeepSeek reasoning effort for latency-sensitive tasks')
 assert(Object.keys(deepSeekRequestOptions('https://api.openai.com/v1', 'gpt-5')).length === 0, 'non-DeepSeek endpoint does not receive provider-specific reasoning fields')
 
 const originalFetch = globalThis.fetch
@@ -19,8 +20,11 @@ globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
   return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 })
 }) as typeof fetch
 await sendTextChat({ apiKey: 'test', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', messages: [] })
-globalThis.fetch = originalFetch
 assert(body?.reasoning_effort === 'max', 'sendTextChat sends max reasoning effort to DeepSeek')
+
+await sendTextChat({ apiKey: 'test', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', messages: [], reasoningEffort: 'low' })
+assert(body?.reasoning_effort === 'low', 'sendTextChat forwards a low reasoning override')
+globalThis.fetch = originalFetch
 
 console.log('RESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)

@@ -3,7 +3,7 @@ import { hasMeaningfulAssistantContent } from '../engine/types'
 
 export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 export type ApiChatMessage = { role: 'user' | 'assistant' | 'system'; content: string | ChatContentPart[] }
-export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal }
+export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal; reasoningEffort?: DeepSeekReasoningEffort }
 export type SendTextChatResult = { content: string }
 
 /** DeepSeek vision API limit: max images in ONE chat request (API limit, not product). */
@@ -52,8 +52,8 @@ function isDeepSeekRequest(baseUrl: string, model: string): boolean {
 }
 
 /** Add DeepSeek-only defaults without leaking provider-specific fields to compatible APIs. */
-export function deepSeekRequestOptions(baseUrl: string, model: string): { reasoning_effort?: DeepSeekReasoningEffort } {
-  return isDeepSeekRequest(baseUrl, model) ? { reasoning_effort: DEFAULT_DEEPSEEK_REASONING_EFFORT } : {}
+export function deepSeekRequestOptions(baseUrl: string, model: string, reasoningEffort: DeepSeekReasoningEffort = DEFAULT_DEEPSEEK_REASONING_EFFORT): { reasoning_effort?: DeepSeekReasoningEffort } {
+  return isDeepSeekRequest(baseUrl, model) ? { reasoning_effort: reasoningEffort } : {}
 }
 
 export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChatResult> {
@@ -65,7 +65,7 @@ export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChat
     res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify({ model, messages, stream: false, ...deepSeekRequestOptions(baseUrl, model) }),
+      body: JSON.stringify({ model, messages, stream: false, ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort) }),
       signal,
     })
   } catch {

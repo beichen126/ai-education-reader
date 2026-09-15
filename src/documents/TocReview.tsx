@@ -14,13 +14,14 @@ export type TocReviewSave = { chapters: ChapterNode[]; source: DocumentChapterSo
 type Props = {
   pageCount: number
   items: MappedTocItem[]
+  notice?: string
   onJump: (page: number) => void
   onSave: (save: TocReviewSave) => Promise<void>
   onClose: () => void
   onEditAll: (items: MappedTocItem[]) => void
 }
 
-export function TocReview({ pageCount, items, onJump, onSave, onClose, onEditAll }: Props) {
+export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, onEditAll }: Props) {
   const [rows, setRows] = useState<MappedTocItem[]>(items)
   const [state, setState] = useState<ReviewState>(() => emptyReviewState(items.length))
   const [idx, setIdx] = useState(0)
@@ -216,6 +217,7 @@ export function TocReview({ pageCount, items, onJump, onSave, onClose, onEditAll
             <button type="button" className={css.btnPrimary} data-testid="toc-review-save" disabled={saving || invalid} onClick={requestSave}>{saving ? '保存中…' : '保存目录'}</button>
           </div>
         </div>
+        {notice && <div className={css.warn} data-testid="toc-review-notice">{notice}</div>}
         {saveError && <div className={css.err} data-testid="toc-review-error">{saveError}</div>}
         {invalid && <div className={css.err} data-testid="toc-review-invalid">还有 {invalidCount} 项需要修正后才能保存。</div>}
         {unresolvedCount > 0 && <div className={css.warn} data-testid="toc-review-unresolved">有 {unresolvedCount} 项页码待确认。</div>}
