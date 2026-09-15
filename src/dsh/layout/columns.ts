@@ -16,15 +16,20 @@
 /** Resolved widths for one frame; center may drop below CENTER_MIN only at the final fallback. */
 export interface Columns { sidebar: number; center: number; details: number }
 
-// Contract-frozen geometry: the three-column concession chain's fixed points.
+// Shared geometry for the three-column concession chain.
 /** Center column floor; only the final fallback may go below it. */
 export const CENTER_MIN = 640
-/** Sidebar drag clamp floor. */
-export const SIDEBAR_MIN = 264
+/** Sidebar drag clamp floor while expanded. Pulling past the collapse trigger
+ * snaps to the compact rail when the pointer is released. */
+export const SIDEBAR_MIN = 184
 /** Sidebar drag clamp ceiling. */
 export const SIDEBAR_MAX = 420
 /** Sidebar width before any user drag. */
 export const SIDEBAR_DEFAULT = 280
+/** Expanded sidebars below this width switch their paired actions to one column. */
+export const SIDEBAR_COMPACT_THRESHOLD = 244
+/** Raw pointer width at or below this point collapses the sidebar on release. */
+export const SIDEBAR_COLLAPSE_TRIGGER = 160
 /** Closed-sidebar rail: a 24px icon column between 16px horizontal paddings. */
 export const SIDEBAR_COLLAPSED = 56
 /** Viewport width below which the sidebar starts in its original collapsed rail.

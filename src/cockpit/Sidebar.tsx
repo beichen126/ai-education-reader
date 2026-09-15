@@ -4,7 +4,8 @@ import { t } from '../engine/locale'
 import { uiActions } from '../engine/ui-store'
 import { galleryActions } from '../gallery/gallery-store'
 import { documentUiActions } from '../documents/document-ui-store'
-import { layoutStore, useLayoutStore } from '../engine/layout-store'
+import { layoutStore, persistSidebarLayout, useLayoutStore } from '../engine/layout-store'
+import { SIDEBAR_COMPACT_THRESHOLD } from '../dsh/layout/columns'
 import { NEW_TITLE } from '../engine/types'
 import { displayTitle, sanitizeTitle, MAX_TITLE_LEN } from '../engine/session-title'
 import { IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, IconClockOutline16, IconFullscreenOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconQuestionOutline14, Input } from '../dsh/primitives'
@@ -31,8 +32,13 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   const filtered = q ? sessions.filter(s => displayTitle(s).toLowerCase().includes(q.toLowerCase())) : sessions
   const fsTitle = fs ? '退出全屏' : '全屏'
   const narrow = useLayoutStore(s => s.narrow)
-  const openHistory = () => { if (narrow) layoutStore.actions.openNarrowSidebar(); else layoutStore.actions.toggleSidebar() }
-  const collapseSidebar = () => { if (narrow) layoutStore.actions.closeNarrowSidebar(); else layoutStore.actions.toggleSidebar() }
+  const toggleDesktopSidebar = () => {
+    layoutStore.actions.toggleSidebar()
+    void persistSidebarLayout().catch(error => console.warn('sidebar layout persistence failed', error))
+  }
+  const openHistory = () => { if (narrow) layoutStore.actions.openNarrowSidebar(); else toggleDesktopSidebar() }
+  const collapseSidebar = () => { if (narrow) layoutStore.actions.closeNarrowSidebar(); else toggleDesktopSidebar() }
+  const compact = !narrow && width < SIDEBAR_COMPACT_THRESHOLD
 
   if (collapsed) {
     return (
@@ -50,7 +56,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
     )
   }
   return (
-    <div className={css.sidebar} style={{ width }} data-testid={narrow ? 'mobile-history-drawer' : undefined} role={narrow ? 'navigation' : undefined} aria-label={narrow ? '主导航' : undefined}>
+    <div className={css.sidebar} style={{ width }} data-testid={narrow ? 'mobile-history-drawer' : 'sidebar'} data-compact={compact || undefined} role={narrow ? 'navigation' : undefined} aria-label={narrow ? '主导航' : undefined}>
       <div className={css.sidebarHead}>
         <div className={css.sidebarTitle}>AI 学习阅读器</div>
         <div className={css.sidebarHeadBtns}>

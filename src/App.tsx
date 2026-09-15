@@ -11,7 +11,7 @@ import { requestStoragePersist } from './storage/binary-store'
 import { uiActions, useUi } from './engine/ui-store'
 import { useSettings, getSettingsSnapshot } from './engine/settings-store'
 import { useTheme } from './theme/use-theme'
-import { layoutStore, useLayoutStore } from './engine/layout-store'
+import { initLayout, layoutStore, useLayoutStore } from './engine/layout-store'
 import { SessionProvider } from './engine/session-context'
 import { t } from './engine/locale'
 import { Sidebar } from './cockpit/Sidebar'
@@ -48,7 +48,7 @@ export function App() {
   const productGuideCheckedRef = useRef(false)
   const bootFn = useCallback(async () => {
     setBoot('loading')
-    try { await migrateLegacyPrompts(); await migratePromptSimplification(); await initSettings(); await initStore(); setBoot('ready') }
+    try { await migrateLegacyPrompts(); await migratePromptSimplification(); await initSettings(); await initLayout(); await initStore(); setBoot('ready') }
     catch (e) { console.error('本地数据载入失败', e); setBoot('error') }
   }, [])
   useEffect(() => { void bootFn() }, [bootFn])

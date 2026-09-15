@@ -83,7 +83,8 @@
 
 /* Drag handles are frame children (columns clip overflow): an 8px hit strip
    centered on the column border via inline left, above column content. Details
-   adds a visible 12x32 pill at vertical center; sidebar keeps only the hit strip. */
+   adds a visible 12x32 pill at vertical center; the sidebar keeps its hit strip
+   in normal, compact, and collapsed desktop states. */
 .handle {
   position: absolute;
   top: 0;
@@ -126,6 +127,26 @@
   transition:
     opacity var(--ds-transition-duration-slow) var(--ds-ease-in-out),
     background var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.handle[data-side='sidebar']::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--dsw-alias-border-l3);
+  opacity: 0;
+  transform: translate(-50%, -50%);
+  transition: opacity var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+.sidebarCol:hover ~ .handle[data-side='sidebar']::after,
+.handle[data-side='sidebar']:hover::after,
+.handle[data-side='sidebar'][data-dragging='true']::after {
+  opacity: 1;
 }
 
 .detailsCol:hover ~ .handle[data-side='details']::after,

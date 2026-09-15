@@ -15,9 +15,9 @@ import type { ReactNode } from 'react'
 import type {
   PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '../../engine/slot-types'
-import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT } from './columns.ts'
+import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_COLLAPSE_TRIGGER, SIDEBAR_DEFAULT } from './columns.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
-import type { LayoutState } from '../../engine/layout-store'
+import { persistSidebarLayout, type LayoutState } from '../../engine/layout-store'
 import css from './AppFrame.module.css'
 
 /** Full composed props: runtime share + child-slot render share + store share. */
@@ -79,6 +79,10 @@ function DragHandle(props: { side: 'sidebar' | 'details'; left: number; onStart:
       className={css.handle}
       style={{ left: props.left }}
       data-side={props.side}
+      data-testid={props.side + '-resize-handle'}
+      role="separator"
+      aria-label={props.side === 'sidebar' ? '调整侧栏宽度' : '调整详情栏宽度'}
+      aria-orientation="vertical"
       data-dragging={dragging || undefined}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
@@ -156,16 +160,36 @@ export function AppFrame({
   // concession-clamped panel must not jump back to the stored preference);
   // it stays frozen for the whole gesture so dx deltas do not compound.
   const sidebarBase = useRef(0)
+  const sidebarRequested = useRef(SIDEBAR_DEFAULT)
+  const sidebarStartedCollapsed = useRef(false)
   const detailsBase = useRef(0)
   // Track-level transitions pause for the whole gesture: eased tracks would
   // detach the column edge from the pointer (AppFrame.module.css).
   const [dragging, setDragging] = useState(false)
-  const onDragEnd = useCallback(() => { setDragging(false) }, [])
-  const onSidebarStart = useCallback(() => { sidebarBase.current = colsRef.current.sidebar; setDragging(true) }, [])
+  const onSidebarStart = useCallback(() => {
+    sidebarBase.current = colsRef.current.sidebar
+    sidebarRequested.current = colsRef.current.sidebar
+    sidebarStartedCollapsed.current = colsRef.current.sidebar === SIDEBAR_COLLAPSED
+    setDragging(true)
+  }, [])
   const onDetailsStart = useCallback(() => { detailsBase.current = colsRef.current.details; setDragging(true) }, [])
   const onSidebarDrag = useCallback((dx: number) => {
-    actions.setSidebar(sidebarBase.current + dx)
+    const requested = sidebarBase.current + dx
+    sidebarRequested.current = requested
+    // Keep the rail stable until the pointer crosses the expand threshold.
+    // Once expanded, the minimum panel width gives the content a usable shape.
+    actions.previewSidebar(sidebarStartedCollapsed.current && requested <= SIDEBAR_COLLAPSE_TRIGGER ? 0 : requested)
   }, [actions])
+  const onSidebarEnd = useCallback(() => {
+    if (sidebarRequested.current <= SIDEBAR_COLLAPSE_TRIGGER) {
+      actions.setSidebar(0)
+    } else {
+      actions.setSidebar(sidebarRequested.current)
+    }
+    setDragging(false)
+    void persistSidebarLayout().catch(error => console.warn('sidebar layout persistence failed', error))
+  }, [actions])
+  const onDetailsEnd = useCallback(() => { setDragging(false) }, [])
   const onDetailsDrag = useCallback((dx: number) => {
     actions.setDetails(detailsBase.current - dx)
   }, [actions])
@@ -212,9 +236,10 @@ const productTitle = ((globalThis as any).process?.env?.DSH_CLIENT_TITLE) ?? t('
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
-      {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
-      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
+      {/* Desktop keeps the boundary draggable in every sidebar state, including
+          the collapsed rail, so one continuous gesture can select all three. */}
+      {!narrow && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onSidebarEnd} />}
+      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDetailsEnd} />}
     </div>
   )
 }

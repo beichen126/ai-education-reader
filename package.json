@@ -203,6 +203,7 @@
     "test:study-card-performance": "node scripts/benchmark-study-cards.mjs",
     "test:e2e-pdf-renderer-ownership": "node scripts/e2e-pdf-renderer-ownership.mjs",
     "test:e2e-sidebar-information-architecture": "node scripts/e2e-sidebar-information-architecture.mjs",
+    "test:e2e-sidebar-resize": "node scripts/e2e-sidebar-resize.mjs",
     "test:e2e-study-cards": "node scripts/e2e-study-cards.mjs",
     "test:e2e-learning-center": "node scripts/e2e-learning-center.mjs",
     "test:e2e-card-backlinks": "node scripts/e2e-card-backlinks.mjs",
