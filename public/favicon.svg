@@ -1,1 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#0f1115"/><text x="16" y="22" font-family="Arial" font-size="16" fill="#f9fafb" text-anchor="middle">墨</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="AI 学习阅读器">
+  <rect width="32" height="32" rx="7" fill="#4b70c9"/>
+  <path d="M6.5 10.25c3.75-.55 6.92.4 9.5 2.75v11c-2.58-2.35-5.75-3.3-9.5-2.75z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M25.5 10.25c-3.75-.55-6.92.4-9.5 2.75v11c2.58-2.35 5.75-3.3 9.5-2.75z" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>
+  <path d="M23.3 5.1c.26 1.67 1.23 2.64 2.9 2.9-1.67.26-2.64 1.23-2.9 2.9-.26-1.67-1.23-2.64-2.9-2.9 1.67-.26 2.64-1.23 2.9-2.9z" fill="#fff"/>
+</svg>
