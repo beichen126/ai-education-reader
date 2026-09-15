@@ -8,6 +8,7 @@ import { setMessageRanges, removeMessageRanges, highlightSupported } from './hig
 import { shouldToggleAll, normalizeBounds, hasExactRectangle, hasWholeTable, hasMath } from './annotation-ops'
 import { containsNode, ownedMath } from './ownership'
 import type { SelectionMapping } from './selection-types'
+import { markdownSourceForRange } from '../markdown/source-copy'
 import css from './annotate.module.css'
 
 export function AnnotatedMarkdown({ content, messageId, conversationId, branchId }: { content: string; messageId: string; conversationId: string; branchId?: string }) {
@@ -78,6 +79,28 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
     document.addEventListener('touchend', onSelChange)
     return () => { document.removeEventListener('selectionchange', onSelChange); document.removeEventListener('pointerdown', onPointerDown); document.removeEventListener('pointerup', onSelChange); document.removeEventListener('touchend', onSelChange) }
   }, [messageId, content, canonicalOf])
+
+  useEffect(() => {
+    function onCopy(event: ClipboardEvent) {
+      const selection = window.getSelection()
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0 || !event.clipboardData) return
+      const range = selection.getRangeAt(0)
+      if (!containsNode(wrapRef.current, range.startContainer) || !containsNode(wrapRef.current, range.endContainer)) return
+      const messageRoot = wrapRef.current?.querySelector<HTMLElement>('[data-message-id]')
+      if (!messageRoot) return
+      const source = markdownSourceForRange(messageRoot, content, range)
+      if (source === null) return
+      try {
+        event.clipboardData.setData('text/plain', source)
+        // Chromium and Firefox accept this richer flavor; older WebKit may not.
+        // Plain text already contains the source and remains the compatibility path.
+        try { event.clipboardData.setData('text/markdown', source) } catch {}
+        event.preventDefault()
+      } catch { /* keep the browser's normal rendered-text copy when clipboardData is read-only */ }
+    }
+    document.addEventListener('copy', onCopy)
+    return () => document.removeEventListener('copy', onCopy)
+  }, [content])
 
   const markCrossCell = () => { if (!pending || pending.kind !== 'table-cross-cell') return; const a = pending.startCell, b = pending.endCell; const bounds = normalizeBounds(a.row, a.column, b.row, b.column); void toggleTableCellsMessage(conversationId, messageId, pending.tableId, bounds, branchId); window.getSelection()?.removeAllRanges(); setPending(null) }
   const onMathAction = (mathId: string, kind: 'inline' | 'block') => { setPending({ kind: 'math', mathId, mathKind: kind }) }

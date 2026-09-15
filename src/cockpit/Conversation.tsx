@@ -9,6 +9,7 @@ import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, cle
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { t } from '../engine/locale'
 import { MessageText, IconCloseOutline16, IconFolderOpenOutline16, Button } from '../dsh/primitives'
+import { useCopyFeedback } from '../dsh/primitives/use-copy-feedback'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
 import { galleryActions } from '../gallery/gallery-store'
@@ -357,6 +358,7 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
   }
   const isStreaming = m.id === streamingId
   const stable = isStableBranchPoint(m, { streaming: isStreaming })
+  const canCopySource = !isStreaming && m.content.length > 0
   return (
     <div className={css.msg + ' ' + css.msgAssistant} data-message-id={m.id}>
       {isStreaming ? (
@@ -367,27 +369,42 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
         <div className={css.assistantBody} data-empty></div>
       )}
       {m.status && m.error && <div className={css.errorBanner} role="alert" data-testid="assistant-generation-error">{m.status === 'aborted' ? '已停止生成：' : '生成失败：'}{m.error}</div>}
-      {stable && onToggleMenu && onBranch && onArtifact && (
-        <div style={{ position: 'relative' }}>
-          <button type="button" aria-label="消息操作" data-testid="message-actions" title="从这里分支 / 特殊分支 / 学习卡片" aria-haspopup="menu" aria-expanded={!!menuOpen} onClick={() => onToggleMenu(!menuOpen)} style={{ appearance: 'none', border: 0, background: 'transparent', color: 'var(--dsw-alias-label-tertiary)', cursor: 'pointer', fontSize: '0.8rem', padding: '0.1rem 0.375rem', borderRadius: '0.375rem' }}>⋯</button>
-          {menuOpen && <MessageActionMenu
-            conversationId={convId || ''}
-            branchId={branchId}
-            message={m}
-            isStreaming={isStreaming}
-            cardState={cardSave?.state ?? 'idle'}
-            cardRating={cardSave?.rating}
-            onCreateBranch={() => onBranch(m.id)}
-            onCreateArtifact={(kind) => onArtifact(kind, m.id)}
-            onCreateCustomArtifact={() => onArtifactCustom?.(m.id)}
-            onSaveCard={(rating) => onSaveCard?.(m.id, rating)}
-            onViewSavedCard={() => onViewSavedCard?.(m.id)}
-            onClose={() => onToggleMenu(false)}
-          />}
+      {(canCopySource || (stable && onToggleMenu && onBranch && onArtifact)) && (
+        <div className={css.messageTools}>
+          {canCopySource && <MessageSourceCopyButton source={m.content} />}
+          {stable && onToggleMenu && onBranch && onArtifact && <div className={css.messageMenuAnchor}>
+            <button type="button" className={css.messageToolButton} aria-label="消息操作" data-testid="message-actions" title="从这里分支 / 特殊分支 / 学习卡片" aria-haspopup="menu" aria-expanded={!!menuOpen} onClick={() => onToggleMenu(!menuOpen)}>⋯</button>
+            {menuOpen && <MessageActionMenu
+              conversationId={convId || ''}
+              branchId={branchId}
+              message={m}
+              isStreaming={isStreaming}
+              cardState={cardSave?.state ?? 'idle'}
+              cardRating={cardSave?.rating}
+              onCreateBranch={() => onBranch(m.id)}
+              onCreateArtifact={(kind) => onArtifact(kind, m.id)}
+              onCreateCustomArtifact={() => onArtifactCustom?.(m.id)}
+              onSaveCard={(rating) => onSaveCard?.(m.id, rating)}
+              onViewSavedCard={() => onViewSavedCard?.(m.id)}
+              onClose={() => onToggleMenu(false)}
+            />}
+          </div>}
         </div>
       )}
     </div>
   )
+}
+
+function MessageSourceCopyButton({ source }: { source: string }) {
+  const copy = useCopyFeedback(source)
+  return <button
+    type="button"
+    className={css.messageToolButton}
+    data-testid="message-copy-source"
+    aria-label={copy.copied ? '已复制回复原文' : '复制回复原始 Markdown 和 LaTeX'}
+    title="复制完整的原始 Markdown / LaTeX"
+    onClick={copy.onCopy}
+  >{copy.copied ? '已复制' : '复制全文'}</button>
 }
 
 function QuickFollowUpBar({ items, disabled, sendingId, onSend, onInspect, onConfigure }: { items: QuickFollowUpPrompt[]; disabled: boolean; sendingId: string | null; onSend: (item: QuickFollowUpPrompt) => void; onInspect: (metadata: QuickFollowUpMetadata) => void; onConfigure: () => void }) {
