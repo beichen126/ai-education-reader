@@ -16,6 +16,8 @@ import { normalizePdfNavigationMode } from '../engine/pdf-navigation-settings'
 import { listStudyCards } from '../study-cards/study-card-service'
 import { validateStudyCard } from '../study-cards/study-card-validation'
 import { STUDY_CARD_PREFERENCES_KEY } from '../study-cards/learning-ui-store'
+import { LAYOUT_PREFERENCES_KEY, normalizeLayoutPreferences } from '../engine/layout-store'
+import { loadSortPreference } from '../documents/document-sort'
 
 async function blobToBase64(blob: Blob): Promise<string> {
   const buf = await blob.arrayBuffer()
@@ -99,8 +101,8 @@ export async function buildBackup(): Promise<BackupV7> {
     const blob = await attachmentBlobOf(imgId, row.meta.mimeType)
     attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, data: await blobToBase64(blob) })
   }
-  const [apiBaseUrl, model, customSystemPrompt, customSystemPromptEnabled, appearance, visionCapability, pdfNavigationMode] = await Promise.all([
-    getSetting('apiBaseUrl'), getSetting('model'), getSetting('customSystemPrompt'), getSetting('customSystemPromptEnabled'), getSetting('appearance'), getSetting('visionCapability'), getSetting('pdfNavigationMode'),
+  const [apiBaseUrl, model, customSystemPrompt, customSystemPromptEnabled, appearance, visionCapability, pdfNavigationMode, uiLanguage, layoutPreferences, productGuideSeenVersion, lastConversationId] = await Promise.all([
+    getSetting('apiBaseUrl'), getSetting('model'), getSetting('customSystemPrompt'), getSetting('customSystemPromptEnabled'), getSetting('appearance'), getSetting('visionCapability'), getSetting('pdfNavigationMode'), getSetting('uiLanguage'), getSetting(LAYOUT_PREFERENCES_KEY), getSetting('productGuideSeenVersion'), getSetting('lastConversationId'),
   ])
   const settings = {
     apiBaseUrl: (typeof apiBaseUrl === 'string' ? apiBaseUrl : 'https://api.deepseek.com'),
@@ -110,6 +112,11 @@ export async function buildBackup(): Promise<BackupV7> {
     customArtifactActions: await listCustomActions(),
     visionCapability: (visionCapability === 'supports-image' || visionCapability === 'text-only') ? visionCapability : 'auto',
     pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode),
+    uiLanguage: uiLanguage === 'en' ? 'en' as const : 'zh-CN' as const,
+    layoutPreferences: normalizeLayoutPreferences(layoutPreferences),
+    documentSort: loadSortPreference(),
+    ...(typeof productGuideSeenVersion === 'string' ? { productGuideSeenVersion } : {}),
+    ...(typeof lastConversationId === 'string' ? { lastConversationId } : {}),
   }
   const appearanceOut: 'system' | 'light' | 'dark' = (appearance === 'light' || appearance === 'dark') ? appearance : 'system'
   // Local Document Library: iterate ONE record at a time (metadata, one binary read, base64,

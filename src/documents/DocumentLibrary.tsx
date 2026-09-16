@@ -18,6 +18,7 @@ import { DocumentContextPicker } from './DocumentContextPicker'
 import { executeDocumentContext } from './document-context-service'
 import type { PdfSelection } from '../pdf/pdf-types'
 import css from './document-library.module.css'
+import { tx } from '../engine/locale'
 
 type PendingImport = { analysis: ImportAnalysis; file: File }
 
@@ -179,22 +180,22 @@ export function DocumentLibrary() {
   return (
     <div className={css.overlay} data-testid="document-library">
       <div className={css.head}>
-        <span className={css.title}>文件</span>
+        <span className={css.title}>{tx('文件', 'Files')}</span>
         <div className={css.headBtns}>
-          <select className={css.sortSelect} data-testid="library-sort" aria-label="排序" value={sortKey} onChange={e => onSortChange(e.target.value as DocumentSortKey)}>
-            {DOCUMENT_SORT_KEYS.map(k => <option key={k} value={k}>{DOCUMENT_SORT_LABELS[k]}</option>)}
+          <select className={css.sortSelect} data-testid="library-sort" aria-label={tx('排序', 'Sort')} value={sortKey} onChange={e => onSortChange(e.target.value as DocumentSortKey)}>
+            {DOCUMENT_SORT_KEYS.map(k => <option key={k} value={k}>{localizedDocumentSort(k)}</option>)}
           </select>
           <input ref={fileRef} type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) void importFile(f); e.target.value = '' }} />
-          <button className={css.primaryBtn} data-testid="library-import" disabled={importing} onClick={() => fileRef.current?.click()}>{importing ? '正在导入…' : '导入 PDF'}</button>
-          <button className={css.closeBtn} data-testid="library-close" onClick={documentUiActions.close}>关闭</button>
+          <button className={css.primaryBtn} data-testid="library-import" disabled={importing} onClick={() => fileRef.current?.click()}>{importing ? tx('正在导入…', 'Importing…') : tx('导入 PDF', 'Import PDF')}</button>
+          <button className={css.closeBtn} data-testid="library-close" onClick={documentUiActions.close}>{tx('关闭', 'Close')}</button>
         </div>
       </div>
       {error && <div className={css.error} data-testid="library-error">{error}</div>}
       {displaySummaries.length === 0 ? (
         <div className={css.empty} data-testid="library-empty">
-          <div>还没有本地文件。</div>
-          <div className={css.emptyHint}>导入一份 PDF 开始阅读。</div>
-          <button className={css.primaryBtn} data-testid="library-empty-import" onClick={() => fileRef.current?.click()}>导入 PDF</button>
+          <div>{tx('还没有本地文件。', 'No local files yet.')}</div>
+          <div className={css.emptyHint}>{tx('导入一份 PDF 开始阅读。', 'Import a PDF to start reading.')}</div>
+          <button className={css.primaryBtn} data-testid="library-empty-import" onClick={() => fileRef.current?.click()}>{tx('导入 PDF', 'Import PDF')}</button>
         </div>
       ) : (
         <div className={css.list}>
@@ -202,21 +203,21 @@ export function DocumentLibrary() {
             <div className={css.card} key={d.id} data-testid={'doc-card-' + d.id}>
               <button className={css.cardMain} data-testid={'doc-open-' + d.id} onClick={() => documentUiActions.openReader(d.id)}>
                 <div className={css.cardTitle}>{d.fileName}</div>
-                <div className={css.cardMeta}>PDF · {d.pageCount} 页 · {formatBytes(d.fileSize)}</div>
+                <div className={css.cardMeta}>PDF · {tx(d.pageCount + ' 页', d.pageCount + ' pages')} · {formatBytes(d.fileSize)}</div>
                 <div className={css.cardMeta}>
-                  {d.lastReadPage > 0 ? '上次阅读：第 ' + d.lastReadPage + ' 页' : '尚未阅读'}
+                  {d.lastReadPage > 0 ? tx('上次阅读：第 ' + d.lastReadPage + ' 页', 'Last read: page ' + d.lastReadPage) : tx('尚未阅读', 'Not read yet')}
                   {d.lastReadAt > 0 ? ' · ' + relTimeLabel(d.lastReadAt) : ''}
-                  {d.chapterCount > 0 ? ' · 有目录' : ' · 无目录'}
+                  {d.chapterCount > 0 ? tx(' · 有目录', ' · Has outline') : tx(' · 无目录', ' · No outline')}
                 </div>
               </button>
               <div className={css.cardActions}>
-                <button className={css.actionBtn} data-testid={'doc-context-' + d.id} onClick={() => { setMenuOpenId(null); setCtxMsg(null); setCtxDocId(d.id) }}>加入对话</button>
+                <button className={css.actionBtn} data-testid={'doc-context-' + d.id} onClick={() => { setMenuOpenId(null); setCtxMsg(null); setCtxDocId(d.id) }}>{tx('加入对话', 'Add to chat')}</button>
                 <div className={css.menuWrap}>
-                  <button className={css.menuBtn} data-testid={'doc-menu-' + d.id} aria-label="更多操作" title="更多操作" onClick={() => setMenuOpenId(o => o === d.id ? null : d.id)}>⋯</button>
+                  <button className={css.menuBtn} data-testid={'doc-menu-' + d.id} aria-label={tx('更多操作', 'More actions')} title={tx('更多操作', 'More actions')} onClick={() => setMenuOpenId(o => o === d.id ? null : d.id)}>⋯</button>
                   {menuOpenId === d.id && (
                     <div className={css.menu} data-testid={'doc-menu-pop-' + d.id}>
-                      <button className={css.menuItem} data-testid={'doc-rename-' + d.id} onClick={() => startRename(d)}>重命名</button>
-                      <button className={css.menuItem + ' ' + css.danger} data-testid={'doc-delete-' + d.id} onClick={() => { setMenuOpenId(null); setConfirmDelete(d) }}>删除</button>
+                      <button className={css.menuItem} data-testid={'doc-rename-' + d.id} onClick={() => startRename(d)}>{tx('重命名', 'Rename')}</button>
+                      <button className={css.menuItem + ' ' + css.danger} data-testid={'doc-delete-' + d.id} onClick={() => { setMenuOpenId(null); setConfirmDelete(d) }}>{tx('删除', 'Delete')}</button>
                     </div>
                   )}
                 </div>
@@ -234,8 +235,8 @@ export function DocumentLibrary() {
       )}
       {ctxBusy && (
         <div className={css.error} data-testid="library-ctx-progress">
-          <span>正在准备 AI Context {ctxBusy.done} / {ctxBusy.total} 页</span>
-          <button type="button" className={css.ctxCancel} data-testid="library-ctx-cancel" onClick={cancelCtx}>取消</button>
+          <span>{tx('正在准备 AI Context ' + ctxBusy.done + ' / ' + ctxBusy.total + ' 页', 'Preparing AI context ' + ctxBusy.done + ' / ' + ctxBusy.total + ' pages')}</span>
+          <button type="button" className={css.ctxCancel} data-testid="library-ctx-cancel" onClick={cancelCtx}>{tx('取消', 'Cancel')}</button>
         </div>
       )}
       {ctxMsg && !ctxDocId && <div className={css.error} data-testid="library-ctx-msg">{ctxMsg}</div>}
@@ -244,12 +245,12 @@ export function DocumentLibrary() {
       {renameId && (
         <div className={css.dialogBackdrop} data-testid="rename-dialog">
           <div className={css.dialog}>
-            <div className={css.dialogTitle}>重命名</div>
+            <div className={css.dialogTitle}>{tx('重命名', 'Rename')}</div>
             <input className={css.renameInput} data-testid="rename-input" value={renameName} autoFocus onChange={e => setRenameName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void commitRename() } }} />
             {renameErr && <div className={css.dialogErr} data-testid="rename-error">{renameErr}</div>}
             <div className={css.dialogBtns}>
-              <button className={css.secondaryBtn} data-testid="rename-cancel" onClick={cancelRename}>取消</button>
-              <button className={css.primaryBtn} data-testid="rename-save" disabled={importing} onClick={() => void commitRename()}>保存</button>
+              <button className={css.secondaryBtn} data-testid="rename-cancel" onClick={cancelRename}>{tx('取消', 'Cancel')}</button>
+              <button className={css.primaryBtn} data-testid="rename-save" disabled={importing} onClick={() => void commitRename()}>{tx('保存', 'Save')}</button>
             </div>
           </div>
         </div>
@@ -259,11 +260,11 @@ export function DocumentLibrary() {
       {confirmDelete && (
         <div className={css.dialogBackdrop} data-testid="delete-dialog">
           <div className={css.dialog}>
-            <div className={css.dialogTitle}>删除《{confirmDelete.fileName}》？</div>
-            <div className={css.dialogText}>删除会移除保存在当前浏览器中的原始 PDF 和阅读进度。聊天中已经生成并保存的 PDF 页面 Context 不会因此删除。</div>
+            <div className={css.dialogTitle}>{tx('删除《' + confirmDelete.fileName + '》？', 'Delete “' + confirmDelete.fileName + '”?')}</div>
+            <div className={css.dialogText}>{tx('删除会移除保存在当前浏览器中的原始 PDF 和阅读进度。聊天中已经生成并保存的 PDF 页面 Context 不会因此删除。', 'This removes the original PDF and reading progress from this browser. PDF page context already saved in chats is not removed.')}</div>
             <div className={css.dialogBtns}>
-              <button className={css.secondaryBtn} data-testid="delete-cancel" onClick={() => setConfirmDelete(null)}>取消</button>
-              <button className={css.primaryBtn + ' ' + css.danger} data-testid="delete-confirm" disabled={importing} onClick={() => void doDelete()}>删除</button>
+              <button className={css.secondaryBtn} data-testid="delete-cancel" onClick={() => setConfirmDelete(null)}>{tx('取消', 'Cancel')}</button>
+              <button className={css.primaryBtn + ' ' + css.danger} data-testid="delete-confirm" disabled={importing} onClick={() => void doDelete()}>{tx('删除', 'Delete')}</button>
             </div>
           </div>
         </div>
@@ -308,4 +309,12 @@ export function DocumentLibrary() {
       )}
     </div>
   )
+}
+
+function localizedDocumentSort(key: DocumentSortKey): string {
+  const english: Record<DocumentSortKey, string> = {
+    'last-read': 'Recently read', 'last-import': 'Recently imported', 'name-asc': 'File name A–Z',
+    'name-desc': 'File name Z–A', pages: 'Page count', size: 'File size',
+  }
+  return tx(DOCUMENT_SORT_LABELS[key], english[key])
 }

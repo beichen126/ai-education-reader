@@ -3,14 +3,15 @@ import { getSetting, saveSettingsAtomic } from '../storage/storage'
 import { DEFAULT_APPEARANCE, writeAppearanceHint, type AppearanceMode } from '../theme/theme'
 import { type VisionCapability } from '../api/deepseek'
 import { DEFAULT_PDF_NAVIGATION_MODE, normalizePdfNavigationMode, type PdfNavigationMode } from './pdf-navigation-settings'
+import { applyUiLanguage, normalizeUiLanguage, type UiLanguage } from './locale'
 
 export type { VisionCapability }
 export type { PdfNavigationMode }
-export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode }
-export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-v4-flash-vision-exp', customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE }
+export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage }
+export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-v4-flash-vision-exp', customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN' }
 
 /** A partial settings change. Every mutation goes through {@link patchSettings}. */
-export type SettingsPatch = Partial<Pick<Settings, 'apiBaseUrl' | 'apiKey' | 'model' | 'customSystemPrompt' | 'customSystemPromptEnabled' | 'appearance' | 'visionCapability' | 'pdfNavigationMode'>>
+export type SettingsPatch = Partial<Pick<Settings, 'apiBaseUrl' | 'apiKey' | 'model' | 'customSystemPrompt' | 'customSystemPromptEnabled' | 'appearance' | 'visionCapability' | 'pdfNavigationMode' | 'uiLanguage'>>
 
 let state: Settings = { ...DEFAULT_SETTINGS }
 const subs = new Set<() => void>()
@@ -50,14 +51,16 @@ export function normalizeSettings(input: Settings): Settings {
     appearance,
     visionCapability,
     pdfNavigationMode: normalizePdfNavigationMode(input.pdfNavigationMode),
+    uiLanguage: normalizeUiLanguage(input.uiLanguage),
   }
 }
 
 export async function initSettings(): Promise<void> {
-  const [base, key, model, sys, sysOn, appearance, visionCapability, pdfNavigationMode] = await Promise.all([getSetting('apiBaseUrl'), getSetting('apiKey'), getSetting('model'), getSetting('customSystemPrompt'), getSetting('customSystemPromptEnabled'), getSetting('appearance'), getSetting('visionCapability'), getSetting('pdfNavigationMode')])
+  const [base, key, model, sys, sysOn, appearance, visionCapability, pdfNavigationMode, uiLanguage] = await Promise.all([getSetting('apiBaseUrl'), getSetting('apiKey'), getSetting('model'), getSetting('customSystemPrompt'), getSetting('customSystemPromptEnabled'), getSetting('appearance'), getSetting('visionCapability'), getSetting('pdfNavigationMode'), getSetting('uiLanguage')])
   const resolvedAppearance: AppearanceMode = (appearance === 'light' || appearance === 'dark') ? appearance : DEFAULT_APPEARANCE
   const resolvedVision: VisionCapability = (visionCapability === 'supports-image' || visionCapability === 'text-only') ? visionCapability : 'auto'
-  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: model || DEFAULT_SETTINGS.model, customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode) })
+  const resolvedLanguage = applyUiLanguage(uiLanguage)
+  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: model || DEFAULT_SETTINGS.model, customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage })
   writeAppearanceHint(resolvedAppearance)
 }
 
@@ -84,7 +87,7 @@ async function commitPatch(patch: SettingsPatch): Promise<Settings> {
     await saveSettingsAtomic({
       apiBaseUrl: next.apiBaseUrl, apiKey: next.apiKey, model: next.model,
       customSystemPrompt: next.customSystemPrompt, customSystemPromptEnabled: String(next.customSystemPromptEnabled),
-      appearance: next.appearance, visionCapability: next.visionCapability, pdfNavigationMode: next.pdfNavigationMode,
+      appearance: next.appearance, visionCapability: next.visionCapability, pdfNavigationMode: next.pdfNavigationMode, uiLanguage: next.uiLanguage,
     })
   } catch (error) {
     // The transaction did not commit: the previously committed state stays published
@@ -94,6 +97,7 @@ async function commitPatch(patch: SettingsPatch): Promise<Settings> {
   }
   set(next)
   if (next.appearance !== base.appearance) writeAppearanceHint(next.appearance)
+  if (next.uiLanguage !== base.uiLanguage) applyUiLanguage(next.uiLanguage)
   setMutation('idle', null)
   return next
 }
@@ -122,6 +126,10 @@ export async function setAppearance(appearance: AppearanceMode): Promise<void> {
 /** Immediately persist the user's PDF navigation choice. No extra "save" click is needed. */
 export async function setPdfNavigationMode(mode: PdfNavigationMode): Promise<Settings> {
   return patchSettings({ pdfNavigationMode: normalizePdfNavigationMode(mode) })
+}
+
+export async function setUiLanguage(uiLanguage: UiLanguage): Promise<Settings> {
+  return patchSettings({ uiLanguage: normalizeUiLanguage(uiLanguage) })
 }
 
 export { useSettings }

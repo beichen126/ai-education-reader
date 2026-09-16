@@ -1,5 +1,5 @@
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
@@ -7,7 +7,7 @@ import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
-import { t } from '../engine/locale'
+import { t, tx } from '../engine/locale'
 import { MessageText, IconCloseOutline16, IconFolderOpenOutline16, Button } from '../dsh/primitives'
 import { useCopyFeedback } from '../dsh/primitives/use-copy-feedback'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
@@ -266,15 +266,15 @@ export function Conversation() {
     <div className={css.conversation} data-testid="conversation">
       {!hasKey && (
         <div className={css.noKeyBanner}>
-          <span>本项目使用 BYOK，需要配置你自己的 API Key 才能调用模型。</span>
-          <button className={css.noKeyBtn} onClick={uiActions.openSettings}>打开设置</button>
-          <a className={css.noKeyLink} href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">获取 DeepSeek API Key</a>
+          <span>{tx('本项目使用 BYOK，需要配置你自己的 API Key 才能调用模型。', 'This app uses BYOK. Configure your own API key to use a model.')}</span>
+          <button className={css.noKeyBtn} onClick={uiActions.openSettings}>{tx('打开设置', 'Open settings')}</button>
+          <a className={css.noKeyLink} href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">{tx('获取 DeepSeek API Key', 'Get a DeepSeek API key')}</a>
         </div>
       )}
       {busy && (
         <div className={css.sendingBar}>
-          <span>{streaming ? '正在生成…' : '正在发送…'}</span>
-          {streaming && <button className={css.stopBtn} onClick={sessionsActions.stopGenerating}>停止生成</button>}
+          <span>{streaming ? tx('正在生成…', 'Generating…') : tx('正在发送…', 'Sending…')}</span>
+          {streaming && <button className={css.stopBtn} onClick={sessionsActions.stopGenerating}>{tx('停止生成', 'Stop')}</button>}
         </div>
       )}
       {visibleSendError && !busy && <div className={css.errorBanner} role="alert" aria-live="assertive">{visibleSendError}</div>}
@@ -296,14 +296,14 @@ export function Conversation() {
         <div className={css.messagesInner}>
           {!session || messages.length === 0 ? (
             <div className={css.emptyHero}>
-              <div className={css.emptyTitle}>AI 学习阅读器</div>
-              <div className={css.emptyHint}>还没有学习内容。添加资料，或从资料库开始。</div>
+              <div className={css.emptyTitle}>{t('brand.localBuild')}</div>
+              <div className={css.emptyHint}>{tx('还没有学习内容。添加资料，或从资料库开始。', 'No study content yet. Add materials or start from the library.')}</div>
               <div className={css.emptyActions}>
-                <Button variant="primary" data-testid="empty-add-materials" onClick={triggerComposerMaterials}>添加资料</Button>
-                <Button variant="outline" data-testid="empty-open-library" onClick={() => documentUiActions.openLibrary()}>打开资料库</Button>
-                {!hasKey && <Button variant="outline" data-testid="empty-configure" onClick={uiActions.openSettings}>配置 API</Button>}
+                <Button variant="primary" data-testid="empty-add-materials" onClick={triggerComposerMaterials}>{tx('添加资料', 'Add materials')}</Button>
+                <Button variant="outline" data-testid="empty-open-library" onClick={() => documentUiActions.openLibrary()}>{tx('打开资料库', 'Open library')}</Button>
+                {!hasKey && <Button variant="outline" data-testid="empty-configure" onClick={uiActions.openSettings}>{tx('配置 API', 'Configure API')}</Button>}
               </div>
-              {!hasKey && <div className={css.emptyHint}>开始前，需要配置你自己的 DeepSeek API Key。</div>}
+              {!hasKey && <div className={css.emptyHint}>{tx('开始前，需要配置你自己的 DeepSeek API Key。', 'Configure your own DeepSeek API key before you begin.')}</div>}
             </div>
           ) : <>
             {initialTransition && <PromptTransitionDivider transition={initialTransition} onOpen={() => setInspectedTransition(initialTransition)} />}
@@ -318,7 +318,7 @@ export function Conversation() {
             })}
           </>}
         </div>
-        <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" onClick={openLibrary}>学习成果</Button></div>
+        <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" onClick={openLibrary}>{tx('学习成果', 'Study outputs')}</Button></div>
         <Composer sessionId={session?.id} busy={busy} thread={activeThread} contextMessages={messages} promptTexts={promptPath?.transitions.map(transition => transition.snapshot.content) ?? []} onBranchSent={() => void branchChat.refresh()} />
       </div>
       {turns.length > 1 && <ConversationTurnRail turns={turns} activeId={activeTurnId} onSelect={(turn) => {
@@ -328,7 +328,7 @@ export function Conversation() {
         setActiveTurnId(turn.id)
       }} />}
       </div>
-      {cardNotice && <div className={css.cardNotice} role="status" aria-live="polite" data-testid="card-save-status">{cardNotice}<button type="button" className={css.cardNoticeClose} aria-label="关闭提示" onClick={() => setCardNotice(null)}>×</button></div>}
+      {cardNotice && <div className={css.cardNotice} role="status" aria-live="polite" data-testid="card-save-status">{cardNotice}<button type="button" className={css.cardNoticeClose} aria-label={tx('关闭提示', 'Dismiss')} onClick={() => setCardNotice(null)}>×</button></div>}
       {creating && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', padding: '1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}><ArtifactCreateDialog sourceLabel={creatingSourceLabel(session, branchChat.activeBranchId, creating.messageId)} initialKind={creating.kind} customEntry={creating.customEntry} busy={creatingBusy} error={creatingError} onSubmit={(i) => void onCreateArtifact(i)} onCancel={() => setCreating(null)} /></div></div>)}
       {inspectedTransition && <ConversationPromptInspector transition={inspectedTransition} positionLabel={inspectedTransition.afterMessageId ? '从下一条消息开始' : '会话开始'} onClose={() => setInspectedTransition(null)} />}
       {inspectedQuickFollowUp && <QuickFollowUpPromptDialog metadata={inspectedQuickFollowUp} onClose={() => setInspectedQuickFollowUp(null)} />}
@@ -350,7 +350,7 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
     return (
       <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>
         <div className={css.bubble}><MessageText text={m.content} /></div>
-        {m.quickFollowUp && <div className={css.quickFollowUpHistory} data-testid="quick-follow-up-history"><span>快捷追问 · {m.quickFollowUp.labelSnapshot}</span><button type="button" data-testid="quick-follow-up-history-inspect" onClick={() => onInspectQuickFollowUp?.(m.quickFollowUp)}>查看实际提示词</button></div>}
+        {m.quickFollowUp && <div className={css.quickFollowUpHistory} data-testid="quick-follow-up-history"><span>{tx('快捷追问', 'Quick follow-up')} · {m.quickFollowUp.labelSnapshot}</span><button type="button" data-testid="quick-follow-up-history-inspect" onClick={() => onInspectQuickFollowUp?.(m.quickFollowUp)}>{tx('查看实际提示词', 'View exact prompt')}</button></div>}
         {m.images.length > 0 && <MessageAttachmentStrip convId={convId} message={m} imgOffset={imgOffset} />}
         {pdfContextsOf(m).map((context, index) => <PdfSourceButton key={context.documentId + ':' + index} context={context} />)}
       </div>
@@ -361,10 +361,8 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
   const canCopySource = !isStreaming && m.content.length > 0
   return (
     <div className={css.msg + ' ' + css.msgAssistant} data-message-id={m.id}>
-      {isStreaming ? (
-        <div className={css.assistantBody}>{m.content}</div>
-      ) : m.content ? (
-        <div className={css.assistantBody}><AnnotatedMarkdown content={m.content} messageId={m.id} conversationId={convId || ''} branchId={branchId} /></div>
+      {m.content ? (
+        <StableAssistantContent content={m.content} messageId={m.id} conversationId={convId || ''} branchId={branchId} />
       ) : (
         <div className={css.assistantBody} data-empty></div>
       )}
@@ -373,7 +371,7 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
         <div className={css.messageTools}>
           {canCopySource && <MessageSourceCopyButton source={m.content} />}
           {stable && onToggleMenu && onBranch && onArtifact && <div className={css.messageMenuAnchor}>
-            <button type="button" className={css.messageToolButton} aria-label="消息操作" data-testid="message-actions" title="从这里分支 / 特殊分支 / 学习卡片" aria-haspopup="menu" aria-expanded={!!menuOpen} onClick={() => onToggleMenu(!menuOpen)}>⋯</button>
+            <button type="button" className={css.messageToolButton} aria-label={tx('消息操作', 'Message actions')} data-testid="message-actions" title={tx('从这里分支 / 特殊分支 / 学习卡片', 'Branch / study output / study card')} aria-haspopup="menu" aria-expanded={!!menuOpen} onClick={() => onToggleMenu(!menuOpen)}>⋯</button>
             {menuOpen && <MessageActionMenu
               conversationId={convId || ''}
               branchId={branchId}
@@ -394,6 +392,14 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
     </div>
   )
 }
+
+/** Streaming changes only the active answer. Keeping each completed Markdown subtree behind
+ * a memo boundary prevents every token batch from re-running the full history renderer.
+ * The active answer is rendered as Markdown too, so already-received Markdown/LaTeX never
+ * falls back to raw source while generation is in progress. */
+const StableAssistantContent = memo(function StableAssistantContent(props: { content: string; messageId: string; conversationId: string; branchId?: string }) {
+  return <div className={css.assistantBody}><AnnotatedMarkdown content={props.content} messageId={props.messageId} conversationId={props.conversationId} branchId={props.branchId} /></div>
+})
 
 function MessageSourceCopyButton({ source }: { source: string }) {
   const copy = useCopyFeedback(source)

@@ -3,6 +3,7 @@ import { parseAndValidate, restoreBackup, BackupError } from './backup-import'
 import { conversationMarkdown, markedOnlyMarkdown } from './markdown'
 import { downloadText, downloadJson, downloadBlob } from './download'
 import { buildConversationBundle, ConversationBundleError } from './conversation-bundle'
+import { buildBackupArchive, isBackupArchive, parseBackupArchive } from './backup-archive'
 import { writeBookmarkedPdf, PdfOutlineError } from './pdf-outline-writer'
 import { readDocumentSourceBlob } from '../documents/document-service'
 import type { ChapterNode } from '../documents/document-types'
@@ -13,6 +14,7 @@ import { clearAnnotationCache } from '../annotations/annotation-store'
 import { resetDrafts } from '../engine/draft-store'
 import { migrateLegacyPrompts } from '../prompts/prompt-migration'
 import { migratePromptSimplification } from '../prompts/prompt-simplification'
+import { initLayout } from '../engine/layout-store'
 
 export { BackupError, PdfOutlineError, ConversationBundleError }
 export type { BackupV1, BackupAttachment } from './backup-types'
@@ -23,6 +25,10 @@ function safeName(t: string): string { return (String(t || '').replace(/[\\/:*?"
 export async function exportBackupJson(): Promise<void> {
   const backup = await buildBackup()
   downloadJson('ai-education-reader-backup-' + stamp() + '.json', backup)
+}
+export async function exportBackupZip(): Promise<void> {
+  const backup = await buildBackup()
+  downloadBlob('ai-education-reader-backup-' + stamp() + '.zip', buildBackupArchive(backup))
 }
 export async function exportConversationMd(convId: string): Promise<void> {
   const conv = await getConversation(convId); if (!conv) return
@@ -57,6 +63,24 @@ export async function importBackupText(text: string): Promise<void> {
   await migrateLegacyPrompts()
   await migratePromptSimplification()
   await initSettings()
+  await initLayout()
   await initStore()
   clearAnnotationCache()
+}
+
+export async function importBackupFile(file: File): Promise<void> {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  if (isBackupArchive(bytes)) {
+    const backup = parseBackupArchive(bytes)
+    await restoreBackup(backup)
+    resetDrafts()
+    await migrateLegacyPrompts()
+    await migratePromptSimplification()
+    await initSettings()
+    await initLayout()
+    await initStore()
+    clearAnnotationCache()
+    return
+  }
+  await importBackupText(new TextDecoder().decode(bytes))
 }

@@ -20,6 +20,7 @@ import {
 import { documentUiActions } from '../documents/document-ui-store'
 import { learningUiActions, loadStudyCardPreferences, persistStudyCardPreferences, useLearningUi, type CardListContext } from './learning-ui-store'
 import css from './study-card.module.css'
+import { tx } from '../engine/locale'
 
 const SEARCH_DEBOUNCE_MS = 200
 /** The list mounts at most this many rows at once, so a 5000-card library never renders
@@ -37,11 +38,11 @@ function formatPages(pages: readonly number[]): string {
     start = page; end = page
   }
   ranges.push(start === end ? String(start) : start + '–' + end)
-  return '第 ' + ranges.join('、') + ' 页'
+  return tx('第 ' + ranges.join('、') + ' 页', 'Pages ' + ranges.join(', '))
 }
 
 export function formatDocumentRef(ref: StudyCardDocumentRef): string {
-  const relation = ref.relation === 'turn' ? '本轮上下文' : '此前上下文'
+  const relation = ref.relation === 'turn' ? tx('本轮上下文', 'Current turn') : tx('此前上下文', 'Earlier context')
   return ref.fileNameSnapshot + ' · ' + relation + ' · ' + formatPages(ref.pageNumbers)
 }
 
@@ -102,7 +103,7 @@ export function LearningCenter() {
       })
       setError(null)
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : '学习卡片读取失败')
+      setError(e instanceof Error && e.message ? e.message : tx('学习卡片读取失败', 'Failed to load study cards'))
     } finally {
       setLoading(false)
     }
@@ -138,15 +139,15 @@ export function LearningCenter() {
 
   return (
     <div className={css.overlay} role="presentation" onClick={() => learningUiActions.close()}>
-      <div className={css.center} role="dialog" aria-modal="true" aria-label="学习中心" data-testid="learning-center" onClick={event => event.stopPropagation()}>
+      <div className={css.center} role="dialog" aria-modal="true" aria-label={tx('学习中心', 'Learning center')} data-testid="learning-center" onClick={event => event.stopPropagation()}>
         <div className={css.header}>
-          <h2 className={css.title}>学习中心</h2>
-          <div className={css.tabs} role="tablist" aria-label="学习中心分类">
-            <button type="button" role="tab" className={css.tab} data-testid="learning-tab-cards" aria-selected={state.view === 'library' ? state.tab === 'cards' : state.view === 'card'} onClick={() => learningUiActions.backToLibrary('cards')}>学习卡片</button>
-            <button type="button" role="tab" className={css.tab} data-testid="learning-tab-artifacts" aria-selected={state.view === 'library' ? state.tab === 'artifacts' : state.view === 'artifact'} onClick={() => learningUiActions.backToLibrary('artifacts')}>学习成果</button>
+          <h2 className={css.title}>{tx('学习中心', 'Learning center')}</h2>
+          <div className={css.tabs} role="tablist" aria-label={tx('学习中心分类', 'Learning center sections')}>
+            <button type="button" role="tab" className={css.tab} data-testid="learning-tab-cards" aria-selected={state.view === 'library' ? state.tab === 'cards' : state.view === 'card'} onClick={() => learningUiActions.backToLibrary('cards')}>{tx('学习卡片', 'Study cards')}</button>
+            <button type="button" role="tab" className={css.tab} data-testid="learning-tab-artifacts" aria-selected={state.view === 'library' ? state.tab === 'artifacts' : state.view === 'artifact'} onClick={() => learningUiActions.backToLibrary('artifacts')}>{tx('学习成果', 'Study outputs')}</button>
           </div>
           <div className={css.spacer} />
-          <button type="button" className={css.close} data-testid="learning-center-close" aria-label="关闭学习中心" onClick={() => learningUiActions.close()}>关闭</button>
+          <button type="button" className={css.close} data-testid="learning-center-close" aria-label={tx('关闭学习中心', 'Close learning center')} onClick={() => learningUiActions.close()}>{tx('关闭', 'Close')}</button>
         </div>
         {state.view === 'artifact' ? (
           <ArtifactDetail artifactId={state.artifactId} onBack={() => learningUiActions.closeArtifact()} />
@@ -168,27 +169,27 @@ export function LearningCenter() {
           <div className={css.body}>
             <div className={css.listPane}>
               <div className={css.toolbar}>
-                <label className={css.field}>来源
+                <label className={css.field}>{tx('来源', 'Source')}
                   <select className={css.select} data-testid="card-filter" value={filterKeyValue(filter)} onChange={event => setFilter(parseFilterValue(event.target.value))}>
                     {filterOptions.map(option => (
-                      <option key={filterKeyValue(option.key)} value={filterKeyValue(option.key)}>{option.label}（{option.count}）</option>
+                      <option key={filterKeyValue(option.key)} value={filterKeyValue(option.key)}>{localizedFilterLabel(option.key, option.label)}{tx(`（${option.count}）`, ` (${option.count})`)}</option>
                     ))}
                   </select>
                 </label>
-                <label className={css.field}>排序
+                <label className={css.field}>{tx('排序', 'Sort')}
                   <select className={css.select} data-testid="card-sort" value={sort} onChange={event => {
                     const next = event.target.value as StudyCardSortMode
                     setSort(next)
                     // Re-choosing 随机顺序 (or any change) while random is active reseeds.
                     if (next === 'random') setSeed(createStudyCardSeed())
                   }}>
-                    {STUDY_CARD_SORT_MODES.map(mode => <option key={mode.id} value={mode.id}>{mode.label}</option>)}
+                    {STUDY_CARD_SORT_MODES.map(mode => <option key={mode.id} value={mode.id}>{localizedSortLabel(mode.id, mode.label)}</option>)}
                   </select>
                 </label>
-                {sort === 'random' && <button type="button" className={css.reroll} data-testid="card-reroll" onClick={() => setSeed(createStudyCardSeed())}>重新随机</button>}
-                <input className={css.search} data-testid="card-search" aria-label="搜索学习卡片" placeholder="搜索标题、正文、会话或 PDF" value={query} onChange={event => setQuery(event.target.value)} />
+                {sort === 'random' && <button type="button" className={css.reroll} data-testid="card-reroll" onClick={() => setSeed(createStudyCardSeed())}>{tx('重新随机', 'Shuffle again')}</button>}
+                <input className={css.search} data-testid="card-search" aria-label={tx('搜索学习卡片', 'Search study cards')} placeholder={tx('搜索标题、正文、会话或 PDF', 'Search title, body, chat, or PDF')} value={query} onChange={event => setQuery(event.target.value)} />
               </div>
-              {loading && <div className={css.empty} data-testid="card-list-loading">正在读取学习卡片…</div>}
+              {loading && <div className={css.empty} data-testid="card-list-loading">{tx('正在读取学习卡片…', 'Loading study cards…')}</div>}
               {error && <div className={css.error} data-testid="card-list-error" role="alert">{error}</div>}
               {diagnostics && (diagnostics.detached > 0 || diagnostics.missingDocuments > 0) && (
                 <div className={css.hint} data-testid="learning-diagnostics">
@@ -199,7 +200,7 @@ export function LearningCenter() {
               )}
               {!loading && !error && selected.length === 0 && (
                 <div className={css.empty} data-testid="card-list-empty">
-                  {cards.length === 0 ? '还没有学习卡片。在 AI 回复的「⋯」菜单里选择「保存本轮回复为学习卡片」。' : '没有符合当前筛选条件的学习卡片。'}
+                  {cards.length === 0 ? tx('还没有学习卡片。在 AI 回复的「⋯」菜单里选择「保存本轮回复为学习卡片」。', 'No study cards yet. Open the “⋯” menu on an AI response and choose “Save this response as a study card”.') : tx('没有符合当前筛选条件的学习卡片。', 'No study cards match the current filters.')}
                 </div>
               )}
               <ul className={css.list} data-testid="card-list">
@@ -209,12 +210,12 @@ export function LearningCenter() {
                       <span className={css.itemTitle} data-testid="card-item-title">{card.title}</span>
                       <span className={css.itemSummary}>{studyCardPlainText(card.bodyMarkdown).slice(0, 240)}</span>
                       <span className={css.itemMeta}>
-                        {card.rating !== undefined && <span className={css.ratingBadge} data-testid="card-item-rating" aria-label={'评分 ' + card.rating + ' 分'}>★ {card.rating}/5</span>}
-                        {!!card.annotations?.length && <span className={css.ratingBadge} data-testid="card-item-marks">已标记 {card.annotations.length} 处</span>}
-                        <span data-testid="card-item-conversation">{card.source.conversationTitleSnapshot || '学习卡片'}</span>
+                        {card.rating !== undefined && <span className={css.ratingBadge} data-testid="card-item-rating" aria-label={tx('评分 ' + card.rating + ' 分', 'Rating ' + card.rating + ' out of 5')}>★ {card.rating}/5</span>}
+                        {!!card.annotations?.length && <span className={css.ratingBadge} data-testid="card-item-marks">{tx('已标记 ' + card.annotations.length + ' 处', card.annotations.length + ' marks')}</span>}
+                        <span data-testid="card-item-conversation">{card.source.conversationTitleSnapshot || tx('学习卡片', 'Study card')}</span>
                         {card.documentRefs.length > 0 && <span data-testid="card-item-sources">{card.documentRefs.map(ref => ref.fileNameSnapshot).join('、')}</span>}
-                        <span>创建 {timestampLabel(card.createdAt)}</span>
-                        {card.lastOpenedAt !== undefined && <span>最近打开 {timestampLabel(card.lastOpenedAt)}</span>}
+                        <span>{tx('创建 ', 'Created ')}{timestampLabel(card.createdAt)}</span>
+                        {card.lastOpenedAt !== undefined && <span>{tx('最近打开 ', 'Last opened ')}{timestampLabel(card.lastOpenedAt)}</span>}
                       </span>
                     </button>
                   </li>
@@ -222,8 +223,8 @@ export function LearningCenter() {
               </ul>
               {selected.length > visibleCards.length && (
                 <div className={css.hint} data-testid="card-list-more">
-                  已显示 {visibleCards.length} / {selected.length} 张卡片；用上面的搜索或来源筛选缩小范围。
-                  <button type="button" className={css.reroll} data-testid="card-list-more-button" onClick={() => setVisibleCount(count => count + LIST_PAGE_SIZE)}>再显示 {LIST_PAGE_SIZE} 张</button>
+                  {tx('已显示 ' + visibleCards.length + ' / ' + selected.length + ' 张卡片；用上面的搜索或来源筛选缩小范围。', 'Showing ' + visibleCards.length + ' / ' + selected.length + ' cards. Use search or source filters to narrow the list.')}
+                  <button type="button" className={css.reroll} data-testid="card-list-more-button" onClick={() => setVisibleCount(count => count + LIST_PAGE_SIZE)}>{tx('再显示 ' + LIST_PAGE_SIZE + ' 张', 'Show ' + LIST_PAGE_SIZE + ' more')}</button>
                 </div>
               )}
             </div>
@@ -232,6 +233,22 @@ export function LearningCenter() {
       </div>
     </div>
   )
+}
+
+function localizedSortLabel(mode: StudyCardSortMode, fallback: string): string {
+  const english: Record<StudyCardSortMode, string> = {
+    'created-desc': 'Created (newest first)', 'created-asc': 'Created (oldest first)',
+    'updated-desc': 'Recently modified', 'last-opened-desc': 'Recently opened',
+    'rating-desc': 'Rating (high to low)', random: 'Random order',
+  }
+  return tx(fallback, english[mode])
+}
+
+function localizedFilterLabel(key: StudyCardFilterKey, fallback: string): string {
+  if (key.kind === 'all') return tx(fallback, 'All sources')
+  if (key.kind === 'no-pdf') return tx(fallback, 'No PDF source')
+  if (key.kind === 'unlocated') return tx(fallback, 'Unlocatable PDF source')
+  return tx(fallback, fallback.replace('（已删除）', ' (deleted)'))
 }
 
 function filterKeyValue(key: StudyCardFilterKey): string {
@@ -353,12 +370,12 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
   if (missing) {
     return (
       <div className={css.detail}>
-        <div className={css.detailHead}><span className={css.itemTitle}>这张卡片已被删除</span><div className={css.spacer} /><button type="button" className={css.small} data-testid="card-back" onClick={onBack}>返回列表</button></div>
-        <div className={css.empty} data-testid="card-missing">它可能在另一个标签页里被删除了。</div>
+        <div className={css.detailHead}><span className={css.itemTitle}>{tx('这张卡片已被删除', 'This card was deleted')}</span><div className={css.spacer} /><button type="button" className={css.small} data-testid="card-back" onClick={onBack}>{tx('返回列表', 'Back to list')}</button></div>
+        <div className={css.empty} data-testid="card-missing">{tx('它可能在另一个标签页里被删除了。', 'It may have been deleted in another tab.')}</div>
       </div>
     )
   }
-  if (!card) return <div className={css.empty} data-testid="card-loading">正在读取卡片…</div>
+  if (!card) return <div className={css.empty} data-testid="card-loading">{tx('正在读取卡片…', 'Loading card…')}</div>
 
   return (
     <div className={css.detail} data-testid="card-viewer" data-card-id={card.id}>
@@ -367,7 +384,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
           <input
             className={css.titleInput}
             data-testid="card-title-input"
-            aria-label="卡片标题"
+            aria-label={tx('卡片标题', 'Card title')}
             autoFocus
             value={title}
             onChange={event => setTitle(event.target.value)}
@@ -378,15 +395,15 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
             onBlur={() => { if (renaming) void commitRename() }}
           />
         ) : (
-          <button type="button" className={css.itemTitle + ' ' + css.titleButton} data-testid="card-title" title="点击重命名" onClick={() => setRenaming(true)}>{card.title}</button>
+          <button type="button" className={css.itemTitle + ' ' + css.titleButton} data-testid="card-title" title={tx('点击重命名', 'Click to rename')} onClick={() => setRenaming(true)}>{card.title}</button>
         )}
         <div className={css.spacer} />
-        <button type="button" className={css.small} data-testid="card-rename" disabled={busy} onClick={() => setRenaming(true)}>重命名</button>
-        <button type="button" className={css.small + ' ' + css.danger} data-testid="card-delete" disabled={busy} onClick={() => void remove()}>删除</button>
+        <button type="button" className={css.small} data-testid="card-rename" disabled={busy} onClick={() => setRenaming(true)}>{tx('重命名', 'Rename')}</button>
+        <button type="button" className={css.small + ' ' + css.danger} data-testid="card-delete" disabled={busy} onClick={() => void remove()}>{tx('删除', 'Delete')}</button>
       </div>
       <div className={css.ratingRow} data-testid="card-rating">
-        <span className={css.ratingLabel}>给这张卡片评分</span>
-        <span className={css.ratingStars} role="group" aria-label="学习卡片评分" onMouseLeave={() => setHoverRating(null)}>
+        <span className={css.ratingLabel}>{tx('给这张卡片评分', 'Rate this card')}</span>
+        <span className={css.ratingStars} role="group" aria-label={tx('学习卡片评分', 'Study card rating')} onMouseLeave={() => setHoverRating(null)}>
           {([1, 2, 3, 4, 5] as StudyCardRating[]).map(value => {
             const active = value <= (hoverRating ?? card.rating ?? 0)
             return (
@@ -396,9 +413,9 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
                 className={css.ratingButton}
                 data-testid={'card-rating-' + value}
                 data-active={active ? 'true' : 'false'}
-                aria-label={'设置为 ' + value + ' 分'}
+                aria-label={tx('设置为 ' + value + ' 分', 'Set rating to ' + value)}
                 aria-pressed={card.rating === value}
-                title={value + ' 分'}
+                title={tx(value + ' 分', value + ' stars')}
                 disabled={busy}
                 onMouseEnter={() => setHoverRating(value)}
                 onFocus={() => setHoverRating(value)}
@@ -408,17 +425,17 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
             )
           })}
         </span>
-        <span className={css.ratingValue} data-testid="card-rating-value" aria-live="polite">{card.rating === undefined ? '未评分' : card.rating + ' / 5'}</span>
-        {card.rating !== undefined && <button type="button" className={css.ratingClear} data-testid="card-rating-clear" disabled={busy} onClick={() => void commitRating(undefined)}>清除</button>}
+        <span className={css.ratingValue} data-testid="card-rating-value" aria-live="polite">{card.rating === undefined ? tx('未评分', 'Not rated') : card.rating + ' / 5'}</span>
+        {card.rating !== undefined && <button type="button" className={css.ratingClear} data-testid="card-rating-clear" disabled={busy} onClick={() => void commitRating(undefined)}>{tx('清除', 'Clear')}</button>}
       </div>
       <div className={css.detailBody} data-testid="card-detail-body">
         <AnnotatedMarkdown content={card.bodyMarkdown} messageId={card.source.assistantMessageId} conversationId={card.source.conversationId} branchId={card.source.branchId} />
       </div>
       <div className={css.sourceList} data-testid="card-sources">
         <div className={css.sourceRow}>
-          <strong>来源会话</strong>
-          <span data-testid="card-source-conversation">{card.source.conversationTitleSnapshot || '学习卡片'}</span>
-          {sourceStatus === 'live' && <button type="button" className={css.small} data-testid="card-back-to-conversation" onClick={() => void backToConversation()}>返回原会话</button>}
+          <strong>{tx('来源会话', 'Source chat')}</strong>
+          <span data-testid="card-source-conversation">{card.source.conversationTitleSnapshot || tx('学习卡片', 'Study card')}</span>
+          {sourceStatus === 'live' && <button type="button" className={css.small} data-testid="card-back-to-conversation" onClick={() => void backToConversation()}>{tx('返回原会话', 'Open source chat')}</button>}
           {sourceStatus !== null && sourceStatus !== 'live' && (
             <span data-testid="card-source-deleted">
               {sourceStatus === 'conversation-deleted' ? '原会话已删除' : sourceStatus === 'branch-deleted' ? '原分支已删除' : '原回复已删除'}
@@ -429,18 +446,18 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
           const available = !!ref.documentId && documentNames.has(ref.documentId) && pageCounts.has(ref.documentId as string)
           return (
             <div className={css.sourceRow} key={(ref.documentId ?? 'no-id') + ':' + i} data-testid="card-source-pdf" data-document-id={ref.documentId ?? ''} data-document-missing={String(!available)}>
-              <strong>来源 PDF</strong>
+              <strong>{tx('来源 PDF', 'Source PDF')}</strong>
               <span>{formatDocumentRef(ref)}</span>
-              {!available && <span data-testid="card-source-pdf-missing">（已删除，仅保留快照）</span>}
+              {!available && <span data-testid="card-source-pdf-missing">{tx('（已删除，仅保留快照）', '(deleted; snapshot retained)')}</span>}
               {available && (
                 <>
                   <button type="button" className={css.small} data-testid="card-source-pdf-open" onClick={() => openSourcePage(ref, ref.pageNumbers[0])}>
-                    打开第 {ref.pageNumbers[0]} 页
+                    {tx('打开第 ' + ref.pageNumbers[0] + ' 页', 'Open page ' + ref.pageNumbers[0])}
                   </button>
                   {ref.pageNumbers.length > 1 && (
                     <span className={css.chips} data-testid="card-source-pdf-pages">
                       {ref.pageNumbers.map(page => (
-                        <button key={page} type="button" className={css.chip} data-testid="card-source-pdf-page" data-page={page} onClick={() => openSourcePage(ref, page)}>第 {page} 页</button>
+                        <button key={page} type="button" className={css.chip} data-testid="card-source-pdf-page" data-page={page} onClick={() => openSourcePage(ref, page)}>{tx('第 ' + page + ' 页', 'Page ' + page)}</button>
                       ))}
                     </span>
                   )}
@@ -450,16 +467,16 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
           )
         })}
         {clampNote && <div className={css.hint} data-testid="card-source-clamp-note">{clampNote}</div>}
-        {card.documentRefs.length === 0 && <div className={css.sourceRow} data-testid="card-source-none">这张卡片没有 PDF 来源。</div>}
+        {card.documentRefs.length === 0 && <div className={css.sourceRow} data-testid="card-source-none">{tx('这张卡片没有 PDF 来源。', 'This card has no PDF source.')}</div>}
         <div className={css.sourceRow}><span>创建 {timestampLabel(card.createdAt)}</span>{card.lastOpenedAt !== undefined && <span>· 最近打开 {timestampLabel(card.lastOpenedAt)}</span>}</div>
       </div>
       {error && <div className={css.error} data-testid="card-error" role="alert">{error}</div>}
       <div className={css.detailHead}>
-        <button type="button" className={css.small} data-testid="card-prev" disabled={!previousId} onClick={() => previousId && learningUiActions.openCard(previousId, context)}>上一张</button>
+        <button type="button" className={css.small} data-testid="card-prev" disabled={!previousId} onClick={() => previousId && learningUiActions.openCard(previousId, context)}>{tx('上一张', 'Previous')}</button>
         <span className={css.position} data-testid="card-position">{index + 1} / {positions.length}</span>
-        <button type="button" className={css.small} data-testid="card-next" disabled={!nextId} onClick={() => nextId && learningUiActions.openCard(nextId, context)}>下一张</button>
+        <button type="button" className={css.small} data-testid="card-next" disabled={!nextId} onClick={() => nextId && learningUiActions.openCard(nextId, context)}>{tx('下一张', 'Next')}</button>
         <div className={css.spacer} />
-        <button type="button" className={css.small} data-testid="card-back" onClick={onBack}>返回列表</button>
+        <button type="button" className={css.small} data-testid="card-back" onClick={onBack}>{tx('返回列表', 'Back to list')}</button>
       </div>
     </div>
   )

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useSessions, sessionsActions, type ChatSession } from '../engine/sessions-store'
-import { t } from '../engine/locale'
+import { t, tx } from '../engine/locale'
 import { uiActions } from '../engine/ui-store'
 import { galleryActions } from '../gallery/gallery-store'
 import { documentUiActions } from '../documents/document-ui-store'
@@ -30,7 +30,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   const { fs, toggle } = useFullscreen()
   // Search the same text the user sees (displayTitle), so auto/manual titles are findable.
   const filtered = q ? sessions.filter(s => displayTitle(s).toLowerCase().includes(q.toLowerCase())) : sessions
-  const fsTitle = fs ? '退出全屏' : '全屏'
+  const fsTitle = fs ? tx('退出全屏', 'Exit full screen') : tx('全屏', 'Full screen')
   const narrow = useLayoutStore(s => s.narrow)
   const toggleDesktopSidebar = () => {
     layoutStore.actions.toggleSidebar()
@@ -43,56 +43,56 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   if (collapsed) {
     return (
       <div className={css.sideRail} style={{ width }}>
-        <button type="button" className={css.railBtn} data-testid="rail-history" aria-label="历史会话" title="历史会话" onClick={openHistory}><IconClockOutline16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label="新建会话" title="新建会话" onClick={() => sessionsActions.newChat()}><IconNewChatOutline16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-images" aria-label="图片资料" title="图片资料" onClick={() => galleryActions.open(currentConv?.id, 0)}><IconPhoto16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-files" aria-label="本地文件" title="本地文件" onClick={() => documentUiActions.openLibrary()}><IconFolderOpenOutline16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-cards" aria-label="学习卡片" title="学习卡片" onClick={() => learningUiActions.openLibrary('cards')}><IconListPenOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-history" aria-label={tx('历史会话', 'Chat history')} title={tx('历史会话', 'Chat history')} onClick={openHistory}><IconClockOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label={t('sidebar.newChat')} title={t('sidebar.newChat')} onClick={() => sessionsActions.newChat()}><IconNewChatOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-images" aria-label={tx('图片资料', 'Images')} title={tx('图片资料', 'Images')} onClick={() => galleryActions.open(currentConv?.id, 0)}><IconPhoto16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-files" aria-label={tx('本地文件', 'Local files')} title={tx('本地文件', 'Local files')} onClick={() => documentUiActions.openLibrary()}><IconFolderOpenOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-cards" aria-label={tx('学习卡片', 'Study cards')} title={tx('学习卡片', 'Study cards')} onClick={() => learningUiActions.openLibrary('cards')}><IconListPenOutline16 /></button>
         <div className={css.railSpacer} />
         <button type="button" className={css.railBtn} data-testid="rail-fullscreen" aria-label={fsTitle} title={fsTitle} onClick={toggle}><IconFullscreenOutline16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-settings" aria-label="设置" title="设置" onClick={uiActions.openSettings}><IconSettingsOutline16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-help" aria-label="帮助" title="帮助" onClick={uiActions.openProductGuide}><IconQuestionOutline14 size={16} /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-settings" aria-label={tx('设置', 'Settings')} title={tx('设置', 'Settings')} onClick={uiActions.openSettings}><IconSettingsOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-help" aria-label={tx('帮助', 'Help')} title={tx('帮助', 'Help')} onClick={uiActions.openProductGuide}><IconQuestionOutline14 size={16} /></button>
       </div>
     )
   }
   return (
-    <div className={css.sidebar} style={{ width }} data-testid={narrow ? 'mobile-history-drawer' : 'sidebar'} data-compact={compact || undefined} role={narrow ? 'navigation' : undefined} aria-label={narrow ? '主导航' : undefined}>
+    <div className={css.sidebar} style={{ width }} data-testid={narrow ? 'mobile-history-drawer' : 'sidebar'} data-compact={compact || undefined} role={narrow ? 'navigation' : undefined} aria-label={narrow ? tx('主导航', 'Main navigation') : undefined}>
       <div className={css.sidebarHead}>
-        <div className={css.sidebarTitle}>AI 学习阅读器</div>
+        <div className={css.sidebarTitle}>{t('brand.localBuild')}</div>
         <div className={css.sidebarHeadBtns}>
-          <button type="button" className={css.collapseBtn} data-testid="sidebar-collapse" aria-label="收起侧栏" title="收起侧栏" onClick={collapseSidebar}>‹ 收起</button>
+          <button type="button" className={css.collapseBtn} data-testid="sidebar-collapse" aria-label={tx('收起侧栏', 'Collapse sidebar')} title={tx('收起侧栏', 'Collapse sidebar')} onClick={collapseSidebar}>‹ {tx('收起', 'Collapse')}</button>
         </div>
       </div>
       <div className={css.sidebarNew}>
         <button type="button" className={css.newChatBtn} data-testid="sidebar-new-chat" onClick={() => sessionsActions.newChat()}>
-          <IconNewChatOutline16 /> 新建会话
+          <IconNewChatOutline16 /> {t('sidebar.newChat')}
         </button>
       </div>
-      <div className={css.sidebarSection}>资料</div>
+      <div className={css.sidebarSection}>{tx('资料', 'Materials')}</div>
       <div className={css.sidebarEntries}>
         <button type="button" className={css.entryBtn} data-testid="sidebar-entry-images" onClick={() => galleryActions.open(currentConv?.id, 0)}>
-          <IconPhoto16 /> <span>图片</span>
+          <IconPhoto16 /> <span>{tx('图片', 'Images')}</span>
         </button>
         <button type="button" className={css.entryBtn} data-testid="sidebar-entry-files" onClick={() => documentUiActions.openLibrary()}>
-          <IconFolderOpenOutline16 /> <span>文件</span>
+          <IconFolderOpenOutline16 /> <span>{tx('文件', 'Files')}</span>
         </button>
       </div>
-      <div className={css.sidebarSection}>学习</div>
+      <div className={css.sidebarSection}>{tx('学习', 'Study')}</div>
       <div className={css.sidebarEntries}>
         <button type="button" className={css.entryBtn} data-testid="sidebar-entry-cards" onClick={() => learningUiActions.openLibrary('cards')}>
-          <IconListPenOutline16 /> <span>学习卡片</span>
+          <IconListPenOutline16 /> <span>{tx('学习卡片', 'Study cards')}</span>
         </button>
       </div>
-      <div className={css.sidebarSection}>会话</div>
+      <div className={css.sidebarSection}>{tx('会话', 'Chats')}</div>
       <div className={css.sidebarSearch}><Input icon={<IconSearchOutline16 />} value={q} onChange={e => setQ(e.target.value)} placeholder={t('sidebar.search')} /></div>
       <div className={css.sidebarList}>
         {filtered.map(s => <SessionRow key={s.id} session={s} active={s.id === current} busy={busy} narrow={narrow} />)}
-        {filtered.length === 0 && <div className={css.sidebarEmpty}>暂无会话</div>}
+        {filtered.length === 0 && <div className={css.sidebarEmpty}>{tx('暂无会话', 'No chats')}</div>}
       </div>
       <div className={css.sidebarFoot}>
         <button type="button" className={css.footBtn} data-testid="sidebar-fullscreen" onClick={toggle}><IconFullscreenOutline16 /> <span>{fsTitle}</span></button>
-        <button type="button" className={css.footBtn} data-testid="sidebar-settings" onClick={uiActions.openSettings}><IconSettingsOutline16 /> <span>设置</span></button>
-        <button type="button" className={css.footBtn + ' ' + css.footBtnQuiet} data-testid="help-product-guide" onClick={uiActions.openProductGuide}><IconQuestionOutline14 size={16} /> <span>帮助</span></button>
+        <button type="button" className={css.footBtn} data-testid="sidebar-settings" onClick={uiActions.openSettings}><IconSettingsOutline16 /> <span>{tx('设置', 'Settings')}</span></button>
+        <button type="button" className={css.footBtn + ' ' + css.footBtnQuiet} data-testid="help-product-guide" onClick={uiActions.openProductGuide}><IconQuestionOutline14 size={16} /> <span>{tx('帮助', 'Help')}</span></button>
       </div>
     </div>
   )
@@ -103,7 +103,7 @@ function SessionRow({ session, active, busy, narrow }: { session: ChatSession; a
   const [renaming, setRenaming] = useState(false)
   const [renameVal, setRenameVal] = useState('')
   const [confirming, setConfirming] = useState(false)
-  const onOpen = () => { if (busy) { window.alert('正在生成，请先停止生成'); return } sessionsActions.open(session.id); if (narrow) layoutStore.actions.closeNarrowSidebar() }
+  const onOpen = () => { if (busy) { window.alert(tx('正在生成，请先停止生成', 'A response is being generated. Stop it first.')); return } sessionsActions.open(session.id); if (narrow) layoutStore.actions.closeNarrowSidebar() }
   const startRename = () => { setMenuOpen(false); setConfirming(false); setRenameVal(displayTitle(session)); setRenaming(true) }
   const commitRename = () => {
     const v = sanitizeTitle(renameVal)
@@ -122,8 +122,8 @@ function SessionRow({ session, active, busy, narrow }: { session: ChatSession; a
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitRename() } else if (e.key === 'Escape') { e.preventDefault(); cancelRename() } }}
             onBlur={cancelRename}
           />
-          <button className={css.rowRenameBtn} data-testid="session-rename-confirm" onMouseDown={e => e.preventDefault()} onClick={commitRename}>确定</button>
-          <button className={css.rowRenameBtn} onMouseDown={e => e.preventDefault()} onClick={cancelRename}>取消</button>
+          <button className={css.rowRenameBtn} data-testid="session-rename-confirm" onMouseDown={e => e.preventDefault()} onClick={commitRename}>{tx('确定', 'Save')}</button>
+          <button className={css.rowRenameBtn} onMouseDown={e => e.preventDefault()} onClick={cancelRename}>{tx('取消', 'Cancel')}</button>
         </div>
       </div>
     )
@@ -135,15 +135,15 @@ function SessionRow({ session, active, busy, narrow }: { session: ChatSession; a
         <span className={css.sessionTitle}>{displayTitle(session)}</span>
         <span className={css.sessionCount}>{session.messages.length}</span>
       </button>
-      <button className={css.rowMenu} title="操作" onClick={() => setMenuOpen(o => !o)}><span className={css.rowMenuDots}>⋯</span></button>
+      <button className={css.rowMenu} title={tx('操作', 'Actions')} onClick={() => setMenuOpen(o => !o)}><span className={css.rowMenuDots}>⋯</span></button>
       {menuOpen && (
         <div className={css.rowMenuPopup}>
-          <button className={css.rowMenuItem} onClick={startRename}>重命名</button>
-          <button className={css.rowMenuItem} onClick={onDeleteClick} data-danger>删除</button>
+          <button className={css.rowMenuItem} onClick={startRename}>{tx('重命名', 'Rename')}</button>
+          <button className={css.rowMenuItem} onClick={onDeleteClick} data-danger>{tx('删除', 'Delete')}</button>
         </div>
       )}
       {confirming && (
-        <div className={css.rowConfirm}><span>删除这个会话？</span><button onClick={doDelete}>删除</button><button onClick={() => setConfirming(false)}>取消</button></div>
+        <div className={css.rowConfirm}><span>{tx('删除这个会话？', 'Delete this chat?')}</span><button onClick={doDelete}>{tx('删除', 'Delete')}</button><button onClick={() => setConfirming(false)}>{tx('取消', 'Cancel')}</button></div>
       )}
     </div>
   )

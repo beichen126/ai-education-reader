@@ -43,6 +43,7 @@ import { AiTocProgressDialog } from './AiTocProgressDialog'
 import { getSettingsSnapshot, useSettings } from '../engine/settings-store'
 import type { MappedTocItem } from './toc-mapping'
 import type { LearningDocument, ChapterNode } from './document-types'
+import { tx } from '../engine/locale'
 import { findConversationsByDocumentPage, type PdfPageConversationHit } from '../pdf/pdf-page-conversations'
 import { flushNoteEditorSession, type NoteEditorSession } from './note-session'
 import { NoteAvailabilityGate, NoteReadCache, noteAvailabilityFrom, noteHasContent, noteKey, notePersistedState, type NoteAvailability } from './note-availability'
@@ -1055,22 +1056,22 @@ export function DocumentReader() {
   return (
     <div className={css.overlay} data-testid="document-reader">
       <div className={css.topbar}>
-        <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary() }}>← 文件</button>
+        <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary() }}>← {tx('文件', 'Files')}</button>
         <span className={css.title} data-testid="reader-title">{doc?.fileName ?? recordMeta?.fileName ?? '…'}</span>
         <div className={css.topActions}>
           {doc && (
-            <button className={css.ctxBtn} data-testid="reader-ctx-toggle" aria-label="加入对话" title="加入对话" disabled={ctxBusy} onClick={() => setCtxMenuOpen(o => !o)}>
-              {ctxBusy ? '处理中' : '加入对话'}
+            <button className={css.ctxBtn} data-testid="reader-ctx-toggle" aria-label={tx('加入对话', 'Add to chat')} title={tx('加入对话', 'Add to chat')} disabled={ctxBusy} onClick={() => setCtxMenuOpen(o => !o)}>
+              {ctxBusy ? tx('处理中', 'Processing') : tx('加入对话', 'Add to chat')}
             </button>
           )}
           {doc && (
             <button className={css.relatedBtn} data-testid="reader-related-toggle" aria-expanded={relatedOpen} onClick={openRelatedPanel}>
-              关于此页{relatedOpen && (relatedConversations.length + relatedCards.length) > 0 ? ' ' + (relatedConversations.length + relatedCards.length) : ''}
+              {tx('关于此页', 'About this page')}{relatedOpen && (relatedConversations.length + relatedCards.length) > 0 ? ' ' + (relatedConversations.length + relatedCards.length) : ''}
             </button>
           )}
-          <button ref={tocToggleRef} className={css.tocToggle} data-testid="reader-toc-toggle" aria-expanded={tocPanelClosed ? false : (isNarrowViewport() ? tocOpen : true)} aria-controls={loadError ? undefined : 'reader-toc-panel'} onClick={toggleToc}>目录</button>
+          <button ref={tocToggleRef} className={css.tocToggle} data-testid="reader-toc-toggle" aria-expanded={tocPanelClosed ? false : (isNarrowViewport() ? tocOpen : true)} aria-controls={loadError ? undefined : 'reader-toc-panel'} onClick={toggleToc}>{tx('目录', 'Outline')}</button>
           {doc && <button type="button" ref={noteToggleRef} className={css.noteToggle} data-testid="reader-notes-toggle" data-note-state={noteButtonState} disabled={(!notesOpen && closedNoteState === 'loading') || noteActionBusy} aria-busy={noteActionBusy || undefined} onClick={() => void toggleNotes()}>{noteButtonLabel}</button>}
-          <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>关闭</button>
+          <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>{tx('关闭', 'Close')}</button>
         </div>
       </div>
       {relatedOpen && (
@@ -1107,8 +1108,8 @@ export function DocumentReader() {
           <>
             <aside ref={tocPanelRef} id="reader-toc-panel" className={css.toc + (tocOpen ? ' ' + css.tocOpen : '') + (tocPanelClosed ? ' ' + css.tocClosed : '')} data-testid="reader-toc">
               <div className={css.tocHeader}>
-                <button type="button" ref={tocBackRef} className={css.tocBack} data-testid="reader-toc-back" aria-label="返回 PDF 阅读" onClick={closeToc}>← 返回阅读</button>
-                <div className={css.tocTitle}>目录</div>
+                <button type="button" ref={tocBackRef} className={css.tocBack} data-testid="reader-toc-back" aria-label={tx('返回 PDF 阅读', 'Back to PDF')} onClick={closeToc}>← {tx('返回阅读', 'Back to reading')}</button>
+                <div className={css.tocTitle}>{tx('目录', 'Outline')}</div>
               </div>
               {doc && doc.chapters.length > 0 ? (
                 <div className={css.tocTree}>
@@ -1116,34 +1117,34 @@ export function DocumentReader() {
                 </div>
               ) : (
                 <div className={css.tocEmpty}>
-                  <div data-testid="reader-toc-empty">这份 PDF 暂无章节目录。</div>
-                  <button type="button" className={css.tocCreate} data-testid="reader-toc-create" onClick={() => { setBuilderSaveSource('manual'); setBuilderOpen(true) }}>创建章节</button>
+                  <div data-testid="reader-toc-empty">{tx('这份 PDF 暂无章节目录。', 'This PDF has no outline.')}</div>
+                  <button type="button" className={css.tocCreate} data-testid="reader-toc-create" onClick={() => { setBuilderSaveSource('manual'); setBuilderOpen(true) }}>{tx('创建章节', 'Create chapters')}</button>
                 </div>
               )}
               {doc && doc.chapterSource !== 'none' && (
                 <div className={css.tocActions}>
                   {doc.chapterSource === 'native' && (
-                    <button type="button" className={css.tocActionBtn} data-testid="reader-toc-organize" onClick={openOrganizeNative}>整理目录</button>
+                    <button type="button" className={css.tocActionBtn} data-testid="reader-toc-organize" onClick={openOrganizeNative}>{tx('整理目录', 'Organize outline')}</button>
                   )}
                   {doc.chapterSource !== 'native' && (
-                    <button type="button" className={css.tocActionBtn} data-testid="reader-toc-edit" onClick={openEditCurrent}>编辑目录</button>
+                    <button type="button" className={css.tocActionBtn} data-testid="reader-toc-edit" onClick={openEditCurrent}>{tx('编辑目录', 'Edit outline')}</button>
                   )}
                   {doc.chapterSource !== 'native' && hasNativeOutline && (
-                    <button type="button" className={css.tocActionBtn} data-testid="reader-toc-restore" onClick={() => setRestoreConfirmOpen(true)}>恢复原始目录</button>
+                    <button type="button" className={css.tocActionBtn} data-testid="reader-toc-restore" onClick={() => setRestoreConfirmOpen(true)}>{tx('恢复原始目录', 'Restore original outline')}</button>
                   )}
                 </div>
               )}
               {doc && (
                 <div className={css.tocAiArea}>
-                  <button type="button" className={css.tocActionBtn} data-testid="reader-toc-ai" disabled={aiTocExtracting || tocPickerOpen} onClick={() => setTocPickerOpen(true)}>AI 识别目录</button>
-                  <button type="button" className={css.tocActionBtn} data-testid="reader-export-pdf" disabled={exportBusy || doc.chapters.length === 0} onClick={() => void exportBookmarked()}>{exportBusy ? '导出中…' : '导出带目录 PDF'}</button>
+                  <button type="button" className={css.tocActionBtn} data-testid="reader-toc-ai" disabled={aiTocExtracting || tocPickerOpen} onClick={() => setTocPickerOpen(true)}>{tx('AI 识别目录', 'Detect outline with AI')}</button>
+                  <button type="button" className={css.tocActionBtn} data-testid="reader-export-pdf" disabled={exportBusy || doc.chapters.length === 0} onClick={() => void exportBookmarked()}>{exportBusy ? tx('导出中…', 'Exporting…') : tx('导出带目录 PDF', 'Export PDF with outline')}</button>
                 </div>
               )}
               {exportMsg && <div className={css.tocRestoreMsg} data-testid="reader-export-msg">{exportMsg}</div>}
               {restoreMsg && <div className={css.tocRestoreMsg} data-testid="reader-toc-restore-msg">{restoreMsg}</div>}
               {aiTocMsg && <div className={css.tocRestoreMsg} data-testid="reader-toc-ai-msg">{aiTocMsg}</div>}
               {aiTocExtracting && aiTocDialogHidden && (
-                <button type="button" className={css.tocActionBtn} data-testid="reader-toc-ai-activity" onClick={() => setAiTocDialogHidden(false)}>⏳ 目录识别中…（点击查看进度）</button>
+                <button type="button" className={css.tocActionBtn} data-testid="reader-toc-ai-activity" onClick={() => setAiTocDialogHidden(false)}>⏳ {tx('目录识别中…（点击查看进度）', 'Detecting outline… (view progress)')}</button>
               )}
             </aside>
             <main className={css.stage} ref={display.stageRef} data-testid="reader-viewport" data-pdf-navigation-mode={display.mode}>
@@ -1275,19 +1276,19 @@ export function DocumentReader() {
         </div>
       )}
       <div className={css.navBar}>
-        <button className={css.navBtn} data-testid="reader-prev" disabled={page <= 1} onClick={() => go(page - 1, pageCount)}>上一页</button>
+        <button className={css.navBtn} data-testid="reader-prev" disabled={page <= 1} onClick={() => go(page - 1, pageCount)}>{tx('上一页', 'Previous')}</button>
         <div className={css.counter}>
           <input ref={pageInputRef} className={css.pageInput} data-testid="reader-page-input" inputMode="numeric" aria-label="当前页码" value={pageInput}
             onChange={e => setPageInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitPageInput() } }} />
           <span className={css.counterTotal}>/ {pageCount}</span>
         </div>
-        <button className={css.navBtn} data-testid="reader-next" disabled={pageCount === 0 || page >= pageCount} onClick={() => go(page + 1, pageCount)}>下一页</button>
+        <button className={css.navBtn} data-testid="reader-next" disabled={pageCount === 0 || page >= pageCount} onClick={() => go(page + 1, pageCount)}>{tx('下一页', 'Next')}</button>
         {display.mode === 'continuous' && (
-          <div className={css.readerZoom} role="group" aria-label="PDF 阅读缩放">
-            <button type="button" className={css.zoomStepBtn} data-testid="reader-zoom-out" aria-label="缩小 PDF" disabled={readerZoom <= READER_ZOOM_STEPS[0]} onClick={() => setReaderZoom(value => neighbouringReaderZoom(value, -1))}>−</button>
-            <button type="button" className={css.zoomValueBtn} data-testid="reader-zoom-value" title="恢复 100%" onClick={() => setReaderZoom(1)}>{Math.round(readerZoom * 100)}%</button>
-            <button type="button" className={css.zoomStepBtn} data-testid="reader-zoom-in" aria-label="放大 PDF" disabled={readerZoom >= READER_ZOOM_STEPS[READER_ZOOM_STEPS.length - 1]} onClick={() => setReaderZoom(value => neighbouringReaderZoom(value, 1))}>＋</button>
+          <div className={css.readerZoom} role="group" aria-label={tx('PDF 阅读缩放', 'PDF zoom')}>
+            <button type="button" className={css.zoomStepBtn} data-testid="reader-zoom-out" aria-label={tx('缩小 PDF', 'Zoom out')} disabled={readerZoom <= READER_ZOOM_STEPS[0]} onClick={() => setReaderZoom(value => neighbouringReaderZoom(value, -1))}>−</button>
+            <button type="button" className={css.zoomValueBtn} data-testid="reader-zoom-value" title={tx('恢复 100%', 'Reset to 100%')} onClick={() => setReaderZoom(1)}>{Math.round(readerZoom * 100)}%</button>
+            <button type="button" className={css.zoomStepBtn} data-testid="reader-zoom-in" aria-label={tx('放大 PDF', 'Zoom in')} disabled={readerZoom >= READER_ZOOM_STEPS[READER_ZOOM_STEPS.length - 1]} onClick={() => setReaderZoom(value => neighbouringReaderZoom(value, 1))}>＋</button>
           </div>
         )}
       </div>

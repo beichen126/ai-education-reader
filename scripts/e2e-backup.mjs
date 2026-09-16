@@ -1,4 +1,4 @@
-// Backup V4 browser round-trip: seed a full V4 state, then export via the real settings UI,
+// Complete backup browser round-trip: seed a full state, then export via the real settings UI,
 // clear app data, import the downloaded backup, reload, and verify restore.
 import { launchBrowser } from './e2e-browser.mjs'
 import { openAppDb } from './e2e-idb.mjs'
@@ -62,15 +62,15 @@ console.log('SEED:', seeded)
 await page.getByRole('button', { name: /打开设置|设置/ }).first().click().catch(() => {})
 await page.locator('text=数据与导出').waitFor({ state: 'visible', timeout: 8000 })
 const dlPromise = page.waitForEvent('download', { timeout: 15000 })
-await page.locator('button:has-text("导出完整备份 JSON")').click()
+await page.locator('button:has-text("导出完整备份 ZIP")').click()
 const download = await dlPromise
 const dlPath = await download.path()
 console.log('DOWNLOAD PATH:', dlPath)
 assert(!!dlPath && dlPath.length > 0, 'export produced a backup download')
 const size = (await import('fs')).statSync(dlPath).size
-assert(size > 100, 'exported backup JSON is non-trivial (bytes=' + size + ')')
+assert(size > 100, 'exported backup ZIP is non-trivial (bytes=' + size + ')')
 
-// Capture the export msg + which version it is (v4).
+// Capture the export success message.
 const expMsg = await page.locator('text=已导出完整备份').count()
 assert(expMsg > 0, 'export success message shown')
 
@@ -84,7 +84,7 @@ await dismissProductGuide(page)
 
 // ---- reopen settings, import the downloaded backup via the real UI ----
 await page.locator('button:has-text("打开设置")').first().click()
-const impInput = page.locator('input[type="file"][accept*=".json"]')
+const impInput = page.locator('input[type="file"][accept*=".zip"]')
 await impInput.waitFor({ state: 'attached', timeout: 8000 })
 await impInput.setInputFiles(dlPath)
 await page.locator('text=导入完成').waitFor({ state: 'visible', timeout: 20000 })

@@ -13,7 +13,7 @@ import { useSettings, getSettingsSnapshot } from './engine/settings-store'
 import { useTheme } from './theme/use-theme'
 import { initLayout, layoutStore, useLayoutStore } from './engine/layout-store'
 import { SessionProvider } from './engine/session-context'
-import { t } from './engine/locale'
+import { t, tx, useUiLanguage } from './engine/locale'
 import { Sidebar } from './cockpit/Sidebar'
 import { Conversation } from './cockpit/Conversation'
 import { SettingsDialog } from './cockpit/SettingsDialog'
@@ -39,6 +39,9 @@ type BootState = 'loading' | 'ready' | 'error'
 
 export function App() {
   useTheme()
+  // Subscribing at the application boundary re-renders every visible surface when the
+  // language changes, including layout slots rendered through AppFrame.
+  useUiLanguage()
   const persistRequestedRef = useRef(false)
   const settingsOpen = useUi(s => s.settingsOpen)
   const promptManagerOpen = useUi(s => s.promptManagerOpen)
@@ -96,9 +99,9 @@ export function App() {
         <div className="eink-boot-card">
           <div className="eink-boot-title">{t('brand.localBuild')}</div>
           {boot === 'loading'
-            ? <div className="eink-boot-hint">正在载入本地会话…</div>
-            : <div className="eink-boot-error">本地数据载入失败</div>}
-          {boot === 'error' && <button className="eink-boot-retry" onClick={() => void bootFn()}>重试</button>}
+            ? <div className="eink-boot-hint">{tx('正在载入本地会话…', 'Loading local chats…')}</div>
+            : <div className="eink-boot-error">{tx('本地数据载入失败', 'Failed to load local data')}</div>}
+          {boot === 'error' && <button className="eink-boot-retry" onClick={() => void bootFn()}>{tx('重试', 'Retry')}</button>}
         </div>
       </div>
     )

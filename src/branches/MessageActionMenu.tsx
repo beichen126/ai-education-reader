@@ -3,6 +3,7 @@ import type { Message } from '../engine/types'
 import type { CreateArtifactKind } from '../artifacts/artifact-types'
 import type { StudyCardRating } from '../study-cards/study-card-types'
 import css from './branch.module.css'
+import { tx } from '../engine/locale'
 
 export type CardSaveState = 'idle' | 'saving' | 'saved' | 'failed'
 
@@ -69,17 +70,17 @@ export function MessageActionMenu(props: MessageActionMenuProps) {
     else if (event.key === 'ArrowLeft' && specialOpen) { event.preventDefault(); setSpecialOpen(false); ref.current?.querySelector<HTMLElement>('[data-testid="message-action-special"]')?.focus({ preventScroll: true }) }
   }
 
-  const cardLabel = cardState === 'saving' ? '正在保存…' : saved ? '查看已保存卡片' : cardState === 'failed' ? '保存失败，重试' : '保存本轮回复为学习卡片'
+  const cardLabel = cardState === 'saving' ? tx('正在保存…', 'Saving…') : saved ? tx('查看已保存卡片', 'View saved card') : cardState === 'failed' ? tx('保存失败，重试', 'Save failed; retry') : tx('保存本轮回复为学习卡片', 'Save this response as a study card')
 
   const specialItems: MenuItem[] = [
-    { testId: 'message-action-note', label: '整理成笔记', action: () => onCreateArtifact('note') },
-    { testId: 'message-action-quiz', label: '生成题目', action: () => onCreateArtifact('quiz') },
-    { testId: 'message-action-custom', label: '自定义提示词…', action: onCreateCustomArtifact },
+    { testId: 'message-action-note', label: tx('整理成笔记', 'Turn into notes'), action: () => onCreateArtifact('note') },
+    { testId: 'message-action-quiz', label: tx('生成题目', 'Generate quiz'), action: () => onCreateArtifact('quiz') },
+    { testId: 'message-action-custom', label: tx('自定义提示词…', 'Custom prompt…'), action: onCreateCustomArtifact },
   ]
 
   return (
-    <div ref={ref} className={css.menu} role="menu" aria-label="消息操作" data-testid="message-action-menu" style={{ position: 'absolute', top: '100%', left: 0, right: 'auto', zIndex: 30 }} onKeyDown={onMenuKeyDown}>
-      <button type="button" className={css.menuItem} role="menuitem" data-testid="message-action-branch" onClick={() => { onCreateBranch(); onClose() }}>从这里分支</button>
+    <div ref={ref} className={css.menu} role="menu" aria-label={tx('消息操作', 'Message actions')} data-testid="message-action-menu" style={{ position: 'absolute', top: '100%', left: 0, right: 'auto', zIndex: 30 }} onKeyDown={onMenuKeyDown}>
+      <button type="button" className={css.menuItem} role="menuitem" data-testid="message-action-branch" onClick={() => { onCreateBranch(); onClose() }}>{tx('从这里分支', 'Branch from here')}</button>
       <button
         type="button"
         className={css.menuItem}
@@ -89,10 +90,10 @@ export function MessageActionMenu(props: MessageActionMenuProps) {
         aria-expanded={specialOpen}
         onClick={() => setSpecialOpen(open => !open)}
       >
-        开启特殊分支 <span aria-hidden="true">›</span>
+        {tx('开启特殊分支', 'Create study output')} <span aria-hidden="true">›</span>
       </button>
       {specialOpen && (
-        <div className={css.submenu} role="menu" aria-label="特殊分支" data-testid="message-action-special-menu">
+        <div className={css.submenu} role="menu" aria-label={tx('特殊分支', 'Study output')} data-testid="message-action-special-menu">
           {specialItems.map(item => (
             <button key={item.testId} type="button" className={css.menuItem} role="menuitem" data-testid={item.testId} disabled={item.disabled} onClick={() => { item.action(); onClose() }}>{item.label}</button>
           ))}
@@ -106,14 +107,14 @@ export function MessageActionMenu(props: MessageActionMenuProps) {
         data-testid="message-action-save-card"
         data-card-state={cardState}
         disabled={!canSaveCard || cardState === 'saving'}
-        title={canSaveCard ? undefined : '只能保存已完成且非空的 AI 回复'}
+        title={canSaveCard ? undefined : tx('只能保存已完成且非空的 AI 回复', 'Only completed, non-empty AI responses can be saved')}
         onClick={() => { if (saved) onViewSavedCard(); else onSaveCard(); onClose() }}
       >
         {cardLabel}
       </button>
       {canSaveCard && cardState !== 'saving' && (
-        <div className={css.cardRatingQuick} role="group" aria-label={saved ? '快速修改学习卡片评分' : '保存学习卡片并评分'} data-testid="message-action-card-rating">
-          <span>{saved ? '快速评分' : '保存并评分'}</span>
+        <div className={css.cardRatingQuick} role="group" aria-label={saved ? tx('快速修改学习卡片评分', 'Quickly change card rating') : tx('保存学习卡片并评分', 'Save and rate study card')} data-testid="message-action-card-rating">
+          <span>{saved ? tx('快速评分', 'Quick rating') : tx('保存并评分', 'Save and rate')}</span>
           <span className={css.cardRatingStars}>
             {([1, 2, 3, 4, 5] as StudyCardRating[]).map(value => (
               <button
@@ -122,9 +123,9 @@ export function MessageActionMenu(props: MessageActionMenuProps) {
                 className={css.cardRatingStar}
                 data-testid={'message-action-card-rating-' + value}
                 data-active={value <= (cardRating ?? 0) ? 'true' : 'false'}
-                aria-label={(saved ? '修改为 ' : '保存并设置为 ') + value + ' 分'}
+                aria-label={saved ? tx('修改为 ' + value + ' 分', 'Change rating to ' + value) : tx('保存并设置为 ' + value + ' 分', 'Save with rating ' + value)}
                 aria-pressed={cardRating === value}
-                title={value + ' 分'}
+                title={tx(value + ' 分', value + ' stars')}
                 onClick={() => { onSaveCard(value); onClose() }}
               >★</button>
             ))}

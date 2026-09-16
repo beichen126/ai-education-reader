@@ -19,6 +19,8 @@ import { isPdfNavigationMode } from '../engine/pdf-navigation-settings'
 import { validateStudyCard } from '../study-cards/study-card-validation'
 import { buildStudyCardPageRefs } from '../study-cards/study-card-store'
 import { STUDY_CARD_PREFERENCES_KEY } from '../study-cards/learning-ui-store'
+import { LAYOUT_PREFERENCES_KEY, normalizeLayoutPreferences } from '../engine/layout-store'
+import { isDocumentSortKey, saveSortPreference } from '../documents/document-sort'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -264,6 +266,11 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
   // v1.2.0: visionCapability must be one of the known values, else the backup is invalid.
   if ((settings as any).visionCapability !== undefined && (settings as any).visionCapability !== 'auto' && (settings as any).visionCapability !== 'supports-image' && (settings as any).visionCapability !== 'text-only') throw new BackupError('settings.visionCapability 非法')
   if ((settings as any).pdfNavigationMode !== undefined && !isPdfNavigationMode((settings as any).pdfNavigationMode)) throw new BackupError('settings.pdfNavigationMode 非法')
+  if ((settings as any).uiLanguage !== undefined && (settings as any).uiLanguage !== 'zh-CN' && (settings as any).uiLanguage !== 'en') throw new BackupError('settings.uiLanguage 非法')
+  if ((settings as any).documentSort !== undefined && !isDocumentSortKey((settings as any).documentSort)) throw new BackupError('settings.documentSort 非法')
+  if ((settings as any).productGuideSeenVersion !== undefined && !isStr((settings as any).productGuideSeenVersion)) throw new BackupError('settings.productGuideSeenVersion 非法')
+  if ((settings as any).lastConversationId !== undefined && !isStr((settings as any).lastConversationId)) throw new BackupError('settings.lastConversationId 非法')
+  if ((settings as any).layoutPreferences !== undefined && !isObj((settings as any).layoutPreferences)) throw new BackupError('settings.layoutPreferences 非法')
 
   const convIds = new Set<string>()
   const attIds = new Set<string>()
@@ -552,6 +559,10 @@ export async function restoreBackup(backup: Backup): Promise<void> {
       // v1.2.0: restore the vision capability (old backups lack it -> default 'auto').
       { key: 'visionCapability', value: (backup.settings as { visionCapability?: unknown } | undefined)?.visionCapability || 'auto' },
       { key: 'pdfNavigationMode', value: isPdfNavigationMode((backup.settings as { pdfNavigationMode?: unknown } | undefined)?.pdfNavigationMode) ? (backup.settings as { pdfNavigationMode: string }).pdfNavigationMode : 'paged' },
+      { key: 'uiLanguage', value: (backup.settings as { uiLanguage?: unknown } | undefined)?.uiLanguage === 'en' ? 'en' : 'zh-CN' },
+      { key: LAYOUT_PREFERENCES_KEY, value: normalizeLayoutPreferences((backup.settings as { layoutPreferences?: unknown } | undefined)?.layoutPreferences) },
+      { key: 'productGuideSeenVersion', value: typeof (backup.settings as { productGuideSeenVersion?: unknown } | undefined)?.productGuideSeenVersion === 'string' ? (backup.settings as { productGuideSeenVersion: string }).productGuideSeenVersion : '' },
+      { key: 'lastConversationId', value: typeof (backup.settings as { lastConversationId?: unknown } | undefined)?.lastConversationId === 'string' && backup.conversations.some(conversation => conversation.id === (backup.settings as { lastConversationId: string }).lastConversationId) ? (backup.settings as { lastConversationId: string }).lastConversationId : '' },
       // V3: restore the appearance + every persisted Draft row (unsent user data). The API
       // Key is NEVER restored (always empty). Draft rows re-create the unsent composer state.
       { key: 'appearance', value: (backup as BackupV3).appearance || 'system' },
@@ -580,6 +591,7 @@ export async function restoreBackup(backup: Backup): Promise<void> {
   }
   // F. Post-success cleanup of old OPFS refs (best-effort; only orphans, never new data).
   for (const old of oldRefs) { if (old.storage === 'opfs') { try { await deleteBinary(old) } catch { /* orphan */ } } }
+  if (isDocumentSortKey((backup.settings as { documentSort?: unknown } | undefined)?.documentSort)) saveSortPreference((backup.settings as { documentSort: any }).documentSort)
 }
 
 async function oldDocumentRefs(): Promise<StoredBinary[]> {
