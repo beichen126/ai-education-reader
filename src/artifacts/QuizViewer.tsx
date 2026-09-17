@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Button } from '../dsh/primitives/Button'
 import { optionLetter } from './artifact-export'
 import type { QuizDocument, QuizQuestion } from './artifact-types'
+import { tx } from '../engine/locale'
 
 type AnswerMap = Record<string, string | number[] | boolean | string>
 
@@ -59,17 +60,17 @@ function Question({ q, answers, revealed, setAnswer }: { q: QuizQuestion; answer
       })}
       {q.type === 'true-false' && [true, false].map((b) => {
         const isSel = chosen === b
-        return (<label key={String(b)} style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', padding: '0.25rem 0' }}><input type='radio' name={q.id} checked={isSel} disabled={revealed} onChange={() => setAnswer(b)} />{b ? '正确' : '错误'}</label>)
+        return (<label key={String(b)} style={{ display: 'flex', gap: '0.375rem', alignItems: 'center', padding: '0.25rem 0' }}><input type='radio' name={q.id} checked={isSel} disabled={revealed} onChange={() => setAnswer(b)} />{b ? tx('正确', 'True') : tx('错误', 'False')}</label>)
       })}
-      {q.type === 'short-answer' && <input aria-label='简答题答案' disabled={revealed} value={typeof chosen === 'string' ? chosen : ''} onChange={(e) => setAnswer(e.target.value)} style={{ width: '100%', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '0.375rem', background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)', padding: '0.375rem' }} />}
+      {q.type === 'short-answer' && <input aria-label={tx('简答题答案', 'Short answer')} disabled={revealed} value={typeof chosen === 'string' ? chosen : ''} onChange={(e) => setAnswer(e.target.value)} style={{ width: '100%', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '0.375rem', background: 'var(--dsw-alias-bg-base)', color: 'var(--dsw-alias-label-primary)', padding: '0.375rem' }} />}
       {revealed && q.type === 'short-answer' && (<div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--dsw-alias-label-secondary)' }}>
-        {shortExact && isShortAnswerClose(chosen, q.answer) ? '（与参考答案接近）' : ''}
-        <div>参考答案：{q.answer}</div>
-        <div style={{ opacity: 0.8 }}>简答题请自行对照检查，系统不自动判为对/错。</div>
+        {shortExact && isShortAnswerClose(chosen, q.answer) ? tx('（与参考答案接近）', ' (close to the reference answer)') : ''}
+        <div>{tx('参考答案：', 'Reference answer: ')}{q.answer}</div>
+        <div style={{ opacity: 0.8 }}>{tx('简答题请自行对照检查，系统不自动判为对/错。', 'Compare short answers yourself; they are not graded automatically.')}</div>
       </div>)}
-      {revealed && q.type !== 'short-answer' && (<div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: correct ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-state-error-primary)' }}>{correct ? '✓ 正确' : '✗ 错误'}</div>)}
-      {revealed && q.explanation && <div style={{ marginTop: '0.25rem', fontSize: '0.8125rem', color: 'var(--dsw-alias-label-secondary)' }}>解析：{q.explanation}</div>}
-      {revealed && source && <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--dsw-alias-label-tertiary)' }}>来源：{source}</div>}
+      {revealed && q.type !== 'short-answer' && (<div style={{ marginTop: '0.5rem', fontSize: '0.8125rem', color: correct ? 'var(--dsw-alias-state-success-primary)' : 'var(--dsw-alias-state-error-primary)' }}>{correct ? tx('✓ 正确', '✓ Correct') : tx('✗ 错误', '✗ Incorrect')}</div>)}
+      {revealed && q.explanation && <div style={{ marginTop: '0.25rem', fontSize: '0.8125rem', color: 'var(--dsw-alias-label-secondary)' }}>{tx('解析：', 'Explanation: ')}{q.explanation}</div>}
+      {revealed && source && <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--dsw-alias-label-tertiary)' }}>{tx('来源：', 'Source: ')}{source}</div>}
     </div>
   )
 }
@@ -87,9 +88,9 @@ export function QuizViewer({ quiz }: { quiz: QuizDocument }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-        <span style={{ color: 'var(--dsw-alias-label-secondary)' }}>共 {quiz.questions.length} 题{revealed ? (' · 得分 ' + score.correct + '/' + score.graded) : (unanswered > 0 ? (' · 未答 ' + unanswered) : '')}{revealed && score.ungraded > 0 ? (' · ' + score.ungraded + ' 题需自行对照') : ''}</span>
-        <Button size='sm' variant='primary' onClick={() => setRevealed(true)} disabled={revealed}>提交/查看答案</Button>
-        <Button size='sm' variant='ghost' onClick={() => { setAnswers({}); setRevealed(false) }}>重置</Button>
+        <span style={{ color: 'var(--dsw-alias-label-secondary)' }}>{tx('共 ' + quiz.questions.length + ' 题', quiz.questions.length + ' questions')}{revealed ? tx(' · 得分 ', ' · Score ') + score.correct + '/' + score.graded : (unanswered > 0 ? tx(' · 未答 ' + unanswered, ' · Unanswered ' + unanswered) : '')}{revealed && score.ungraded > 0 ? tx(' · ' + score.ungraded + ' 题需自行对照', ' · ' + score.ungraded + ' need manual review') : ''}</span>
+        <Button size='sm' variant='primary' onClick={() => setRevealed(true)} disabled={revealed}>{tx('提交/查看答案', 'Submit / View answers')}</Button>
+        <Button size='sm' variant='ghost' onClick={() => { setAnswers({}); setRevealed(false) }}>{tx('重置', 'Reset')}</Button>
       </div>
       {quiz.questions.map((q) => (<Question key={q.id} q={q} answers={answers} revealed={revealed} setAnswer={(v) => setAnswers((prev) => ({ ...prev, [q.id]: v }))} />))}
     </div>

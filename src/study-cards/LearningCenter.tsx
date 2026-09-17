@@ -193,9 +193,9 @@ export function LearningCenter() {
               {error && <div className={css.error} data-testid="card-list-error" role="alert">{error}</div>}
               {diagnostics && (diagnostics.detached > 0 || diagnostics.missingDocuments > 0) && (
                 <div className={css.hint} data-testid="learning-diagnostics">
-                  {diagnostics.detached > 0 && <span data-testid="learning-diagnostics-detached">{diagnostics.detached} 张卡片的原会话已删除，正文仍可读。</span>}
+                  {diagnostics.detached > 0 && <span data-testid="learning-diagnostics-detached">{tx(diagnostics.detached + ' 张卡片的原会话已删除，正文仍可读。', diagnostics.detached + ' cards have deleted source chats; their content remains available.')}</span>}
                   {diagnostics.detached > 0 && diagnostics.missingDocuments > 0 && ' '}
-                  {diagnostics.missingDocuments > 0 && <span data-testid="learning-diagnostics-documents">{diagnostics.missingDocuments} 张卡片的来源 PDF 已删除，仍可按快照查看。</span>}
+                  {diagnostics.missingDocuments > 0 && <span data-testid="learning-diagnostics-documents">{tx(diagnostics.missingDocuments + ' 张卡片的来源 PDF 已删除，仍可按快照查看。', diagnostics.missingDocuments + ' cards have deleted source PDFs; their snapshots remain available.')}</span>}
                 </div>
               )}
               {!loading && !error && selected.length === 0 && (
@@ -300,7 +300,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
     documentUiActions.openReader(ref.documentId, target)
     // Normally the centre steps aside so the user lands on the PDF. When the document
     // changed under the card, the centre stays visible long enough to explain the clamp.
-    if (clamped) setClampNote('这份 PDF 现在只有 ' + total + ' 页，已定位到第 ' + target + ' 页；卡片快照仍保留原来的页码。')
+    if (clamped) setClampNote(tx('这份 PDF 现在只有 ' + total + ' 页，已定位到第 ' + target + ' 页；卡片快照仍保留原来的页码。', 'This PDF now has ' + total + ' pages. Opened page ' + target + '; the card snapshot keeps the original page number.'))
     else { setClampNote(null); learningUiActions.close() }
   }
   const backToConversation = async () => {
@@ -309,7 +309,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
     const opened = await openStudyCardSource(card)
     if (opened) { learningUiActions.close(); return }
     setSourceStatus(await getStudyCardSourceStatus(card))
-    setError('原会话或这条回复已删除，无法回链。')
+    setError(tx('原会话或这条回复已删除，无法回链。', 'The source chat or answer was deleted and cannot be opened.'))
   }
 
   // Opening a card really shown to the user marks lastOpenedAt exactly once per card.
@@ -332,9 +332,9 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
     try {
       const updated = await updateStudyCardTitle(card.id, clean, card.updatedAt)
       if (updated) { setCard(updated); setTitle(updated.title); setError(null); onChanged() }
-      else setError('卡片已在其它标签页中被修改，未覆盖较新的标题。')
+      else setError(tx('卡片已在其它标签页中被修改，未覆盖较新的标题。', 'This card was changed in another tab. The newer title was not overwritten.'))
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : '重命名失败')
+      setError(e instanceof Error && e.message ? e.message : tx('重命名失败', 'Rename failed'))
     } finally { setBusy(false); setRenaming(false) }
   }
 
@@ -344,9 +344,9 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
     try {
       const updated = await updateStudyCardRating(card.id, rating, card.updatedAt)
       if (updated) { setCard(updated); setError(null); onChanged() }
-      else setError('卡片已在其它标签页中被修改，请重新打开后再评分。')
+      else setError(tx('卡片已在其它标签页中被修改，请重新打开后再评分。', 'This card was changed in another tab. Reopen it before rating.'))
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : '评分保存失败')
+      setError(e instanceof Error && e.message ? e.message : tx('评分保存失败', 'Unable to save rating'))
     } finally {
       setBusy(false)
       setHoverRating(null)
@@ -354,7 +354,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
   }
 
   const remove = async () => {
-    if (!card || !globalThis.confirm('删除这张学习卡片？（不会删除原会话、PDF 或学习成果）')) return
+    if (!card || !globalThis.confirm(tx('删除这张学习卡片？（不会删除原会话、PDF 或学习成果）', 'Delete this study card? Its source chat, PDF, and study output will not be deleted.'))) return
     setBusy(true)
     try {
       await deleteStudyCard(card.id)
@@ -363,7 +363,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
       if (neighbour) learningUiActions.openCard(neighbour, context)
       else onBack()
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : '删除失败')
+      setError(e instanceof Error && e.message ? e.message : tx('删除失败', 'Delete failed'))
     } finally { setBusy(false) }
   }
 
@@ -438,7 +438,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
           {sourceStatus === 'live' && <button type="button" className={css.small} data-testid="card-back-to-conversation" onClick={() => void backToConversation()}>{tx('返回原会话', 'Open source chat')}</button>}
           {sourceStatus !== null && sourceStatus !== 'live' && (
             <span data-testid="card-source-deleted">
-              {sourceStatus === 'conversation-deleted' ? '原会话已删除' : sourceStatus === 'branch-deleted' ? '原分支已删除' : '原回复已删除'}
+              {sourceStatus === 'conversation-deleted' ? tx('原会话已删除', 'Source chat deleted') : sourceStatus === 'branch-deleted' ? tx('原分支已删除', 'Source branch deleted') : tx('原回复已删除', 'Source answer deleted')}
             </span>
           )}
         </div>
@@ -468,7 +468,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
         })}
         {clampNote && <div className={css.hint} data-testid="card-source-clamp-note">{clampNote}</div>}
         {card.documentRefs.length === 0 && <div className={css.sourceRow} data-testid="card-source-none">{tx('这张卡片没有 PDF 来源。', 'This card has no PDF source.')}</div>}
-        <div className={css.sourceRow}><span>创建 {timestampLabel(card.createdAt)}</span>{card.lastOpenedAt !== undefined && <span>· 最近打开 {timestampLabel(card.lastOpenedAt)}</span>}</div>
+        <div className={css.sourceRow}><span>{tx('创建 ', 'Created ')}{timestampLabel(card.createdAt)}</span>{card.lastOpenedAt !== undefined && <span>· {tx('最近打开 ', 'Last opened ')}{timestampLabel(card.lastOpenedAt)}</span>}</div>
       </div>
       {error && <div className={css.error} data-testid="card-error" role="alert">{error}</div>}
       <div className={css.detailHead}>
@@ -494,7 +494,7 @@ function ArtifactDetail({ artifactId, onBack }: { artifactId: string; onBack: ()
     })
     return () => { active = false }
   }, [artifactId])
-  if (!artifact) return <div className={css.empty} data-testid="artifact-missing">这个学习成果已不存在。<button type="button" className={css.small} onClick={onBack}>返回列表</button></div>
+  if (!artifact) return <div className={css.empty} data-testid="artifact-missing">{tx('这个学习成果已不存在。', 'This study output no longer exists.')}<button type="button" className={css.small} onClick={onBack}>{tx('返回列表', 'Back to list')}</button></div>
   return (
     <div className={css.artifactPane} data-testid="learning-artifact-detail">
       {artifact.kind === 'quiz' && artifact.quiz && artifact.status === 'ready'

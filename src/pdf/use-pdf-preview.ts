@@ -6,6 +6,7 @@
 // "first-3 + last-3" preview strategy for >30 page contexts.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { openPdf, renderPdfPage, closePdf, readPdfOutline, pdfErrorMessage, PdfError } from './pdf-service'
+import { tx } from '../engine/locale'
 export { validatePdfRange } from './pdf-types'
 
 import { PdfOutlineError, type PdfOutlineResult } from './pdf-outline'
@@ -103,7 +104,7 @@ export function usePdfPreview(): PdfPreviewApi {
         setDocumentId(created.id)
       } catch {
         if (gen !== genRef.current) return
-        setDocumentSaveError('该 PDF 可以继续临时使用，但无法保存到本地文件库（存储空间不足或写入失败）。')
+        setDocumentSaveError(tx('该 PDF 可以继续临时使用，但无法保存到本地文件库（存储空间不足或写入失败）。', 'You can use this PDF temporarily, but it could not be saved to the local library (storage full or write failed).'))
       }
       try {
         const o = await readPdfOutline()
@@ -117,11 +118,11 @@ export function usePdfPreview(): PdfPreviewApi {
       } catch (e) {
         if (gen !== genRef.current) return
         setOutlineStatus('error')
-        setOutlineError(e instanceof PdfOutlineError ? e.message : '无法读取该 PDF 的书签。')
+        setOutlineError(e instanceof PdfOutlineError ? e.message : tx('无法读取该 PDF 的书签。', 'Unable to read this PDF’s bookmarks.'))
       }
     } catch (e: unknown) {
       if (gen !== genRef.current) return
-      setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : 'PDF 处理失败。')
+      setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : tx('PDF 处理失败。', 'PDF processing failed.'))
       setStatus('error'); setOutlineStatus('idle')
     }
   }, [revokeAll])
@@ -131,8 +132,8 @@ export function usePdfPreview(): PdfPreviewApi {
   // only keeps UI orchestration: preview URL ownership (first-3/last-3), pages
   // state, progress display and user-facing error mapping.
   const generateRanges = useCallback(async (ranges: PdfRange[]) => {
-    if (!doc) { setError('尚未打开 PDF 文件。'); return }
-    if (normalizePdfRanges(ranges).length === 0) { setError('请先选择页面范围。'); return }
+    if (!doc) { setError(tx('尚未打开 PDF 文件。', 'No PDF is open.')); return }
+    if (normalizePdfRanges(ranges).length === 0) { setError(tx('请先选择页面范围。', 'Select a page range first.')); return }
     genRef.current++
     const gen = genRef.current
     revokeAll()
@@ -167,13 +168,13 @@ export function usePdfPreview(): PdfPreviewApi {
       revokeAll()
       setPages([]); setProgress(undefined)
       if (e instanceof PdfContextRenderError) {
-        if (e.kind === 'hard-limit') setError('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少选择的页面范围后重试。')
-        else if (e.kind === 'byte-budget') setError('该范围生成的图片数据过大，已超过当前单次 PDF Context 的安全限制。请减少选择的页面范围后重试。（本次处理到第 ' + (e.pageNumber ?? '') + ' 页时超过限制。）')
-        else if (e.kind === 'render-failed') setError('第 ' + (e.pageNumber ?? '') + ' 页处理失败，本次范围未加入对话。你可以重新尝试，或切换到“选页”模式缩小范围。')
-        else if (e.kind === 'out-of-range') setError('页码范围超出范围，该 PDF 共 ' + doc.pageCount + ' 页。')
+        if (e.kind === 'hard-limit') setError(tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少选择的页面范围后重试。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Reduce the range and try again.'))
+        else if (e.kind === 'byte-budget') setError(tx('该范围生成的图片数据过大，已超过当前单次 PDF Context 的安全限制。请减少选择的页面范围后重试。（本次处理到第 ' + (e.pageNumber ?? '') + ' 页时超过限制。）', 'The generated images exceed the safe size limit for one PDF context. Reduce the range and try again. (Limit reached at page ' + (e.pageNumber ?? '') + '.)'))
+        else if (e.kind === 'render-failed') setError(tx('第 ' + (e.pageNumber ?? '') + ' 页处理失败，本次范围未加入对话。你可以重新尝试，或切换到“选页”模式缩小范围。', 'Page ' + (e.pageNumber ?? '') + ' failed to process, so the range was not added. Try again or select fewer pages.'))
+        else if (e.kind === 'out-of-range') setError(tx('页码范围超出范围，该 PDF 共 ' + doc.pageCount + ' 页。', 'The page range is out of bounds. This PDF has ' + doc.pageCount + ' pages.'))
         else setError(e.message)
       } else {
-        setError('PDF 处理失败。')
+        setError(tx('PDF 处理失败。', 'PDF processing failed.'))
       }
     } finally {
       if (gen === genRef.current) setProgress(undefined)

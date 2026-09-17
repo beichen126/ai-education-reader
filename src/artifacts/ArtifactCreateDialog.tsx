@@ -6,6 +6,7 @@ import { getBuiltinArtifactPrompt } from '../prompts/prompt-registry'
 import type { ArtifactPrompt, ArtifactPromptSnapshot, ProtocolPrompt, ProtocolPromptSnapshot, PromptDefinition } from '../prompts/prompt-types'
 import type { ArtifactKind, CreateArtifactKind } from './artifact-types'
 import css from './artifact.module.css'
+import { tx } from '../engine/locale'
 
 type Props = {
   sourceLabel: string
@@ -49,7 +50,7 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
       if (!active) return
       setCatalog(artifactRows)
       setProtocols(protocolRows)
-    }).catch((e) => { if (active) setError(e instanceof Error ? e.message : '提示词目录读取失败') })
+    }).catch((e) => { if (active) setError(e instanceof Error ? e.message : tx('提示词目录读取失败', 'Unable to load the prompt catalog')) })
     return () => { active = false }
   }, [])
 
@@ -64,7 +65,7 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
     if (selectedId !== selectedTemplate.id) {
       setSelectedId(selectedTemplate.id)
       setPrompt(selectedTemplate.userPrompt)
-      setSaveAsName(selectedTemplate.name + '（我的）')
+      setSaveAsName(selectedTemplate.name + tx('（我的）', ' (mine)'))
       setNotice(undefined)
     }
   }, [selectedTemplate, selectedId])
@@ -77,20 +78,20 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
   function selectTemplate(template: ArtifactPrompt) {
     setSelectedId(template.id)
     setPrompt(template.userPrompt)
-    setSaveAsName(template.name + '（我的）')
+    setSaveAsName(template.name + tx('（我的）', ' (mine)'))
     setError(undefined); setNotice(undefined)
   }
 
   async function protocolSnapshotFor(template: ArtifactPrompt, capturedAt: number): Promise<ProtocolPromptSnapshot | undefined> {
     if (!template.protocolId) return undefined
     const protocol = protocolsById.get(template.protocolId) ?? await getPromptDefinition(template.protocolId)
-    if (!protocol || protocol.kind !== 'protocol') throw new Error('所选模板的 protocol 不存在。')
+    if (!protocol || protocol.kind !== 'protocol') throw new Error(tx('所选模板的 protocol 不存在。', 'The selected template’s protocol does not exist.'))
     return capturePromptSnapshot(protocol, capturedAt) as ProtocolPromptSnapshot
   }
 
   async function submit() {
-    if (!selectedTemplate) { setError('正在读取可用提示词，请稍候。'); return }
-    if (!prompt.trim()) { setError('本次要求不能为空'); return }
+    if (!selectedTemplate) { setError(tx('正在读取可用提示词，请稍候。', 'Loading available prompts. Please wait.')); return }
+    if (!prompt.trim()) { setError(tx('本次要求不能为空', 'Instructions cannot be empty')); return }
     setError(undefined); setNotice(undefined)
     const resolvedAt = Date.now()
     try {
@@ -98,13 +99,13 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
       const template = capturePromptSnapshot(selectedTemplate, resolvedAt) as ArtifactPromptSnapshot
       const userPrompt = prompt.trim()
       onSubmit({ kind, prompt: userPrompt, presetId: selectedTemplate.id, promptBundle: { template, userPrompt, ...(protocol ? { protocol } : {}), resolvedAt } })
-    } catch (e) { setError(e instanceof Error ? e.message : '提示词解析失败') }
+    } catch (e) { setError(e instanceof Error ? e.message : tx('提示词解析失败', 'Unable to resolve the prompt')) }
   }
 
   async function saveAs() {
-    if (!selectedTemplate) { setError('尚未选择模板'); return }
-    if (!prompt.trim()) { setError('本次要求不能为空'); return }
-    if (!saveAsName.trim()) { setError('另存为名称不能为空'); return }
+    if (!selectedTemplate) { setError(tx('尚未选择模板', 'No template selected')); return }
+    if (!prompt.trim()) { setError(tx('本次要求不能为空', 'Instructions cannot be empty')); return }
+    if (!saveAsName.trim()) { setError(tx('另存为名称不能为空', 'Save-as name cannot be empty')); return }
     setSaving(true); setError(undefined); setNotice(undefined)
     try {
       const result = await saveAsArtifactPromptDefinition(selectedTemplate.id, { name: saveAsName, userPrompt: prompt.trim() })
@@ -112,8 +113,8 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
       setCatalog(nextCatalog)
       setSelectedId(result.definition.id)
       setPrompt(result.definition.kind === 'artifact' ? result.definition.userPrompt : prompt)
-      setNotice(result.warnings.length ? result.warnings.map((item) => item.message).join(' ') : '已另存为提示词。')
-    } catch (e) { setError(e instanceof Error ? e.message : '另存为失败') }
+      setNotice(result.warnings.length ? result.warnings.map((item) => item.message).join(' ') : tx('已另存为提示词。', 'Saved as a prompt.'))
+    } catch (e) { setError(e instanceof Error ? e.message : tx('另存为失败', 'Save as failed')) }
     finally { setSaving(false) }
   }
 
@@ -123,44 +124,44 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
     return () => window.removeEventListener('keydown', onKey)
   }, [onCancel, busy, saving])
 
-  return (<div className={css.dialog} role="dialog" aria-modal="true" aria-label="创建学习成果">
-    <h3 className={css.dialogTitle}>创建学习成果</h3>
-    <div><div className={css.fieldLabel}>来源</div><div className={css.sourceLine}>{sourceLabel}</div></div>
+  return (<div className={css.dialog} role="dialog" aria-modal="true" aria-label={tx('创建学习成果', 'Create study output')}>
+    <h3 className={css.dialogTitle}>{tx('创建学习成果', 'Create study output')}</h3>
+    <div><div className={css.fieldLabel}>{tx('来源', 'Source')}</div><div className={css.sourceLine}>{sourceLabel}</div></div>
     <div>
-      <div className={css.fieldLabel}>类型</div>
-      {customEntry && <div className={css.cardMeta} data-testid="artifact-custom-format-hint">自定义提示词需要先确认结果格式：整理成笔记 = Markdown，生成题目 = Quiz。</div>}
-      <div className={css.kindRow} role="radiogroup" aria-label="类型">
+      <div className={css.fieldLabel}>{tx('类型', 'Type')}</div>
+      {customEntry && <div className={css.cardMeta} data-testid="artifact-custom-format-hint">{tx('自定义提示词需要先确认结果格式：整理成笔记 = Markdown，生成题目 = Quiz。', 'Choose the output format for a custom prompt: note = Markdown, quiz = Quiz.')}</div>}
+      <div className={css.kindRow} role="radiogroup" aria-label={tx('类型', 'Type')}>
         {MODE_KINDS.map((item) => {
-          const labels = { note: '整理成笔记', quiz: '生成题目' } as const
+          const labels = { note: tx('整理成笔记', 'Create note'), quiz: tx('生成题目', 'Generate quiz') } as const
           return <button key={item} type="button" data-testid={'artifact-kind-' + item} disabled={busy || saving} className={css.filterBtn + (kind === item ? ' ' + css.active : '')} role="radio" aria-checked={kind === item} onClick={() => selectKind(item)}>{labels[item]}</button>
         })}
       </div>
     </div>
     <div>
-      <div className={css.fieldLabel}>模板</div>
-      <div className={css.opList} role="listbox" aria-label="Artifact 模板">
+      <div className={css.fieldLabel}>{tx('模板', 'Template')}</div>
+      <div className={css.opList} role="listbox" aria-label={tx('Artifact 模板', 'Study-output templates')}>
         {templates.map((template) => <button key={template.id} type="button" role="option" aria-selected={selectedTemplate?.id === template.id} disabled={busy || saving} className={css.filterBtn + (selectedTemplate?.id === template.id ? ' ' + css.active : '')} onClick={() => selectTemplate(template)}>{template.name}</button>)}
-        {catalog.length > 0 && templates.length === 0 && <span className={css.cardMeta}>没有可用的已启用模板，请在提示词管理中启用一个。</span>}
+        {catalog.length > 0 && templates.length === 0 && <span className={css.cardMeta}>{tx('没有可用的已启用模板，请在提示词管理中启用一个。', 'No enabled templates are available. Enable one in Prompt management.')}</span>}
       </div>
-      {selectedTemplate && <div className={css.cardMeta} style={{ marginTop: '0.375rem' }}>模板：{selectedTemplate.name} · revision {selectedTemplate.revision} · {selectedTemplate.source === 'builtin' ? 'canonical' : '本地自定义'}</div>}
+      {selectedTemplate && <div className={css.cardMeta} style={{ marginTop: '0.375rem' }}>{tx('模板：', 'Template: ')}{selectedTemplate.name} · revision {selectedTemplate.revision} · {selectedTemplate.source === 'builtin' ? 'canonical' : tx('本地自定义', 'local custom')}</div>}
     </div>
     <div>
-      <div className={css.fieldLabel}>本次要求 <span className={css.cardMeta}>（只影响本次生成，不会修改模板）</span></div>
-      <textarea className={css.promptArea} value={prompt} aria-label="本次要求" disabled={busy || saving} onChange={(event) => { setPrompt(event.target.value); setNotice(undefined) }} />
+      <div className={css.fieldLabel}>{tx('本次要求 ', 'Instructions ')}<span className={css.cardMeta}>{tx('（只影响本次生成，不会修改模板）', '(affects only this run and does not change the template)')}</span></div>
+      <textarea className={css.promptArea} value={prompt} aria-label={tx('本次要求', 'Instructions')} disabled={busy || saving} onChange={(event) => { setPrompt(event.target.value); setNotice(undefined) }} />
     </div>
     <div className={css.customArea}>
-      <div className={css.fieldLabel}>另存为提示词</div>
+      <div className={css.fieldLabel}>{tx('另存为提示词', 'Save as prompt')}</div>
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-        <input className={css.actionName} value={saveAsName} disabled={busy || saving || !selectedTemplate} aria-label="另存为名称" placeholder="提示词名称" onChange={(event) => setSaveAsName(event.target.value)} />
-        <Button variant="ghost" onClick={() => void saveAs()} disabled={busy || saving || !selectedTemplate}>{saving ? '保存中…' : '另存为提示词'}</Button>
+        <input className={css.actionName} value={saveAsName} disabled={busy || saving || !selectedTemplate} aria-label={tx('另存为名称', 'Save-as name')} placeholder={tx('提示词名称', 'Prompt name')} onChange={(event) => setSaveAsName(event.target.value)} />
+        <Button variant="ghost" onClick={() => void saveAs()} disabled={busy || saving || !selectedTemplate}>{saving ? tx('保存中…', 'Saving…') : tx('另存为提示词', 'Save as prompt')}</Button>
       </div>
     </div>
     {genError && <div className={css.error} role="alert">{genError}</div>}
     {error && <div className={css.error} role="alert">{error}</div>}
     {notice && <div className={css.cardMeta} role="status">{notice}</div>}
     <div className={css.dialogFoot}>
-      <Button variant="ghost" onClick={onCancel} disabled={busy || saving}>取消</Button>
-      <Button variant="primary" data-testid="artifact-generate" onClick={() => void submit()} disabled={busy || saving || !selectedTemplate}>{busy ? '生成中…' : '生成'}</Button>
+      <Button variant="ghost" onClick={onCancel} disabled={busy || saving}>{tx('取消', 'Cancel')}</Button>
+      <Button variant="primary" data-testid="artifact-generate" onClick={() => void submit()} disabled={busy || saving || !selectedTemplate}>{busy ? tx('生成中…', 'Generating…') : tx('生成', 'Generate')}</Button>
     </div>
   </div>)
 }

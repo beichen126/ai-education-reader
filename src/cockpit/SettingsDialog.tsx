@@ -107,12 +107,12 @@ export function SettingsDialog() {
     try {
       releaseAllPreviews()
       const r = await clearAllLocalData()
-      if (r && r.partialCleanup) { setMsg('本地记录已清除，但部分文件数据清理失败（' + (r.failedPaths?.length ?? 0) + ' 个文件），请再次点击清除重试。'); setClearing(false); return }
+      if (r && r.partialCleanup) { setMsg(tx('本地记录已清除，但部分文件数据清理失败（' + (r.failedPaths?.length ?? 0) + ' 个文件），请再次点击清除重试。', 'Local records were cleared, but ' + (r.failedPaths?.length ?? 0) + ' file(s) could not be removed. Try clearing again.')); setClearing(false); return }
       window.location.reload()
-    } catch (e) { setClearing(false); setMsg('清除本地数据失败，请重试。') }
+    } catch (e) { setClearing(false); setMsg(tx('清除本地数据失败，请重试。', 'Unable to clear local data. Try again.')) }
   }
 
-  const setBusyMsg = (fn: () => Promise<void>, ok: string) => { setBusy(true); setMsg(null); void fn().then(() => setMsg(ok)).catch((e: any) => setMsg(e instanceof BackupError ? e.message : '操作失败')).finally(() => setBusy(false)) }
+  const setBusyMsg = (fn: () => Promise<void>, ok: string) => { setBusy(true); setMsg(null); void fn().then(() => setMsg(ok)).catch((e: any) => setMsg(e instanceof BackupError ? e.message : tx('操作失败', 'Operation failed'))).finally(() => setBusy(false)) }
   const onExportBackup = () => setBusyMsg(() => exportBackupZip(), tx('已导出完整备份 ZIP', 'Complete ZIP backup exported'))
   const onExportMd = () => currentConv ? setBusyMsg(() => exportConversationMd(currentConv.id), tx('已导出当前会话 Markdown', 'Current chat exported as Markdown')) : setMsg(tx('当前没有会话可导出', 'There is no chat to export'))
   const onExportMarked = () => currentConv ? setBusyMsg(() => exportMarkedOnlyMd(currentConv.id), tx('已导出仅标记内容', 'Marked content exported')) : setMsg(tx('当前没有会话可导出', 'There is no chat to export'))
@@ -164,7 +164,7 @@ export function SettingsDialog() {
         <Button variant="primary" onClick={onSave}>{saved ? tx('已保存', 'Saved') : tx('保存 API 设置', 'Save API settings')}</Button>
       </div>
       {mutation.status === 'error' && mutation.error && (
-        <div className={css.testResult} data-ok="false" data-testid="settings-mutation-error">设置保存失败：{mutation.error}</div>
+        <div className={css.testResult} data-ok="false" data-testid="settings-mutation-error">{tx('设置保存失败：', 'Failed to save settings: ')}{mutation.error}</div>
       )}
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
       <div className={css.settingsHint}>{tx('“测试连接”仅调用 GET /models 验证服务可达与 Key 有效，不会发送聊天内容或文档。', 'Test connection only calls GET /models to verify connectivity and the key. It does not send chats or documents.')}</div>
@@ -238,7 +238,7 @@ export function SettingsDialog() {
             <div className={css.storageRow}><span className={css.storageLabel}>{tx('文件存储', 'File storage')}</span><span className={css.storageValue}>{storage.opfsSupported ? tx('OPFS（推荐）', 'OPFS (recommended)') : tx('IndexedDB 兼容模式', 'IndexedDB compatibility mode')}</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>{tx('持久化存储', 'Persistent storage')}</span><span className={css.storageValue}>{storage.storagePersistent === undefined ? tx('不支持', 'Unsupported') : (storage.storagePersistent ? tx('已授予', 'Granted') : tx('未授予', 'Not granted'))}</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>{tx('本站总占用', 'Site usage')}</span><span className={css.storageValue}>{storage.originUsageBytes !== undefined ? formatBytes(storage.originUsageBytes) : tx('浏览器未提供', 'Unavailable')}</span></div>
-            {storage.legacyBinaryCount > 0 && <div className={css.storageRow}><span className={css.storageLabel}>旧版 IndexedDB 二进制</span><span className={css.storageValue}>{storage.legacyBinaryCount} 个等待迁移</span></div>}
+            {storage.legacyBinaryCount > 0 && <div className={css.storageRow}><span className={css.storageLabel}>{tx('旧版 IndexedDB 二进制', 'Legacy IndexedDB binaries')}</span><span className={css.storageValue}>{tx(storage.legacyBinaryCount + ' 个等待迁移', storage.legacyBinaryCount + ' awaiting migration')}</span></div>}
             <div className={css.storageRow}><span className={css.storageLabel}>{tx('学习卡片', 'Study cards')}</span><span className={css.storageValue} data-testid="storage-study-card-count">{tx(storage.studyCardCount + ' 张', String(storage.studyCardCount))}</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>{tx('学习卡片文本占用', 'Study card text')}</span><span className={css.storageValue} data-testid="storage-study-card-bytes">{formatBytes(storage.studyCardTextBytes)}</span></div>
             <div className={css.storageRow}><span className={css.storageLabel}>{tx('图片附件', 'Image attachments')}</span><span className={css.storageValue}>{tx(storage.attachmentCount + ' 张', String(storage.attachmentCount))}</span></div>

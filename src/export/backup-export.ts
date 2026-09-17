@@ -4,7 +4,7 @@ import { listDocumentRecords, readDocumentSourceBlob } from '../documents/docume
 import { listDocumentNotes } from '../documents/document-note-service'
 import type { Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
-import { BACKUP_FORMAT, BACKUP_VERSION, type BackupAttachment, type BackupDocument, type BackupV3, type BackupDraft, type BackupV6, type BackupV7, type BackupBranchDraft, type BackupActiveBranch } from './backup-types'
+import { BACKUP_FORMAT, BACKUP_VERSION, PORTABLE_ARCHIVE_FORMAT, type BackupAttachment, type BackupDocument, type BackupDraft, type BackupV7, type BackupBranchDraft, type BackupActiveBranch, type PortableBackupManifest, type PortableBackupV7 } from './backup-types'
 import { readBinary } from '../storage/binary-store'
 import { BackupError, parseAndValidate } from './backup-import'
 import { allBranches, getActiveBranch } from '../branches/branch-store'
@@ -40,13 +40,19 @@ async function attachmentBlobOf(id: string, mime: string): Promise<Blob> {
   return blob.type ? blob : blob.slice(0, blob.size, mime || 'application/octet-stream')
 }
 
-export async function buildBackup(): Promise<BackupV7> {
+type PortableBinaryEntry = { entry: string; blob: Blob }
+export type PortableBackupPlan = { manifest: PortableBackupManifest; binaries: PortableBinaryEntry[] }
+
+async function buildBackupData(portable: false): Promise<BackupV7>
+async function buildBackupData(portable: true): Promise<PortableBackupPlan>
+async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBackupPlan> {
   const conversations = (await listConversations()).map((conversation) => ({
     ...conversation,
     promptTransitions: conversation.promptTransitions ?? [],
   }))
   const annotations: Annotation[] = []
-  const attachments: BackupAttachment[] = []
+  const attachments: Array<BackupAttachment | { id: string; meta: Attachment; mimeType: string; entry: string }> = []
+  const binaries: PortableBinaryEntry[] = []
   const seen = new Set<string>()
   // Collect attachment ids referenced by conversation messages.
   for (const conv of conversations) {
@@ -99,7 +105,13 @@ export async function buildBackup(): Promise<BackupV7> {
     if (!row) throw new BackupError('本地文件数据不完整，无法生成完整备份：附件 ' + imgId.slice(0, 8) + ' 不存在')
     if (!row.meta) throw new BackupError('本地文件数据不完整，无法生成完整备份：附件 ' + imgId.slice(0, 8) + ' 元数据缺失')
     const blob = await attachmentBlobOf(imgId, row.meta.mimeType)
-    attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, data: await blobToBase64(blob) })
+    if (portable) {
+      const entry = 'attachments/' + encodeURIComponent(row.meta.id)
+      attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, entry })
+      binaries.push({ entry, blob })
+    } else {
+      attachments.push({ id: row.meta.id, meta: row.meta, mimeType: row.meta.mimeType, data: await blobToBase64(blob) })
+    }
   }
   const [apiBaseUrl, model, customSystemPrompt, customSystemPromptEnabled, appearance, visionCapability, pdfNavigationMode, uiLanguage, layoutPreferences, productGuideSeenVersion, lastConversationId] = await Promise.all([
     getSetting('apiBaseUrl'), getSetting('model'), getSetting('customSystemPrompt'), getSetting('customSystemPromptEnabled'), getSetting('appearance'), getSetting('visionCapability'), getSetting('pdfNavigationMode'), getSetting('uiLanguage'), getSetting(LAYOUT_PREFERENCES_KEY), getSetting('productGuideSeenVersion'), getSetting('lastConversationId'),
@@ -122,12 +134,19 @@ export async function buildBackup(): Promise<BackupV7> {
   // Local Document Library: iterate ONE record at a time (metadata, one binary read, base64,
   // next) — never hydrate the whole library first. A document binary that cannot be read
   // makes the backup FAIL (complete backups must be complete).
-  const documents: BackupDocument[] = []
+  const documents: Array<BackupDocument | { id: string; meta: BackupDocument['meta']; mimeType: string; entry: string }> = []
   for (const rec of await listDocumentRecords()) {
     let blob: Blob
     try { blob = await readBinaryForExport(rec.id) }
     catch { throw new BackupError('本地文件数据不完整，无法生成完整备份：文档 ' + rec.id.slice(0, 8) + ' 数据缺失') }
-    documents.push({ id: rec.id, meta: rec.meta as BackupDocument['meta'], mimeType: blob.type || rec.meta.mimeType || 'application/pdf', data: await blobToBase64(blob) })
+    const mimeType = blob.type || rec.meta.mimeType || 'application/pdf'
+    if (portable) {
+      const entry = 'documents/' + encodeURIComponent(rec.id) + '.pdf'
+      documents.push({ id: rec.id, meta: rec.meta as BackupDocument['meta'], mimeType, entry })
+      binaries.push({ entry, blob })
+    } else {
+      documents.push({ id: rec.id, meta: rec.meta as BackupDocument['meta'], mimeType, data: await blobToBase64(blob) })
+    }
   }
   const documentNotes = await listDocumentNotes()
   const artifacts = await listArtifacts()
@@ -141,17 +160,29 @@ export async function buildBackup(): Promise<BackupV7> {
     catch { throw new BackupError('学习卡片数据不合法，无法生成完整备份：卡片 ' + card?.id?.slice(0, 8)) }
   })
   const studyCardPreferences = await getSetting(STUDY_CARD_PREFERENCES_KEY)
-  const backup: BackupV7 = {
+  const backup = {
     format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents, documentNotes, drafts, appearance: appearanceOut, branches, branchDrafts, artifacts, activeBranches, prompts, promptPreferences,
     studyCards,
     ...(studyCardPreferences && typeof studyCardPreferences === 'object' ? { studyCardPreferences: studyCardPreferences as BackupV7['studyCardPreferences'] } : {}),
-  }
+  } as BackupV7 | PortableBackupV7
   // Final self-validation (finding 9.4D.2-0.2): the assembled object MUST pass the SAME
   // pure reference-integrity validator used for import (no JSON round-trip). A "complete"
   // backup that references a missing attachment/document/draft is rejected here, not shipped.
+  if (portable) {
+    return {
+      manifest: { archiveFormat: PORTABLE_ARCHIVE_FORMAT, archiveVersion: 2, backup: backup as PortableBackupV7 },
+      binaries,
+    }
+  }
   parseAndValidate(backup)
-  return backup
+  return backup as BackupV7
 }
+
+export async function buildBackup(): Promise<BackupV7> { return buildBackupData(false) }
+
+/** Build a lightweight manifest plus Blob handles. Blob bytes are not base64-encoded or
+ * materialized here; the ZIP writer consumes each stream incrementally. */
+export async function buildPortableBackupPlan(): Promise<PortableBackupPlan> { return buildBackupData(true) }
 
 // Read exactly ONE document's source Blob (imported here to avoid a hard circular import
 // at module load — backup-import imports binary-store; this stays a lazy boundary hook.

@@ -8,6 +8,7 @@ import { exportNoteMarkdown } from './artifact-export'
 import { useCopyFeedback } from '../dsh/primitives/use-copy-feedback'
 import type { StudyArtifact, ArtifactKind } from './artifact-types'
 import css from './artifact.module.css'
+import { tx } from '../engine/locale'
 
 type Props = {
   artifact: StudyArtifact
@@ -21,11 +22,12 @@ type Props = {
 type EditorMode = 'edit' | 'split' | 'preview'
 
 const kindLabel: Record<ArtifactKind, string> = { note: '笔记', quiz: '题目', summary: '历史类型 · 总结', 'study-guide': '历史类型 · 学习指南', custom: '历史类型 · 自定义' }
+const kindLabelEn: Record<ArtifactKind, string> = { note: 'Note', quiz: 'Quiz', summary: 'Legacy · Summary', 'study-guide': 'Legacy · Study guide', custom: 'Legacy · Custom' }
 
-const MODES: { key: EditorMode; label: string }[] = [
-  { key: 'edit', label: '编辑' },
-  { key: 'split', label: '分屏' },
-  { key: 'preview', label: '预览' },
+const MODES: { key: EditorMode; label: string; labelEn: string }[] = [
+  { key: 'edit', label: '编辑', labelEn: 'Edit' },
+  { key: 'split', label: '分屏', labelEn: 'Split' },
+  { key: 'preview', label: '预览', labelEn: 'Preview' },
 ]
 
 /**
@@ -101,10 +103,10 @@ export function ArtifactEditor({ artifact, onOpenArtifact, onClose, onChanged, s
   }, [])
   async function commitTitle() { if (title.trim() && title.trim() !== artifact.title) { await updateArtifactTitle(artifact.id, title); onChanged() } }
   async function doCopy() { cp.onCopy() }
-  async function doDelete() { if (!globalThis.confirm('删除该学习成果？')) return; await removeArtifact(artifact.id); onChanged(); onClose() }
+  async function doDelete() { if (!globalThis.confirm(tx('删除该学习成果？', 'Delete this study output?'))) return; await removeArtifact(artifact.id); onChanged(); onClose() }
   function doExport() { exportNoteMarkdown(artifact, body) }
   async function doRegenerate() {
-    if (!globalThis.confirm('重新生成将创建一个新版本，当前编辑不会丢失。继续？')) return
+    if (!globalThis.confirm(tx('重新生成将创建一个新版本，当前编辑不会丢失。继续？', 'Regenerating creates a new version and preserves your current edits. Continue?'))) return
     setBusy(true); setGenError(undefined)
     try {
       const draft = await createArtifactDraft({ kind: artifact.kind, conversationId: artifact.source.conversationId, branchId: artifact.source.branchId, throughMessageId: artifact.source.throughMessageId, prompt: artifact.prompt, presetId: artifact.presetId, promptBundle: artifact.promptBundle })
@@ -125,31 +127,31 @@ export function ArtifactEditor({ artifact, onOpenArtifact, onClose, onChanged, s
 
   return (<div className={css.editor}>
     <div className={css.editorHead}>
-      <input className={css.titleInput} value={title} aria-label="标题" onChange={(e) => setTitle(e.target.value)} onBlur={() => void commitTitle()} />
-      <span className={css.cardKind}>{kindLabel[artifact.kind]}</span>
-      {saved && <span className={css.saved}>已保存</span>}
-      <div className={css.modeSwitch} role="radiogroup" aria-label="视图模式">
-        {MODES.map((m) => (<button key={m.key} type="button" className={css.modeBtn + (mode === m.key ? ' ' + css.active : '')} role="radio" aria-checked={mode === m.key} onClick={() => setMode(m.key)}>{m.label}</button>))}
+      <input className={css.titleInput} value={title} aria-label={tx('标题', 'Title')} onChange={(e) => setTitle(e.target.value)} onBlur={() => void commitTitle()} />
+      <span className={css.cardKind}>{tx(kindLabel[artifact.kind], kindLabelEn[artifact.kind])}</span>
+      {saved && <span className={css.saved}>{tx('已保存', 'Saved')}</span>}
+      <div className={css.modeSwitch} role="radiogroup" aria-label={tx('视图模式', 'View mode')}>
+        {MODES.map((m) => (<button key={m.key} type="button" className={css.modeBtn + (mode === m.key ? ' ' + css.active : '')} role="radio" aria-checked={mode === m.key} onClick={() => setMode(m.key)}>{tx(m.label, m.labelEn)}</button>))}
       </div>
-      <Button size="sm" variant="ghost" aria-label="复制正文" onClick={() => void doCopy()}>复制</Button>
-      <Button size="sm" variant="ghost" aria-label="导出 Markdown" onClick={doExport}>导出 Markdown</Button>
-      <Button size="sm" variant="ghost" aria-label="重新生成" disabled={busy} onClick={() => void doRegenerate()}>{busy ? '生成中…' : '重新生成'}</Button>
-      <Button size="sm" variant="ghost" aria-label="删除" onClick={() => void doDelete()}>删除</Button>
-      <Button size="sm" variant="outline" aria-label="关闭" onClick={requestClose}>关闭</Button>
+      <Button size="sm" variant="ghost" aria-label={tx('复制正文', 'Copy content')} onClick={() => void doCopy()}>{tx('复制', 'Copy')}</Button>
+      <Button size="sm" variant="ghost" aria-label={tx('导出 Markdown', 'Export Markdown')} onClick={doExport}>{tx('导出 Markdown', 'Export Markdown')}</Button>
+      <Button size="sm" variant="ghost" aria-label={tx('重新生成', 'Regenerate')} disabled={busy} onClick={() => void doRegenerate()}>{busy ? tx('生成中…', 'Generating…') : tx('重新生成', 'Regenerate')}</Button>
+      <Button size="sm" variant="ghost" aria-label={tx('删除', 'Delete')} onClick={() => void doDelete()}>{tx('删除', 'Delete')}</Button>
+      <Button size="sm" variant="outline" aria-label={tx('关闭', 'Close')} onClick={requestClose}>{tx('关闭', 'Close')}</Button>
     </div>
     {genError && <div className={css.error} role="alert">{genError}</div>}
     <div className={css.editorBody + (mode === 'edit' ? ' ' + css.narrow : '') + (mode === 'preview' ? ' ' + css.previewOnly : '')}>
-      {showEdit && (<div className={css.pane}><div className={css.paneLabel}>编辑</div><textarea className={css.textarea} aria-label="正文 Markdown" value={body} onChange={(e) => scheduleSave(e.target.value)} /></div>)}
-      {showPreview && (<div className={css.pane}><div className={css.paneLabel}>预览</div><div className={css.preview}><MarkdownBlocks content={body} messageId={'artifact:' + artifact.id} /></div></div>)}
+      {showEdit && (<div className={css.pane}><div className={css.paneLabel}>{tx('编辑', 'Edit')}</div><textarea className={css.textarea} aria-label={tx('正文 Markdown', 'Content Markdown')} value={body} onChange={(e) => scheduleSave(e.target.value)} /></div>)}
+      {showPreview && (<div className={css.pane}><div className={css.paneLabel}>{tx('预览', 'Preview')}</div><div className={css.preview}><MarkdownBlocks content={body} messageId={'artifact:' + artifact.id} /></div></div>)}
     </div>
-    <div className={css.provenance}><strong>来源</strong> · {artifact.source.snapshot.sourceLabel}{sourceDeleted ? ' · 原会话已删除' : ''}</div>
+    <div className={css.provenance}><strong>{tx('来源', 'Source')}</strong> · {artifact.source.snapshot.sourceLabel}{sourceDeleted ? tx(' · 原会话已删除', ' · Source chat deleted') : ''}</div>
   </div>)
 }
 
 function genErrorMessage(e: unknown): string {
   if (e instanceof ArtifactGenerationError) return e.message
-  const msg = (e as any)?.name === 'AbortError' ? '已取消生成' : String((e as any)?.message ?? e)
-  return '生成失败：' + msg
+  const msg = (e as any)?.name === 'AbortError' ? tx('已取消生成', 'Generation cancelled') : String((e as any)?.message ?? e)
+  return tx('生成失败：', 'Generation failed: ') + msg
 }
 
 // Regeneration uses the same BYOK model pipeline via the existing non-streaming send.

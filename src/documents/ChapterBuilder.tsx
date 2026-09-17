@@ -17,6 +17,7 @@ import {
   type ChapterDraftItem, type ChapterDraftValidation,
 } from './chapter-builder'
 import css from './chapter-builder.module.css'
+import { tx } from '../engine/locale'
 
 export type ChapterBuilderSave = { chapters: ChapterNode[]; source: DocumentChapterSource }
 
@@ -38,9 +39,9 @@ type Props = {
   onClose: () => void
 }
 
-const SAVE_FAILED_MSG = '无法保存章节，请检查浏览器存储空间后重试。'
-const SAME_PAGE_MSG = '第 {P} 页已有同级章节，请编辑现有章节或调整新章节层级。'
-const INSIDE_SUBTREE_MSG = '当前页位于已有章节结构内部，请在章节编辑器中调整层级或目录结构。'
+const saveFailedMsg = () => tx('无法保存章节，请检查浏览器存储空间后重试。', 'Unable to save chapters. Check browser storage and try again.')
+const samePageMsg = (page: number) => tx('第 ' + page + ' 页已有同级章节，请编辑现有章节或调整新章节层级。', 'Page ' + page + ' already has a chapter at this level. Edit it or choose another level.')
+const insideSubtreeMsg = () => tx('当前页位于已有章节结构内部，请在章节编辑器中调整层级或目录结构。', 'This page is inside an existing chapter tree. Adjust the level or outline structure in the editor.')
 
 function idsBetween(orderedIds: readonly string[], anchorId: string | null, targetId: string): string[] {
   if (!anchorId) return []
@@ -146,7 +147,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
     const result = shiftDraftItemsLevel(items, selectedIds, delta)
     if (result.ok === false) {
       const item = items.find(candidate => candidate.id === result.itemId)
-      setBulkError('批量操作未执行：「' + (item?.title || '未命名章节') + '」不能调整到 L' + result.toLevel + '，本批次未修改。')
+      setBulkError(tx('批量操作未执行：「' + (item?.title || '未命名章节') + '」不能调整到 L' + result.toLevel + '，本批次未修改。', 'Bulk change was not applied: “' + (item?.title || 'Untitled chapter') + '” cannot move to L' + result.toLevel + '.'))
       return
     }
     setBulkError(null)
@@ -159,7 +160,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
     const item = makeNewChapterItem({ currentPage, pageCount, level: 1 })
     setItems(prev => {
       const r = insertChapterByPage(prev, item)
-      if (!r.ok) { setInsertError(('reason' in r && r.reason === 'inside-existing-subtree') ? INSIDE_SUBTREE_MSG : SAME_PAGE_MSG.replace('{P}', String(item.startPage))); return prev }
+      if (!r.ok) { setInsertError(('reason' in r && r.reason === 'inside-existing-subtree') ? insideSubtreeMsg() : samePageMsg(item.startPage)); return prev }
       return r.items
     })
   }
@@ -209,7 +210,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
     } catch {
       // A failed save must NOT fabricate success: builder stays open, draft kept.
       setSaving(false)
-      setSaveError(SAVE_FAILED_MSG)
+      setSaveError(saveFailedMsg())
     }
   }
 
@@ -238,64 +239,64 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
 
   const delIndex = pendingDelete
   const delItem = delIndex != null ? items[delIndex] : null
-  const delTitle = delItem?.title?.trim() || '（未命名）'
+  const delTitle = delItem?.title?.trim() || tx('（未命名）', '(Untitled)')
   const delHasChildren = delIndex != null ? draftHasChildren(items, delIndex) : false
   const delCount = delIndex != null ? subtreeCount(items, delIndex) : 0
   return (
     <div className={css.overlay} data-testid="chapter-builder">
       <div className={css.panel}>
         <div className={css.header}>
-          <span className={css.title}>编辑章节</span>
+          <span className={css.title}>{tx('编辑章节', 'Edit chapters')}</span>
           <div className={css.headerBtns}>
-            <button type="button" className={css.btn} data-testid="cb-cancel" disabled={saving} onClick={close}>取消</button>
-            <button type="button" className={css.btnPrimary} data-testid="cb-save" disabled={saving} onClick={save}>{saving ? '保存中…' : '保存'}</button>
+            <button type="button" className={css.btn} data-testid="cb-cancel" disabled={saving} onClick={close}>{tx('取消', 'Cancel')}</button>
+            <button type="button" className={css.btnPrimary} data-testid="cb-save" disabled={saving} onClick={save}>{saving ? tx('保存中…', 'Saving…') : tx('保存', 'Save')}</button>
           </div>
         </div>
         {!validation.ok && <div className={css.error} data-testid="cb-error">{validation.issues[0].message}</div>}
         {saveError && <div className={css.error} data-testid="cb-save-error">{saveError}</div>}
         {insertError && <div className={css.error} data-testid="cb-insert-error">{insertError}</div>}
         {hint && <div className={css.hint} data-testid="cb-hint">{hint}</div>}
-        {skippedUnresolved > 0 && <div className={css.warn} data-testid="cb-skipped">原目录中有 {skippedUnresolved} 项无法定位页码，未自动加入编辑结果。</div>}
+        {skippedUnresolved > 0 && <div className={css.warn} data-testid="cb-skipped">{tx('原目录中有 ' + skippedUnresolved + ' 项无法定位页码，未自动加入编辑结果。', skippedUnresolved + ' original outline items had no page mapping and were not added.')}</div>}
         <div className={css.searchRow}>
           <input
             className={css.searchInput}
             data-testid="cb-search"
             type="search"
-            placeholder="搜索章节标题…"
+            placeholder={tx('搜索章节标题…', 'Search chapter titles…')}
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
           />
           <span className={css.searchCount} data-testid="cb-visible-count">
-            {normalizedSearch ? `显示 ${visibleEntries.length} / ${items.length}` : `共 ${items.length} 项`}
+            {normalizedSearch ? tx(`显示 ${visibleEntries.length} / ${items.length}`, `Showing ${visibleEntries.length} / ${items.length}`) : tx(`共 ${items.length} 项`, `${items.length} items`)}
           </span>
         </div>
         <div className={css.list} data-testid="cb-list">
           <div className={css.bulkToolbar} data-testid="cb-bulk-toolbar">
             <div className={css.bulkSummary}>
-              <span data-testid="cb-selected-count">已选 {selectedIds.size} 项</span>
-              <button type="button" className={css.bulkBtn} data-testid="cb-clear-selection" onClick={clearSelection}>清除选择</button>
+              <span data-testid="cb-selected-count">{tx('已选 ' + selectedIds.size + ' 项', selectedIds.size + ' selected')}</span>
+              <button type="button" className={css.bulkBtn} data-testid="cb-clear-selection" onClick={clearSelection}>{tx('清除选择', 'Clear selection')}</button>
             </div>
             <div className={css.bulkGroup}>
-              <span className={css.bulkLabel}>选择当前：</span>
-              <button type="button" className={css.bulkBtn} data-testid="cb-select-all" onClick={selectAll}>{normalizedSearch ? '全选当前结果' : '全选'}</button>
+              <span className={css.bulkLabel}>{tx('选择当前：', 'Select:')}</span>
+              <button type="button" className={css.bulkBtn} data-testid="cb-select-all" onClick={selectAll}>{normalizedSearch ? tx('全选当前结果', 'Select all results') : tx('全选', 'Select all')}</button>
               {Array.from({ length: MAX_CHAPTER_LEVEL }, (_, level) => (
                 <button type="button" className={css.bulkBtn} data-testid={'cb-select-level-' + (level + 1)} key={level + 1} onClick={() => selectCurrentLevel(level + 1)}>L{level + 1}</button>
               ))}
             </div>
             <div className={css.bulkGroup}>
-              <span className={css.bulkLabel}>设为：</span>
+              <span className={css.bulkLabel}>{tx('设为：', 'Set to:')}</span>
               {Array.from({ length: MAX_CHAPTER_LEVEL }, (_, level) => (
                 <button type="button" className={css.bulkBtn} data-testid={'cb-bulk-set-' + (level + 1)} key={level + 1} disabled={selectedIds.size === 0} onClick={() => applyBulkLevel(level + 1)}>L{level + 1}</button>
               ))}
             </div>
             <div className={css.bulkGroup}>
-              <button type="button" className={css.bulkBtn} data-testid="cb-bulk-outdent" disabled={selectedIds.size === 0} onClick={() => applyBulkShift(-1)}>减少一级</button>
-              <button type="button" className={css.bulkBtn} data-testid="cb-bulk-indent" disabled={selectedIds.size === 0} onClick={() => applyBulkShift(1)}>增加一级</button>
+              <button type="button" className={css.bulkBtn} data-testid="cb-bulk-outdent" disabled={selectedIds.size === 0} onClick={() => applyBulkShift(-1)}>{tx('减少一级', 'Decrease level')}</button>
+              <button type="button" className={css.bulkBtn} data-testid="cb-bulk-indent" disabled={selectedIds.size === 0} onClick={() => applyBulkShift(1)}>{tx('增加一级', 'Increase level')}</button>
             </div>
             {bulkError && <div className={css.bulkError} data-testid="cb-bulk-error">{bulkError}</div>}
           </div>
-          {items.length === 0 && <div className={css.empty} data-testid="cb-empty">尚无章节，点击下方“从 PDF 第 {currentPage || 1} 页新建章节”开始。</div>}
-          {items.length > 0 && visibleEntries.length === 0 && <div className={css.empty} data-testid="cb-no-results">没有匹配的章节。</div>}
+          {items.length === 0 && <div className={css.empty} data-testid="cb-empty">{tx('尚无章节，点击下方“从 PDF 第 ' + (currentPage || 1) + ' 页新建章节”开始。', 'No chapters yet. Create one from PDF page ' + (currentPage || 1) + ' below.')}</div>}
+          {items.length > 0 && visibleEntries.length === 0 && <div className={css.empty} data-testid="cb-no-results">{tx('没有匹配的章节。', 'No matching chapters.')}</div>}
           {visibleEntries.map(({ item: it, index: i }) => (
             <BuilderRow
               key={it.id}
@@ -321,17 +322,17 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
         </div>
         <div className={css.footer}>
           <div className={css.footerBtns}>
-            <button type="button" className={css.btn} data-testid="cb-add" disabled={saving} onClick={insertNew}>+ 从 PDF 第 {currentPage || 1} 页新建章节</button>
+            <button type="button" className={css.btn} data-testid="cb-add" disabled={saving} onClick={insertNew}>+ {tx('从 PDF 第 ' + (currentPage || 1) + ' 页新建章节', 'Create chapter from PDF page ' + (currentPage || 1))}</button>
           </div>
         </div>
       </div>
       {pendingDelete != null && (
         <div className={css.confirm} data-testid="cb-confirm">
           <div className={css.confirmBox}>
-            <div>{delHasChildren ? '确认删除「' + delTitle + '」及其 ' + delCount + ' 个子章节？' : '确认删除「' + delTitle + '」？'}</div>
+            <div>{delHasChildren ? tx('确认删除「' + delTitle + '」及其 ' + delCount + ' 个子章节？', 'Delete “' + delTitle + '” and its ' + delCount + ' subchapters?') : tx('确认删除「' + delTitle + '」？', 'Delete “' + delTitle + '”?')}</div>
             <div className={css.confirmBtns}>
-              <button type="button" className={css.btn} data-testid="cb-confirm-no" onClick={() => setPendingDelete(null)}>取消</button>
-              <button type="button" className={css.btnPrimary} data-testid="cb-confirm-yes" onClick={() => { const idx = pendingDelete; setPendingDelete(null); confirmDeleteDraft(idx) }}>确认删除</button>
+              <button type="button" className={css.btn} data-testid="cb-confirm-no" onClick={() => setPendingDelete(null)}>{tx('取消', 'Cancel')}</button>
+              <button type="button" className={css.btnPrimary} data-testid="cb-confirm-yes" onClick={() => { const idx = pendingDelete; setPendingDelete(null); confirmDeleteDraft(idx) }}>{tx('确认删除', 'Delete')}</button>
             </div>
           </div>
         </div>
@@ -339,10 +340,10 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
       {confirmDiscard && (
         <div className={css.confirm} data-testid="cb-discard-confirm">
           <div className={css.confirmBox}>
-            <div>放弃未保存的章节修改？</div>
+            <div>{tx('放弃未保存的章节修改？', 'Discard unsaved chapter changes?')}</div>
             <div className={css.confirmBtns}>
-              <button type="button" className={css.btn} data-testid="cb-discard-no" onClick={() => setConfirmDiscard(false)}>继续编辑</button>
-              <button type="button" className={css.btnPrimary} data-testid="cb-discard-yes" onClick={onClose}>放弃修改</button>
+              <button type="button" className={css.btn} data-testid="cb-discard-no" onClick={() => setConfirmDiscard(false)}>{tx('继续编辑', 'Continue editing')}</button>
+              <button type="button" className={css.btnPrimary} data-testid="cb-discard-yes" onClick={onClose}>{tx('放弃修改', 'Discard changes')}</button>
             </div>
           </div>
         </div>
@@ -379,12 +380,12 @@ function BuilderRow(props: {
     <div className={css.row + (error ? ' ' + css.rowErr : '')} data-testid="cb-row">
       <div className={css.indentSpacer} style={{ width: pad }} aria-hidden />
       <div className={css.rowTop}>
-        <input type="checkbox" className={css.selectionCheckbox} data-testid={'cb-select-' + index} aria-label={'选择第 ' + (index + 1) + ' 项'} checked={selected} onChange={e => onSelect(e.target.checked, (e.nativeEvent as MouseEvent).shiftKey)} />
+        <input type="checkbox" className={css.selectionCheckbox} data-testid={'cb-select-' + index} aria-label={tx('选择第 ' + (index + 1) + ' 项', 'Select item ' + (index + 1))} checked={selected} onChange={e => onSelect(e.target.checked, (e.nativeEvent as MouseEvent).shiftKey)} />
         <select
           className={css.levelSelect}
           data-testid={'cb-level-' + index}
-          aria-label={'第 ' + (index + 1) + ' 项层级'}
-          title="选择章节层级"
+          aria-label={tx('第 ' + (index + 1) + ' 项层级', 'Level for item ' + (index + 1))}
+          title={tx('选择章节层级', 'Choose chapter level')}
           value={String(item.level)}
           onChange={e => onLevel(e.target.value)}
         >
@@ -392,15 +393,15 @@ function BuilderRow(props: {
             <option key={level + 1} value={String(level + 1)}>L{level + 1}</option>
           ))}
         </select>
-        <input className={css.titleInput} data-testid={'cb-title-' + index} value={item.title} placeholder="章节标题" onChange={e => onTitle(e.target.value)} />
+        <input className={css.titleInput} data-testid={'cb-title-' + index} value={item.title} placeholder={tx('章节标题', 'Chapter title')} onChange={e => onTitle(e.target.value)} />
         <input className={css.pageInput} data-testid={'cb-page-' + index} inputMode="numeric" value={String(item.startPage)} onChange={e => onPage(e.target.value)} />
       </div>
       <div className={css.rowOps}>
-        <button type="button" className={css.op} data-testid={'cb-up-' + index} title="上移" disabled={!canUp} onClick={onUp}>↑</button>
-        <button type="button" className={css.op} data-testid={'cb-down-' + index} title="下移" disabled={!canDown} onClick={onDown}>↓</button>
-        <button type="button" className={css.op} data-testid={'cb-outdent-' + index} title="减少缩进" disabled={!canOutdent} onClick={onOutdent}>←</button>
-        <button type="button" className={css.op} data-testid={'cb-indent-' + index} title="缩进" disabled={!canIndent} onClick={onIndent}>→</button>
-        <button type="button" className={css.op + ' ' + css.opDel} data-testid={'cb-del-' + index} title="删除" onClick={onDelete}>删除</button>
+        <button type="button" className={css.op} data-testid={'cb-up-' + index} title={tx('上移', 'Move up')} disabled={!canUp} onClick={onUp}>↑</button>
+        <button type="button" className={css.op} data-testid={'cb-down-' + index} title={tx('下移', 'Move down')} disabled={!canDown} onClick={onDown}>↓</button>
+        <button type="button" className={css.op} data-testid={'cb-outdent-' + index} title={tx('减少缩进', 'Outdent')} disabled={!canOutdent} onClick={onOutdent}>←</button>
+        <button type="button" className={css.op} data-testid={'cb-indent-' + index} title={tx('缩进', 'Indent')} disabled={!canIndent} onClick={onIndent}>→</button>
+        <button type="button" className={css.op + ' ' + css.opDel} data-testid={'cb-del-' + index} title={tx('删除', 'Delete')} onClick={onDelete}>{tx('删除', 'Delete')}</button>
       </div>
       {error && <div className={css.error} data-testid={'cb-row-err-' + index}>{error}</div>}
     </div>

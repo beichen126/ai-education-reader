@@ -10,6 +10,7 @@ import { containsNode, ownedMath } from './ownership'
 import type { SelectionMapping } from './selection-types'
 import { markdownSourceForRange } from '../markdown/source-copy'
 import css from './annotate.module.css'
+import { tx } from '../engine/locale'
 
 export function AnnotatedMarkdown({ content, messageId, conversationId, branchId }: { content: string; messageId: string; conversationId: string; branchId?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -122,13 +123,13 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
     <div ref={wrapRef} className={css.wrap} data-highlight={hasHl}>
       <MarkdownBlocks content={content} messageId={messageId} annotations={annotations} onTableAction={onTableAction} onMathAction={onMathAction} />
       {pending && pending.kind === 'math' && (
-        <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{mathCovered ? '取消标记' : '标记公式'}</button></div>
+        <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{mathCovered ? tx('取消标记', 'Unmark') : tx('标记公式', 'Mark formula')}</button></div>
       )}
       {pending && pending.kind === 'text' && (
-        <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{fullyCovered ? '取消标记' : '标记'}</button></div>
+        <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{fullyCovered ? tx('取消标记', 'Unmark') : tx('标记', 'Mark')}</button></div>
       )}
       {pending && pending.kind === 'table-cross-cell' && (
-        <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={markCrossCell}>{hasExactRectangle(annotations, pending.tableId, normalizeBounds(pending.startCell.row, pending.startCell.column, pending.endCell.row, pending.endCell.column)) ? '取消标记' : '标记'}</button></div>
+        <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={markCrossCell}>{hasExactRectangle(annotations, pending.tableId, normalizeBounds(pending.startCell.row, pending.startCell.column, pending.endCell.row, pending.endCell.column)) ? tx('取消标记', 'Unmark') : tx('标记', 'Mark')}</button></div>
       )}
     </div>
   )

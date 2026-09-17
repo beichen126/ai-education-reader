@@ -6,6 +6,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { createPortal } from 'react-dom'
 import { clampScale, clampPan, zoomAtPoint, resetTransform, DOUBLE_CLICK_SCALE } from './zoom'
 import css from './zoomable-image.module.css'
+import { tx as localeText } from '../engine/locale'
 
 export interface ZoomableImageDialogProps {
   src?: string
@@ -232,7 +233,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
         {src ? <img className={css.image} data-testid="viewer-image" src={src} alt={alt} draggable={false}
           style={{ width: fit ? fit.w : undefined, height: fit ? fit.h : undefined, transform: 'translate3d(' + tx + 'px,' + ty + 'px,0) scale(' + scale + ')', willChange: 'transform' }}
           onLoad={e => { const el = e.currentTarget; setNat({ w: el.naturalWidth, h: el.naturalHeight }) }}
-        /> : <div className={css.missing}>无法读取这张图片</div>}
+        /> : <div className={css.missing}>{localeText('无法读取这张图片', 'Unable to load this image')}</div>}
       </div>
       {zoomHudVisible && (
         <div className={css.zoomHud} data-testid="viewer-zoom-hud" aria-hidden="true">{percent}%</div>
@@ -240,10 +241,10 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
       {(hasNav || onBackToList) && (
         <div className={css.topbar}>
           <div className={css.navBar} onPointerDown={e => e.stopPropagation()}>
-            {hasNav && onPrev && <button type="button" className={css.ctrl} data-testid="viewer-prev" disabled={index! <= 0} onClick={onPrev}>{labels.prev || '上一张'}</button>}
+            {hasNav && onPrev && <button type="button" className={css.ctrl} data-testid="viewer-prev" disabled={index! <= 0} onClick={onPrev}>{labels.prev || localeText('上一张', 'Previous')}</button>}
             {hasNav && <span className={css.counter}>{index! + 1} / {count}</span>}
-            {hasNav && onNext && <button type="button" className={css.ctrl} data-testid="viewer-next" disabled={index! >= count! - 1} onClick={onNext}>{labels.next || '下一张'}</button>}
-            {onBackToList && <button type="button" className={css.ctrl} onClick={onBackToList}>{labels.backToList || '返回列表'}</button>}
+            {hasNav && onNext && <button type="button" className={css.ctrl} data-testid="viewer-next" disabled={index! >= count! - 1} onClick={onNext}>{labels.next || localeText('下一张', 'Next')}</button>}
+            {onBackToList && <button type="button" className={css.ctrl} onClick={onBackToList}>{labels.backToList || localeText('返回列表', 'Back to list')}</button>}
           </div>
         </div>
       )}

@@ -20,6 +20,11 @@ function useFullscreen() {
   return { fs, toggle }
 }
 
+function localizedSessionTitle(session: ChatSession): string {
+  const title = displayTitle(session)
+  return title === NEW_TITLE ? tx(NEW_TITLE, 'New chat') : title
+}
+
 export function Sidebar({ collapsed, width }: { collapsed: boolean; width: number }) {
   const sessions = useSessions(s => s.list)
   const current = useSessions(s => s.current)
@@ -29,7 +34,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   const [q, setQ] = useState('')
   const { fs, toggle } = useFullscreen()
   // Search the same text the user sees (displayTitle), so auto/manual titles are findable.
-  const filtered = q ? sessions.filter(s => displayTitle(s).toLowerCase().includes(q.toLowerCase())) : sessions
+  const filtered = q ? sessions.filter(s => localizedSessionTitle(s).toLowerCase().includes(q.toLowerCase())) : sessions
   const fsTitle = fs ? tx('退出全屏', 'Exit full screen') : tx('全屏', 'Full screen')
   const narrow = useLayoutStore(s => s.narrow)
   const toggleDesktopSidebar = () => {
@@ -60,7 +65,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
       <div className={css.sidebarHead}>
         <div className={css.sidebarTitle}>{t('brand.localBuild')}</div>
         <div className={css.sidebarHeadBtns}>
-          <button type="button" className={css.collapseBtn} data-testid="sidebar-collapse" aria-label={tx('收起侧栏', 'Collapse sidebar')} title={tx('收起侧栏', 'Collapse sidebar')} onClick={collapseSidebar}>‹ {tx('收起', 'Collapse')}</button>
+          <button type="button" className={css.collapseBtn} data-testid="sidebar-collapse" aria-label={tx('收起侧栏', 'Collapse sidebar')} title={tx('收起侧栏', 'Collapse sidebar')} onClick={collapseSidebar}><span aria-hidden="true">‹</span></button>
         </div>
       </div>
       <div className={css.sidebarNew}>
@@ -104,7 +109,7 @@ function SessionRow({ session, active, busy, narrow }: { session: ChatSession; a
   const [renameVal, setRenameVal] = useState('')
   const [confirming, setConfirming] = useState(false)
   const onOpen = () => { if (busy) { window.alert(tx('正在生成，请先停止生成', 'A response is being generated. Stop it first.')); return } sessionsActions.open(session.id); if (narrow) layoutStore.actions.closeNarrowSidebar() }
-  const startRename = () => { setMenuOpen(false); setConfirming(false); setRenameVal(displayTitle(session)); setRenaming(true) }
+  const startRename = () => { setMenuOpen(false); setConfirming(false); setRenameVal(localizedSessionTitle(session)); setRenaming(true) }
   const commitRename = () => {
     const v = sanitizeTitle(renameVal)
     if (v && v !== displayTitle(session)) void sessionsActions.setTitle(session.id, v)
@@ -132,7 +137,7 @@ function SessionRow({ session, active, busy, narrow }: { session: ChatSession; a
     <div className={css.sessionRowWrap + (active ? ' ' + css.sessionRowWrapActive : '')}>
       <button className={css.sessionRow} data-testid="history-session" onClick={onOpen}>
         <span className={css.sessionDot} data-state={active ? 'done' : 'idle'} />
-        <span className={css.sessionTitle}>{displayTitle(session)}</span>
+        <span className={css.sessionTitle}>{localizedSessionTitle(session)}</span>
         <span className={css.sessionCount}>{session.messages.length}</span>
       </button>
       <button className={css.rowMenu} title={tx('操作', 'Actions')} onClick={() => setMenuOpen(o => !o)}><span className={css.rowMenuDots}>⋯</span></button>

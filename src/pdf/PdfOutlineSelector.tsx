@@ -6,6 +6,7 @@
 // children — the data layer normalizes/dedups the ranges instead.
 import type { PdfOutlineItem } from './pdf-outline'
 import css from './pdf-panel.module.css'
+import { tx } from '../engine/locale'
 
 type Props = {
   items: PdfOutlineItem[]
@@ -49,7 +50,7 @@ function OutlineRow({ node, depth, selectedIds, expandedIds, onToggleSelect, onT
           type="button"
           className={css.outlineChevron}
           aria-expanded={expanded}
-          aria-label={expanded ? '收起' : '展开'}
+          aria-label={expanded ? tx('收起', 'Collapse') : tx('展开', 'Expand')}
           data-testid={'outline-toggle-' + node.id}
           disabled={!hasChildren}
           onClick={() => hasChildren && onToggle(node.id)}
@@ -65,7 +66,7 @@ function OutlineRow({ node, depth, selectedIds, expandedIds, onToggleSelect, onT
               type="checkbox"
               className={css.outlineCheck}
               checked={selected}
-              aria-label={'选择章节 ' + node.title}
+              aria-label={tx('选择章节 ', 'Select chapter ') + node.title}
               onChange={() => onToggleSelect(node)}
             />
             <span className={css.outlineTitleText}>{node.title}</span>
@@ -88,7 +89,7 @@ function OutlineRow({ node, depth, selectedIds, expandedIds, onToggleSelect, onT
 
 export function PdfOutlineSelector({ items, selectedIds, expandedIds, onToggleSelect, onToggle }: Props) {
   return (
-    <div className={css.outlineList} role="tree" aria-label="章节目录">
+    <div className={css.outlineList} role="tree" aria-label={tx('章节目录', 'Chapter outline')}>
       {items.map(it => <OutlineRow key={it.id} node={it} depth={0} selectedIds={selectedIds} expandedIds={expandedIds} onToggleSelect={onToggleSelect} onToggle={onToggle} />)}
     </div>
   )

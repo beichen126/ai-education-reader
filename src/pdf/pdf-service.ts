@@ -33,14 +33,14 @@ export class PdfError extends Error {
 
 export function pdfErrorMessage(kind: PdfErrorKind): string {
   switch (kind) {
-    case 'not-pdf': return '这不是一个 PDF 文件。'
-    case 'read-failed': return 'PDF 文件读取失败，请重试。'
-    case 'parse-failed': return '无法解析该 PDF，文件可能已损坏或格式不支持。'
-    case 'empty': return '该 PDF 没有页面。'
-    case 'not-open': return '尚未打开 PDF 文件。'
-    case 'render-failed': return '页面渲染失败。'
-    case 'password': return '此 PDF 需要密码，当前版本暂未支持打开受密码保护的文件。'
-    default: return 'PDF 处理失败。'
+    case 'not-pdf': return tx('这不是一个 PDF 文件。', 'This is not a PDF file.')
+    case 'read-failed': return tx('PDF 文件读取失败，请重试。', 'Unable to read the PDF. Try again.')
+    case 'parse-failed': return tx('无法解析该 PDF，文件可能已损坏或格式不支持。', 'Unable to parse this PDF. It may be damaged or unsupported.')
+    case 'empty': return tx('该 PDF 没有页面。', 'This PDF has no pages.')
+    case 'not-open': return tx('尚未打开 PDF 文件。', 'No PDF is open.')
+    case 'render-failed': return tx('页面渲染失败。', 'Page rendering failed.')
+    case 'password': return tx('此 PDF 需要密码，当前版本暂未支持打开受密码保护的文件。', 'This PDF requires a password. Password-protected files are not supported yet.')
+    default: return tx('PDF 处理失败。', 'PDF processing failed.')
   }
 }
 
@@ -253,3 +253,4 @@ export function startPageSurfaceRender(doc: import('pdfjs-dist').PDFDocumentProx
     },
   }
 }
+import { tx } from '../engine/locale'

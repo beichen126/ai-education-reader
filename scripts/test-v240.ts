@@ -42,4 +42,4 @@ assert.doesNotMatch(conversation, /isStreaming \? \(\s*<div className=\{css\.ass
 const releaseGate = readFileSync('scripts/test-release.mjs', 'utf8')
 assert.match(releaseGate, /['"]e2e-v240['"]/, 'v2.4.0 browser coverage must stay in the release gate')
 
-console.log('v2.4.0 ZIP, language, and streaming-render regressions: PASS')
+console.log('v2.4.x ZIP, language, and streaming-render regressions: PASS')

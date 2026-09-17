@@ -17,6 +17,8 @@ export type BackupAppearance = 'system' | 'light' | 'dark'
 export type BackupAttachment = { id: string; meta: Attachment; mimeType: string; data: string }
 /** Original document: metadata (WITHOUT the Blob) + mimeType + base64-encoded source file. */
 export type BackupDocument = { id: string; meta: Omit<LearningDocument, 'sourceBlob'>; mimeType: string; data: string }
+export type PortableBackupBinary = { id: string; meta: Attachment; mimeType: string; entry: string }
+export type PortableBackupDocument = { id: string; meta: Omit<LearningDocument, 'sourceBlob'>; mimeType: string; entry: string }
 /** Stage 4-9.3 single-document backup shape - accepted for import forever. */
 export type BackupV1 = {
   format: 'ai-education-reader-backup'
@@ -86,7 +88,18 @@ export type BackupV7 = Omit<BackupV6, 'version'> & {
   studyCardPreferences?: StudyCardPreferences
 }
 export type Backup = BackupV1 | BackupV2 | BackupV3 | BackupV4 | BackupV5 | BackupV6 | BackupV7
+/** ZIP v2 stores large binaries as separate entries instead of base64 strings in JSON. */
+export type PortableBackupV7 = Omit<BackupV7, 'attachments' | 'documents'> & {
+  attachments: PortableBackupBinary[]
+  documents: PortableBackupDocument[]
+}
+export type PortableBackupManifest = {
+  archiveFormat: 'ai-education-reader-portable-zip'
+  archiveVersion: 2
+  backup: PortableBackupV7
+}
 export const BACKUP_FORMAT = 'ai-education-reader-backup'
+export const PORTABLE_ARCHIVE_FORMAT = 'ai-education-reader-portable-zip'
 /** Stage 0-6 product backups used this identifier; imports must still accept it. */
 export const LEGACY_BACKUP_FORMAT = 'dsh-eink-backup'
 export const BACKUP_VERSION = 7

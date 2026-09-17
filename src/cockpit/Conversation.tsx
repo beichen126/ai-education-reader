@@ -199,7 +199,7 @@ export function Conversation() {
       setCreating(null); setOpenArtifact(out); void branchChat.refresh()
     } catch (e) {
       // A2: never swallow generation errors. The dialog stays open and shows the error.
-      setCreatingError(e instanceof ArtifactGenerationError ? e.message : '生成失败：' + String((e as any)?.message ?? e))
+      setCreatingError(e instanceof ArtifactGenerationError ? e.message : tx('生成失败：', 'Generation failed: ') + String((e as any)?.message ?? e))
       // A1: if the fresh draft was never claimed (busy / pre-flight failure), don't leak it.
       if (draftId) {
         const cur = await getArtifact(draftId)
@@ -233,8 +233,10 @@ export function Conversation() {
             learningUiActions.openCard(card.id, { filter: { kind: 'all' }, query: '', sort: 'created-desc', seed: 1, orderedIds: [card.id] })
           }
           setCardNotice(rating !== undefined
-            ? '已保存学习卡片「' + card.title + '」并评为 ' + rating + ' 分'
-            : result.kind === 'created' ? '已保存为学习卡片「' + card.title + '」' : '这条回复已经保存过，已打开原卡片「' + card.title + '」')
+            ? tx('已保存学习卡片「' + card.title + '」并评为 ' + rating + ' 分', 'Saved study card “' + card.title + '” with a ' + rating + '-star rating')
+            : result.kind === 'created'
+              ? tx('已保存为学习卡片「' + card.title + '」', 'Saved as study card “' + card.title + '”')
+              : tx('这条回复已经保存过，已打开原卡片「' + card.title + '」', 'This response was already saved. Opened “' + card.title + '”.'))
         }
       } else {
         if (mountedRef.current) {
@@ -243,10 +245,10 @@ export function Conversation() {
         }
       }
     } catch (error) {
-      const message = error instanceof Error && error.message ? error.message : '保存失败，请重试'
+      const message = error instanceof Error && error.message ? error.message : tx('保存失败，请重试', 'Save failed. Try again.')
       if (mountedRef.current) {
         setCardSaves(previous => ({ ...previous, [messageId]: { state: 'failed', error: message } }))
-        setCardNotice('保存失败：' + message)
+        setCardNotice(tx('保存失败：', 'Save failed: ') + message)
       }
     }
   }
@@ -260,7 +262,7 @@ export function Conversation() {
       return
     }
     learningUiActions.openCard(saved.cardId, { filter: { kind: 'all' }, query: '', sort: 'created-desc', seed: 1, orderedIds: [saved.cardId] })
-    setCardNotice('已打开学习卡片「' + (saved.title || '未命名卡片') + '」')
+    setCardNotice(tx('已打开学习卡片「' + (saved.title || '未命名卡片') + '」', 'Opened study card “' + (saved.title || 'Untitled card') + '”'))
   }
   return (
     <div className={css.conversation} data-testid="conversation">
@@ -330,7 +332,7 @@ export function Conversation() {
       </div>
       {cardNotice && <div className={css.cardNotice} role="status" aria-live="polite" data-testid="card-save-status">{cardNotice}<button type="button" className={css.cardNoticeClose} aria-label={tx('关闭提示', 'Dismiss')} onClick={() => setCardNotice(null)}>×</button></div>}
       {creating && (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', padding: '1rem', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}><ArtifactCreateDialog sourceLabel={creatingSourceLabel(session, branchChat.activeBranchId, creating.messageId)} initialKind={creating.kind} customEntry={creating.customEntry} busy={creatingBusy} error={creatingError} onSubmit={(i) => void onCreateArtifact(i)} onCancel={() => setCreating(null)} /></div></div>)}
-      {inspectedTransition && <ConversationPromptInspector transition={inspectedTransition} positionLabel={inspectedTransition.afterMessageId ? '从下一条消息开始' : '会话开始'} onClose={() => setInspectedTransition(null)} />}
+      {inspectedTransition && <ConversationPromptInspector transition={inspectedTransition} positionLabel={inspectedTransition.afterMessageId ? tx('从下一条消息开始', 'From the next message') : tx('会话开始', 'Start of chat')} onClose={() => setInspectedTransition(null)} />}
       {inspectedQuickFollowUp && <QuickFollowUpPromptDialog metadata={inspectedQuickFollowUp} onClose={() => setInspectedQuickFollowUp(null)} />}
       {artView === 'library' && <ArtifactLibraryOverlay artifacts={libArtifacts} onOpen={(a) => { setOpenArtifact(a); setArtView(null) }} onClose={() => setArtView(null)} />}
       {openArtifact && <ArtifactViewerOverlay artifact={openArtifact} onOpen={setOpenArtifact} onClose={() => setOpenArtifact(null)} onChanged={() => void branchChat.refresh()} />}
@@ -340,8 +342,8 @@ export function Conversation() {
 
 function PromptTransitionDivider({ transition, onOpen }: { transition: PromptTransition; onOpen: () => void }) {
   return <div className={css.modeDivider} data-testid="mode-transition-divider" data-transition-id={transition.id}>
-    <span>模式：{transition.snapshot.name}</span>
-    <button type="button" onClick={onOpen} aria-label={'查看「' + transition.snapshot.name + '」当时提示词'}>查看当时提示词</button>
+    <span>{tx('模式：', 'Mode: ')}{transition.snapshot.name === '默认' ? tx('默认', 'Default') : transition.snapshot.name}</span>
+    <button type="button" onClick={onOpen} aria-label={tx('查看「' + transition.snapshot.name + '」当时提示词', 'View the prompt used for “' + transition.snapshot.name + '”')}>{tx('查看当时提示词', 'View prompt used')}</button>
   </div>
 }
 
@@ -366,7 +368,7 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
       ) : (
         <div className={css.assistantBody} data-empty></div>
       )}
-      {m.status && m.error && <div className={css.errorBanner} role="alert" data-testid="assistant-generation-error">{m.status === 'aborted' ? '已停止生成：' : '生成失败：'}{m.error}</div>}
+      {m.status && m.error && <div className={css.errorBanner} role="alert" data-testid="assistant-generation-error">{m.status === 'aborted' ? tx('已停止生成：', 'Generation stopped: ') : tx('生成失败：', 'Generation failed: ')}{m.error}</div>}
       {(canCopySource || (stable && onToggleMenu && onBranch && onArtifact)) && (
         <div className={css.messageTools}>
           {canCopySource && <MessageSourceCopyButton source={m.content} />}
@@ -407,20 +409,20 @@ function MessageSourceCopyButton({ source }: { source: string }) {
     type="button"
     className={css.messageToolButton}
     data-testid="message-copy-source"
-    aria-label={copy.copied ? '已复制回复原文' : '复制回复原始 Markdown 和 LaTeX'}
-    title="复制完整的原始 Markdown / LaTeX"
+    aria-label={copy.copied ? tx('已复制回复原文', 'Response source copied') : tx('复制回复原始 Markdown 和 LaTeX', 'Copy original Markdown and LaTeX')}
+    title={tx('复制完整的原始 Markdown / LaTeX', 'Copy complete original Markdown / LaTeX')}
     onClick={copy.onCopy}
-  >{copy.copied ? '已复制' : '复制全文'}</button>
+  >{copy.copied ? tx('已复制', 'Copied') : tx('复制全文', 'Copy all')}</button>
 }
 
 function QuickFollowUpBar({ items, disabled, sendingId, onSend, onInspect, onConfigure }: { items: QuickFollowUpPrompt[]; disabled: boolean; sendingId: string | null; onSend: (item: QuickFollowUpPrompt) => void; onInspect: (metadata: QuickFollowUpMetadata) => void; onConfigure: () => void }) {
   if (items.length === 0) {
-    return <div className={css.quickFollowUpBar} data-testid="quick-follow-up-bar"><button type="button" className={css.quickFollowUpConfigure} data-testid="quick-follow-up-configure" onClick={onConfigure}>＋ 设置快捷追问</button></div>
+    return <div className={css.quickFollowUpBar} data-testid="quick-follow-up-bar"><button type="button" className={css.quickFollowUpConfigure} data-testid="quick-follow-up-configure" onClick={onConfigure}>＋ {tx('设置快捷追问', 'Set up quick follow-ups')}</button></div>
   }
   const inspect = (item: QuickFollowUpPrompt) => onInspect({ promptId: item.id, labelSnapshot: item.label, promptSnapshot: item.userPrompt })
   return (
     <div className={css.quickFollowUpBar} data-testid="quick-follow-up-bar">
-      <span className={css.quickFollowUpTitle}>继续追问</span>
+      <span className={css.quickFollowUpTitle}>{tx('继续追问', 'Follow up')}</span>
       <div className={css.quickFollowUpItems}>
         {items.map((item) => <QuickFollowUpAction key={item.id} item={item} disabled={disabled} sending={sendingId === item.id} onSend={() => onSend(item)} onInspect={() => inspect(item)} />)}
       </div>
@@ -430,8 +432,8 @@ function QuickFollowUpBar({ items, disabled, sendingId, onSend, onInspect, onCon
 
 function QuickFollowUpAction({ item, disabled, sending, onSend, onInspect }: { item: QuickFollowUpPrompt; disabled: boolean; sending: boolean; onSend: () => void; onInspect: () => void }) {
   return <span className={css.quickFollowUpAction}>
-    <button type="button" className={css.quickFollowUpButton} data-testid="quick-follow-up-send" disabled={disabled} aria-label={'发送快捷追问：' + item.label} onClick={onSend}>{sending ? '发送中…' : item.label}</button>
-    <button type="button" className={css.quickFollowUpInspect} data-testid="quick-follow-up-inspect" disabled={disabled} aria-label={'查看实际提示词：' + item.label} onClick={onInspect}>ⓘ</button>
+    <button type="button" className={css.quickFollowUpButton} data-testid="quick-follow-up-send" disabled={disabled} aria-label={tx('发送快捷追问：', 'Send quick follow-up: ') + item.label} onClick={onSend}>{sending ? tx('发送中…', 'Sending…') : item.label}</button>
+    <button type="button" className={css.quickFollowUpInspect} data-testid="quick-follow-up-inspect" disabled={disabled} aria-label={tx('查看实际提示词：', 'View exact prompt: ') + item.label} onClick={onInspect}>ⓘ</button>
   </span>
 }
 
@@ -450,10 +452,10 @@ function QuickFollowUpPromptDialog({ metadata, onClose }: { metadata: QuickFollo
   }, [onClose])
   return <div className={css.quickFollowUpOverlay} role="presentation" onClick={onClose}>
     <div className={css.quickFollowUpDialog} role="dialog" aria-modal="true" aria-labelledby="quick-follow-up-dialog-title" data-testid="quick-follow-up-dialog" onClick={(event) => event.stopPropagation()}>
-      <div className={css.quickFollowUpDialogHeader}><strong id="quick-follow-up-dialog-title">{metadata.labelSnapshot}</strong><button ref={closeRef} type="button" onClick={onClose} aria-label="关闭实际提示词">×</button></div>
-      <p>发送时使用的实际提示词</p>
+      <div className={css.quickFollowUpDialogHeader}><strong id="quick-follow-up-dialog-title">{metadata.labelSnapshot}</strong><button ref={closeRef} type="button" onClick={onClose} aria-label={tx('关闭实际提示词', 'Close exact prompt')}>×</button></div>
+      <p>{tx('发送时使用的实际提示词', 'Exact prompt used when sending')}</p>
       <pre>{metadata.promptSnapshot}</pre>
-      <button type="button" className={css.quickFollowUpClose} onClick={onClose}>关闭</button>
+      <button type="button" className={css.quickFollowUpClose} onClick={onClose}>{tx('关闭', 'Close')}</button>
     </div>
   </div>
 }
@@ -463,7 +465,7 @@ function PdfSourceButton({ context }: { context: { documentId: string; pageNumbe
   if (!context.documentId || pages.length === 0) return null
   return (
     <button type="button" className={css.pdfSourceBtn} data-testid="message-pdf-source" onClick={() => documentUiActions.openReader(context.documentId, pages[0])}>
-      查看来源页面 · 第 {pages[0]} 页{pages.length > 1 ? `（共 ${pages.length} 页）` : ''}
+      {tx('查看来源页面 · 第 ', 'View source · page ')}{pages[0]}{tx(' 页', '')}{pages.length > 1 ? tx(`（共 ${pages.length} 页）`, ` (${pages.length} pages)`) : ''}
     </button>
   )
 }
@@ -506,7 +508,7 @@ function PendingThumb({ id, onRemove, onOpen }: { id: string; onRemove: () => vo
   const { url } = useAttachmentPreview(id)
   return (
     <span className={css.pic}>
-      <img src={url} alt="" role="button" tabIndex={0} aria-label="查看图片" onClick={onOpen}
+      <img src={url} alt="" role="button" tabIndex={0} aria-label={tx('查看图片', 'View image')} onClick={onOpen}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }} />
       <button className={css.picDel} onClick={onRemove}><IconCloseOutline16 size={12} /></button>
     </span>
@@ -539,14 +541,14 @@ function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBra
   const addPdfToDraft = async (payload: PdfAddPayload): Promise<PdfAddResult> => {
     // Shared implementation (also used by the Document Reader): budget guard -> one
     // groupId -> saveGeneratedImages -> addDraftImages with full rollback.
-    if (!sessionId) return { ok: false, count: 0, error: '没有当前会话，无法加入。' }
+    if (!sessionId) return { ok: false, count: 0, error: tx('没有当前会话，无法加入。', 'There is no active chat to add this to.') }
     return addPdfContextToDraft(sessionId, payload)
   }
   // Block 0.4: operation ownership + cancellation. Snapshot the operation identity at
   // start; a stale / cancelled op NEVER writes into a conversation that is no longer the
   // active one, and leaves no partial Draft group. Switching conversation aborts the old run.
   const addFromLibrary = async (selection: PdfSelection, docId: string, fileName: string) => {
-    if (!sessionId) { setLibMsg('当前没有可加入的对话，请先创建一个会话。'); setLibPickerOpen(false); return }
+    if (!sessionId) { setLibMsg(tx('当前没有可加入的对话，请先创建一个会话。', 'There is no active chat. Create a chat first.')); setLibPickerOpen(false); return }
     const gen = ++libGenRef.current
     libCancelledRef.current = false
     const targetConversationId = sessionId
@@ -560,8 +562,8 @@ function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBra
       const res = await executeDocumentContext({ targetConversationId, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === libGenRef.current) setLibBusy({ done: p.done, total: p.total }) } })
       if (gen !== libGenRef.current) return
       if (!res.ok && res.error) setLibMsg(res.error)
-      else if (res.ok) setLibMsg('已加入当前对话 · ' + res.count + ' 页')
-    } catch { if (gen === libGenRef.current) setLibMsg('无法生成上下文。') }
+      else if (res.ok) setLibMsg(tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages'))
+    } catch { if (gen === libGenRef.current) setLibMsg(tx('无法生成上下文。', 'Unable to build context.')) }
     finally { if (gen === libGenRef.current) setLibBusy(null) }
   }
   const cancelLib = () => { libCancelledRef.current = true; libGenRef.current++ }
@@ -638,7 +640,7 @@ function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBra
     const imgs = all.filter(f => !isPdf(f))
     if (pdfs.length === 0) { onFiles(files); return }
     if (pdfs.length === 1 && imgs.length === 0) { setPdfPanel({ open: true, file: pdfs[0] }); return }
-    setPhotoError('一次请选择一个 PDF，或选择一组图片。')
+    setPhotoError(tx('一次请选择一个 PDF，或选择一组图片。', 'Select one PDF or a group of images at a time.'))
   }
   // User removes a pending draft image explicitly -> the attachment is gone for good.
   const removePic = (id: string) => { removeDraftImage(key, id); void deleteAttachment(id) }
@@ -680,31 +682,31 @@ function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBra
           ) : (
             <PdfContextCard key={'g' + item.groupId + '-' + idx} item={item} onDelete={() => removeGroup(item)} onRemovePage={id => removePic(id)} />
           ))}
-          <span className={css.picCount}>已添加 {picIds.length} 张图片</span>
+          <span className={css.picCount}>{tx('已添加 ', 'Added ')}{picIds.length}{tx(' 张图片', ' images')}</span>
         </div>
       )}
       <div className={css.composerBar}>
         {/* ONE unified attachment trigger (A2). Clicking opens a compact menu dispatching to
             the existing image / local-PDF / library actions. The hidden file inputs stay;
             the trigger merely dispatches into them. No domain merge. */}
-        <button type="button" ref={attachBtnRef} className={css.attachBtn} role="button" aria-label="添加资料" title="添加资料" data-testid="composer-attach" aria-haspopup="menu" aria-expanded={attachMenuOpen} onClick={() => setAttachMenuOpen(v => !v)}>
+        <button type="button" ref={attachBtnRef} className={css.attachBtn} role="button" aria-label={tx('添加资料', 'Add material')} title={tx('添加资料', 'Add material')} data-testid="composer-attach" aria-haspopup="menu" aria-expanded={attachMenuOpen} onClick={() => setAttachMenuOpen(v => !v)}>
           <IconDocument16 />
         </button>
         {attachMenuOpen && (
           <div className={css.addFileMenu} data-testid="composer-add-file-menu" ref={attachMenuRef}>
-            <div className={css.menuTitle}>添加资料</div>
-            <button type="button" className={css.menuItem} data-testid="composer-add-image" onClick={() => { setAttachMenuOpen(false); imageInputRef.current?.click() }}><IconPhoto16 /> 打开本地图片</button>
-            <button type="button" className={css.menuItem} data-testid="composer-add-pdf" onClick={() => { setAttachMenuOpen(false); pdfInputRef.current?.click() }}><IconDocument16 /> 打开本地 PDF</button>
-            <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}><IconFolderOpenOutline16 /> 从资料库添加</button>
+            <div className={css.menuTitle}>{tx('添加资料', 'Add material')}</div>
+            <button type="button" className={css.menuItem} data-testid="composer-add-image" onClick={() => { setAttachMenuOpen(false); imageInputRef.current?.click() }}><IconPhoto16 /> {tx('打开本地图片', 'Open local images')}</button>
+            <button type="button" className={css.menuItem} data-testid="composer-add-pdf" onClick={() => { setAttachMenuOpen(false); pdfInputRef.current?.click() }}><IconDocument16 /> {tx('打开本地 PDF', 'Open local PDF')}</button>
+            <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}><IconFolderOpenOutline16 /> {tx('从资料库添加', 'Add from library')}</button>
           </div>
         )}
         <input ref={imageInputRef} data-testid="composer-images-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
         <input ref={pdfInputRef} data-testid="composer-pdf-input" type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
         <input ref={materialsInputRef} data-testid="composer-materials-input" type="file" accept=".pdf,application/pdf,.jpg,.jpeg,.png,.gif,.webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onMaterialsSelected(e.target.files); e.target.value = '' }} />
-        <textarea className={css.composerText} value={text} aria-label="输入消息" placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
+        <textarea className={css.composerText} value={text} aria-label={tx('输入消息', 'Message')} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
           onChange={e => setDraftText(key, e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }} />
-        <button className={css.sendBtn} onClick={send} disabled={busy}>{busy ? '生成中' : '发送'}</button>
+        <button className={css.sendBtn} onClick={send} disabled={busy}>{busy ? tx('生成中', 'Generating') : tx('发送', 'Send')}</button>
       </div>
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}
       {pdfPanel.open && <PdfPanel initialFile={pdfPanel.file} onClose={() => setPdfPanel({ open: false })} onAddToDraft={addPdfToDraft} />}
@@ -713,14 +715,14 @@ function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBra
         <div>
           {libBusy && (
             <div className={css.ctxHint} data-testid="composer-ctx-progress">
-              <span>正在准备 AI Context {libBusy.done} / {libBusy.total} 页</span>
-              <button type="button" className={css.ctxCancel} data-testid="composer-ctx-cancel" onClick={cancelLib}>取消</button>
+              <span>{tx('正在准备 AI Context ', 'Preparing AI context ')}{libBusy.done} / {libBusy.total}{tx(' 页', ' pages')}</span>
+              <button type="button" className={css.ctxCancel} data-testid="composer-ctx-cancel" onClick={cancelLib}>{tx('取消', 'Cancel')}</button>
             </div>
           )}
           {libMsg && <div className={css.ctxHint} data-testid="composer-ctx-msg">{libMsg}</div>}
         </div>
-        {sessionId && <div className={css.contextUsage} data-testid="composer-context-usage" title="文本 token 为本地估算；图片占用由模型决定。发送时仅保留最近一轮含图消息。" aria-label={'已占用上下文，约 ' + contextUsage.estimatedTextTokens + ' tokens，' + contextUsage.imageCount + ' 张图'}>
-          已占用上下文 · 约 {formatEstimatedTokens(contextUsage.estimatedTextTokens)} tokens{contextUsage.imageCount > 0 ? ' · ' + contextUsage.imageCount + ' 张图' : ''}
+        {sessionId && <div className={css.contextUsage} data-testid="composer-context-usage" title={tx('文本 token 为本地估算；图片占用由模型决定。发送时仅保留最近一轮含图消息。', 'Text tokens are estimated locally. Image usage depends on the model. Only the latest turn containing images is sent.')} aria-label={tx('已占用上下文，约 ' + contextUsage.estimatedTextTokens + ' tokens，' + contextUsage.imageCount + ' 张图', 'Context used, about ' + contextUsage.estimatedTextTokens + ' tokens and ' + contextUsage.imageCount + ' images')}>
+          {tx('已占用上下文 · 约 ', 'Context used · about ')}{formatEstimatedTokens(contextUsage.estimatedTextTokens)} tokens{contextUsage.imageCount > 0 ? tx(' · ' + contextUsage.imageCount + ' 张图', ' · ' + contextUsage.imageCount + ' images') : ''}
         </div>}
       </div>
     </div>
@@ -729,16 +731,16 @@ function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBra
 
 function ConversationTurnRail({ turns, activeId, onSelect }: { turns: readonly ConversationTurn[]; activeId?: string; onSelect: (turn: ConversationTurn) => void }) {
   return (
-    <nav className={css.turnRail} aria-label="对话轮次导航" data-testid="conversation-turn-rail">
+    <nav className={css.turnRail} aria-label={tx('对话轮次导航', 'Chat turn navigation')} data-testid="conversation-turn-rail">
       {turns.map((turn, index) => (
         <button
           key={turn.id}
           type="button"
           className={css.turnRailMark}
           style={{ '--turn-weight': turn.weight } as CSSProperties}
-          aria-label={'跳转到第 ' + (index + 1) + ' 轮：' + turn.preview}
+          aria-label={tx('跳转到第 ' + (index + 1) + ' 轮：' + turn.preview, 'Jump to turn ' + (index + 1) + ': ' + turn.preview)}
           aria-current={activeId === turn.id ? 'true' : undefined}
-          title={'第 ' + (index + 1) + ' 轮 · ' + turn.preview}
+          title={tx('第 ' + (index + 1) + ' 轮 · ' + turn.preview, 'Turn ' + (index + 1) + ' · ' + turn.preview)}
           data-testid="conversation-turn-mark"
           onClick={() => onSelect(turn)}
         />
@@ -752,8 +754,8 @@ async function artifactModelCall(args: { apiKey: string; baseUrl: string; model:
   return (await sendTextChat({ apiKey: args.apiKey, baseUrl: args.baseUrl, model: args.model, messages: args.messages as any, signal: args.signal })).content
 }
 function creatingSourceLabel(session: { id: string } | undefined, branchId: string | undefined, messageId: string): string {
-  const base = session ? (branchId ? '当前分支 · ' : '当前会话 · ') : '会话'
-  return base + '截止「' + messageId.slice(0, 8) + '」'
+  const base = session ? (branchId ? tx('当前分支 · ', 'Current branch · ') : tx('当前会话 · ', 'Current chat · ')) : tx('会话', 'Chat')
+  return base + tx('截止「' + messageId.slice(0, 8) + '」', 'through “' + messageId.slice(0, 8) + '”')
 }
 function ArtifactLibraryOverlay({ artifacts, onOpen, onClose }: { artifacts: StudyArtifact[]; onOpen: (a: StudyArtifact) => void; onClose: () => void }) {
   return (<div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 90, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={onClose}><div onClick={(e) => e.stopPropagation()} style={{ background: 'var(--dsw-alias-bg-layer-2)', borderRadius: '12px', width: 'min(46rem, 94vw)', maxHeight: '86vh', overflow: 'auto' }}><ArtifactLibrary onOpen={onOpen} /></div></div>)
@@ -780,10 +782,10 @@ function ArtifactViewerOverlay({ artifact, onOpen, onClose, onChanged }: { artif
 function ArtifactPanelChrome({ artifact, sourceDeleted, onClose, actions }: { artifact: StudyArtifact; sourceDeleted: boolean; onClose: () => void; actions?: ReactNode }) {
   return (<div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--dsw-alias-border-l2)', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
     <strong style={{ color: 'var(--dsw-alias-label-primary)' }}>{artifact.title}</strong>
-    <span style={{ fontSize: '0.75rem', color: 'var(--dsw-alias-label-tertiary)' }}>{artifact.source.snapshot.sourceLabel}{sourceDeleted ? ' · 原会话已删除' : ''}</span>
+    <span style={{ fontSize: '0.75rem', color: 'var(--dsw-alias-label-tertiary)' }}>{artifact.source.snapshot.sourceLabel}{sourceDeleted ? tx(' · 原会话已删除', ' · Source chat deleted') : ''}</span>
     <div style={{ flex: 1 }} />
     {actions}
-    <Button size="sm" variant="outline" aria-label="关闭" onClick={onClose}>关闭</Button>
+    <Button size="sm" variant="outline" aria-label={tx('关闭', 'Close')} onClick={onClose}>{tx('关闭', 'Close')}</Button>
   </div>)
 }
 
@@ -792,8 +794,8 @@ function GeneratingArtifactBody({ artifact, onClose }: { artifact: StudyArtifact
     <ArtifactPanelChrome artifact={artifact} sourceDeleted={false} onClose={onClose} />
     <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '0.75rem', padding: '2rem', color: 'var(--dsw-alias-label-secondary)' }}>
       <div className={css.artifactSpinner} aria-hidden="true" />
-      <div>{artifact.status === 'generating' ? '正在生成…' : '尚未开始生成'}</div>
-      <div style={{ fontSize: '0.8125rem', color: 'var(--dsw-alias-label-tertiary)' }}>生成完成后将在这里显示成果；失败时也可在此查看错误原因。</div>
+      <div>{artifact.status === 'generating' ? tx('正在生成…', 'Generating…') : tx('尚未开始生成', 'Generation has not started')}</div>
+      <div style={{ fontSize: '0.8125rem', color: 'var(--dsw-alias-label-tertiary)' }}>{tx('生成完成后将在这里显示成果；失败时也可在此查看错误原因。', 'The result will appear here when ready. If it fails, the error will be shown here.')}</div>
     </div>
   </div>)
 }
@@ -812,22 +814,22 @@ function ErrorArtifactBody({ artifact, sourceDeleted, onClose, onOpen, onChanged
       } catch (e) {
         const cur = await getArtifact(draft.id)
         if (cur && cur.status === 'draft') await removeArtifact(draft.id).catch(() => undefined)
-        setErr(e instanceof ArtifactGenerationError ? e.message : '生成失败：' + String((e as any)?.message ?? e))
+        setErr(e instanceof ArtifactGenerationError ? e.message : tx('生成失败：', 'Generation failed: ') + String((e as any)?.message ?? e))
       }
     } finally { setBusy(false) }
   }
-  async function del() { if (!globalThis.confirm('删除该学习成果？')) return; await removeArtifact(artifact.id); onChanged(); onClose() }
+  async function del() { if (!globalThis.confirm(tx('删除该学习成果？', 'Delete this study output?'))) return; await removeArtifact(artifact.id); onChanged(); onClose() }
   return (<div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-    <ArtifactPanelChrome artifact={artifact} sourceDeleted={sourceDeleted} onClose={onClose} actions={<Button size="sm" variant="ghost" aria-label="删除" onClick={() => void del()}>删除</Button>} />
+    <ArtifactPanelChrome artifact={artifact} sourceDeleted={sourceDeleted} onClose={onClose} actions={<Button size="sm" variant="ghost" aria-label={tx('删除', 'Delete')} onClick={() => void del()}>{tx('删除', 'Delete')}</Button>} />
     <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
-      <div style={{ color: 'var(--dsw-alias-state-error-primary)', fontWeight: 600, marginBottom: '0.5rem' }}>生成失败</div>
-      <p style={{ color: 'var(--dsw-alias-label-secondary)', margin: '0 0 0.75rem' }}>{artifact.error || '未知错误'}</p>
+      <div style={{ color: 'var(--dsw-alias-state-error-primary)', fontWeight: 600, marginBottom: '0.5rem' }}>{tx('生成失败', 'Generation failed')}</div>
+      <p style={{ color: 'var(--dsw-alias-label-secondary)', margin: '0 0 0.75rem' }}>{artifact.error || tx('未知错误', 'Unknown error')}</p>
       {err && <p style={{ color: 'var(--dsw-alias-state-error-primary)', margin: '0 0 0.75rem' }}>{err}</p>}
-      {artifact.generatedContent !== undefined && (<button type="button" className={css.filterBtn} onClick={() => setShowRaw(!showRaw)}>{showRaw ? '收起原始输出' : '查看原始输出'}</button>)}
+      {artifact.generatedContent !== undefined && (<button type="button" className={css.filterBtn} onClick={() => setShowRaw(!showRaw)}>{showRaw ? tx('收起原始输出', 'Hide raw output') : tx('查看原始输出', 'View raw output')}</button>)}
       {showRaw && artifact.generatedContent !== undefined && (<pre style={{ marginTop: '0.75rem', maxHeight: '16rem', overflow: 'auto', background: 'var(--dsw-alias-bg-base)', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '0.5rem', padding: '0.625rem', whiteSpace: 'pre-wrap', fontSize: '0.8125rem', color: 'var(--dsw-alias-label-primary)' }}>{artifact.generatedContent}</pre>)}
     </div>
     <div style={{ padding: '0.75rem 1rem', borderTop: '1px solid var(--dsw-alias-border-l2)', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
-      <Button size="sm" variant="primary" disabled={busy} onClick={() => void regenerate()}>{busy ? '生成中…' : '重新生成'}</Button>
+      <Button size="sm" variant="primary" disabled={busy} onClick={() => void regenerate()}>{busy ? tx('生成中…', 'Generating…') : tx('重新生成', 'Regenerate')}</Button>
     </div>
   </div>)
 }
@@ -835,7 +837,7 @@ function ErrorArtifactBody({ artifact, sourceDeleted, onClose, onOpen, onChanged
 function QuizArtifactBody({ artifact, sourceDeleted, onClose }: { artifact: StudyArtifact; sourceDeleted: boolean; onClose: () => void }) {
   const canExport = !!artifact.quiz
   return (<div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-    <ArtifactPanelChrome artifact={artifact} sourceDeleted={sourceDeleted} onClose={onClose} actions={canExport ? (<><Button size="sm" variant="ghost" aria-label="导出 Markdown" onClick={() => exportQuizMarkdown(artifact)}>导出 Markdown</Button><Button size="sm" variant="ghost" aria-label="导出 JSON" onClick={() => exportQuizJson(artifact)}>导出 JSON</Button></>) : undefined} />
+    <ArtifactPanelChrome artifact={artifact} sourceDeleted={sourceDeleted} onClose={onClose} actions={canExport ? (<><Button size="sm" variant="ghost" aria-label={tx('导出 Markdown', 'Export Markdown')} onClick={() => exportQuizMarkdown(artifact)}>{tx('导出 Markdown', 'Export Markdown')}</Button><Button size="sm" variant="ghost" aria-label={tx('导出 JSON', 'Export JSON')} onClick={() => exportQuizJson(artifact)}>{tx('导出 JSON', 'Export JSON')}</Button></>) : undefined} />
     <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>{artifact.quiz ? <QuizViewer quiz={artifact.quiz} /> : null}</div>
   </div>)
 }

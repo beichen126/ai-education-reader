@@ -8,6 +8,7 @@ import { applyGlobalOffset, setManualPageOverride, validateMappedTocReview, canU
 import { emptyReviewState, markRowUnchecked, markChangedRowsUnchecked, verifiedCount as countVerified, resolveSaveStage, type ReviewState, type ReviewStateValue } from './toc-review-state'
 import type { ChapterNode, DocumentChapterSource } from './document-types'
 import css from './toc-review.module.css'
+import { tx } from '../engine/locale'
 
 export type TocReviewSave = { chapters: ChapterNode[]; source: DocumentChapterSource }
 
@@ -73,7 +74,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
       if (raw.trim() === '' || !Number.isInteger(Number(raw.trim())) || Number(raw.trim()) < 1) {
         if (!blocking.includes(i)) { blocking.push(i); errorCount++ }
         issuesByRow[i] = issuesByRow[i] || []
-        if (!issuesByRow[i].includes('层级非法')) issuesByRow[i].push('层级非法')
+        if (!issuesByRow[i].includes('层级非法')) issuesByRow[i].push(tx('层级非法', 'Invalid level'))
       }
     }
     return {
@@ -100,13 +101,13 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   const jump = (i: number) => { const p = rows[i]?.startPage; if (p != null) onJump(p); setIdx(i) }
   const markVerified = (i: number) => setState(s => ({ ...s, [i]: 'verified' }))
   // 9.4C.1: verify is a no-op (with a hint) for a blocking/unresolved row — never marked verified.
-  const verifyButton = (i: number) => { if (isBlocking(i)) { setSaveError('第 ' + (i + 1) + ' 项仍需修正后才能标记为正确。'); return } markVerified(i) }
+  const verifyButton = (i: number) => { if (isBlocking(i)) { setSaveError(tx('第 ' + (i + 1) + ' 项仍需修正后才能标记为正确。', 'Item ' + (i + 1) + ' must be corrected before it can be verified.')); return } markVerified(i) }
 
   // 继续检查 (Stage 9.4D.1): if the CURRENT row is blocking, set an explicit hint and STAY
   // on it (never silently jump to the next item). Otherwise mark verified and advance.
   const continueReview = () => {
     const cur = rows[idx]
-    if (cur && isBlocking(idx)) { setSaveError('第 ' + (idx + 1) + ' 项仍需修正后才能继续检查。'); return }
+    if (cur && isBlocking(idx)) { setSaveError(tx('第 ' + (idx + 1) + ' 项仍需修正后才能继续检查。', 'Item ' + (idx + 1) + ' must be corrected before continuing.')); return }
     if (cur) markVerified(idx)
     const next = rows.findIndex((_, i) => state[i] === 'unchecked' && i > idx)
     const target = next >= 0 ? next : rows.findIndex((_, k) => state[k] === 'unchecked')
@@ -134,9 +135,9 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   const calibrateWithCurrent = () => {
     const cur = rows[idx]
     if (!cur) return
-    if (cur.startPage == null) { setSaveError('请先为当前项填写对应的 PDF 物理页，再用它校准全书。'); return }
+    if (cur.startPage == null) { setSaveError(tx('请先为当前项填写对应的 PDF 物理页，再用它校准全书。', 'Enter the physical PDF page for this item before calibrating the full document.')); return }
     const printed = canonicalNumericPageNumber(cur.pageLabel)
-    if (printed == null) { setSaveError('「' + cur.pageLabel + '」不是可识别的纯数字页码，无法作为校准项。'); return }
+    if (printed == null) { setSaveError(tx('「' + cur.pageLabel + '」不是可识别的纯数字页码，无法作为校准项。', '“' + cur.pageLabel + '” is not a numeric page label and cannot be used for calibration.')); return }
     const n = cur.startPage - printed
     setOffset(String(n))
     setRows(r => {
@@ -182,7 +183,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
       uncheckedAck: uncheckedAckRef.current,
       issueAck: issueAckRef.current,
     })
-    if (stage.kind === 'invalid') { setSaveError('还有 ' + stage.invalidCount + ' 项需要修正后才能保存。'); return }
+    if (stage.kind === 'invalid') { setSaveError(tx('还有 ' + stage.invalidCount + ' 项需要修正后才能保存。', stage.invalidCount + ' items must be corrected before saving.')); return }
     if (stage.kind === 'confirm-unchecked') { setConfirmUnchecked(true); return }
     if (stage.kind === 'confirm-issue') { setConfirmIssue(true); return }
     void doSave()
@@ -192,7 +193,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
     try {
       const tree = buildChapterTreeFromDraft(toDraft(rows), pageCount, 'ai-toc')
       await onSave({ chapters: tree, source: 'ai-toc' })
-    } catch { setSaveError('保存目录失败，请重试。'); setSaving(false) }
+    } catch { setSaveError(tx('保存目录失败，请重试。', 'Unable to save the outline. Try again.')); setSaving(false) }
   }
 
   // Progress reflects TRULY verified rows only — a row marked 待修改 is NOT counted as verified.
@@ -209,49 +210,49 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
     <div className={css.overlay} data-testid="toc-review">
       <div className={css.panel}>
         <div className={css.header}>
-          <span className={css.title}>检查目录</span>
-          <span className={css.sub} data-testid="toc-review-progress">已检查 {verifiedCount} / {rows.length}</span>
+          <span className={css.title}>{tx('检查目录', 'Review outline')}</span>
+          <span className={css.sub} data-testid="toc-review-progress">{tx('已检查 ', 'Reviewed ')}{verifiedCount} / {rows.length}</span>
           <div className={css.headerBtns}>
-            <button type="button" className={css.btn} data-testid="toc-review-edit-all" onClick={() => onEditAll(rows)}>编辑全部目录</button>
-            <button type="button" className={css.btn} data-testid="toc-review-close" onClick={onClose}>取消</button>
-            <button type="button" className={css.btnPrimary} data-testid="toc-review-save" disabled={saving || invalid} onClick={requestSave}>{saving ? '保存中…' : '保存目录'}</button>
+            <button type="button" className={css.btn} data-testid="toc-review-edit-all" onClick={() => onEditAll(rows)}>{tx('编辑全部目录', 'Edit full outline')}</button>
+            <button type="button" className={css.btn} data-testid="toc-review-close" onClick={onClose}>{tx('取消', 'Cancel')}</button>
+            <button type="button" className={css.btnPrimary} data-testid="toc-review-save" disabled={saving || invalid} onClick={requestSave}>{saving ? tx('保存中…', 'Saving…') : tx('保存目录', 'Save outline')}</button>
           </div>
         </div>
         {notice && <div className={css.warn} data-testid="toc-review-notice">{notice}</div>}
         {saveError && <div className={css.err} data-testid="toc-review-error">{saveError}</div>}
-        {invalid && <div className={css.err} data-testid="toc-review-invalid">还有 {invalidCount} 项需要修正后才能保存。</div>}
-        {unresolvedCount > 0 && <div className={css.warn} data-testid="toc-review-unresolved">有 {unresolvedCount} 项页码待确认。</div>}
+        {invalid && <div className={css.err} data-testid="toc-review-invalid">{tx('还有 ' + invalidCount + ' 项需要修正后才能保存。', invalidCount + ' items must be corrected before saving.')}</div>}
+        {unresolvedCount > 0 && <div className={css.warn} data-testid="toc-review-unresolved">{tx('有 ' + unresolvedCount + ' 项页码待确认。', unresolvedCount + ' page mappings need confirmation.')}</div>}
         <div className={css.reviewBody}>
           <div className={css.list} data-testid="toc-review-list">
             {rows.map((it, i) => (
               <div key={i} className={css.item + (i === idx ? ' ' + css.active : '')} data-testid={'toc-review-item-' + i} data-sp={it.startPage ?? ''} data-state={state[i] || 'unchecked'} onClick={() => jump(i)}>
                 <div className={css.itemTitle}><span className={css.itemMark}>{state[i] === 'verified' ? '✓' : state[i] === 'issue' ? '!' : '·'}</span><span className={css.itemText}>{it.title}</span></div>
-                <div className={css.itemMeta}>L{it.level} · {it.pageLabel}{it.startPage != null ? ' → PDF ' + it.startPage : ' · 页码待确认'}</div>
+                <div className={css.itemMeta}>L{it.level} · {it.pageLabel}{it.startPage != null ? ' → PDF ' + it.startPage : tx(' · 页码待确认', ' · page needs confirmation')}</div>
                 <div className={css.itemBtns}>
-                  <button type="button" className={css.mini} data-testid={'toc-review-ok-' + i} disabled={isBlocking(i)} onClick={(e) => { e.stopPropagation(); verifyButton(i) }}>✓ 正确</button>
+                  <button type="button" className={css.mini} data-testid={'toc-review-ok-' + i} disabled={isBlocking(i)} onClick={(e) => { e.stopPropagation(); verifyButton(i) }}>✓ {tx('正确', 'Correct')}</button>
                 </div>
               </div>
             ))}
-            {rows.length === 0 && <div className={css.empty} data-testid="toc-review-empty">没有识别到条目。</div>}
+            {rows.length === 0 && <div className={css.empty} data-testid="toc-review-empty">{tx('没有识别到条目。', 'No entries were detected.')}</div>}
           </div>
           <div className={css.adjust} data-testid="toc-review-adjust">
-            <div className={css.adjustTitle}>快速调整当前项</div>
+            <div className={css.adjustTitle}>{tx('快速调整当前项', 'Adjust current item')}</div>
             <div className={css.adjustCurrent} data-testid="toc-review-current-title">{rows[idx]?.title || '—'}</div>
-            <label className={css.field}>标题 <input className={css.input} data-testid="toc-review-title" value={rows[idx]?.title || ''} onChange={e => editRow(idx, { title: e.target.value })} /></label>
-            <label className={css.field}>层级 <input className={css.input} data-testid="toc-review-level" value={levelRaw[idx] ?? String(rows[idx]?.level ?? '')} inputMode="numeric" onChange={e => onLevelInput(idx, e.target.value)} /></label>
-            <label className={css.field}>PDF页 <input className={css.input} data-testid="toc-review-page" value={rows[idx]?.startPage ?? ''} placeholder="待确认" onChange={e => onPageInput(idx, e.target.value)} /></label>
+            <label className={css.field}>{tx('标题', 'Title')} <input className={css.input} data-testid="toc-review-title" value={rows[idx]?.title || ''} onChange={e => editRow(idx, { title: e.target.value })} /></label>
+            <label className={css.field}>{tx('层级', 'Level')} <input className={css.input} data-testid="toc-review-level" value={levelRaw[idx] ?? String(rows[idx]?.level ?? '')} inputMode="numeric" onChange={e => onLevelInput(idx, e.target.value)} /></label>
+            <label className={css.field}>{tx('PDF页', 'PDF page')} <input className={css.input} data-testid="toc-review-page" value={rows[idx]?.startPage ?? ''} placeholder={tx('待确认', 'Unconfirmed')} onChange={e => onPageInput(idx, e.target.value)} /></label>
             {canOffset && (
               <div className={css.offset}>
-                <div className={css.adjustTitle}>页码映射</div>
+                <div className={css.adjustTitle}>{tx('页码映射', 'Page mapping')}</div>
                 <div className={css.calib} data-testid="toc-review-calib">
-                  <span className={css.calibMeta}>当前项印刷页 <b data-testid="toc-review-calib-printed">{rows[idx]?.pageLabel ?? '—'}</b> · 对应 PDF 页 {rows[idx]?.startPage != null ? rows[idx]?.startPage : '请在上方“PDF页”填写后再匹配'}</span>
-                  <button type="button" className={css.mini} data-testid="toc-review-calibrate" onClick={calibrateWithCurrent}>按此对应关系匹配其余页码</button>
+                  <span className={css.calibMeta}>{tx('当前项印刷页 ', 'Printed page ')}<b data-testid="toc-review-calib-printed">{rows[idx]?.pageLabel ?? '—'}</b> · {tx('对应 PDF 页 ', 'PDF page ')}{rows[idx]?.startPage != null ? rows[idx]?.startPage : tx('请在上方“PDF页”填写后再匹配', 'enter a PDF page above to calibrate')}</span>
+                  <button type="button" className={css.mini} data-testid="toc-review-calibrate" onClick={calibrateWithCurrent}>{tx('按此对应关系匹配其余页码', 'Match remaining pages from this pair')}</button>
                 </div>
                 <details className={css.detail}>
-                  <summary className={css.detailSummary}>高级：数字偏移（offset）</summary>
+                  <summary className={css.detailSummary}>{tx('高级：数字偏移（offset）', 'Advanced: numeric offset')}</summary>
                   <div className={css.offsetAdv}>
                     <label className={css.field}>offset <input className={css.input} data-testid="toc-review-offset" value={offset} onChange={e => setOffset(e.target.value)} /></label>
-                    <button type="button" className={css.mini} data-testid="toc-review-apply-offset" onClick={applyGlobal}>重新计算全书映射</button>
+                    <button type="button" className={css.mini} data-testid="toc-review-apply-offset" onClick={applyGlobal}>{tx('重新计算全书映射', 'Recalculate full-document mapping')}</button>
                   </div>
                 </details>
               </div>
@@ -259,16 +260,16 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
           </div>
         </div>
         <div className={css.nav}>
-          <button type="button" className={css.btn} data-testid="toc-review-prev" onClick={() => idx > 0 && jump(idx - 1)}>上一项</button>
-          <button type="button" className={css.btn} data-testid="toc-review-next" onClick={continueReview}>继续检查</button>
+          <button type="button" className={css.btn} data-testid="toc-review-prev" onClick={() => idx > 0 && jump(idx - 1)}>{tx('上一项', 'Previous item')}</button>
+          <button type="button" className={css.btn} data-testid="toc-review-next" onClick={continueReview}>{tx('继续检查', 'Continue review')}</button>
         </div>
         {confirmUnchecked && (
           <div className={css.confirmWrap} data-testid="toc-review-unchecked-confirm">
             <div className={css.confirmBox}>
-              <div>还有 {rows.filter((_, i) => state[i] === 'unchecked').length} 项未检查，仍然保存目录？</div>
+              <div>{tx('还有 ' + rows.filter((_, i) => state[i] === 'unchecked').length + ' 项未检查，仍然保存目录？', rows.filter((_, i) => state[i] === 'unchecked').length + ' items are unreviewed. Save the outline anyway?')}</div>
               <div className={css.confirmBtns}>
-                <button type="button" className={css.btn} data-testid="toc-review-unchecked-no" onClick={() => setConfirmUnchecked(false)}>继续检查</button>
-                <button type="button" className={css.btnPrimary} data-testid="toc-review-unchecked-yes" onClick={() => { setConfirmUnchecked(false); uncheckedAckRef.current = true; advanceSave() }}>仍然保存</button>
+                <button type="button" className={css.btn} data-testid="toc-review-unchecked-no" onClick={() => setConfirmUnchecked(false)}>{tx('继续检查', 'Continue review')}</button>
+                <button type="button" className={css.btnPrimary} data-testid="toc-review-unchecked-yes" onClick={() => { setConfirmUnchecked(false); uncheckedAckRef.current = true; advanceSave() }}>{tx('仍然保存', 'Save anyway')}</button>
               </div>
             </div>
           </div>
@@ -276,10 +277,10 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
         {confirmIssue && (
           <div className={css.confirmWrap} data-testid="toc-review-issue-confirm">
             <div className={css.confirmBox}>
-              <div>还有 {rows.filter((_, i) => state[i] === 'issue').length} 项标记为待修改，仍然保存？</div>
+              <div>{tx('还有 ' + rows.filter((_, i) => state[i] === 'issue').length + ' 项标记为待修改，仍然保存？', rows.filter((_, i) => state[i] === 'issue').length + ' items are marked for changes. Save anyway?')}</div>
               <div className={css.confirmBtns}>
-                <button type="button" className={css.btn} data-testid="toc-review-issue-no" onClick={() => setConfirmIssue(false)}>返回修改</button>
-                <button type="button" className={css.btnPrimary} data-testid="toc-review-issue-yes" onClick={() => { setConfirmIssue(false); issueAckRef.current = true; advanceSave() }}>仍然保存</button>
+                <button type="button" className={css.btn} data-testid="toc-review-issue-no" onClick={() => setConfirmIssue(false)}>{tx('返回修改', 'Go back')}</button>
+                <button type="button" className={css.btnPrimary} data-testid="toc-review-issue-yes" onClick={() => { setConfirmIssue(false); issueAckRef.current = true; advanceSave() }}>{tx('仍然保存', 'Save anyway')}</button>
               </div>
             </div>
           </div>

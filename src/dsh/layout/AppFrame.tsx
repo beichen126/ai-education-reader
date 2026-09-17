@@ -19,6 +19,7 @@ import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_COLLA
 import { DocumentTitle } from './DocumentTitle.tsx'
 import { persistSidebarLayout, type LayoutState } from '../../engine/layout-store'
 import css from './AppFrame.module.css'
+import { tx } from '../../engine/locale'
 
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
@@ -81,7 +82,7 @@ function DragHandle(props: { side: 'sidebar' | 'details'; left: number; onStart:
       data-side={props.side}
       data-testid={props.side + '-resize-handle'}
       role="separator"
-      aria-label={props.side === 'sidebar' ? '调整侧栏宽度' : '调整详情栏宽度'}
+      aria-label={props.side === 'sidebar' ? tx('调整侧栏宽度', 'Resize sidebar') : tx('调整详情栏宽度', 'Resize details panel')}
       aria-orientation="vertical"
       data-dragging={dragging || undefined}
       onPointerDown={onPointerDown}
@@ -221,7 +222,7 @@ const productTitle = ((globalThis as any).process?.env?.DSH_CLIENT_TITLE) ?? t('
             width: narrow && panels.narrowExpanded ? mobileDrawerWidth : cols.sidebar,
           })}
       </div>
-      {narrow && panels.narrowExpanded && <button type="button" className={css.mobileBackdrop} data-testid="mobile-history-backdrop" aria-label="关闭历史会话" onClick={() => actions.closeNarrowSidebar()} />}
+      {narrow && panels.narrowExpanded && <button type="button" className={css.mobileBackdrop} data-testid="mobile-history-backdrop" aria-label={tx('关闭历史会话', 'Close chat history')} onClick={() => actions.closeNarrowSidebar()} />}
       <>
         {/* Both column occupants stay at fixed tree positions from first
             paint — no loading gate: a bare status line reads worse than

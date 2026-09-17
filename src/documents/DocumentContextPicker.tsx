@@ -11,6 +11,7 @@ import { bookmarkRangePresentation, type BookmarkRangeEndMode } from '../pdf/boo
 import { ChapterRangeModeControl } from './ChapterRangeModeControl'
 import { DocumentContextPreview } from './DocumentContextPreview'
 import css from './document-context-picker.module.css'
+import { tx } from '../engine/locale'
 
 type Props = {
   documentId?: string
@@ -77,7 +78,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
   useEffect(() => {
     const id = scoped ? documentId : (doc ? doc.id : null)
     if (!id) return
-    void getDocumentContextDescriptor(id).then(d => { setDoc(d); if (!d) setBlockMsg('这份文档不存在或已被删除。') })
+    void getDocumentContextDescriptor(id).then(d => { setDoc(d); if (!d) setBlockMsg(tx('这份文档不存在或已被删除。', 'This document does not exist or was deleted.')) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scoped, documentId, stage])
 
@@ -91,7 +92,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
 
   const selectDoc = async (id: string) => {
     const d = await getDocumentContextDescriptor(id)
-    if (!d) { setBlockMsg('这份文档不存在或已被删除。'); return }
+    if (!d) { setBlockMsg(tx('这份文档不存在或已被删除。', 'This document does not exist or was deleted.')); return }
     setDoc(d); setBlockMsg(null)
     // Unscoped: transition to the context stage (blocker 0.1).
     setStage('context')
@@ -197,12 +198,12 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
         if (!state || state.generation !== entry.generations.get(key)) continue
         state.desired = state.confirmed
         state.pending = null
-        state.error = '范围语义保存失败，请重试。'
+        state.error = tx('范围语义保存失败，请重试。', 'Unable to save range semantics. Try again.')
         currentFailure = true
       }
       if (currentFailure) {
         applyPreferenceRollback(entry.documentId, entry)
-        if (mountedRef.current) setBlockMsg('范围语义保存失败，请重试。')
+        if (mountedRef.current) setBlockMsg(tx('范围语义保存失败，请重试。', 'Unable to save range semantics. Try again.'))
       }
     }).finally(() => {
       if (preferenceQueuesRef.current.get(entry.documentId) === entry.chain) preferenceQueuesRef.current.delete(entry.documentId)
@@ -291,9 +292,9 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
   const commit = async () => {
     if (!(await flushPreferenceWrites(doc?.id))) return
     const currentSelection = selectionRef.current
-    if (currentSelection.ranges.length === 0) { setBlockMsg('请先选择要加入的章节或页码范围。'); return }
+    if (currentSelection.ranges.length === 0) { setBlockMsg(tx('请先选择要加入的章节或页码范围。', 'Select chapters or a page range first.')); return }
     const count = countPdfRangePages(currentSelection.ranges)
-    if (exceedsPdfContextHardLimit(count)) { setBlockMsg('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页，请缩小章节或页码范围。'); return }
+    if (exceedsPdfContextHardLimit(count)) { setBlockMsg(tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页，请缩小章节或页码范围。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Reduce the chapter or page range.')); return }
     if (needsPdfContextSoftConfirm(count)) { setConfirming(currentSelection); return }
     finishAdd(currentSelection)
   }
@@ -321,7 +322,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
       setPreviewInitialPage(Math.max(1, Math.min(loaded.pageCount, requested)))
       setPreviewDoc(loaded)
     } catch (e) {
-      setPreviewError(e instanceof DocumentBinaryMissingError ? '本地 PDF 数据不可用，请重新导入。' : '无法打开该 PDF 预览，请重试。')
+      setPreviewError(e instanceof DocumentBinaryMissingError ? tx('本地 PDF 数据不可用，请重新导入。', 'The local PDF data is unavailable. Import it again.') : tx('无法打开该 PDF 预览，请重试。', 'Unable to open this PDF preview. Try again.'))
     }
   }
 
@@ -334,73 +335,73 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
           {stage === 'context' && !scoped && (
             <button type="button" className={css.back} data-testid="doc-context-back" onClick={() => void requestBackToDocs()}>←</button>
           )}
-          <span className={css.title}>{stage === 'document' ? '从文件资料库加入对话' : (doc ? doc.fileName : '')}</span>
-          <span className={css.subTitle}>{stage === 'context' && doc ? doc.pageCount + ' 页' : ''}</span>
-          <button type="button" className={css.btn} data-testid="doc-context-cancel" onClick={() => void requestCancel()}>取消</button>
+          <span className={css.title}>{stage === 'document' ? tx('从文件资料库加入对话', 'Add from the file library') : (doc ? doc.fileName : '')}</span>
+          <span className={css.subTitle}>{stage === 'context' && doc ? tx(doc.pageCount + ' 页', doc.pageCount + ' pages') : ''}</span>
+          <button type="button" className={css.btn} data-testid="doc-context-cancel" onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
         </div>
         {stage === 'document' ? (
           <div className={css.docPick}>
-            <input className={css.search} data-testid="doc-context-search" placeholder="搜索文件" value={search} onChange={e => setSearch(e.target.value)} />
+            <input className={css.search} data-testid="doc-context-search" placeholder={tx('搜索文件', 'Search files')} value={search} onChange={e => setSearch(e.target.value)} />
             <div className={css.docList} data-testid="doc-context-doclist">
               {(filtered || []).map(d => (
                 <button key={d.id} type="button" className={css.docRow} data-testid={'doc-context-doc-' + d.id} onClick={() => void selectDoc(d.id)}>
                   <div className={css.docName}>{d.fileName}</div>
-                  <div className={css.docMeta}>PDF · {d.pageCount} 页 · {d.chapterCount > 0 ? '有目录' : '无目录'}</div>
+                  <div className={css.docMeta}>PDF · {tx(d.pageCount + ' 页', d.pageCount + ' pages')} · {d.chapterCount > 0 ? tx('有目录', 'Has outline') : tx('无目录', 'No outline')}</div>
                 </button>
               ))}
-              {docs && docs.length === 0 && <div className={css.empty}>还没有本地文件，请先导入 PDF。</div>}
+              {docs && docs.length === 0 && <div className={css.empty}>{tx('还没有本地文件，请先导入 PDF。', 'No local files yet. Import a PDF first.')}</div>}
             </div>
           </div>
         ) : doc ? (
           <>
             <div className={css.tabs}>
-              <button type="button" className={css.tab + (tab === 'toc' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-toc" onClick={() => { setTab('toc'); setWholeChecked(false); setManualSel(null) }}>目录</button>
-              <button type="button" className={css.tab + (tab === 'manual' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-manual" onClick={() => { setTab('manual'); setWholeChecked(false) }}>页码</button>
+              <button type="button" className={css.tab + (tab === 'toc' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-toc" onClick={() => { setTab('toc'); setWholeChecked(false); setManualSel(null) }}>{tx('目录', 'Outline')}</button>
+              <button type="button" className={css.tab + (tab === 'manual' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-manual" onClick={() => { setTab('manual'); setWholeChecked(false) }}>{tx('页码', 'Pages')}</button>
             </div>
             {tab === 'toc' ? (
               <div ref={contextBodyRef} className={css.body} data-testid="doc-context-tree">
                 <button type="button" className={css.whole + (wholeChecked ? ' ' + css.wholeOn : '')} data-testid="doc-context-whole" disabled={wholeBlocked} onClick={addWhole}>
-                  <span>整份文档 · {doc.pageCount} 页</span>
+                  <span>{tx('整份文档 · ' + doc.pageCount + ' 页', 'Entire document · ' + doc.pageCount + ' pages')}</span>
                 </button>
-                {wholeBlocked && <div className={css.limitHint}>当前一次最多处理 120 页，请选择章节或页码范围。</div>}
+                {wholeBlocked && <div className={css.limitHint}>{tx('当前一次最多处理 120 页，请选择章节或页码范围。', 'You can process up to 120 pages at a time. Select chapters or a page range.')}</div>}
                 {doc.chapters.length === 0 ? (
-                  <div className={css.empty}>这份文档还没有目录。可使用「页码」或「整份文档」（&le;120 页）。</div>
+                  <div className={css.empty}>{tx('这份文档还没有目录。可使用「页码」或「整份文档」（≤120 页）。', 'This document has no outline. Use “Pages” or “Entire document” (up to 120 pages).')}</div>
                 ) : (
                   <ChapterTreeCheck nodes={doc.chapters} checked={checked} bookmarkRangePreferences={doc.bookmarkRangePreferences} pageCount={doc.pageCount} preferenceBusy={chapterId => preferenceBusyKeys.has(preferenceKey(doc.id, chapterId))} onToggle={toggle} onModeChange={changeBookmarkRangeMode} />
                 )}
               </div>
             ) : (
               <div ref={contextBodyRef} className={css.manualBody} data-testid="doc-context-manual">
-                <div className={css.fieldRow}><label>开始页</label><input className={css.input} data-testid="doc-context-ms" inputMode="numeric" value={manualStart} onChange={e => setManualStart(e.target.value)} /></div>
-                <div className={css.fieldRow}><label>结束页</label><input className={css.input} data-testid="doc-context-me" inputMode="numeric" value={manualEnd} onChange={e => setManualEnd(e.target.value)} /></div>
+                <div className={css.fieldRow}><label>{tx('开始页', 'Start page')}</label><input className={css.input} data-testid="doc-context-ms" inputMode="numeric" value={manualStart} onChange={e => setManualStart(e.target.value)} /></div>
+                <div className={css.fieldRow}><label>{tx('结束页', 'End page')}</label><input className={css.input} data-testid="doc-context-me" inputMode="numeric" value={manualEnd} onChange={e => setManualEnd(e.target.value)} /></div>
                 {manualError && <div className={css.limitHint} data-testid="doc-context-manual-error">{manualError}</div>}
-                <button type="button" className={css.btn} data-testid="doc-context-manual-add" onClick={addManual}>选择范围</button>
+                <button type="button" className={css.btn} data-testid="doc-context-manual-add" onClick={addManual}>{tx('选择范围', 'Select range')}</button>
               </div>
             )}
             <div className={css.footer}>
               <div className={css.summary} data-testid="doc-context-summary">
                 {hasScope ? (
-                  <>{selection.title ? '已选择：' + selection.title : '已选择：' + (wholeChecked ? '整份文档' : pdfRangesText(selection.ranges))}<br />{pdfRangesText(selection.ranges)} · 共 {selectionCount} 页</>
+                  <>{tx('已选择：', 'Selected: ')}{selection.title || (wholeChecked ? tx('整份文档', 'Entire document') : pdfRangesText(selection.ranges))}<br />{pdfRangesText(selection.ranges)} · {tx('共 ' + selectionCount + ' 页', selectionCount + ' pages')}</>
                 ) : (
-                  <>已选择：未选择章节</>
+                  <>{tx('已选择：未选择章节', 'Selected: no chapter selected')}</>
                 )}
               </div>
               <div className={css.footerBtns}>
-                <button type="button" className={css.btn} data-testid="doc-context-cancel2" onClick={() => void requestCancel()}>取消</button>
-                <button type="button" className={css.btn} data-testid="doc-context-preview" disabled={!doc || binaryAvailable !== true} aria-describedby={binaryAvailable === false ? 'doc-context-preview-disabled' : undefined} onClick={() => void openPreview()}>预览</button>
-                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" disabled={!hasScope} onClick={() => void commit()}>加入当前对话</button>
+                <button type="button" className={css.btn} data-testid="doc-context-cancel2" onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
+                <button type="button" className={css.btn} data-testid="doc-context-preview" disabled={!doc || binaryAvailable !== true} aria-describedby={binaryAvailable === false ? 'doc-context-preview-disabled' : undefined} onClick={() => void openPreview()}>{tx('预览', 'Preview')}</button>
+                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" disabled={!hasScope} onClick={() => void commit()}>{tx('加入当前对话', 'Add to current chat')}</button>
               </div>
             </div>
-            {binaryAvailable === false && <div className={css.limitHint} id="doc-context-preview-disabled" data-testid="doc-context-preview-disabled">本地 PDF 数据不可用，请重新导入。</div>}
+            {binaryAvailable === false && <div className={css.limitHint} id="doc-context-preview-disabled" data-testid="doc-context-preview-disabled">{tx('本地 PDF 数据不可用，请重新导入。', 'The local PDF data is unavailable. Import it again.')}</div>}
             {previewError && <div className={css.blockMsg} data-testid="doc-context-preview-error" role="alert">{previewError}</div>}
           </>
         ) : null}
         {confirming && (
           <div className={css.confirm} data-testid="doc-context-confirm">
-            <div>本次将加入 {countPdfRangePages(confirming.ranges)} 页内容，处理时间和模型输入都会比较大。确认继续？</div>
+            <div>{tx('本次将加入 ' + countPdfRangePages(confirming.ranges) + ' 页内容，处理时间和模型输入都会比较大。确认继续？', 'This will add ' + countPdfRangePages(confirming.ranges) + ' pages and use substantial processing time and model input. Continue?')}</div>
             <div className={css.confirmBtns}>
-              <button className={css.btnPrimary} data-testid="doc-context-confirm-yes" onClick={() => { const s = confirming; setConfirming(null); finishAdd(s) }}>继续加入</button>
-              <button className={css.btn} data-testid="doc-context-confirm-no" onClick={() => setConfirming(null)}>取消</button>
+              <button className={css.btnPrimary} data-testid="doc-context-confirm-yes" onClick={() => { const s = confirming; setConfirming(null); finishAdd(s) }}>{tx('继续加入', 'Continue')}</button>
+              <button className={css.btn} data-testid="doc-context-confirm-no" onClick={() => setConfirming(null)}>{tx('取消', 'Cancel')}</button>
             </div>
           </div>
         )}
@@ -428,9 +429,9 @@ function ChapterTreeCheck({ nodes, checked, pageCount, bookmarkRangePreferences,
               {presentation ? (
                 <span className={css.treeDetails}>
                   <ChapterRangeModeControl chapterId={n.id} chapterTitle={n.title} mode={mode} presentation={presentation} disabled={preferenceBusy(n.id)} onChange={nextMode => onModeChange(n.id, nextMode)} />
-                  <span id={'doc-context-range-help-' + n.id} className={css.srOnly}>范围语义：左闭右开表示到下一章节起始页前一页；左闭右闭表示包含所示终点页。</span>
+                  <span id={'doc-context-range-help-' + n.id} className={css.srOnly}>{tx('范围语义：左闭右开表示到下一章节起始页前一页；左闭右闭表示包含所示终点页。', 'Range semantics: exclusive ends before the next chapter starts; inclusive includes the displayed end page.')}</span>
                 </span>
-              ) : <span className={css.treeRange}>无法定位页码</span>}
+              ) : <span className={css.treeRange}>{tx('无法定位页码', 'Page unavailable')}</span>}
             </div>
             {n.children.length > 0 && <ChapterTreeCheck nodes={n.children} checked={checked} pageCount={pageCount} bookmarkRangePreferences={bookmarkRangePreferences} preferenceBusy={preferenceBusy} onToggle={onToggle} onModeChange={onModeChange} />}
           </div>

@@ -80,7 +80,7 @@ export function expandPdfRangePages(ranges: PdfRange[]): number[] {
 export function pdfRangesText(ranges: PdfRange[]): string {
   const rs = normalizePdfRanges(ranges)
   if (rs.length === 0) return ''
-  return 'PDF ' + rs.map(r => r.startPage === r.endPage ? '第 ' + r.startPage + ' 页' : r.startPage + '–' + r.endPage).join(', ')
+  return 'PDF ' + rs.map(r => r.startPage === r.endPage ? tx('第 ' + r.startPage + ' 页', 'page ' + r.startPage) : r.startPage + '–' + r.endPage).join(', ')
 }
 
 /** Human-readable title for a selection — single chapter keeps its own title;
@@ -132,3 +132,4 @@ export type PdfAddPayload = {
   selection: PdfSelection
   pages: RenderedPdfPage[]
 }
+import { tx } from '../engine/locale'

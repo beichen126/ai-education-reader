@@ -43,7 +43,7 @@ import { AiTocProgressDialog } from './AiTocProgressDialog'
 import { getSettingsSnapshot, useSettings } from '../engine/settings-store'
 import type { MappedTocItem } from './toc-mapping'
 import type { LearningDocument, ChapterNode } from './document-types'
-import { tx } from '../engine/locale'
+import { getUiLanguage, tx } from '../engine/locale'
 import { findConversationsByDocumentPage, type PdfPageConversationHit } from '../pdf/pdf-page-conversations'
 import { flushNoteEditorSession, type NoteEditorSession } from './note-session'
 import { NoteAvailabilityGate, NoteReadCache, noteAvailabilityFrom, noteHasContent, noteKey, notePersistedState, type NoteAvailability } from './note-availability'
@@ -345,7 +345,7 @@ export function DocumentReader() {
         if (cancelled) return
         if (!meta) {
           await binaryPromise?.catch(() => undefined)
-          setLoadError('找不到这份文档。')
+          setLoadError(tx('找不到这份文档。', 'This document could not be found.'))
           return
         }
         telemetry.mark('metadata-ready')
@@ -396,8 +396,8 @@ export function DocumentReader() {
         outlineScheduleRef.current = scheduleOutline
       } catch (e) {
         if (!cancelled) {
-          if (e instanceof DocumentBinaryMissingError) setLoadError('本地 PDF 文件数据已丢失，请重新导入。')
-          else setLoadError(e instanceof PdfError ? pdfErrorMessage(e.kind) : '无法打开这份文档。')
+          if (e instanceof DocumentBinaryMissingError) setLoadError(tx('本地 PDF 文件数据已丢失，请重新导入。', 'The local PDF data is missing. Import the file again.'))
+          else setLoadError(e instanceof PdfError ? pdfErrorMessage(e.kind) : tx('无法打开这份文档。', 'Unable to open this document.'))
         }
       }
     })()
@@ -532,7 +532,7 @@ export function DocumentReader() {
         if (cancelled) return
         setRelatedConversations([])
         setRelatedConvState('error')
-        setRelatedError('会话读取失败，可关闭面板后重试。')
+        setRelatedError(tx('会话读取失败，可关闭面板后重试。', 'Unable to load chats. Close the panel and try again.'))
       })
       void listStudyCardsByDocumentPage(targetDocId, targetPage).then(cards => {
         if (cancelled) return
@@ -621,7 +621,7 @@ export function DocumentReader() {
   const openRelatedConversation = useCallback(async (hit: PdfPageConversationHit) => {
     flushCurrentNote()
     const opened = await sessionsActions.openAtMessage(hit.conversationId, hit.messageId, hit.branchId)
-    if (!opened) { setRelatedError('这条对话或消息已不存在。'); return }
+    if (!opened) { setRelatedError(tx('这条对话或消息已不存在。', 'This chat or message no longer exists.')); return }
     setRelatedOpen(false)
     documentUiActions.close()
   }, [flushCurrentNote])
@@ -644,10 +644,10 @@ export function DocumentReader() {
   const requestContext = useCallback((selection: PdfSelection, ranges: PdfRange[]) => {
     if (!doc || !sessionRef.current || ctxBusy) return
     const targetConversationId = conv?.id
-    if (!targetConversationId) { setCtxMsg({ text: '请先创建一个会话。', ok: false }); return }
+    if (!targetConversationId) { setCtxMsg({ text: tx('请先创建一个会话。', 'Create a chat first.'), ok: false }); return }
     const count = countPdfRangePages(ranges)
     if (count > MAX_PDF_CONTEXT_PAGES) {
-      setCtxMsg({ text: '当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请选择较小的页码范围。', ok: false })
+      setCtxMsg({ text: tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请选择较小的页码范围。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Select a smaller range.'), ok: false })
       return
     }
     const request: ReaderContextRequest = {
@@ -684,12 +684,12 @@ export function DocumentReader() {
         onProgress: (p) => { if (gen === ctxGenRef.current) setCtxProgress(p) },
       })
       if (gen !== ctxGenRef.current) return // cancelled / stale during render -> silent
-      const label = request.selection.title ? '已加入「' + request.selection.title + '」· ' + res.count + ' 页' : '已加入当前对话 · ' + res.count + ' 页'
+      const label = request.selection.title ? tx('已加入「' + request.selection.title + '」· ' + res.count + ' 页', 'Added “' + request.selection.title + '” · ' + res.count + ' pages') : tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages')
       if (!res.ok && res.error) setCtxMsg({ text: res.error, ok: false })
       else if (res.ok) setCtxMsg({ text: label, ok: true })
     } catch (e) {
       if (gen !== ctxGenRef.current) return
-      setCtxMsg({ text: e instanceof PdfContextRenderError ? e.message : '无法生成上下文。', ok: false })
+      setCtxMsg({ text: e instanceof PdfContextRenderError ? e.message : tx('无法生成上下文。', 'Unable to build context.'), ok: false })
     } finally {
       if (gen === ctxGenRef.current) { setCtxBusy(false); setCtxProgress(null) }
     }
@@ -707,9 +707,9 @@ export function DocumentReader() {
   const addFromPicker = useCallback(async (selection: PdfSelection) => {
     if (!doc || !sessionRef.current || ctxBusy) return
     const targetConversationId = conv?.id
-    if (!targetConversationId) { setCtxMsg({ text: '请先创建一个会话。', ok: false }); return }
+    if (!targetConversationId) { setCtxMsg({ text: tx('请先创建一个会话。', 'Create a chat first.'), ok: false }); return }
     const count = countPdfRangePages(selection.ranges)
-    if (count > MAX_PDF_CONTEXT_PAGES) { setCtxMsg({ text: '当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请选择较小的页码范围。', ok: false }); return }
+    if (count > MAX_PDF_CONTEXT_PAGES) { setCtxMsg({ text: tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请选择较小的页码范围。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Select a smaller range.'), ok: false }); return }
     const ownedDocId = doc.id
     const ownedConvId = targetConversationId
     const gen = ++ctxGenRef.current
@@ -719,9 +719,9 @@ export function DocumentReader() {
     try {
       const res = await executeDocumentContext({ targetConversationId, documentId: doc.id, fileName: doc.fileName, pageCount, selection, existingSession: sessionRef.current, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxRunning({ total: p.total, done: p.done }) } })
       if (gen !== ctxGenRef.current) return
-      const label = selection.title ? '已加入「' + selection.title + '」· ' + res.count + ' 页' : '已加入当前对话 · ' + res.count + ' 页'
+      const label = selection.title ? tx('已加入「' + selection.title + '」· ' + res.count + ' 页', 'Added “' + selection.title + '” · ' + res.count + ' pages') : tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages')
       setCtxMsg(res.ok ? { text: label, ok: true } : { text: res.error, ok: false })
-    } catch { if (gen === ctxGenRef.current) setCtxMsg({ text: '无法生成上下文。', ok: false }) }
+    } catch { if (gen === ctxGenRef.current) setCtxMsg({ text: tx('无法生成上下文。', 'Unable to build context.'), ok: false }) }
     finally { if (gen === ctxGenRef.current) { setCtxBusy(false); setCtxRunning(null) } }
   }, [doc, conv, ctxBusy, pageCount])
 
@@ -769,7 +769,7 @@ export function DocumentReader() {
     if (!doc) return
     const { items, skippedUnresolved } = chaptersToEditableDraft(doc.chapters)
     setNativeDraft({ items, skipped: skippedUnresolved })
-    setBuilderHint('正在整理 PDF 原始目录。保存后仅修改本地目录，不会改动原 PDF。')
+    setBuilderHint(tx('正在整理 PDF 原始目录。保存后仅修改本地目录，不会改动原 PDF。', 'Organizing the original PDF outline. Saving changes only the local outline, not the PDF.'))
     setBuilderSaveSource('manual')
     setBuilderOpen(true)
   }, [doc])
@@ -813,7 +813,7 @@ export function DocumentReader() {
       setAiTocMsg(null); setAiTocError(null)
       setTocReviewOpen(true)
     } catch {
-      if (gen === aiTocGenRef.current) setAiTocError('目录识别失败，请重试。')
+      if (gen === aiTocGenRef.current) setAiTocError(tx('目录识别失败，请重试。', 'Outline detection failed. Try again.'))
     } finally {
       if (gen === aiTocGenRef.current) setAiTocExtracting(false)
     }
@@ -824,7 +824,7 @@ export function DocumentReader() {
   const cancelAiToc = () => {
     aiTocAbortRef.current?.abort()
     setAiTocDialogHidden(false)
-    setAiTocError('已取消目录识别')
+    setAiTocError(tx('已取消目录识别', 'Outline detection cancelled'))
     setAiTocExtracting(false)
   }
   const hideAiTocDialog = () => { setAiTocDialogHidden(true); setAiTocError(null) }
@@ -836,9 +836,9 @@ export function DocumentReader() {
     setExportBusy(true); setExportMsg(null)
     try {
       await exportBookmarkedPdf({ id: doc.id, fileName: doc.fileName, pageCount: doc.pageCount, chapters: doc.chapters })
-      setExportMsg('已导出带目录 PDF')
+      setExportMsg(tx('已导出带目录 PDF', 'PDF with outline exported'))
     } catch (e) {
-      setExportMsg(e instanceof PdfOutlineError ? e.message : '导出失败，请重试。')
+      setExportMsg(e instanceof PdfOutlineError ? e.message : tx('导出失败，请重试。', 'Export failed. Try again.'))
     } finally { setExportBusy(false) }
   }
 
@@ -848,7 +848,7 @@ export function DocumentReader() {
       .filter(r => r.startPage != null)
       .map((r, i) => ({ id: 'ai' + i, title: r.title, level: r.level, startPage: r.startPage as number }))
     setNativeDraft({ items, skipped: rows.filter(r => r.startPage == null).length })
-    setBuilderHint('正在编辑 AI 识别并已检查的目录。保存后仅修改本地目录，不会改动原 PDF。')
+    setBuilderHint(tx('正在编辑 AI 识别并已检查的目录。保存后仅修改本地目录，不会改动原 PDF。', 'Editing the reviewed AI-detected outline. Saving changes only the local outline, not the PDF.'))
     setBuilderSaveSource('ai-toc')
     setTocReviewOpen(false)
     setBuilderOpen(true)
@@ -876,16 +876,16 @@ export function DocumentReader() {
       const w = window as unknown as { __dshFailNextNativeRestore?: boolean }
       if (w.__dshFailNextNativeRestore) { w.__dshFailNextNativeRestore = false; throw new Error('simulated native restore failure') }
       const session = sessionRef.current
-      if (!session) { setRestoreMsg('无法读取 PDF 原始目录，当前整理结果未发生变化。'); return }
+      if (!session) { setRestoreMsg(tx('无法读取 PDF 原始目录，当前整理结果未发生变化。', 'Unable to read the original PDF outline. Your current outline was not changed.')); return }
       const outline = await readSessionOutline(session)
-      if (outline.items.length === 0) { setRestoreMsg('无法读取 PDF 原始目录，当前整理结果未发生变化。'); return }
+      if (outline.items.length === 0) { setRestoreMsg(tx('无法读取 PDF 原始目录，当前整理结果未发生变化。', 'Unable to read the original PDF outline. Your current outline was not changed.')); return }
       const nativeTree = chapterNodesFromPdfOutline(outline.items)
       await updateDocumentChapters(doc.id, nativeTree, 'native')
       const fresh = await getDocument(doc.id)
       if (fresh) { setDoc(fresh); setTocState(prev => ({ expanded: prev.expanded })) }
       setRestoreConfirmOpen(false)
     } catch {
-      setRestoreMsg('无法读取 PDF 原始目录，当前整理结果未发生变化。')
+      setRestoreMsg(tx('无法读取 PDF 原始目录，当前整理结果未发生变化。', 'Unable to read the original PDF outline. Your current outline was not changed.'))
     } finally {
       restoreBusyRef.current = false
     }
@@ -968,9 +968,9 @@ export function DocumentReader() {
   const closedNoteState = noteReadError ? currentNoteState.persisted : currentNoteState.kind
   const noteButtonState = notesOpen ? 'open' : closedNoteState
   const noteButtonLabel = notesOpen
-    ? '收起笔记'
-    : noteReadError ? '重试读取笔记'
-      : closedNoteState === 'existing' ? '查看笔记' : closedNoteState === 'empty' ? '新建笔记' : '检查笔记…'
+    ? tx('收起笔记', 'Hide note')
+    : noteReadError ? tx('重试读取笔记', 'Retry loading note')
+      : closedNoteState === 'existing' ? tx('查看笔记', 'View note') : closedNoteState === 'empty' ? tx('新建笔记', 'New note') : tx('检查笔记…', 'Checking note…')
 
   const retryNoteRead = useCallback(() => {
     if (!currentNoteKey || noteActionBusy) return
@@ -1034,7 +1034,7 @@ export function DocumentReader() {
         setViewerPage(ownedPage)
         setViewerUrl(urlOwnerRef.current.current)
       })
-      .catch(() => { setPageError('第 ' + page + ' 页渲染失败。') })
+      .catch(() => { setPageError(tx('第 ' + page + ' 页渲染失败。', 'Page ' + page + ' failed to render.')) })
       .finally(() => setZoomBusy(false))
   }
 
@@ -1076,26 +1076,26 @@ export function DocumentReader() {
       </div>
       {relatedOpen && (
         <div className={css.relatedPanel} data-testid="reader-related-conversations">
-          <div className={css.relatedTitle}>关于此页 · 第 {page} 页</div>
-          <div className={css.relatedGroupTitle} data-testid="reader-related-conversations-group">会话{relatedConvState === 'ready' ? '（' + relatedConversations.length + '）' : ''}</div>
-          {relatedConvState === 'loading' && <div className={css.relatedMeta} data-testid="reader-related-conversations-loading">正在读取会话…</div>}
-          {relatedConvState === 'error' && <div className={css.relatedError} data-testid="reader-related-conversations-error">会话读取失败</div>}
-          {relatedConvState === 'ready' && relatedConversations.length === 0 && <div className={css.relatedMeta} data-testid="reader-related-conversations-empty">这一页还没有相关会话。</div>}
+          <div className={css.relatedTitle}>{tx('关于此页 · 第 ' + page + ' 页', 'About this page · page ' + page)}</div>
+          <div className={css.relatedGroupTitle} data-testid="reader-related-conversations-group">{tx('会话', 'Chats')}{relatedConvState === 'ready' ? tx('（' + relatedConversations.length + '）', ' (' + relatedConversations.length + ')') : ''}</div>
+          {relatedConvState === 'loading' && <div className={css.relatedMeta} data-testid="reader-related-conversations-loading">{tx('正在读取会话…', 'Loading chats…')}</div>}
+          {relatedConvState === 'error' && <div className={css.relatedError} data-testid="reader-related-conversations-error">{tx('会话读取失败', 'Unable to load chats')}</div>}
+          {relatedConvState === 'ready' && relatedConversations.length === 0 && <div className={css.relatedMeta} data-testid="reader-related-conversations-empty">{tx('这一页还没有相关会话。', 'No related chats on this page yet.')}</div>}
           {relatedConversations.map((hit) => (
             <button type="button" className={css.relatedItem} data-testid="reader-related-item" key={hit.conversationId + ':' + hit.messageId + ':' + hit.documentId + ':' + hit.pageNumber} onClick={() => void openRelatedConversation(hit)}>
               <span className={css.relatedConversation}>{hit.conversationTitle}</span>
-              <span className={css.relatedMeta}>{new Date(hit.messageCreatedAt).toLocaleString()} · 消息 {hit.messageId.slice(0, 8)}</span>
+              <span className={css.relatedMeta}>{new Date(hit.messageCreatedAt).toLocaleString(getUiLanguage() === 'en' ? 'en-US' : 'zh-CN')} · {tx('消息 ', 'Message ')}{hit.messageId.slice(0, 8)}</span>
               {hit.messagePreview && <span className={css.relatedPreview}>“{hit.messagePreview}”</span>}
             </button>
           ))}
-          <div className={css.relatedGroupTitle} data-testid="reader-related-cards-group">学习卡片{relatedCardState === 'ready' ? '（' + relatedCards.length + '）' : ''}</div>
-          {relatedCardState === 'loading' && <div className={css.relatedMeta} data-testid="reader-related-cards-loading">正在读取学习卡片…</div>}
-          {relatedCardState === 'error' && <div className={css.relatedError} data-testid="reader-related-cards-error">学习卡片读取失败</div>}
-          {relatedCardState === 'ready' && relatedCards.length === 0 && <div className={css.relatedMeta} data-testid="reader-related-cards-empty">这一页还没有学习卡片。</div>}
+          <div className={css.relatedGroupTitle} data-testid="reader-related-cards-group">{tx('学习卡片', 'Study cards')}{relatedCardState === 'ready' ? tx('（' + relatedCards.length + '）', ' (' + relatedCards.length + ')') : ''}</div>
+          {relatedCardState === 'loading' && <div className={css.relatedMeta} data-testid="reader-related-cards-loading">{tx('正在读取学习卡片…', 'Loading study cards…')}</div>}
+          {relatedCardState === 'error' && <div className={css.relatedError} data-testid="reader-related-cards-error">{tx('学习卡片读取失败', 'Unable to load study cards')}</div>}
+          {relatedCardState === 'ready' && relatedCards.length === 0 && <div className={css.relatedMeta} data-testid="reader-related-cards-empty">{tx('这一页还没有学习卡片。', 'No study cards on this page yet.')}</div>}
           {relatedCards.map(card => (
             <button type="button" className={css.relatedItem} data-testid="reader-related-card" data-card-id={card.id} key={card.id} onClick={() => openRelatedCard(card)}>
               <span className={css.relatedConversation}>{card.title}</span>
-              <span className={css.relatedMeta}>{card.source.conversationTitleSnapshot || '学习卡片'}</span>
+              <span className={css.relatedMeta}>{card.source.conversationTitleSnapshot || tx('学习卡片', 'Study card')}</span>
             </button>
           ))}
           {relatedError && <div className={css.relatedError} data-testid="reader-related-error">{relatedError}</div>}
@@ -1148,11 +1148,11 @@ export function DocumentReader() {
               )}
             </aside>
             <main className={css.stage} ref={display.stageRef} data-testid="reader-viewport" data-pdf-navigation-mode={display.mode}>
-              {display.rendering && <div className={css.hint} data-testid="reader-loading">正在渲染第 {page} 页…</div>}
+              {display.rendering && <div className={css.hint} data-testid="reader-loading">{tx('正在渲染第 ' + page + ' 页…', 'Rendering page ' + page + '…')}</div>}
               {(display.pageError || pageError) && <div className={css.errorBox} data-testid="reader-page-error">{display.pageError || pageError}</div>}
               {display.mode !== 'continuous' && display.surface && (
                 <button className={css.pageBtn} data-testid="reader-page" disabled={zoomBusy} onClick={() => openZoom()}>
-                  <canvas ref={display.canvasRef} className={css.pageCanvas} data-testid="reader-page-img" aria-label={'PDF 第 ' + page + ' 页'} data-render-width={String(display.surface.width)} data-render-height={String(display.surface.height)} width={display.surface.width} height={display.surface.height} />
+                  <canvas ref={display.canvasRef} className={css.pageCanvas} data-testid="reader-page-img" aria-label={tx('PDF 第 ' + page + ' 页', 'PDF page ' + page)} data-render-width={String(display.surface.width)} data-render-height={String(display.surface.height)} width={display.surface.width} height={display.surface.height} />
                 </button>
               )}
               {display.mode === 'continuous' && display.continuousWindow && (
@@ -1162,7 +1162,7 @@ export function DocumentReader() {
                   data-testid="reader-continuous-scroll"
                   data-reader-zoom={Math.round(readerZoom * 100)}
                   role="region"
-                  aria-label="PDF 连续阅读"
+                  aria-label={tx('PDF 连续阅读', 'Continuous PDF reading')}
                   style={{ width: `min(${readerZoom * 100}%, ${Math.round(960 * readerZoom)}px)` }}
                 >
                   <div className={css.continuousSpacer} data-testid="reader-continuous-top-spacer" style={{ height: display.continuousWindow.topSpacer + 'px' }} />
@@ -1170,9 +1170,9 @@ export function DocumentReader() {
                     <section key={view.pageNumber} className={css.continuousPage} data-testid={'reader-continuous-page-' + view.pageNumber} data-page-number={view.pageNumber} data-mounted="true" data-render-state={view.surface ? 'ready' : view.error ? 'error' : 'loading'} style={view.style}>
                       {view.surface ? (
                         <button type="button" className={css.continuousPageButton} data-testid={'reader-continuous-page-button-' + view.pageNumber} disabled={zoomBusy} onClick={() => openZoom(view.pageNumber)}>
-                          <canvas ref={view.canvasRef} className={css.continuousCanvas} data-testid={'reader-continuous-canvas-' + view.pageNumber} aria-label={'PDF 第 ' + view.pageNumber + ' 页'} width={view.surface.width} height={view.surface.height} data-render-width={String(view.surface.width)} data-render-height={String(view.surface.height)} />
+                          <canvas ref={view.canvasRef} className={css.continuousCanvas} data-testid={'reader-continuous-canvas-' + view.pageNumber} aria-label={tx('PDF 第 ' + view.pageNumber + ' 页', 'PDF page ' + view.pageNumber)} width={view.surface.width} height={view.surface.height} data-render-width={String(view.surface.width)} data-render-height={String(view.surface.height)} />
                         </button>
-                      ) : view.error ? <div className={css.errorBox} role="alert">{view.error}</div> : <span className={css.continuousPlaceholder}>第 {view.pageNumber} 页</span>}
+                      ) : view.error ? <div className={css.errorBox} role="alert">{view.error}</div> : <span className={css.continuousPlaceholder}>{tx('第 ' + view.pageNumber + ' 页', 'Page ' + view.pageNumber)}</span>}
                     </section>
                   ))}
                   <div className={css.continuousSpacer} data-testid="reader-continuous-bottom-spacer" style={{ height: display.continuousWindow.bottomSpacer + 'px' }} />
@@ -1181,11 +1181,11 @@ export function DocumentReader() {
             </main>
             {notesOpen && doc && (
               <aside className={css.notePanel} data-testid="reader-notes">
-                <div className={css.noteTitle}>第 {page} 页笔记</div>
+                <div className={css.noteTitle}>{tx('第 ' + page + ' 页笔记', 'Notes for page ' + page)}</div>
                 {noteLoading ? (
-                  <div className={css.noteStatus} data-testid="reader-note-loading">正在加载…</div>
+                  <div className={css.noteStatus} data-testid="reader-note-loading">{tx('正在加载…', 'Loading…')}</div>
                 ) : (
-                <textarea ref={noteInputRef} className={css.noteInput} value={noteText} disabled={noteLoading || !noteWriteEnabled} aria-label={`第 ${page} 页笔记`} placeholder="记录这一页的想法…" onChange={e => {
+                <textarea ref={noteInputRef} className={css.noteInput} value={noteText} disabled={noteLoading || !noteWriteEnabled} aria-label={tx(`第 ${page} 页笔记`, `Notes for page ${page}`)} placeholder={tx('记录这一页的想法…', 'Write your thoughts about this page…')} onChange={e => {
                   const value = e.target.value
                   setNoteText(value)
                   setNoteSavedAt(null)
@@ -1199,7 +1199,7 @@ export function DocumentReader() {
                   }
                 }} />
                 )}
-                <div className={css.noteStatus} data-testid="reader-note-status" role={noteSaveError || noteLoadError ? 'alert' : 'status'} aria-live="polite">{noteLoadError ? '读取失败，可重新编辑并重试' : noteSaveError ? '保存失败，将重试' : noteSavedAt ? '已自动保存' : '输入后自动保存'}</div>
+                <div className={css.noteStatus} data-testid="reader-note-status" role={noteSaveError || noteLoadError ? 'alert' : 'status'} aria-live="polite">{noteLoadError ? tx('读取失败，可重新编辑并重试', 'Load failed. Edit and try again.') : noteSaveError ? tx('保存失败，将重试', 'Save failed. Will retry.') : noteSavedAt ? tx('已自动保存', 'Saved automatically') : tx('输入后自动保存', 'Saves automatically as you type')}</div>
               </aside>
             )}
           </>
@@ -1207,11 +1207,11 @@ export function DocumentReader() {
       </div>
       {ctxMenuOpen && !ctxBusy && (
         <div className={css.ctxMenu} data-testid="reader-ctx-menu">
-          <div className={css.ctxMenuTitle}>加入对话</div>
+          <div className={css.ctxMenuTitle}>{tx('加入对话', 'Add to chat')}</div>
           <button type="button" className={css.menuItem} data-testid="reader-ctx-current-page" onClick={() => { const s = buildCurrentPageSelection(page); void requestContext(s, s.ranges) }}>
-            当前页<span className={css.menuMeta}>第 {page} 页</span>
+            {tx('当前页', 'Current page')}<span className={css.menuMeta}>{tx('第 ' + page + ' 页', 'Page ' + page)}</span>
           </button>
-          {currentChapterPath.length > 0 && <div className={css.ctxMenuTitle2}>所在章节</div>}
+          {currentChapterPath.length > 0 && <div className={css.ctxMenuTitle2}>{tx('所在章节', 'Containing chapters')}</div>}
           {[...currentChapterPath].reverse().map(n => {
             const mode = bookmarkRangeEndModeOf(doc?.bookmarkRangePreferences, n.id)
             const range = n.startPage != null && n.endPage != null
@@ -1219,43 +1219,43 @@ export function DocumentReader() {
               : null
             return (
               <button key={n.id} type="button" className={css.menuItem} data-testid={'reader-ctx-ancestor-' + n.id} disabled={!n.selectable || n.startPage == null} onClick={() => { const s = buildChapterSelection(n, { pageCount, bookmarkRangePreferences: doc?.bookmarkRangePreferences }); void requestContext(s, s.ranges) }}>
-                <span className={css.menuLevel}>L{n.level}</span>{n.title}<span className={css.menuMeta}>{range ? range.label : '无法定位页码'}</span>
+                <span className={css.menuLevel}>L{n.level}</span>{n.title}<span className={css.menuMeta}>{range ? range.label : tx('无法定位页码', 'Page unavailable')}</span>
               </button>
             )
           })}
-          {doc && currentChapterPath.length === 0 && <div className={css.ctxHint}>当前页不属于可识别章节</div>}
-          <button type="button" className={css.menuItem} data-testid="reader-ctx-picker" onClick={() => { setCtxMenuOpen(false); setCtxPickerOpen(true) }}>选择其他章节 / 多章节…</button>
-          <button type="button" className={css.menuItem} data-testid="reader-ctx-manual" onClick={() => { setCtxMode('manual'); setManualError(null) }}>自定义页码…</button>
+          {doc && currentChapterPath.length === 0 && <div className={css.ctxHint}>{tx('当前页不属于可识别章节', 'This page is not inside a recognized chapter')}</div>}
+          <button type="button" className={css.menuItem} data-testid="reader-ctx-picker" onClick={() => { setCtxMenuOpen(false); setCtxPickerOpen(true) }}>{tx('选择其他章节 / 多章节…', 'Choose another or multiple chapters…')}</button>
+          <button type="button" className={css.menuItem} data-testid="reader-ctx-manual" onClick={() => { setCtxMode('manual'); setManualError(null) }}>{tx('自定义页码…', 'Custom page range…')}</button>
           {ctxMode === 'manual' && (
             <div className={css.ctxForm} data-testid="reader-ctx-manual-form">
               <div className={css.ctxFormRow}>
-                <label>开始页</label><input className={css.ctxInput} data-testid="reader-ctx-start" inputMode="numeric" value={manualStart} onChange={e => setManualStart(e.target.value)} />
-                <label>结束页</label><input className={css.ctxInput} data-testid="reader-ctx-end" inputMode="numeric" value={manualEnd} onChange={e => setManualEnd(e.target.value)} />
+                <label>{tx('开始页', 'Start page')}</label><input className={css.ctxInput} data-testid="reader-ctx-start" inputMode="numeric" value={manualStart} onChange={e => setManualStart(e.target.value)} />
+                <label>{tx('结束页', 'End page')}</label><input className={css.ctxInput} data-testid="reader-ctx-end" inputMode="numeric" value={manualEnd} onChange={e => setManualEnd(e.target.value)} />
               </div>
               {manualError && <div className={css.ctxHint} data-testid="reader-ctx-manual-error">{manualError}</div>}
-              <button type="button" className={css.menuItem} data-testid="reader-ctx-go" onClick={commitManualRange}>确认加入</button>
+              <button type="button" className={css.menuItem} data-testid="reader-ctx-go" onClick={commitManualRange}>{tx('确认加入', 'Add range')}</button>
             </div>
           )}
-          <button type="button" className={css.menuClose} onClick={() => { setCtxMenuOpen(false); setCtxMode('menu') }}>收起</button>
+          <button type="button" className={css.menuClose} onClick={() => { setCtxMenuOpen(false); setCtxMode('menu') }}>{tx('收起', 'Close')}</button>
         </div>
       )}
       {ctxPending && (
         <div className={css.ctxConfirm} data-testid="reader-ctx-confirm">
-          <div>本次将处理 {ctxPending.count} 页。</div>
-          <div className={css.ctxHint}>大范围 PDF 会占用更多本地处理时间和模型视觉上下文。</div>
+          <div>{tx('本次将处理 ' + ctxPending.count + ' 页。', 'This will process ' + ctxPending.count + ' pages.')}</div>
+          <div className={css.ctxHint}>{tx('大范围 PDF 会占用更多本地处理时间和模型视觉上下文。', 'Large PDF ranges require more local processing time and model vision context.')}</div>
           <div className={css.ctxConfirmBtns}>
-            <button className={css.ctxPrimary} data-testid="reader-ctx-confirm-yes" onClick={confirmContext}>继续加入 {ctxPending.count} 页</button>
-            <button className={css.ctxSecondary} data-testid="reader-ctx-confirm-no" onClick={() => setCtxPending(null)}>取消</button>
+            <button className={css.ctxPrimary} data-testid="reader-ctx-confirm-yes" onClick={confirmContext}>{tx('继续加入 ' + ctxPending.count + ' 页', 'Add ' + ctxPending.count + ' pages')}</button>
+            <button className={css.ctxSecondary} data-testid="reader-ctx-confirm-no" onClick={() => setCtxPending(null)}>{tx('取消', 'Cancel')}</button>
           </div>
         </div>
       )}
       {ctxBusy && ctxProgress && (
-        <div className={css.ctxProgress} data-testid="reader-ctx-progress">正在准备上下文 {ctxProgress.done} / {ctxProgress.total} 页 · {formatBytes(ctxProgress.bytes)}</div>
+        <div className={css.ctxProgress} data-testid="reader-ctx-progress">{tx('正在准备上下文 ', 'Preparing context ')}{ctxProgress.done} / {ctxProgress.total}{tx(' 页', ' pages')} · {formatBytes(ctxProgress.bytes)}</div>
       )}
       {ctxMsg && (
         <div className={css.ctxMsg + (ctxMsg.ok ? ' ' + css.ctxMsgOk : '')} data-testid="reader-ctx-msg">
           <span>{ctxMsg.text}</span>
-          {ctxMsg.ok && <button className={css.ctxSecondary} data-testid="reader-ctx-back" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>返回对话</button>}
+          {ctxMsg.ok && <button className={css.ctxSecondary} data-testid="reader-ctx-back" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>{tx('返回对话', 'Back to chat')}</button>}
         </div>
       )}
       {ctxPickerOpen && doc && (
@@ -1267,18 +1267,18 @@ export function DocumentReader() {
         />
       )}
       {doc && ctxRunning && (
-        <div className={css.ctxProgress} data-testid="reader-ctx-progress">正在准备上下文 {ctxRunning.done} / {ctxRunning.total} 页</div>
+        <div className={css.ctxProgress} data-testid="reader-ctx-progress">{tx('正在准备上下文 ', 'Preparing context ')}{ctxRunning.done} / {ctxRunning.total}{tx(' 页', ' pages')}</div>
       )}
       {progressError && (
         <div className={css.progressError} data-testid="reader-progress-error" role="alert">
-          <span>阅读位置暂未保存</span>
-          <button type="button" className={css.ctxSecondary} data-testid="reader-progress-retry" onClick={retryProgress}>重试</button>
+          <span>{tx('阅读位置暂未保存', 'Reading position not saved yet')}</span>
+          <button type="button" className={css.ctxSecondary} data-testid="reader-progress-retry" onClick={retryProgress}>{tx('重试', 'Retry')}</button>
         </div>
       )}
       <div className={css.navBar}>
         <button className={css.navBtn} data-testid="reader-prev" disabled={page <= 1} onClick={() => go(page - 1, pageCount)}>{tx('上一页', 'Previous')}</button>
         <div className={css.counter}>
-          <input ref={pageInputRef} className={css.pageInput} data-testid="reader-page-input" inputMode="numeric" aria-label="当前页码" value={pageInput}
+          <input ref={pageInputRef} className={css.pageInput} data-testid="reader-page-input" inputMode="numeric" aria-label={tx('当前页码', 'Current page')} value={pageInput}
             onChange={e => setPageInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitPageInput() } }} />
           <span className={css.counterTotal}>/ {pageCount}</span>
@@ -1295,10 +1295,10 @@ export function DocumentReader() {
       {viewerUrl && (
         <ZoomableImageDialog
           src={viewerUrl}
-          alt={'PDF 第 ' + viewerPage + ' 页'}
+          alt={tx('PDF 第 ' + viewerPage + ' 页', 'PDF page ' + viewerPage)}
           resetKey={viewerPage}
           onClose={() => { viewerOpenRef.current = false; setViewerUrl(null); setViewerPage(1); urlOwnerRef.current.revokeAll() }}
-          labels={{ close: '关闭', dialog: 'PDF 页面查看' }}
+          labels={{ close: tx('关闭', 'Close'), dialog: tx('PDF 页面查看', 'PDF page viewer') }}
         />
       )}
       {tocReviewOpen && aiTocItems && (
@@ -1346,10 +1346,10 @@ export function DocumentReader() {
       {restoreConfirmOpen && (
         <div className={css.restoreConfirm} data-testid="reader-restore-confirm">
           <div className={css.restoreConfirmBox}>
-            <div>恢复 PDF 原始目录后，你当前整理的目录将被替换。确认恢复？</div>
+            <div>{tx('恢复 PDF 原始目录后，你当前整理的目录将被替换。确认恢复？', 'Restoring the original PDF outline will replace your current outline. Continue?')}</div>
             <div className={css.restoreConfirmBtns}>
-              <button type="button" className={css.tocSecondary} data-testid="reader-restore-no" onClick={() => setRestoreConfirmOpen(false)}>取消</button>
-              <button type="button" className={css.tocPrimary} data-testid="reader-restore-yes" onClick={() => void restoreNative()}>确认恢复</button>
+              <button type="button" className={css.tocSecondary} data-testid="reader-restore-no" onClick={() => setRestoreConfirmOpen(false)}>{tx('取消', 'Cancel')}</button>
+              <button type="button" className={css.tocPrimary} data-testid="reader-restore-yes" onClick={() => void restoreNative()}>{tx('确认恢复', 'Restore')}</button>
             </div>
           </div>
         </div>
@@ -1372,7 +1372,7 @@ function TocRow({ node, depth, state, onOpen, onToggle }: { node: ChapterNode; d
     <div className={css.tocNode} style={{ paddingLeft: indent }}>
       <div className={css.tocNodeWrap} data-testid={'reader-toc-node-' + node.id}>
         {hasKids ? (
-          <button type="button" className={css.tocChevronBtn} data-testid={'reader-toc-toggle-' + node.id} aria-label={expanded ? '收起' : '展开'} onClick={() => onToggle(node)}>{expanded ? '▾' : '▸'}</button>
+          <button type="button" className={css.tocChevronBtn} data-testid={'reader-toc-toggle-' + node.id} aria-label={expanded ? tx('收起', 'Collapse') : tx('展开', 'Expand')} onClick={() => onToggle(node)}>{expanded ? '▾' : '▸'}</button>
         ) : <span className={css.tocChevron} aria-hidden />}
         <button
           type="button"

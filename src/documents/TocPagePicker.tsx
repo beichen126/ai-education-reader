@@ -8,6 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { renderSessionThumbnail } from '../pdf/pdf-session'
 import type { PdfSession } from '../pdf/pdf-session'
 import css from './toc-page-picker.module.css'
+import { tx } from '../engine/locale'
 
 const INITIAL_BATCH = 30
 const BATCH_STEP = 30
@@ -124,7 +125,7 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
     setRangeError(null)
     const s = Number(rangeStart.trim()), e = Number(rangeEnd.trim())
     if (rangeStart.trim() === '' || rangeEnd.trim() === '' || !Number.isInteger(s) || !Number.isInteger(e) || s < 1 || e < 1 || s > pageCount || e > pageCount || s > e) {
-      setRangeError('请输入 1–' + pageCount + ' 之间的有效页码范围。'); return
+      setRangeError(tx('请输入 1–' + pageCount + ' 之间的有效页码范围。', 'Enter a valid page range between 1 and ' + pageCount + '.')); return
     }
     setSelected(prev => { const next = new Set(prev); for (let n = s; n <= e; n++) next.add(n); return next })
     ensureLoaded(e)
@@ -143,7 +144,7 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   const scrollToStart = (s: number) => { const el = thumbRefs.current[s]; if (el) el.scrollIntoView({ block: 'start' }) }
 
   const selectedText = useMemo(() => {
-    if (sorted.length === 0) return '未选择'
+    if (sorted.length === 0) return tx('未选择', 'None selected')
     const ranges: { start: number; end: number }[] = []
     for (const n of sorted) { const last = ranges[ranges.length - 1]; if (last && n === last.end + 1) last.end = n; else ranges.push({ start: n, end: n }) }
     return ranges.map(r => r.start === r.end ? String(r.start) : (r.start + '–' + r.end)).join('、')
@@ -154,25 +155,25 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
       <div className={css.panel}>
         <div className={css.header}>
           <div className={css.headRow}>
-            <span className={css.title}>选择目录页</span>
+            <span className={css.title}>{tx('选择目录页', 'Select outline pages')}</span>
             <div className={css.headerBtns}>
-              <button type="button" className={css.btn} data-testid="toc-picker-cancel" onClick={onCancel}>取消</button>
-              <button type="button" className={css.btnPrimary} data-testid="toc-picker-start" disabled={selected.size === 0} onClick={() => onStart(sorted)}>开始识别{selected.size ? '（' + selected.size + ' 页）' : ''}</button>
+              <button type="button" className={css.btn} data-testid="toc-picker-cancel" onClick={onCancel}>{tx('取消', 'Cancel')}</button>
+              <button type="button" className={css.btnPrimary} data-testid="toc-picker-start" disabled={selected.size === 0} onClick={() => onStart(sorted)}>{tx('开始识别', 'Start detection')}{selected.size ? tx('（' + selected.size + ' 页）', ' (' + selected.size + ' pages)') : ''}</button>
             </div>
           </div>
           <div className={css.rangeRow} data-testid="toc-picker-range">
-            <label className={css.rangeLabel}>PDF页范围</label>
-            <input className={css.rangeInput} data-testid="toc-picker-range-start" inputMode="numeric" aria-label="起始页" placeholder="起始" value={rangeStart} onChange={e => setRangeStart(e.target.value)} />
+            <label className={css.rangeLabel}>{tx('PDF页范围', 'PDF page range')}</label>
+            <input className={css.rangeInput} data-testid="toc-picker-range-start" inputMode="numeric" aria-label={tx('起始页', 'Start page')} placeholder={tx('起始', 'Start')} value={rangeStart} onChange={e => setRangeStart(e.target.value)} />
             <span className={css.rangeSep}>—</span>
-            <input className={css.rangeInput} data-testid="toc-picker-range-end" inputMode="numeric" aria-label="结束页" placeholder="结束" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} />
-            <button type="button" className={css.btn} data-testid="toc-picker-range-apply" onClick={selectRange}>选择范围</button>
-            <button type="button" className={css.btn + (continuousMode ? ' ' + css.btnOn : '')} data-testid="toc-picker-continuous" onClick={() => setContinuousMode(v => !v)}>{continuousMode ? '连续选择：开启' : '连续选择'}</button>
-            <button type="button" className={css.btn} data-testid="toc-picker-clear" onClick={clearSelection}>清空</button>
+            <input className={css.rangeInput} data-testid="toc-picker-range-end" inputMode="numeric" aria-label={tx('结束页', 'End page')} placeholder={tx('结束', 'End')} value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} />
+            <button type="button" className={css.btn} data-testid="toc-picker-range-apply" onClick={selectRange}>{tx('选择范围', 'Select range')}</button>
+            <button type="button" className={css.btn + (continuousMode ? ' ' + css.btnOn : '')} data-testid="toc-picker-continuous" onClick={() => setContinuousMode(v => !v)}>{continuousMode ? tx('连续选择：开启', 'Continuous selection: on') : tx('连续选择', 'Continuous selection')}</button>
+            <button type="button" className={css.btn} data-testid="toc-picker-clear" onClick={clearSelection}>{tx('清空', 'Clear')}</button>
           </div>
           {rangeError && <div className={css.rangeErr} data-testid="toc-picker-range-error">{rangeError}</div>}
-          <div className={css.pickCount} data-testid="toc-picker-count">已选择 {sorted.length} 页 · PDF {selectedText || '—'}</div>
+          <div className={css.pickCount} data-testid="toc-picker-count">{tx('已选择 ' + sorted.length + ' 页', sorted.length + ' pages selected')} · PDF {selectedText || '—'}</div>
         </div>
-        <div className={css.privacy} data-testid="toc-picker-privacy">仅你选择的目录页面图片会发送到当前配置的视觉模型；完整 PDF 不会因此上传。</div>
+        <div className={css.privacy} data-testid="toc-picker-privacy">{tx('仅你选择的目录页面图片会发送到当前配置的视觉模型；完整 PDF 不会因此上传。', 'Only the selected outline-page images are sent to the configured vision model; the full PDF is not uploaded.')}</div>
         <div className={css.grid} data-testid="toc-picker-grid">
           {Array.from({ length: Math.min(loadedCount, pageCount) }, (_, i) => i + 1).map(n => (
             <button key={n} type="button" ref={(el) => { thumbRefs.current[n] = el }} className={css.thumb + (selected.has(n) ? ' ' + css.selected : '')} data-testid={'toc-thumb-' + n} data-page={n} data-selected={selected.has(n) ? '1' : '0'}
@@ -181,18 +182,18 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
               onPointerEnter={(e) => { if (dragRef.current) dragOver(n) }}
               >
               <span className={css.thumbNum}>{n}</span>
-              {thumbs[n] ? <img className={css.thumbImg} src={thumbs[n]} alt={'第 ' + n + ' 页'} /> : <span className={css.thumbLoad}>…</span>}
+              {thumbs[n] ? <img className={css.thumbImg} src={thumbs[n]} alt={tx('第 ' + n + ' 页', 'Page ' + n)} /> : <span className={css.thumbLoad}>…</span>}
               <span className={css.check}>{selected.has(n) ? '✓' : ''}</span>
             </button>
           ))}
         </div>
         {loadedCount < pageCount && (
           <div className={css.footer}>
-            <button type="button" className={css.btn} data-testid="toc-picker-more" onClick={() => setLoadedCount(c => Math.min(c + BATCH_STEP, pageCount))}>继续加载 {Math.min(BATCH_STEP, pageCount - loadedCount)} 页</button>
-            <span className={css.footerHint}>已加载 {Math.min(loadedCount, pageCount)} / {pageCount} 页</span>
+            <button type="button" className={css.btn} data-testid="toc-picker-more" onClick={() => setLoadedCount(c => Math.min(c + BATCH_STEP, pageCount))}>{tx('继续加载 ' + Math.min(BATCH_STEP, pageCount - loadedCount) + ' 页', 'Load ' + Math.min(BATCH_STEP, pageCount - loadedCount) + ' more pages')}</button>
+            <span className={css.footerHint}>{tx('已加载 ', 'Loaded ')}{Math.min(loadedCount, pageCount)} / {pageCount}{tx(' 页', ' pages')}</span>
           </div>
         )}
-        {loadedCount >= pageCount && <div className={css.footer}><span className={css.footerHint}>已加载全部 {pageCount} 页</span></div>}
+        {loadedCount >= pageCount && <div className={css.footer}><span className={css.footerHint}>{tx('已加载全部 ' + pageCount + ' 页', 'All ' + pageCount + ' pages loaded')}</span></div>}
       </div>
     </div>
   )

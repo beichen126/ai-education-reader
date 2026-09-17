@@ -9,6 +9,7 @@ import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { IconCloseOutline16 } from '../dsh/primitives'
 import { PDF_GROUP_PREVIEW_BATCH, pdfRangesText } from '../pdf/pdf-types'
 import css from './cockpit.module.css'
+import { tx } from '../engine/locale'
 
 type GroupItem = Extract<AttachmentDisplayItem, { type: 'pdf-group' }>
 
@@ -28,8 +29,8 @@ export function PdfContextCard({
   // Multi-range display (Stage 9.1): 'PDF 30–48, 100–118' — never re-flattened to a fake span.
   const rangeText = pdfRangesText(item.ranges)
   const countText = item.selectedPageCount === item.originalPageCount
-    ? rangeText + ' · ' + item.originalPageCount + ' 页'
-    : rangeText + ' · 已加入 ' + item.selectedPageCount + '/' + item.originalPageCount + ' 页'
+    ? rangeText + tx(' · ' + item.originalPageCount + ' 页', ' · ' + item.originalPageCount + ' pages')
+    : rangeText + tx(' · 已加入 ' + item.selectedPageCount + '/' + item.originalPageCount + ' 页', ' · Added ' + item.selectedPageCount + '/' + item.originalPageCount + ' pages')
 
   return (
     <div className={css.groupCard} data-testid="pdf-group-card">
@@ -46,10 +47,10 @@ export function PdfContextCard({
           aria-expanded={expanded}
           onClick={() => setExpanded(e => { const next = !e; if (!next) setShown(PDF_GROUP_PREVIEW_BATCH); return next })}
         >
-          {expanded ? '收起' : '预览页面'}
+          {expanded ? tx('收起', 'Collapse') : tx('预览页面', 'Preview pages')}
         </button>
         {!readOnly && onDelete && (
-          <button type="button" className={css.groupBtn + ' ' + css.groupDel} data-testid={'pdf-group-delete-' + item.groupId} onClick={onDelete}>删除</button>
+          <button type="button" className={css.groupBtn + ' ' + css.groupDel} data-testid={'pdf-group-delete-' + item.groupId} onClick={onDelete}>{tx('删除', 'Delete')}</button>
         )}
       </div>
       {viewerIdx !== null && (
@@ -64,7 +65,7 @@ export function PdfContextCard({
         </div>
         {large && shown < item.attachmentIds.length && (
           <button type="button" className={css.groupBtn} data-testid="pdf-group-more" onClick={() => setShown(s => Math.min(s + PDF_GROUP_PREVIEW_BATCH, item.attachmentIds.length))}>
-            显示更多 {Math.min(PDF_GROUP_PREVIEW_BATCH, item.attachmentIds.length - shown)} 页
+            {tx('显示更多 ' + Math.min(PDF_GROUP_PREVIEW_BATCH, item.attachmentIds.length - shown) + ' 页', 'Show ' + Math.min(PDF_GROUP_PREVIEW_BATCH, item.attachmentIds.length - shown) + ' more pages')}
           </button>
         )}
         </>
@@ -77,11 +78,11 @@ function GroupPageThumb({ id, readOnly, onRemove, onOpen }: { id: string; readOn
   const { url } = useAttachmentPreview(id)
   return (
     <span className={css.groupPage}>
-      <button type="button" className={css.groupPageBtn} data-testid={'pdf-page-open-' + id} aria-label="查看这一页" onClick={onOpen}>
+      <button type="button" className={css.groupPageBtn} data-testid={'pdf-page-open-' + id} aria-label={tx('查看这一页', 'View this page')} onClick={onOpen}>
         {url ? <img src={url} alt="" /> : <span className={css.photoLoading}>…</span>}
       </button>
       {!readOnly && onRemove && (
-        <button className={css.picDel} data-testid={'pdf-page-del-' + id} onClick={onRemove} aria-label="删除这一页"><IconCloseOutline16 size={12} /></button>
+        <button className={css.picDel} data-testid={'pdf-page-del-' + id} onClick={onRemove} aria-label={tx('删除这一页', 'Delete this page')}><IconCloseOutline16 size={12} /></button>
       )}
     </span>
   )
@@ -100,7 +101,7 @@ function GroupViewer2({ attachmentIds, index, onClose, onPrev, onNext }: { attac
       onPrev={onPrev}
       onNext={onNext}
       onClose={onClose}
-      labels={{ close: '关闭', prev: '上一页', next: '下一页', dialog: 'PDF 页面查看' }}
+      labels={{ close: tx('关闭', 'Close'), prev: tx('上一页', 'Previous page'), next: tx('下一页', 'Next page'), dialog: tx('PDF 页面查看', 'PDF page viewer') }}
     />
   )
 }

@@ -1,9 +1,9 @@
-import { buildBackup } from './backup-export'
+import { buildBackup, buildPortableBackupPlan } from './backup-export'
 import { parseAndValidate, restoreBackup, BackupError } from './backup-import'
 import { conversationMarkdown, markedOnlyMarkdown } from './markdown'
 import { downloadText, downloadJson, downloadBlob } from './download'
 import { buildConversationBundle, ConversationBundleError } from './conversation-bundle'
-import { buildBackupArchive, isBackupArchive, parseBackupArchive } from './backup-archive'
+import { buildPortableBackupArchive, isBackupArchive, parseBackupArchive } from './backup-archive'
 import { writeBookmarkedPdf, PdfOutlineError } from './pdf-outline-writer'
 import { readDocumentSourceBlob } from '../documents/document-service'
 import type { ChapterNode } from '../documents/document-types'
@@ -27,8 +27,8 @@ export async function exportBackupJson(): Promise<void> {
   downloadJson('ai-education-reader-backup-' + stamp() + '.json', backup)
 }
 export async function exportBackupZip(): Promise<void> {
-  const backup = await buildBackup()
-  downloadBlob('ai-education-reader-backup-' + stamp() + '.zip', buildBackupArchive(backup))
+  const plan = await buildPortableBackupPlan()
+  downloadBlob('ai-education-reader-backup-' + stamp() + '.zip', await buildPortableBackupArchive(plan))
 }
 export async function exportConversationMd(convId: string): Promise<void> {
   const conv = await getConversation(convId); if (!conv) return

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { BookmarkRangeEndMode, BookmarkRangePresentation } from '../pdf/bookmark-range'
 import css from './chapter-range-mode-control.module.css'
+import { tx } from '../engine/locale'
 
 type Props = {
   chapterId: string
@@ -21,8 +22,8 @@ const OPTIONS: readonly BookmarkRangeEndMode[] = ['exclusive', 'inclusive']
 
 function optionLabel(mode: BookmarkRangeEndMode, presentation: BookmarkRangePresentation): string {
   return mode === 'exclusive'
-    ? '左闭右开 · ' + presentation.exclusive.label
-    : '左闭右闭 · ' + presentation.inclusive.label
+    ? tx('左闭右开 · ', 'End before next · ') + presentation.exclusive.label
+    : tx('左闭右闭 · ', 'Include end page · ') + presentation.inclusive.label
 }
 
 export function ChapterRangeModeControl({ chapterId, chapterTitle, mode, presentation, disabled = false, onChange }: Props) {
@@ -131,7 +132,7 @@ export function ChapterRangeModeControl({ chapterId, chapterTitle, mode, present
       id={popupId}
       className={css.popup}
       role="listbox"
-      aria-label={chapterTitle + ' 范围'}
+      aria-label={chapterTitle + tx(' 范围', ' range')}
       style={position ? { left: position.left, top: position.top } : { left: 0, top: 0, visibility: 'hidden' }}
     >
       {OPTIONS.map(option => (
@@ -160,7 +161,7 @@ export function ChapterRangeModeControl({ chapterId, chapterTitle, mode, present
         className={css.trigger}
         data-testid={'doc-context-mode-' + chapterId}
         aria-disabled={disabled || undefined}
-        aria-label={chapterTitle + ' 范围'}
+        aria-label={chapterTitle + tx(' 范围', ' range')}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={popupId}

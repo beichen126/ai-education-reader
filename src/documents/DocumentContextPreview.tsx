@@ -7,6 +7,7 @@ import { createPdfPerformanceTelemetry, type PdfPerformanceTelemetry } from './p
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import type { ChapterNode, LearningDocument } from './document-types'
 import css from './document-context-preview.module.css'
+import { tx } from '../engine/locale'
 
 type Props = {
   document: LearningDocument
@@ -90,7 +91,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
     }).catch((e: unknown) => {
       if (generation !== generationRef.current) return
       setStatus('error')
-      setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : '无法打开该 PDF 预览。')
+      setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : tx('无法打开该 PDF 预览。', 'Unable to open this PDF preview.'))
     })
     return () => {
       generationRef.current++
@@ -166,7 +167,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
       zoomUrlRef.current = url
       setViewerPage(ownedPage)
       setZoomUrl(url)
-    }).catch(() => setError('页面放大查看失败。')).finally(() => setZoomBusy(false))
+    }).catch(() => setError(tx('页面放大查看失败。', 'Unable to open the enlarged page.'))).finally(() => setZoomBusy(false))
   }
 
   const openChapter = (node: ChapterNode) => {
@@ -183,57 +184,57 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
     <div className={css.overlay} data-testid="doc-context-preview-view" role="dialog" aria-modal="true" aria-labelledby="doc-context-preview-title">
       <div className={css.preview}>
         <header className={css.header}>
-          <button ref={backRef} type="button" className={css.back} data-testid="doc-context-preview-back" onClick={onBack}>← 返回选择</button>
-          <h2 id="doc-context-preview-title" className={css.title} data-testid="doc-context-preview-title">PDF 预览 · {sourceDoc.fileName}</h2>
-          <button type="button" className={css.tocToggle} data-testid="doc-context-preview-toc-toggle" aria-expanded={tocVisible} aria-controls="doc-context-preview-toc" onClick={() => { setTocClosed(false); setTocOpen(open => !open) }}>目录</button>
+          <button ref={backRef} type="button" className={css.back} data-testid="doc-context-preview-back" onClick={onBack}>← {tx('返回选择', 'Back to selection')}</button>
+          <h2 id="doc-context-preview-title" className={css.title} data-testid="doc-context-preview-title">{tx('PDF 预览', 'PDF preview')} · {sourceDoc.fileName}</h2>
+          <button type="button" className={css.tocToggle} data-testid="doc-context-preview-toc-toggle" aria-expanded={tocVisible} aria-controls="doc-context-preview-toc" onClick={() => { setTocClosed(false); setTocOpen(open => !open) }}>{tx('目录', 'Outline')}</button>
         </header>
         <div className={css.body}>
           {tocVisible && (
             <aside id="doc-context-preview-toc" className={css.toc} data-testid="doc-context-preview-toc">
-              <div className={css.tocTitle}>目录</div>
-              {sourceDoc.chapters.length > 0 ? <PreviewTocRows nodes={sourceDoc.chapters} onOpen={openChapter} /> : <div className={css.tocEmpty}>这份 PDF 暂无章节目录。</div>}
+              <div className={css.tocTitle}>{tx('目录', 'Outline')}</div>
+              {sourceDoc.chapters.length > 0 ? <PreviewTocRows nodes={sourceDoc.chapters} onOpen={openChapter} /> : <div className={css.tocEmpty}>{tx('这份 PDF 暂无章节目录。', 'This PDF has no outline.')}</div>}
             </aside>
           )}
           <main className={css.main}>
-            {status === 'loading' && <div className={css.status} data-testid="doc-context-preview-loading" aria-live="polite">正在打开 PDF 预览…</div>}
-            {status === 'error' && <div className={css.error} data-testid="doc-context-preview-error" role="alert">{error || '无法打开该 PDF 预览。'}</div>}
+            {status === 'loading' && <div className={css.status} data-testid="doc-context-preview-loading" aria-live="polite">{tx('正在打开 PDF 预览…', 'Opening PDF preview…')}</div>}
+            {status === 'error' && <div className={css.error} data-testid="doc-context-preview-error" role="alert">{error || tx('无法打开该 PDF 预览。', 'Unable to open this PDF preview.')}</div>}
             {session && status === 'ready' && (
               <div ref={display.stageRef} className={css.stage} data-testid="doc-context-preview-stage" data-pdf-navigation-mode={display.mode}>
-                {display.mode !== 'continuous' && <button type="button" className={css.pageButton} data-testid="doc-context-preview-page" disabled={zoomBusy} onClick={() => openZoom()} aria-label={'PDF 第 ' + page + ' 页，点击放大'}>
-                  <canvas ref={display.canvasRef} className={css.canvas} data-testid="doc-context-preview-page-canvas" aria-label={'PDF 第 ' + page + ' 页'} data-render-width={display.surface ? String(display.surface.width) : undefined} data-render-height={display.surface ? String(display.surface.height) : undefined} />
+                {display.mode !== 'continuous' && <button type="button" className={css.pageButton} data-testid="doc-context-preview-page" disabled={zoomBusy} onClick={() => openZoom()} aria-label={tx('PDF 第 ' + page + ' 页，点击放大', 'PDF page ' + page + ', open enlarged view')}>
+                  <canvas ref={display.canvasRef} className={css.canvas} data-testid="doc-context-preview-page-canvas" aria-label={tx('PDF 第 ' + page + ' 页', 'PDF page ' + page)} data-render-width={display.surface ? String(display.surface.width) : undefined} data-render-height={display.surface ? String(display.surface.height) : undefined} />
                 </button>}
                 {display.mode === 'continuous' && display.continuousWindow && (
-                  <div ref={display.continuousStackRef} className={css.continuousStack} data-testid="doc-context-preview-continuous-scroll" role="region" aria-label="PDF 连续阅读">
+                  <div ref={display.continuousStackRef} className={css.continuousStack} data-testid="doc-context-preview-continuous-scroll" role="region" aria-label={tx('PDF 连续阅读', 'Continuous PDF reading')}>
                     <div className={css.continuousSpacer} data-testid="doc-context-preview-continuous-top-spacer" style={{ height: display.continuousWindow.topSpacer + 'px' }} />
                     {display.continuousWindow.pages.map(view => (
                       <section key={view.pageNumber} className={css.continuousPage} data-testid={'doc-context-preview-continuous-page-' + view.pageNumber} data-page-number={view.pageNumber} data-mounted="true" data-render-state={view.surface ? 'ready' : view.error ? 'error' : 'loading'} style={view.style}>
                         {view.surface ? (
                           <button type="button" className={css.continuousPageButton} data-testid={'doc-context-preview-continuous-page-button-' + view.pageNumber} disabled={zoomBusy} onClick={() => openZoom(view.pageNumber)}>
-                            <canvas ref={view.canvasRef} className={css.continuousCanvas} data-testid={'doc-context-preview-continuous-canvas-' + view.pageNumber} aria-label={'PDF 第 ' + view.pageNumber + ' 页'} width={view.surface.width} height={view.surface.height} />
+                            <canvas ref={view.canvasRef} className={css.continuousCanvas} data-testid={'doc-context-preview-continuous-canvas-' + view.pageNumber} aria-label={tx('PDF 第 ' + view.pageNumber + ' 页', 'PDF page ' + view.pageNumber)} width={view.surface.width} height={view.surface.height} />
                           </button>
-                        ) : view.error ? <div className={css.error} role="alert">{view.error}</div> : <span className={css.continuousPlaceholder}>第 {view.pageNumber} 页</span>}
+                        ) : view.error ? <div className={css.error} role="alert">{view.error}</div> : <span className={css.continuousPlaceholder}>{tx('第 ' + view.pageNumber + ' 页', 'Page ' + view.pageNumber)}</span>}
                       </section>
                     ))}
                     <div className={css.continuousSpacer} data-testid="doc-context-preview-continuous-bottom-spacer" style={{ height: display.continuousWindow.bottomSpacer + 'px' }} />
                   </div>
                 )}
-                {display.rendering && <div className={css.rendering} aria-live="polite">正在渲染第 {page} 页…</div>}
+                {display.rendering && <div className={css.rendering} aria-live="polite">{tx('正在渲染第 ' + page + ' 页…', 'Rendering page ' + page + '…')}</div>}
                 {display.pageError && <div className={css.error} data-testid="doc-context-preview-page-error" role="alert">{display.pageError}</div>}
               </div>
             )}
           </main>
         </div>
         <footer className={css.footer}>
-          <button type="button" className={css.navButton} data-testid="doc-context-preview-prev" disabled={status !== 'ready' || page <= 1} onClick={() => go(page - 1)}>上一页</button>
+          <button type="button" className={css.navButton} data-testid="doc-context-preview-prev" disabled={status !== 'ready' || page <= 1} onClick={() => go(page - 1)}>{tx('上一页', 'Previous')}</button>
           <div className={css.counter}>
-            <input className={css.pageInput} data-testid="doc-context-preview-page-input" inputMode="numeric" aria-label="预览当前页码" value={pageInput} onChange={event => setPageInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitPageInput() } }} />
+            <input className={css.pageInput} data-testid="doc-context-preview-page-input" inputMode="numeric" aria-label={tx('预览当前页码', 'Current preview page')} value={pageInput} onChange={event => setPageInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); commitPageInput() } }} />
             <span> / {sourceDoc.pageCount}</span>
           </div>
-          <button type="button" className={css.navButton} data-testid="doc-context-preview-next" disabled={status !== 'ready' || page >= sourceDoc.pageCount} onClick={() => go(page + 1)}>下一页</button>
-          <button type="button" className={css.zoomButton} data-testid="doc-context-preview-zoom" disabled={status !== 'ready' || zoomBusy} onClick={() => openZoom()}>放大</button>
+          <button type="button" className={css.navButton} data-testid="doc-context-preview-next" disabled={status !== 'ready' || page >= sourceDoc.pageCount} onClick={() => go(page + 1)}>{tx('下一页', 'Next')}</button>
+          <button type="button" className={css.zoomButton} data-testid="doc-context-preview-zoom" disabled={status !== 'ready' || zoomBusy} onClick={() => openZoom()}>{tx('放大', 'Enlarge')}</button>
         </footer>
       </div>
-      {zoomUrl && <ZoomableImageDialog src={zoomUrl} alt={'PDF 第 ' + viewerPage + ' 页'} resetKey={viewerPage} onClose={clearZoom} labels={{ close: '关闭', dialog: 'PDF 页面预览' }} />}
+      {zoomUrl && <ZoomableImageDialog src={zoomUrl} alt={tx('PDF 第 ' + viewerPage + ' 页', 'PDF page ' + viewerPage)} resetKey={viewerPage} onClose={clearZoom} labels={{ close: tx('关闭', 'Close'), dialog: tx('PDF 页面预览', 'PDF page preview') }} />}
     </div>
   )
 }

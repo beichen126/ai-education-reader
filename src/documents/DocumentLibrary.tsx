@@ -26,12 +26,12 @@ function relTimeLabel(at: number): string {
   if (!at) return ''
   const diff = Math.max(0, Date.now() - at)
   const MIN = 60_000, HOUR = 3_600_000, DAY = 86_400_000
-  if (diff < MIN) return '刚刚'
-  if (diff < HOUR) return Math.floor(diff / MIN) + ' 分钟前'
-  if (diff < DAY) return Math.floor(diff / HOUR) + ' 小时前'
-  if (diff < 30 * DAY) return Math.floor(diff / DAY) + ' 天前'
-  if (diff < 365 * DAY) return Math.floor(diff / (30 * DAY)) + ' 个月前'
-  return Math.floor(diff / (365 * DAY)) + ' 年前'
+  if (diff < MIN) return tx('刚刚', 'Just now')
+  if (diff < HOUR) return tx(Math.floor(diff / MIN) + ' 分钟前', Math.floor(diff / MIN) + ' min ago')
+  if (diff < DAY) return tx(Math.floor(diff / HOUR) + ' 小时前', Math.floor(diff / HOUR) + ' hr ago')
+  if (diff < 30 * DAY) return tx(Math.floor(diff / DAY) + ' 天前', Math.floor(diff / DAY) + ' days ago')
+  if (diff < 365 * DAY) return tx(Math.floor(diff / (30 * DAY)) + ' 个月前', Math.floor(diff / (30 * DAY)) + ' mo ago')
+  return tx(Math.floor(diff / (365 * DAY)) + ' 年前', Math.floor(diff / (365 * DAY)) + ' yr ago')
 }
 
 export function DocumentLibrary() {
@@ -65,7 +65,7 @@ export function DocumentLibrary() {
   async function addFromPicker(selection: PdfSelection) {
     if (!ctxDocId) return
     const targetConversationId = getSessionsCurrent()
-    if (!targetConversationId) { setCtxMsg('当前没有可加入的对话，请先创建一个会话。'); setCtxDocId(null); return }
+    if (!targetConversationId) { setCtxMsg(tx('当前没有可加入的对话，请先创建一个会话。', 'There is no current chat. Create one first.')); setCtxDocId(null); return }
     const gen = ++ctxGenRef.current
     ctxCancelledRef.current = false
     const docId = ctxDocId
@@ -81,8 +81,8 @@ export function DocumentLibrary() {
       const res = await executeDocumentContext({ targetConversationId, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxBusy({ done: p.done, total: p.total }) } })
       if (gen !== ctxGenRef.current) return
       if (!res.ok && res.error) setCtxMsg(res.error)
-      else if (res.ok) setCtxMsg('已加入当前对话 · ' + res.count + ' 页')
-    } catch { if (gen === ctxGenRef.current) setCtxMsg('无法生成上下文。') }
+      else if (res.ok) setCtxMsg(tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages'))
+    } catch { if (gen === ctxGenRef.current) setCtxMsg(tx('无法生成上下文。', 'Unable to build context.')) }
     finally { if (gen === ctxGenRef.current) { setCtxBusy(null); setCtxDocId(null); ctxOpRef.current = null } }
   }
   function cancelCtx() { ctxCancelledRef.current = true; ctxGenRef.current++ }
@@ -107,7 +107,7 @@ export function DocumentLibrary() {
       await refresh()
       documentUiActions.openReader(id)
     } catch (e) {
-      setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : '无法导入该 PDF。')
+      setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : tx('无法导入该 PDF。', 'Unable to import this PDF.'))
     } finally { setImporting(false) }
   }, [refresh])
 
@@ -122,7 +122,7 @@ export function DocumentLibrary() {
         setPendingImport({ analysis, file: f })
       }
     } catch (e) {
-      setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : '无法导入该 PDF。')
+      setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : tx('无法导入该 PDF。', 'Unable to import this PDF.'))
     } finally { setImporting(false) }
   }
 
@@ -146,8 +146,8 @@ export function DocumentLibrary() {
   const onNameConflictCustomCommit = async () => {
     const p = pendingImport; if (!p) return
     const s = sanitizeFileName(customName ?? '')
-    if (!(customName ?? '').trim()) { setCustomNameErr('文件名不能为空。'); return }
-    if (existingNames.has(s)) { setCustomNameErr('文件名已被占用，请更换。'); return }
+    if (!(customName ?? '').trim()) { setCustomNameErr(tx('文件名不能为空。', 'File name cannot be empty.')); return }
+    if (existingNames.has(s)) { setCustomNameErr(tx('文件名已被占用，请更换。', 'That file name is already in use.')); return }
     setPendingImport(null); setCustomName(null)
     await finalizeResolved(p.analysis, s, p.file)
   }
@@ -157,12 +157,12 @@ export function DocumentLibrary() {
   const commitRename = async () => {
     if (!renameId) return
     const trimmed = renameName.trim()
-    if (!trimmed) { setRenameErr('文件名不能为空。'); return }
+    if (!trimmed) { setRenameErr(tx('文件名不能为空。', 'File name cannot be empty.')); return }
     setImporting(true); setError(null); setRenameErr(null)
     try {
       await renameDocument(renameId, sanitizeFileName(trimmed))
       setRenameId(null); await refresh()
-    } catch (e) { setRenameErr(e instanceof DocumentNameConflictError ? '已存在同名文件。' : '重命名失败，请重试。') }
+    } catch (e) { setRenameErr(e instanceof DocumentNameConflictError ? tx('已存在同名文件。', 'A file with that name already exists.') : tx('重命名失败，请重试。', 'Rename failed. Try again.')) }
     finally { setImporting(false) }
   }
   const cancelRename = () => { setRenameId(null); setRenameName(''); setRenameErr(null) }
@@ -172,7 +172,7 @@ export function DocumentLibrary() {
     if (!confirmDelete) return
     setError(null); setImporting(true)
     try { await deleteDocument(confirmDelete.id); setConfirmDelete(null); await refresh() }
-    catch { setError('删除失败，请重试。') }
+    catch { setError(tx('删除失败，请重试。', 'Delete failed. Try again.')) }
     finally { setImporting(false) }
   }
 
@@ -276,29 +276,29 @@ export function DocumentLibrary() {
           <div className={css.dialog}>
             {duplicateConflict ? (
               <>
-                <div className={css.dialogTitle}>检测到这份文件已经存在</div>
-                <div className={css.dialogText}>《{duplicateConflict.existingFileName}》已在资料库中。该文件内容与将要导入的文件完全一致。</div>
+                <div className={css.dialogTitle}>{tx('检测到这份文件已经存在', 'This file already exists')}</div>
+                <div className={css.dialogText}>{tx('《' + duplicateConflict.existingFileName + '》已在资料库中。该文件内容与将要导入的文件完全一致。', '“' + duplicateConflict.existingFileName + '” is already in the library and has identical content.')}</div>
                 <div className={css.dialogBtns}>
-                  <button className={css.primaryBtn} data-testid="duplicate-open-existing" onClick={onDuplicateOpenExisting}>打开已有文件</button>
-                  <button className={css.secondaryBtn} data-testid="duplicate-import-copy" onClick={() => void onDuplicateImportCopy()}>仍然导入副本</button>
-                  <button className={css.secondaryBtn} data-testid="duplicate-cancel" onClick={() => { setPendingImport(null); setCustomName(null) }}>取消</button>
+                  <button className={css.primaryBtn} data-testid="duplicate-open-existing" onClick={onDuplicateOpenExisting}>{tx('打开已有文件', 'Open existing file')}</button>
+                  <button className={css.secondaryBtn} data-testid="duplicate-import-copy" onClick={() => void onDuplicateImportCopy()}>{tx('仍然导入副本', 'Import a copy')}</button>
+                  <button className={css.secondaryBtn} data-testid="duplicate-cancel" onClick={() => { setPendingImport(null); setCustomName(null) }}>{tx('取消', 'Cancel')}</button>
                 </div>
               </>
             ) : nameConflict ? (
               <>
-                <div className={css.dialogTitle}>资料库中已存在同名文件</div>
-                <div className={css.dialogText}>《{nameConflict.baseFileName}》已在资料库中，但内容不同。请选择保存方式。</div>
+                <div className={css.dialogTitle}>{tx('资料库中已存在同名文件', 'A file with this name already exists')}</div>
+                <div className={css.dialogText}>{tx('《' + nameConflict.baseFileName + '》已在资料库中，但内容不同。请选择保存方式。', '“' + nameConflict.baseFileName + '” is already in the library but has different content. Choose how to save it.')}</div>
                 <div className={css.dialogBtns}>
-                  <button className={css.primaryBtn} data-testid="name-save-suggested" onClick={onNameConflictSaveSuggested}>保存为 {nameConflict.suggestedName}</button>
-                  <button className={css.secondaryBtn} data-testid="name-custom" onClick={onNameConflictOpenCustom}>自定义名称</button>
-                  <button className={css.secondaryBtn} data-testid="name-cancel" onClick={() => { setPendingImport(null); setCustomName(null) }}>取消</button>
+                  <button className={css.primaryBtn} data-testid="name-save-suggested" onClick={onNameConflictSaveSuggested}>{tx('保存为 ', 'Save as ')}{nameConflict.suggestedName}</button>
+                  <button className={css.secondaryBtn} data-testid="name-custom" onClick={onNameConflictOpenCustom}>{tx('自定义名称', 'Custom name')}</button>
+                  <button className={css.secondaryBtn} data-testid="name-cancel" onClick={() => { setPendingImport(null); setCustomName(null) }}>{tx('取消', 'Cancel')}</button>
                 </div>
                 {customName !== null && (
                   <div className={css.customWrap}>
                     <input className={css.renameInput} data-testid="name-custom-input" value={customName} autoFocus onChange={e => setCustomName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void onNameConflictCustomCommit() } }} />
                     {customNameErr && <div className={css.dialogErr} data-testid="name-custom-error">{customNameErr}</div>}
                     <div className={css.dialogBtns}>
-                      <button className={css.primaryBtn} data-testid="name-custom-confirm" disabled={importing} onClick={() => void onNameConflictCustomCommit()}>确认</button>
+                      <button className={css.primaryBtn} data-testid="name-custom-confirm" disabled={importing} onClick={() => void onNameConflictCustomCommit()}>{tx('确认', 'Confirm')}</button>
                     </div>
                   </div>
                 )}
