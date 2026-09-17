@@ -1,5 +1,5 @@
 
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/sessions-store'
 import { useSettings } from '../engine/settings-store'
@@ -13,7 +13,6 @@ import { useCopyFeedback } from '../dsh/primitives/use-copy-feedback'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
 import { galleryActions } from '../gallery/gallery-store'
-import { PdfPanel } from '../pdf/PdfPanel'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult, type RenderedPdfPage } from '../pdf/pdf-types'
 import { isStableBranchPoint, newStableId, pdfContextsOf, type QuickFollowUpMetadata } from '../engine/types'
@@ -21,8 +20,6 @@ import { useAttachmentMetas } from '../engine/use-attachment-metas'
 import { IconPhoto16, IconDocument16 } from './composer-icons'
 import { setComposerTriggers, triggerComposerMaterials } from '../engine/composer-triggers'
 import { documentUiActions } from '../documents/document-ui-store'
-import { DocumentContextPicker } from '../documents/DocumentContextPicker'
-import { executeDocumentContext } from '../documents/document-context-service'
 import { getSessionsCurrent } from '../engine/sessions-store'
 import type { PdfSelection } from '../pdf/pdf-types'
 import { buildAttachmentDisplayItems, type AttachmentDisplayItem } from '../attachments/attachment-display'
@@ -59,6 +56,9 @@ import type { PromptTransition } from '../prompts/prompt-types'
 import { promptDisplayName } from '../prompts/prompt-display'
 import css from './cockpit.module.css'
 
+const PdfPanel = lazy(() => import('../pdf/PdfPanel').then(module => ({ default: module.PdfPanel })))
+const DocumentContextPicker = lazy(() => import('../documents/DocumentContextPicker').then(module => ({ default: module.DocumentContextPicker })))
+
 export function Conversation() {
   const session = useSessions(s => s.byId[s.current || ''])
   const focusMessage = useSessions(s => s.focusMessage)
@@ -72,27 +72,10 @@ export function Conversation() {
   const messages = branchChat.effectiveMessages
   const turns = useMemo(() => buildConversationTurns(messages), [messages])
   const [activeTurnId, setActiveTurnId] = useState<string | undefined>(undefined)
-  const scrollFrameRef = useRef<number | null>(null)
   const onScroll = () => {
     const el = listRef.current
     if (!el) return
     atBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 60
-    if (scrollFrameRef.current !== null) return
-    scrollFrameRef.current = window.requestAnimationFrame(() => {
-      scrollFrameRef.current = null
-      const current = listRef.current
-      if (!current) return
-      const centre = current.getBoundingClientRect().top + Math.min(current.clientHeight * 0.42, 320)
-      const nodes = new Map(Array.from(current.querySelectorAll<HTMLElement>('[data-message-id]')).map(item => [item.dataset.messageId, item]))
-      let nearest: { id: string; distance: number } | undefined
-      for (const turn of turns) {
-        const node = nodes.get(turn.anchorMessageId)
-        if (!node) continue
-        const distance = Math.abs(node.getBoundingClientRect().top - centre)
-        if (!nearest || distance < nearest.distance) nearest = { id: turn.id, distance }
-      }
-      if (nearest?.id !== activeTurnId) setActiveTurnId(nearest?.id)
-    })
   }
   const imageOffsetByMsg: Record<string, number> = {}
   { let off = 0; for (const m of messages) { if (m.role === 'user') { imageOffsetByMsg[m.id] = off; off += m.images.length } } }
@@ -105,7 +88,23 @@ export function Conversation() {
     lastRef.current = sig
   }, [sig])
   useEffect(() => { setActiveTurnId(turns[0]?.id) }, [session?.id, branchChat.activeBranchId, turns.length])
-  useEffect(() => () => { if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current) }, [])
+  useEffect(() => {
+    const root = listRef.current
+    if (!root || typeof IntersectionObserver === 'undefined') return
+    const turnByAnchor = new Map(turns.map(turn => [turn.anchorMessageId, turn.id]))
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries
+        .filter(entry => entry.isIntersecting)
+        .sort((a, b) => Math.abs(a.boundingClientRect.top - root.clientHeight * 0.42) - Math.abs(b.boundingClientRect.top - root.clientHeight * 0.42))[0]
+      const messageId = visible && (visible.target as HTMLElement).dataset.messageId
+      const turnId = messageId ? turnByAnchor.get(messageId) : undefined
+      if (turnId) setActiveTurnId(current => current === turnId ? current : turnId)
+    }, { root, rootMargin: '-38% 0px -55% 0px', threshold: 0 })
+    for (const element of root.querySelectorAll<HTMLElement>('[data-message-id]')) {
+      if (element.dataset.messageId && turnByAnchor.has(element.dataset.messageId)) observer.observe(element)
+    }
+    return () => observer.disconnect()
+  }, [turns])
   // Consume a one-shot navigation intent only after the selected conversation/thread
   // has rendered its message DOM. Branch targets additionally wait for branch data
   // belonging to this conversation; an empty pre-load state is not treated as missing.
@@ -563,6 +562,7 @@ function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBra
     const isStale = () => gen !== libGenRef.current || sessionId !== targetConversationId
     try {
       if (isCancelled()) return
+      const { executeDocumentContext } = await import('../documents/document-context-service')
       const res = await executeDocumentContext({ targetConversationId, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === libGenRef.current) setLibBusy({ done: p.done, total: p.total }) } })
       if (gen !== libGenRef.current) return
       if (!res.ok && res.error) setLibMsg(res.error)
@@ -713,8 +713,10 @@ function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBra
         <button className={css.sendBtn} onClick={send} disabled={busy}>{busy ? tx('生成中', 'Generating') : tx('发送', 'Send')}</button>
       </div>
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}
-      {pdfPanel.open && <PdfPanel initialFile={pdfPanel.file} onClose={() => setPdfPanel({ open: false })} onAddToDraft={addPdfToDraft} />}
-      {libPickerOpen && <DocumentContextPicker documentId={undefined} onCancel={() => { setLibPickerOpen(false); setLibMsg(null) }} onAdd={(selection, docId, fileName) => { void addFromLibrary(selection, docId, fileName) }} />}
+      <Suspense fallback={null}>
+        {pdfPanel.open && <PdfPanel initialFile={pdfPanel.file} onClose={() => setPdfPanel({ open: false })} onAddToDraft={addPdfToDraft} />}
+        {libPickerOpen && <DocumentContextPicker documentId={undefined} onCancel={() => { setLibPickerOpen(false); setLibMsg(null) }} onAdd={(selection, docId, fileName) => { void addFromLibrary(selection, docId, fileName) }} />}
+      </Suspense>
       <div className={css.composerStatusRow}>
         <div>
           {libBusy && (

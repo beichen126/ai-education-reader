@@ -1,8 +1,10 @@
 import { buildBlockModels, type BlockModel } from '../markdown/block-layer'
 import { parseMarkdown } from '../markdown/parse'
 import type { TextAnchor } from './annotation-types'
-export function buildBlockMap(content: string, messageId: string): { blocks: Map<string, BlockModel>; canonicalOf: (a: TextAnchor) => string } {
-  const models = buildBlockModels(parseMarkdown(content), messageId)
+import type { Root } from 'mdast'
+
+export function buildBlockMapFromRoot(root: Root, messageId: string): { blocks: Map<string, BlockModel>; canonicalOf: (a: TextAnchor) => string } {
+  const models = buildBlockModels(root, messageId)
   const blocks = new Map(models.map((m) => [m.id, m]))
   const canonicalOf = (anchor: TextAnchor): string => {
     if (!anchor || typeof anchor.scope !== 'string') return ''
@@ -12,5 +14,8 @@ export function buildBlockMap(content: string, messageId: string): { blocks: Map
     return cell ? cell.canonicalText : ''
   }
   return { blocks, canonicalOf }
+}
+export function buildBlockMap(content: string, messageId: string): { blocks: Map<string, BlockModel>; canonicalOf: (a: TextAnchor) => string } {
+  return buildBlockMapFromRoot(parseMarkdown(content), messageId)
 }
 export function makeCanonicalResolver(content: string, messageId: string) { return buildBlockMap(content, messageId).canonicalOf }

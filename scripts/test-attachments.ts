@@ -1,6 +1,6 @@
 
 import 'fake-indexeddb/auto'
-import { saveFiles, getAttachment, toDataUrl, deleteAttachment, existsAttachment, isSupportedImage, MAX_IMAGE_BYTES } from '../src/engine/attachment-service.ts'
+import { saveFiles, getAttachment, toDataUrl, deleteAttachment, existsAttachment, isSupportedImage, ensurePreviewUrl, releasePreviewUrl } from '../src/engine/attachment-service.ts'
 import { getAttachmentRow } from '../src/storage/storage.ts'
 import { buildApiMessages, isVisionModel, type ApiChatMessage } from '../src/api/deepseek.ts'
 import { newStableId, type Message } from '../src/engine/types.ts'
@@ -42,6 +42,22 @@ assert(!!row, 'attachment row persists after reopen')
 const buf = await ((row!.binary && row!.binary.storage === 'idb' ? row!.binary.blob : row!.blob) as Blob).arrayBuffer()
 assert(buf.byteLength === 4, 'blob byte length restored after reopen')
 assert((await getAttachment(idA))!.id === idA, 'metadata id stable after reopen')
+
+// Concurrent mounts share one pending/object URL and revoke only after the last release.
+const originalCreateObjectUrl = URL.createObjectURL.bind(URL)
+const originalRevokeObjectUrl = URL.revokeObjectURL.bind(URL)
+let createdUrls = 0
+let revokedUrls = 0
+URL.createObjectURL = (blob: Blob) => { createdUrls++; return originalCreateObjectUrl(blob) }
+URL.revokeObjectURL = (url: string) => { revokedUrls++; originalRevokeObjectUrl(url) }
+const [previewA, previewB] = await Promise.all([ensurePreviewUrl(idA), ensurePreviewUrl(idA)])
+assert(previewA === previewB && createdUrls === 1, 'concurrent preview consumers share one object URL')
+releasePreviewUrl(idA)
+assert(revokedUrls === 0, 'preview remains live while one consumer still owns it')
+releasePreviewUrl(idA)
+assert(revokedUrls === 1, 'last preview consumer revokes the object URL')
+URL.createObjectURL = originalCreateObjectUrl
+URL.revokeObjectURL = originalRevokeObjectUrl
 
 // case 10+12: buildApiMessages with ordered images -> text + image_url
 const m: Message = { id: newStableId(), role: 'user', content: '解释这张图', images: [idA, idB], createdAt: 1, updatedAt: 1 }

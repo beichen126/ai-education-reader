@@ -4,8 +4,8 @@ import { PORTABLE_ARCHIVE_FORMAT, type Backup, type BackupAttachment, type Backu
 import type { PortableBackupPlan } from './backup-export'
 
 export const BACKUP_ARCHIVE_ENTRY = 'ai-education-reader-backup.json'
-const MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
-const MAX_UNCOMPRESSED_BYTES = 4 * 1024 * 1024 * 1024
+export const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+const MAX_UNCOMPRESSED_BYTES = 1024 * 1024 * 1024
 const MAX_ENTRY_COUNT = 100_000
 
 function hasZipMagic(bytes: Uint8Array): boolean {
@@ -57,13 +57,13 @@ export function buildBackupArchive(backup: Backup): Blob {
   return new Blob([bytes as unknown as BlobPart], { type: 'application/zip' })
 }
 
-async function pushBlob(file: ZipPassThrough, blob: Blob): Promise<void> {
+async function pushBlob(file: ZipPassThrough, blob: Blob, drain: () => Promise<void>): Promise<void> {
   if (typeof blob.stream === 'function') {
     const reader = blob.stream().getReader()
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
-      if (value.byteLength) file.push(value)
+      if (value.byteLength) { file.push(value); await drain() }
     }
     file.push(new Uint8Array(0), true)
     return
@@ -71,6 +71,7 @@ async function pushBlob(file: ZipPassThrough, blob: Blob): Promise<void> {
   const chunkSize = 1024 * 1024
   for (let offset = 0; offset < blob.size; offset += chunkSize) {
     file.push(new Uint8Array(await blob.slice(offset, offset + chunkSize).arrayBuffer()))
+    await drain()
   }
   file.push(new Uint8Array(0), true)
 }
@@ -78,37 +79,49 @@ async function pushBlob(file: ZipPassThrough, blob: Blob): Promise<void> {
 /** ZIP v2 keeps large PDF/image bytes outside JSON and consumes one Blob stream at a time.
  * Peak memory is therefore the compressed archive plus a small stream chunk, rather than
  * base64 JSON + UTF-16 JSON + zipSync input + zipSync output. */
-export async function buildPortableBackupArchive(plan: PortableBackupPlan): Promise<Blob> {
+export async function writePortableBackupArchive(plan: PortableBackupPlan, write: (chunk: Uint8Array) => Promise<void>): Promise<void> {
   const safeSettings = { ...(plan.manifest.backup.settings as Record<string, unknown>) }
   delete safeSettings.apiKey
   const manifest: PortableBackupManifest = {
     ...plan.manifest,
     backup: { ...plan.manifest.backup, settings: safeSettings as PortableBackupManifest['backup']['settings'] },
   }
-  const parts: BlobPart[] = []
-  let resolveDone!: (blob: Blob) => void
+  let writes = Promise.resolve()
+  let resolveDone!: () => void
   let rejectDone!: (error: unknown) => void
-  const done = new Promise<Blob>((resolve, reject) => { resolveDone = resolve; rejectDone = reject })
+  const done = new Promise<void>((resolve, reject) => { resolveDone = resolve; rejectDone = reject })
   const zip = new Zip((error, chunk, final) => {
     if (error) { rejectDone(error); return }
-    if (chunk.byteLength) parts.push(chunk.slice().buffer)
-    if (final) resolveDone(new Blob(parts, { type: 'application/zip' }))
+    if (chunk.byteLength) {
+      const owned = chunk.slice()
+      writes = writes.then(() => write(owned))
+    }
+    if (final) writes.then(resolveDone, rejectDone)
   })
+  const drain = () => writes
   try {
     const meta = new ZipDeflate(BACKUP_ARCHIVE_ENTRY, { level: 6 })
     zip.add(meta)
     meta.push(strToU8(JSON.stringify(manifest)), true)
+    await drain()
     for (const binary of plan.binaries) {
       const file = new ZipPassThrough(binary.entry)
       zip.add(file)
-      await pushBlob(file, binary.blob)
+      await pushBlob(file, binary.blob, drain)
     }
     zip.end()
   } catch (error) {
     zip.terminate()
     rejectDone(error)
   }
-  return done
+  await done
+}
+
+/** In-memory fallback for browsers without the File System Access API. */
+export async function buildPortableBackupArchive(plan: PortableBackupPlan): Promise<Blob> {
+  const parts: BlobPart[] = []
+  await writePortableBackupArchive(plan, async chunk => { parts.push(chunk.buffer as ArrayBuffer) })
+  return new Blob(parts, { type: 'application/zip' })
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -159,6 +172,57 @@ export function parseBackupArchive(bytes: Uint8Array): Backup {
   }
   if (names.length !== 1) throw new BackupError('ZIP 备份结构不正确')
   return parseAndValidate(json)
+}
+
+export type BackupBinarySource = {
+  attachments: Map<string, Uint8Array>
+  documents: Map<string, Uint8Array>
+}
+
+/** Restore-oriented parser. It validates the same manifest but keeps binary ZIP
+ * entries as bytes, avoiding the extra binary-string + base64 copies made by the
+ * compatibility parser above. Entries are consumed and deleted during restore. */
+export function parseBackupArchiveForRestore(bytes: Uint8Array): { backup: Backup; binaries?: BackupBinarySource } {
+  validateZipEnvelope(bytes)
+  let files: Record<string, Uint8Array>
+  try { files = unzipSync(bytes) } catch { throw new BackupError('ZIP 备份已损坏或无法解压') }
+  const names = Object.keys(files)
+  const data = files[BACKUP_ARCHIVE_ENTRY]
+  if (!data || data.byteLength > MAX_UNCOMPRESSED_BYTES) throw new BackupError('ZIP 备份内容缺失或过大')
+  let json: unknown
+  try { json = JSON.parse(strFromU8(data)) } catch { throw new BackupError('ZIP 内的备份 JSON 无法解析') }
+  if (!json || typeof json !== 'object' || (json as Record<string, unknown>).archiveFormat !== PORTABLE_ARCHIVE_FORMAT) {
+    if (names.length !== 1) throw new BackupError('ZIP 备份结构不正确')
+    return { backup: parseAndValidate(json) }
+  }
+
+  const manifest = json as PortableBackupManifest
+  if (manifest.archiveVersion !== 2 || !manifest.backup || !Array.isArray(manifest.backup.attachments) || !Array.isArray(manifest.backup.documents)) throw new BackupError('ZIP 备份清单格式不正确')
+  const expected = new Set([BACKUP_ARCHIVE_ENTRY])
+  const attachments = new Map<string, Uint8Array>()
+  const documents = new Map<string, Uint8Array>()
+  const hydratedAttachments: BackupAttachment[] = manifest.backup.attachments.map(item => {
+    if (!isSafeEntry(item.entry, 'attachments/') || expected.has(item.entry)) throw new BackupError('ZIP 附件路径不正确')
+    expected.add(item.entry)
+    const entry = files[item.entry]
+    if (!entry) throw new BackupError('ZIP 备份缺少附件：' + item.id.slice(0, 8))
+    attachments.set(item.id, entry)
+    delete files[item.entry]
+    return { id: item.id, meta: item.meta, mimeType: item.mimeType, data: 'AA==' }
+  })
+  const hydratedDocuments: BackupDocument[] = manifest.backup.documents.map(item => {
+    if (!isSafeEntry(item.entry, 'documents/') || expected.has(item.entry)) throw new BackupError('ZIP 文档路径不正确')
+    expected.add(item.entry)
+    const entry = files[item.entry]
+    if (!entry) throw new BackupError('ZIP 备份缺少文档：' + item.id.slice(0, 8))
+    documents.set(item.id, entry)
+    delete files[item.entry]
+    return { id: item.id, meta: item.meta, mimeType: item.mimeType, data: 'AA==' }
+  })
+  delete files[BACKUP_ARCHIVE_ENTRY]
+  if (Object.keys(files).length > 0 || expected.size !== names.length) throw new BackupError('ZIP 备份包含未声明的文件')
+  const backup = parseAndValidate({ ...manifest.backup, attachments: hydratedAttachments, documents: hydratedDocuments })
+  return { backup, binaries: { attachments, documents } }
 }
 
 export function isBackupArchive(bytes: Uint8Array): boolean { return hasZipMagic(bytes) }

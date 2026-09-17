@@ -57,7 +57,13 @@
 .emptyTitle { font-size: 18px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .emptyHint { font-size: 13px; color: var(--dsw-alias-label-tertiary); }
 .emptyActions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-.msg { display: flex; flex-direction: column; gap: 6px; }
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 220px;
+}
 .msgUser { align-items: flex-end; }
 .msgAssistant { align-items: flex-start; }
 .bubble { max-width: 72%; padding: 10px 14px; border-radius: 14px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 14px; line-height: 22px; white-space: pre-wrap; word-break: break-word; }

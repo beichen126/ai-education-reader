@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { AppFrame } from './dsh/layout/AppFrame'
 import { useSessions, initStore } from './engine/sessions-store'
@@ -16,18 +16,21 @@ import { SessionProvider } from './engine/session-context'
 import { t, tx, useUiLanguage } from './engine/locale'
 import { Sidebar } from './cockpit/Sidebar'
 import { Conversation } from './cockpit/Conversation'
-import { SettingsDialog } from './cockpit/SettingsDialog'
-import { PromptManager } from './prompts/PromptManager'
-import { Gallery } from './gallery/Gallery'
-import { DocumentLibrary } from './documents/DocumentLibrary'
-import { DocumentReader } from './documents/DocumentReader'
 import { migrateLegacyPrompts } from './prompts/prompt-migration'
 import { migratePromptSimplification } from './prompts/prompt-simplification'
 import { ProductGuideDialog } from './help/ProductGuideDialog'
-import { LearningCenter } from './study-cards/LearningCenter'
 import { migrateAnnotationsToStudyCards } from './annotations/annotation-migration'
 import { getProductGuideSeenVersion, markProductGuideSeen, PRODUCT_GUIDE_VERSION } from './help/product-guide-state'
-import { documentUiActions } from './documents/document-ui-store'
+import { documentUiActions, useDocumentUi } from './documents/document-ui-store'
+import { useGallery } from './gallery/gallery-store'
+import { useLearningUi } from './study-cards/learning-ui-store'
+
+const SettingsDialog = lazy(() => import('./cockpit/SettingsDialog').then(module => ({ default: module.SettingsDialog })))
+const PromptManager = lazy(() => import('./prompts/PromptManager').then(module => ({ default: module.PromptManager })))
+const Gallery = lazy(() => import('./gallery/Gallery').then(module => ({ default: module.Gallery })))
+const DocumentLibrary = lazy(() => import('./documents/DocumentLibrary').then(module => ({ default: module.DocumentLibrary })))
+const DocumentReader = lazy(() => import('./documents/DocumentReader').then(module => ({ default: module.DocumentReader })))
+const LearningCenter = lazy(() => import('./study-cards/LearningCenter').then(module => ({ default: module.LearningCenter })))
 
 function renderSlot(key: string, owner?: any): ReactNode {
   if (key === 'sidebar') return <Sidebar collapsed={!!owner?.collapsed} width={owner?.width ?? 0} />
@@ -46,6 +49,9 @@ export function App() {
   const settingsOpen = useUi(s => s.settingsOpen)
   const promptManagerOpen = useUi(s => s.promptManagerOpen)
   const productGuideOpen = useUi(s => s.productGuideOpen)
+  const galleryOpen = useGallery(s => s.open)
+  const documentView = useDocumentUi(s => s.view)
+  const learningView = useLearningUi(s => s.view)
   const apiKey = useSettings(s => s.apiKey)
   const [boot, setBoot] = useState<BootState>('loading')
   const productGuideCheckedRef = useRef(false)
@@ -116,12 +122,14 @@ export function App() {
         SessionProvider={SessionProvider as any}
         t={t as any}
       />
-      {settingsOpen && <SettingsDialog />}
-      {promptManagerOpen && <PromptManager />}
-      <LearningCenter />
-      <Gallery />
-      <DocumentLibrary />
-      <DocumentReader />
+      <Suspense fallback={null}>
+        {settingsOpen && <SettingsDialog />}
+        {promptManagerOpen && <PromptManager />}
+        {learningView !== 'closed' && <LearningCenter />}
+        {galleryOpen && <Gallery />}
+        {documentView === 'library' && <DocumentLibrary />}
+        {documentView === 'reader' && <DocumentReader />}
+      </Suspense>
       <ProductGuideDialog
         open={productGuideOpen}
         onClose={uiActions.closeProductGuide}

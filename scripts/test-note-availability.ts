@@ -45,5 +45,20 @@ assert(notePersistedState(rejected.peek('doc', 2)) === 'unknown', 'read rejectio
 rejected.remember('doc', 2, row('trusted cache'))
 assert(notePersistedState(rejected.peek('doc', 2)) === 'existing', 'trusted cache remains existing after a later read failure')
 
+let lruCalls = 0
+const bounded = new NoteReadCache(async (documentId, pageNumber) => {
+  lruCalls++
+  return { ...row(documentId + ':' + pageNumber), documentId, pageNumber }
+}, 2)
+await bounded.read('book', 1)
+await bounded.read('book', 2)
+await bounded.read('book', 1) // touch page 1, making page 2 the oldest
+await bounded.read('book', 3)
+await bounded.read('book', 2)
+assert(lruCalls === 4, 'bounded note cache evicts the least-recently-used page')
+bounded.clearDocument('book')
+await bounded.read('book', 1)
+assert(lruCalls === 5, 'document cleanup releases cached note rows')
+
 console.log(`RESULT pass=${pass} fail=${fail}`)
 process.exit(fail === 0 ? 0 : 1)

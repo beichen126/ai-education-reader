@@ -119,9 +119,9 @@ function blockEl(node: any, ctx: RenderCtx, onTableAction?: (tableId: string) =>
   return null
 }
 
-export function MarkdownBlocks({ content, messageId, annotations, onTableAction, onMathAction }: { content: string; messageId: string; annotations?: Annotation[]; onTableAction?: (tableId: string) => void; onMathAction?: (mathId: string, kind: 'inline' | 'block') => void }) {
-  const root = useMemo<Root>(() => parseMarkdown(content), [content])
-  const children = (root.children || []) as any[]
+export function MarkdownBlocks({ content, messageId, annotations, onTableAction, onMathAction, parsedRoot }: { content: string; messageId: string; annotations?: Annotation[]; onTableAction?: (tableId: string) => void; onMathAction?: (mathId: string, kind: 'inline' | 'block') => void; parsedRoot?: Root }) {
+  const localRoot = useMemo<Root>(() => parsedRoot ?? parseMarkdown(content), [content, parsedRoot])
+  const children = (localRoot.children || []) as any[]
   const ctx: RenderCtx = { messageId, source: content, annotations, onMathAction }
   return <div className={css.markdown} data-message-id={messageId}>{children.map((n, i) => <span key={i}>{blockEl(n, ctx, onTableAction)}</span>)}</div>
 }

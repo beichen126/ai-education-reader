@@ -23,7 +23,8 @@ export function attachmentErrorLabel(kind: AttachmentErrorKind): string {
 const SUPPORTED_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 export const MAX_INLINE_IMAGE_RAW_BYTES = 30 * 1024 * 1024
-const urlRegistry = new Map<string, { url: string; refs: number }>()
+type PreviewUrlEntry = { url?: string; pending?: Promise<string>; refs: number }
+const urlRegistry = new Map<string, PreviewUrlEntry>()
 
 export function isSupportedImage(file: { type: string; size: number }): boolean { return SUPPORTED_MIME.has(file.type) && file.size > 0 }
 
@@ -249,15 +250,31 @@ async function blobOf(id: StableId): Promise<Blob> {
 }
 
 export async function ensurePreviewUrl(id: StableId): Promise<string> {
-  const existing = urlRegistry.get(id); if (existing) { existing.refs++; return existing.url }
-  const blob = await blobOf(id)
-  const url = URL.createObjectURL(blob)
-  urlRegistry.set(id, { url, refs: 1 })
-  return url
+  const existing = urlRegistry.get(id)
+  if (existing) {
+    existing.refs++
+    if (existing.url) return existing.url
+    return existing.pending!
+  }
+  const entry: PreviewUrlEntry = { refs: 1 }
+  urlRegistry.set(id, entry)
+  entry.pending = blobOf(id).then(blob => {
+    // The last consumer may have unmounted while IndexedDB/OPFS was still being read.
+    // Do not create an ownerless object URL after that happens.
+    if (urlRegistry.get(id) !== entry || entry.refs <= 0) throw new AttachmentError('read-failed', 'preview released')
+    const url = URL.createObjectURL(blob)
+    entry.url = url
+    entry.pending = undefined
+    return url
+  }).catch(error => {
+    if (urlRegistry.get(id) === entry) urlRegistry.delete(id)
+    throw error
+  })
+  return entry.pending
 }
 export function releasePreviewUrl(id: StableId): void {
   const e = urlRegistry.get(id); if (!e) return; e.refs--;
-  if (e.refs <= 0) { URL.revokeObjectURL(e.url); urlRegistry.delete(id) }
+  if (e.refs <= 0) { urlRegistry.delete(id); if (e.url) URL.revokeObjectURL(e.url) }
 }
 
 export async function toDataUrl(id: StableId): Promise<string> {
@@ -270,12 +287,12 @@ export async function toDataUrl(id: StableId): Promise<string> {
 }
 
 export async function deleteAttachment(id: StableId): Promise<void> {
-  const e = urlRegistry.get(id); if (e) { URL.revokeObjectURL(e.url); urlRegistry.delete(id) }
+  const e = urlRegistry.get(id); if (e) { if (e.url) URL.revokeObjectURL(e.url); urlRegistry.delete(id) }
   const row = await getAttachmentRow(id);
   await deleteAttachmentRow(id);
   if (row && row.binary && row.binary.storage === 'opfs') { try { await deleteBinary(row.binary) } catch { /* orphan */ } }
 }
-export function releaseAllPreviews(): void { for (const [id, e] of urlRegistry) { URL.revokeObjectURL(e.url); urlRegistry.delete(id) } }
+export function releaseAllPreviews(): void { for (const [id, e] of urlRegistry) { if (e.url) URL.revokeObjectURL(e.url); urlRegistry.delete(id) } }
 
 /**
  * Conservative attachment graph-reachability cleanup. Live attachment references are

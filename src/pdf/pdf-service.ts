@@ -46,6 +46,7 @@ export function pdfErrorMessage(kind: PdfErrorKind): string {
 
 let activeDoc: import('pdfjs-dist').PDFDocumentProxy | null = null
 let activeLoadingTask: ReturnType<typeof pdfjsLib.getDocument> | null = null
+let activeOpenToken: symbol | null = null
 
 /**
  * Destroy any loaded document + loading task. Called before opening a new PDF,
@@ -53,6 +54,7 @@ let activeLoadingTask: ReturnType<typeof pdfjsLib.getDocument> | null = null
  */
 export async function closePdf(): Promise<void> {
   const task = activeLoadingTask
+  activeOpenToken = null
   activeLoadingTask = null
   activeDoc = null
   // Destroying the loading task also tears down the underlying document + worker
@@ -67,19 +69,31 @@ export async function closePdf(): Promise<void> {
  */
 export async function openPdf(file: File): Promise<LocalPdfDocument> {
   await closePdf()
+  const openToken = Symbol('pdf-open')
+  activeOpenToken = openToken
   const looksLikePdf = file.type === PDF_FILE_MIME || /.pdf$/i.test(file.name)
-  if (!looksLikePdf) throw new PdfError('not-pdf', 'not a pdf')
+  if (!looksLikePdf) { if (activeOpenToken === openToken) activeOpenToken = null; throw new PdfError('not-pdf', 'not a pdf') }
   let data: ArrayBuffer
-  try { data = await file.arrayBuffer() } catch { throw new PdfError('read-failed', 'read failed') }
+  try { data = await file.arrayBuffer() } catch { if (activeOpenToken === openToken) activeOpenToken = null; throw new PdfError('read-failed', 'read failed') }
+  if (activeOpenToken !== openToken) throw new PdfError('read-failed', 'open superseded')
   const task = pdfjsLib.getDocument(createPdfDocumentInit(data))
   activeLoadingTask = task
   let doc: import('pdfjs-dist').PDFDocumentProxy
   try { doc = await task.promise } catch (err) {
-    activeLoadingTask = null
+    if (activeLoadingTask === task) activeLoadingTask = null
+    if (activeOpenToken === openToken) activeOpenToken = null
+    // A rejected loading task may still own a worker/message channel. Mirror the
+    // explicit-session path and always tear it down before surfacing the error.
+    try { await task.destroy() } catch { /* ignore cleanup failure */ }
     if (isPasswordError(err)) throw new PdfError('password', 'password protected')
     throw new PdfError('parse-failed', 'parse failed')
   }
-  if (doc.numPages < 1) { try { await task.destroy() } catch { /* ignore */ } activeLoadingTask = null; throw new PdfError('empty', 'empty') }
+  if (activeOpenToken !== openToken) {
+    if (activeLoadingTask === task) activeLoadingTask = null
+    try { await task.destroy() } catch { /* ignore cleanup failure */ }
+    throw new PdfError('read-failed', 'open superseded')
+  }
+  if (doc.numPages < 1) { try { await task.destroy() } catch { /* ignore */ } activeLoadingTask = null; if (activeOpenToken === openToken) activeOpenToken = null; throw new PdfError('empty', 'empty') }
   activeDoc = doc
   // Keep the loading task so closePdf() can destroy this document later.
   return { fileName: file.name, fileSize: file.size, pageCount: doc.numPages }

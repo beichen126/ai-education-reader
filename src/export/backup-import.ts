@@ -512,7 +512,10 @@ function restoreArtifacts(artifacts: StudyArtifact[]): StudyArtifact[] {
 // Staged restore (Stage 9.4D): decodes + stages new binary objects, commits metadata in ONE
 // idbReplaceAll transaction, then cleans up old OPFS refs best-effort. A failure at ANY step
 // leaves the existing data intact (staged OPFS files deleted, old IDB untouched).
-export async function restoreBackup(backup: Backup): Promise<void> {
+export async function restoreBackup(backup: Backup, binaries?: {
+  attachments: Map<string, Uint8Array>
+  documents: Map<string, Uint8Array>
+}): Promise<void> {
   // Validate all metadata, including prompt namespace/preferences, before any
   // binary is staged or the existing durable database can be replaced.
   backup = parseAndValidate(backup)
@@ -529,8 +532,12 @@ export async function restoreBackup(backup: Backup): Promise<void> {
     // A. Decode + stage each attachment binary to a UNIQUE new path (never overwrite).
     const attachRows: any[] = [];
     for (const at of backup.attachments) {
-      const blob = base64ToBlob(at.data, at.mimeType || at.meta.mimeType);
+      const bytes = binaries?.attachments.get(at.id)
+      const blob = bytes
+        ? new Blob([bytes as unknown as BlobPart], { type: at.mimeType || at.meta.mimeType || 'application/octet-stream' })
+        : base64ToBlob(at.data, at.mimeType || at.meta.mimeType);
       const ref = await persistBinary('attachments', at.id, blob, { mimeType: at.mimeType || at.meta.mimeType });
+      binaries?.attachments.delete(at.id)
       if (ref.storage === 'opfs') staged.push({ ref, path: ref.path });
       attachRows.push({ id: at.id, meta: at.meta as Attachment, binary: ref, recordVersion: 2 });
     }
@@ -538,8 +545,12 @@ export async function restoreBackup(backup: Backup): Promise<void> {
     const documentsArray = v2 ? v2.documents : [];
     const documentRows: any[] = [];
     for (const d of documentsArray) {
-      const blob = base64ToBlob(d.data, d.mimeType);
+      const bytes = binaries?.documents.get(d.id)
+      const blob = bytes
+        ? new Blob([bytes as unknown as BlobPart], { type: d.mimeType || 'application/pdf' })
+        : base64ToBlob(d.data, d.mimeType);
       const ref = await persistBinary('documents', d.id, blob, { mimeType: d.mimeType });
+      binaries?.documents.delete(d.id)
       if (ref.storage === 'opfs') staged.push({ ref, path: ref.path });
       // recordVersion 3 + lastReadAt backfill (old backups lack the field).
       const lastReadAt = (typeof d.meta.lastReadAt === 'number') ? d.meta.lastReadAt : (typeof d.meta.updatedAt === 'number' ? d.meta.updatedAt : (typeof d.meta.createdAt === 'number' ? d.meta.createdAt : 0));

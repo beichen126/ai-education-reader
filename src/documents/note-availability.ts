@@ -55,11 +55,31 @@ export class NoteReadCache {
   private readonly pending = new Map<string, Promise<DocumentNote | undefined>>()
   private readonly revisions = new Map<string, number>()
 
-  constructor(private readonly reader: NoteReader) {}
+  constructor(private readonly reader: NoteReader, private readonly maxEntries = 128) {}
+
+  private touch(key: string): void {
+    if (!this.resolved.has(key)) return
+    const value = this.resolved.get(key)
+    this.resolved.delete(key)
+    this.resolved.set(key, value)
+  }
+
+  private trim(): void {
+    while (this.resolved.size > this.maxEntries) {
+      const oldest = this.resolved.keys().next().value as string | undefined
+      if (oldest === undefined) return
+      this.resolved.delete(oldest)
+      this.revisions.delete(oldest)
+    }
+  }
 
   read(documentId: string, pageNumber: number): Promise<DocumentNote | undefined> {
     const key = noteKey(documentId, pageNumber)
-    if (this.resolved.has(key)) return Promise.resolve(this.resolved.get(key))
+    if (this.resolved.has(key)) {
+      const value = this.resolved.get(key)
+      this.touch(key)
+      return Promise.resolve(value)
+    }
     const pending = this.pending.get(key)
     if (pending) return pending
 
@@ -72,7 +92,10 @@ export class NoteReadCache {
     const revision = this.revisions.get(key) ?? 0
     let tracked: Promise<DocumentNote | undefined>
     tracked = request.then(note => {
-      if ((this.revisions.get(key) ?? 0) === revision) this.resolved.set(key, note)
+      if ((this.revisions.get(key) ?? 0) === revision) {
+        this.resolved.set(key, note)
+        this.trim()
+      }
       if (this.pending.get(key) === tracked) this.pending.delete(key)
       return note
     }, error => {
@@ -88,9 +111,25 @@ export class NoteReadCache {
     this.revisions.set(key, (this.revisions.get(key) ?? 0) + 1)
     this.resolved.set(key, note)
     this.pending.delete(key)
+    this.trim()
   }
 
   peek(documentId: string, pageNumber: number): DocumentNote | undefined {
-    return this.resolved.get(noteKey(documentId, pageNumber))
+    const key = noteKey(documentId, pageNumber)
+    const value = this.resolved.get(key)
+    this.touch(key)
+    return value
+  }
+
+  clearDocument(documentId: string): void {
+    const prefix = documentId + ':'
+    for (const key of [...this.resolved.keys()]) {
+      if (key.startsWith(prefix)) { this.resolved.delete(key); this.revisions.delete(key) }
+    }
+  }
+
+  clear(): void {
+    this.resolved.clear()
+    this.revisions.clear()
   }
 }

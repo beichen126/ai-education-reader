@@ -122,44 +122,51 @@ export async function extractAiToc(opts: {
   const isMock = typeof mock === 'function'
 
   if (!apiKey && !isMock) return timedAiTocResult({ ok: false, error: 'AI 目录识别需要配置 API Key。' }, timing, totalStartMs)
-
-  // Render each selected TOC page to a small data URL (never persisted).
-  const pageDataUrls: Record<number, string> = {}
-  const renderingStartMs = aiTocNowMs()
-  const finishRendering = () => { timing.renderingMs = elapsedAiTocMs(renderingStartMs) }
-  let renderCursor = 0
-  let renderCompleted = 0
-  let renderFailure: number | null = null
-  const renderWorker = async () => {
-    while (renderCursor < selectedPages.length && renderFailure == null && !signal?.aborted) {
-      const n = selectedPages[renderCursor++]
-      onProgress?.({ phase: 'rendering', completed: renderCompleted, total: selectedPages.length, currentPage: n })
-      try {
-        const rendered = await renderSessionThumbnail(session, n, AI_TOC_RENDER_EDGE)
-        const url = await new Promise<string>((resolve, reject) => { const fr = new FileReader(); fr.onload = () => resolve(String(fr.result)); fr.onerror = () => reject(new Error('render')); fr.readAsDataURL(rendered.blob) })
-        if (signal?.aborted) return
-        pageDataUrls[n] = url
-        renderCompleted++
-        onProgress?.({ phase: 'rendering', completed: renderCompleted, total: selectedPages.length, currentPage: n })
-      } catch { renderFailure = n }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(AI_TOC_RENDER_CONCURRENCY, selectedPages.length) }, () => renderWorker()))
-  if (signal?.aborted) { finishRendering(); return abortedAiTocResult('rendering', timing, totalStartMs) }
-  if (renderFailure != null) { finishRendering(); return timedAiTocResult({ ok: false, error: '第 ' + renderFailure + ' 页渲染失败，无法用于目录识别。' }, timing, totalStartMs) }
-  finishRendering()
+  if (selectedPages.length === 0) return timedAiTocResult({ ok: false, error: '请至少选择一页目录。' }, timing, totalStartMs)
 
   // Window strategy: small TOC (<=8 pages) sent ONCE so the model sees full
   // cross-page continuity; larger TOC uses sequential windows of 8 pages. Each
-  // window is only a TRANSCRIPTION batch, never a tree batch.
+  // window is rendered, transcribed, and released before the next one. This
+  // avoids retaining a base64 copy of every selected page and starts the model
+  // request as soon as the first window is ready.
   const windowSize = selectedPages.length <= SMALL_TOC_MAX ? selectedPages.length : LARGE_TOC_WINDOW
   const windows: number[][] = []
   for (let i = 0; i < selectedPages.length; i += windowSize) windows.push(selectedPages.slice(i, i + windowSize));
+  let renderCompleted = 0
   let allRows: TocTranscriptionRow[] = []
   let tail: TocTranscriptionRow[] = []
   for (let w = 0; w < windows.length; w++) {
-    if (signal?.aborted) return abortedAiTocResult('transcribing', timing, totalStartMs)
     const batch = windows[w];
+    if (signal?.aborted) return abortedAiTocResult('rendering', timing, totalStartMs)
+
+    const pageDataUrls: Record<number, string> = {}
+    const renderingStartMs = aiTocNowMs()
+    let renderCursor = 0
+    let renderFailure: number | null = null
+    const renderWorker = async () => {
+      while (renderCursor < batch.length && renderFailure == null && !signal?.aborted) {
+        const n = batch[renderCursor++]
+        onProgress?.({ phase: 'rendering', completed: renderCompleted, total: selectedPages.length, currentPage: n })
+        try {
+          const rendered = await renderSessionThumbnail(session, n, AI_TOC_RENDER_EDGE)
+          const url = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(String(reader.result))
+            reader.onerror = () => reject(new Error('render'))
+            reader.readAsDataURL(rendered.blob)
+          })
+          if (signal?.aborted) return
+          pageDataUrls[n] = url
+          renderCompleted++
+          onProgress?.({ phase: 'rendering', completed: renderCompleted, total: selectedPages.length, currentPage: n })
+        } catch { renderFailure = n }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(AI_TOC_RENDER_CONCURRENCY, batch.length) }, () => renderWorker()))
+    timing.renderingMs += elapsedAiTocMs(renderingStartMs)
+    if (signal?.aborted) return abortedAiTocResult('rendering', timing, totalStartMs)
+    if (renderFailure != null) return timedAiTocResult({ ok: false, error: '第 ' + renderFailure + ' 页渲染失败，无法用于目录识别。' }, timing, totalStartMs)
+
     const transcriptionStartMs = aiTocNowMs()
     let transcriptionTimingRecorded = false
     const finishTranscription = () => {

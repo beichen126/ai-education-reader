@@ -3,7 +3,7 @@ import { parseAndValidate, restoreBackup, BackupError } from './backup-import'
 import { conversationMarkdown, markedOnlyMarkdown } from './markdown'
 import { downloadText, downloadJson, downloadBlob } from './download'
 import { buildConversationBundle, ConversationBundleError } from './conversation-bundle'
-import { buildPortableBackupArchive, isBackupArchive, parseBackupArchive } from './backup-archive'
+import { buildPortableBackupArchive, isBackupArchive, MAX_ARCHIVE_BYTES, parseBackupArchiveForRestore, writePortableBackupArchive } from './backup-archive'
 import { writeBookmarkedPdf, PdfOutlineError } from './pdf-outline-writer'
 import { readDocumentSourceBlob } from '../documents/document-service'
 import type { ChapterNode } from '../documents/document-types'
@@ -27,8 +27,33 @@ export async function exportBackupJson(): Promise<void> {
   downloadJson('ai-education-reader-backup-' + stamp() + '.json', backup)
 }
 export async function exportBackupZip(): Promise<void> {
+  const fileName = 'ai-education-reader-backup-' + stamp() + '.zip'
+  const picker = (globalThis as typeof globalThis & {
+    showSaveFilePicker?: (options: { suggestedName: string; types: Array<{ description: string; accept: Record<string, string[]> }> }) => Promise<{
+      createWritable: () => Promise<{ write: (data: Uint8Array) => Promise<void>; close: () => Promise<void>; abort: () => Promise<void> }>
+    }>
+  }).showSaveFilePicker
   const plan = await buildPortableBackupPlan()
-  downloadBlob('ai-education-reader-backup-' + stamp() + '.zip', await buildPortableBackupArchive(plan))
+  const estimatedBytes = plan.binaries.reduce((sum, item) => sum + item.blob.size, 0)
+  // Keep the familiar one-click download for ordinary backups. For large data,
+  // Chromium/Edge writes each compressed chunk straight to disk instead of
+  // retaining the complete archive in the JS heap.
+  const handle = typeof picker === 'function' && estimatedBytes > 64 * 1024 * 1024
+    ? await picker({ suggestedName: fileName, types: [{ description: 'ZIP backup', accept: { 'application/zip': ['.zip'] } }] })
+    : undefined
+  if (handle) {
+    const writable = await handle.createWritable()
+    try {
+      await writePortableBackupArchive(plan, chunk => writable.write(chunk))
+      await writable.close()
+    } catch (error) {
+      await writable.abort().catch(() => undefined)
+      throw error
+    }
+    return
+  }
+  if (estimatedBytes > 256 * 1024 * 1024) throw new BackupError('当前浏览器不支持流式保存，备份超过 256 MB。请使用最新版 Chrome 或 Edge 导出，避免内存不足。')
+  downloadBlob(fileName, await buildPortableBackupArchive(plan))
 }
 export async function exportConversationMd(convId: string): Promise<void> {
   const conv = await getConversation(convId); if (!conv) return
@@ -69,10 +94,12 @@ export async function importBackupText(text: string): Promise<void> {
 }
 
 export async function importBackupFile(file: File): Promise<void> {
-  const bytes = new Uint8Array(await file.arrayBuffer())
+  if (file.size > MAX_ARCHIVE_BYTES) throw new BackupError('备份文件超过 512 MB，当前浏览器无法安全地在内存中恢复。')
+  let bytes = new Uint8Array(await file.arrayBuffer())
   if (isBackupArchive(bytes)) {
-    const backup = parseBackupArchive(bytes)
-    await restoreBackup(backup)
+    const parsed = parseBackupArchiveForRestore(bytes)
+    bytes = new Uint8Array(0)
+    await restoreBackup(parsed.backup, parsed.binaries)
     resetDrafts()
     await migrateLegacyPrompts()
     await migratePromptSimplification()

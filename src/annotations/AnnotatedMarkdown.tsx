@@ -1,8 +1,9 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { MarkdownBlocks } from '../markdown/MarkdownBlocks'
+import { parseMarkdown } from '../markdown/parse'
 import { mapSelection } from './selection-mapper'
 import { resolveToRange, resolveByExact } from './range-resolver'
-import { buildBlockMap } from './canonical'
+import { buildBlockMapFromRoot } from './canonical'
 import { useMessageAnnotations, toggleMessageSelection, toggleTableCellsMessage, toggleWholeTableMessage, toggleMathMessage, refreshMessageAnnotations } from './annotation-store'
 import { setMessageRanges, removeMessageRanges, highlightSupported } from './highlight-registry'
 import { shouldToggleAll, normalizeBounds, hasExactRectangle, hasWholeTable, hasMath } from './annotation-ops'
@@ -12,12 +13,75 @@ import { markdownSourceForRange } from '../markdown/source-copy'
 import css from './annotate.module.css'
 import { tx } from '../engine/locale'
 
+type AnnotationEventOwner = {
+  element: HTMLElement
+  pointerDown(event: Event): void
+  selectionEnd(): void
+  copy(event: ClipboardEvent): void
+}
+
+const eventOwners = new Map<string, AnnotationEventOwner>()
+let activeEventOwner: string | null = null
+let annotationEventsInstalled = false
+
+function eventOwnerForNode(node: Node | null): [string, AnnotationEventOwner] | null {
+  const element = node instanceof Element ? node : node?.parentElement
+  const root = element?.closest<HTMLElement>('[data-annotation-owner]')
+  if (!root) return null
+  const id = root.dataset.annotationOwner
+  const owner = id ? eventOwners.get(id) : undefined
+  return id && owner ? [id, owner] : null
+}
+
+function eventOwnerForSelection(): [string, AnnotationEventOwner] | null {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return null
+  const range = selection.getRangeAt(0)
+  const start = eventOwnerForNode(range.startContainer)
+  const end = eventOwnerForNode(range.endContainer)
+  return start && end && start[0] === end[0] ? start : null
+}
+
+const delegatedPointerDown = (event: Event) => {
+  const found = eventOwnerForNode(event.target as Node | null)
+  activeEventOwner = found?.[0] ?? null
+  found?.[1].pointerDown(event)
+}
+const delegatedSelectionEnd = () => {
+  const found = eventOwnerForSelection()
+  if (found) { activeEventOwner = found[0]; found[1].selectionEnd(); return }
+  if (activeEventOwner) eventOwners.get(activeEventOwner)?.selectionEnd()
+}
+const delegatedCopy = (event: ClipboardEvent) => { eventOwnerForSelection()?.[1].copy(event) }
+
+function installAnnotationEvents(): void {
+  if (annotationEventsInstalled || typeof document === 'undefined') return
+  annotationEventsInstalled = true
+  document.addEventListener('selectionchange', delegatedSelectionEnd)
+  document.addEventListener('pointerdown', delegatedPointerDown)
+  document.addEventListener('pointerup', delegatedSelectionEnd)
+  document.addEventListener('touchend', delegatedSelectionEnd)
+  document.addEventListener('copy', delegatedCopy)
+}
+
+function uninstallAnnotationEventsIfIdle(): void {
+  if (!annotationEventsInstalled || eventOwners.size > 0 || typeof document === 'undefined') return
+  annotationEventsInstalled = false
+  activeEventOwner = null
+  document.removeEventListener('selectionchange', delegatedSelectionEnd)
+  document.removeEventListener('pointerdown', delegatedPointerDown)
+  document.removeEventListener('pointerup', delegatedSelectionEnd)
+  document.removeEventListener('touchend', delegatedSelectionEnd)
+  document.removeEventListener('copy', delegatedCopy)
+}
+
 export function AnnotatedMarkdown({ content, messageId, conversationId, branchId }: { content: string; messageId: string; conversationId: string; branchId?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const highlightOwnerId = messageId + ':' + useId()
   const [pending, setPending] = useState<SelectionMapping | null>(null)
   const annotations = useMessageAnnotations(conversationId, messageId)
-  const { blocks, canonicalOf } = useMemo(() => buildBlockMap(content, messageId), [content, messageId])
+  const parsedRoot = useMemo(() => parseMarkdown(content), [content])
+  const { blocks, canonicalOf } = useMemo(() => buildBlockMapFromRoot(parsedRoot, messageId), [parsedRoot, messageId])
   const hasHl = highlightSupported()
   useEffect(() => { void refreshMessageAnnotations(conversationId, messageId) }, [conversationId, messageId])
 
@@ -74,14 +138,6 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
         else { setPending(result) }
       } catch { setPending(null) }
     }
-    document.addEventListener('selectionchange', onSelChange)
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('pointerup', onSelChange)
-    document.addEventListener('touchend', onSelChange)
-    return () => { document.removeEventListener('selectionchange', onSelChange); document.removeEventListener('pointerdown', onPointerDown); document.removeEventListener('pointerup', onSelChange); document.removeEventListener('touchend', onSelChange) }
-  }, [messageId, content, canonicalOf])
-
-  useEffect(() => {
     function onCopy(event: ClipboardEvent) {
       const selection = window.getSelection()
       if (!selection || selection.isCollapsed || selection.rangeCount === 0 || !event.clipboardData) return
@@ -99,9 +155,16 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
         event.preventDefault()
       } catch { /* keep the browser's normal rendered-text copy when clipboardData is read-only */ }
     }
-    document.addEventListener('copy', onCopy)
-    return () => document.removeEventListener('copy', onCopy)
-  }, [content])
+    const element = wrapRef.current
+    if (!element) return
+    eventOwners.set(highlightOwnerId, { element, pointerDown: onPointerDown, selectionEnd: onSelChange, copy: onCopy })
+    installAnnotationEvents()
+    return () => {
+      eventOwners.delete(highlightOwnerId)
+      if (activeEventOwner === highlightOwnerId) activeEventOwner = null
+      uninstallAnnotationEventsIfIdle()
+    }
+  }, [messageId, content, canonicalOf, highlightOwnerId])
 
   const markCrossCell = () => { if (!pending || pending.kind !== 'table-cross-cell') return; const a = pending.startCell, b = pending.endCell; const bounds = normalizeBounds(a.row, a.column, b.row, b.column); void toggleTableCellsMessage(conversationId, messageId, pending.tableId, bounds, branchId); window.getSelection()?.removeAllRanges(); setPending(null) }
   const onMathAction = (mathId: string, kind: 'inline' | 'block') => { setPending({ kind: 'math', mathId, mathKind: kind }) }
@@ -120,8 +183,8 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
 
   const onTableAction = (tableId: string) => { void toggleWholeTableMessage(conversationId, messageId, tableId, branchId) }
   return (
-    <div ref={wrapRef} className={css.wrap} data-highlight={hasHl}>
-      <MarkdownBlocks content={content} messageId={messageId} annotations={annotations} onTableAction={onTableAction} onMathAction={onMathAction} />
+    <div ref={wrapRef} className={css.wrap} data-highlight={hasHl} data-annotation-owner={highlightOwnerId}>
+      <MarkdownBlocks content={content} messageId={messageId} annotations={annotations} onTableAction={onTableAction} onMathAction={onMathAction} parsedRoot={parsedRoot} />
       {pending && pending.kind === 'math' && (
         <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{mathCovered ? tx('取消标记', 'Unmark') : tx('标记公式', 'Mark formula')}</button></div>
       )}
