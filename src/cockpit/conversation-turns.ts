@@ -1,3 +1,5 @@
+import { tx } from '../engine/locale'
+
 export type TurnMessage = { id: string; role: string; content: string }
 
 export type ConversationTurn = {
@@ -10,7 +12,7 @@ export type ConversationTurn = {
 }
 
 function previewOf(content: string): string {
-  return content.replace(/\s+/g, ' ').trim().slice(0, 64) || '无文字内容'
+  return content.replace(/\s+/g, ' ').trim().slice(0, 64) || tx('无文字内容', 'No text content')
 }
 
 /** One rail marker per user/assistant round. A leading assistant or trailing user is

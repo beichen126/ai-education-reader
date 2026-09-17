@@ -2,6 +2,7 @@ import { Modal } from '../dsh/primitives/Modal'
 import type { PromptTransition } from './prompt-types'
 import css from './prompt-inspector.module.css'
 import { tx } from '../engine/locale'
+import { promptDisplayName } from './prompt-display'
 
 type Props = {
   transition: PromptTransition | null
@@ -22,7 +23,7 @@ export function ConversationPromptInspector({ transition, positionLabel, onClose
   return (
     <Modal open={!!transition} onClose={onClose} title={tx('提示词检查器', 'Prompt inspector')} closeLabel={tx('关闭', 'Close')} className={css.dialog}>
       {snapshot && <div data-testid="prompt-inspector" className={css.inspector}>
-        <div className={css.heading}>{snapshot.name}</div>
+        <div className={css.heading}>{promptDisplayName(snapshot.name, snapshot.profileId)}</div>
         <dl className={css.meta}>
           <div><dt>{tx('来源', 'Source')}</dt><dd>{sourceLabel(snapshot.source)}</dd></div>
           <div><dt>{tx('修订版本', 'Revision')}</dt><dd>{snapshot.revision === undefined ? tx('未记录', 'Not recorded') : 'v' + snapshot.revision}</dd></div>

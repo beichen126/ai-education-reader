@@ -8,7 +8,7 @@ import { exportNoteMarkdown } from './artifact-export'
 import { useCopyFeedback } from '../dsh/primitives/use-copy-feedback'
 import type { StudyArtifact, ArtifactKind } from './artifact-types'
 import css from './artifact.module.css'
-import { tx } from '../engine/locale'
+import { localizedArtifactSourceLabel, localizedArtifactTitle, localizedErrorText, tx } from '../engine/locale'
 
 type Props = {
   artifact: StudyArtifact
@@ -38,7 +38,7 @@ const MODES: { key: EditorMode; label: string; labelEn: string }[] = [
  * Regenerate (A1/A6) creates a NEW revision draft; failures surface an error, never silently.
  */
 export function ArtifactEditor({ artifact, onOpenArtifact, onClose, onChanged, sourceDeleted }: Props) {
-  const [title, setTitle] = useState(artifact.title)
+  const [title, setTitle] = useState(() => localizedArtifactTitle(artifact.title, artifact.kind))
   const [body, setBody] = useState(artifact.content ?? '')
   const [saved, setSaved] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -57,7 +57,7 @@ export function ArtifactEditor({ artifact, onOpenArtifact, onClose, onChanged, s
     // editor resets, so the last keystrokes are never lost on an artifact switch.
     if (prevArtIdRef.current !== artifact.id) flushPendingSave()
     prevArtIdRef.current = artifact.id
-    setTitle(artifact.title); setBody(artifact.content ?? ''); setGenError(undefined)
+    setTitle(localizedArtifactTitle(artifact.title, artifact.kind)); setBody(artifact.content ?? ''); setGenError(undefined)
     // A8: narrow screens default to Edit; desktop defaults to Split.
     setMode(typeof window !== 'undefined' && window.innerWidth < 720 ? 'edit' : 'split')
   }, [artifact.id])
@@ -101,7 +101,7 @@ export function ArtifactEditor({ artifact, onOpenArtifact, onClose, onChanged, s
     document.addEventListener('visibilitychange', onVis)
     return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', onVis) }
   }, [])
-  async function commitTitle() { if (title.trim() && title.trim() !== artifact.title) { await updateArtifactTitle(artifact.id, title); onChanged() } }
+  async function commitTitle() { if (title.trim() && title.trim() !== localizedArtifactTitle(artifact.title, artifact.kind)) { await updateArtifactTitle(artifact.id, title); onChanged() } }
   async function doCopy() { cp.onCopy() }
   async function doDelete() { if (!globalThis.confirm(tx('删除该学习成果？', 'Delete this study output?'))) return; await removeArtifact(artifact.id); onChanged(); onClose() }
   function doExport() { exportNoteMarkdown(artifact, body) }
@@ -144,14 +144,14 @@ export function ArtifactEditor({ artifact, onOpenArtifact, onClose, onChanged, s
       {showEdit && (<div className={css.pane}><div className={css.paneLabel}>{tx('编辑', 'Edit')}</div><textarea className={css.textarea} aria-label={tx('正文 Markdown', 'Content Markdown')} value={body} onChange={(e) => scheduleSave(e.target.value)} /></div>)}
       {showPreview && (<div className={css.pane}><div className={css.paneLabel}>{tx('预览', 'Preview')}</div><div className={css.preview}><MarkdownBlocks content={body} messageId={'artifact:' + artifact.id} /></div></div>)}
     </div>
-    <div className={css.provenance}><strong>{tx('来源', 'Source')}</strong> · {artifact.source.snapshot.sourceLabel}{sourceDeleted ? tx(' · 原会话已删除', ' · Source chat deleted') : ''}</div>
+    <div className={css.provenance}><strong>{tx('来源', 'Source')}</strong> · {localizedArtifactSourceLabel(artifact.source.snapshot.sourceLabel)}{sourceDeleted ? tx(' · 原会话已删除', ' · Source chat deleted') : ''}</div>
   </div>)
 }
 
 function genErrorMessage(e: unknown): string {
-  if (e instanceof ArtifactGenerationError) return e.message
+  if (e instanceof ArtifactGenerationError) return localizedErrorText(e, 'Unable to generate this study output.')
   const msg = (e as any)?.name === 'AbortError' ? tx('已取消生成', 'Generation cancelled') : String((e as any)?.message ?? e)
-  return tx('生成失败：', 'Generation failed: ') + msg
+  return localizedErrorText(msg, 'Generation failed.')
 }
 
 // Regeneration uses the same BYOK model pipeline via the existing non-streaming send.

@@ -8,6 +8,7 @@ import { readSessionPageViewport, renderSessionPageSurface, renderSessionPage, t
 import { ReaderRenderController, type CachedSurface, type DisplayGeometry } from '../pdf/reader-render-controller'
 import { notePdfRendererAttach, notePdfRendererCall } from './pdf-performance-telemetry'
 import type { PdfPerformanceTelemetry } from './pdf-performance-telemetry'
+import { tx } from '../engine/locale'
 
 export type ReaderDisplayApi = {
   /** Attach to the visible <canvas>. */
@@ -64,7 +65,7 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
       // switch. Its callbacks must not repopulate the new document's surface state.
       onForeground: (s) => { if (controllerRef.current === ctrl) setSurface(s) },
       onRenderState: (r) => { if (controllerRef.current === ctrl) setRendering(r) },
-      onPageError: (n) => { if (controllerRef.current === ctrl) setPageError('第 ' + n + ' 页渲染失败。') },
+      onPageError: (n) => { if (controllerRef.current === ctrl) setPageError(tx('第 ' + n + ' 页渲染失败。', 'Page ' + n + ' failed to render.')) },
       onRenderStart: () => { if (controllerRef.current === ctrl) telemetry?.mark('first-render-start') },
     })
     controllerRef.current = ctrl

@@ -7,7 +7,7 @@ import { exportBackupZip, exportConversationMd, exportMarkedOnlyMd, exportConver
 import { type AppearanceMode } from '../theme/theme'
 import type { PromptKind } from '../prompts/prompt-types'
 import { setAppearance, setPdfNavigationMode, setUiLanguage, type PdfNavigationMode } from '../engine/settings-store'
-import { tx } from '../engine/locale'
+import { localizedErrorText, tx } from '../engine/locale'
 import { Modal, Button, Input } from '../dsh/primitives'
 import { getStorageDiagnostics, formatBytes, type StorageDiagnostics } from '../storage/diagnostics'
 import { clearAllLocalData } from '../storage/storage'
@@ -59,7 +59,7 @@ export function SettingsDialog() {
       () => { if (mountedRef.current) setPdfPending(null) },
       (error: unknown) => {
         // Roll the visible selection back to the committed value and offer a retry.
-        const message = error instanceof Error && error.message ? error.message : tx('保存失败', 'Save failed')
+        const message = localizedErrorText(error, 'Save failed')
         if (mountedRef.current) { setPdfPending(null); setPdfFailure({ mode: next, message }) }
       },
     )
@@ -112,7 +112,7 @@ export function SettingsDialog() {
     } catch (e) { setClearing(false); setMsg(tx('清除本地数据失败，请重试。', 'Unable to clear local data. Try again.')) }
   }
 
-  const setBusyMsg = (fn: () => Promise<void>, ok: string) => { setBusy(true); setMsg(null); void fn().then(() => setMsg(ok)).catch((e: any) => setMsg(e instanceof BackupError ? e.message : tx('操作失败', 'Operation failed'))).finally(() => setBusy(false)) }
+  const setBusyMsg = (fn: () => Promise<void>, ok: string) => { setBusy(true); setMsg(null); void fn().then(() => setMsg(ok)).catch((e: any) => setMsg(localizedErrorText(e, e instanceof BackupError ? 'Backup operation failed.' : 'Operation failed.'))).finally(() => setBusy(false)) }
   const onExportBackup = () => setBusyMsg(() => exportBackupZip(), tx('已导出完整备份 ZIP', 'Complete ZIP backup exported'))
   const onExportMd = () => currentConv ? setBusyMsg(() => exportConversationMd(currentConv.id), tx('已导出当前会话 Markdown', 'Current chat exported as Markdown')) : setMsg(tx('当前没有会话可导出', 'There is no chat to export'))
   const onExportMarked = () => currentConv ? setBusyMsg(() => exportMarkedOnlyMd(currentConv.id), tx('已导出仅标记内容', 'Marked content exported')) : setMsg(tx('当前没有会话可导出', 'There is no chat to export'))
@@ -128,7 +128,7 @@ export function SettingsDialog() {
       setModel(restored.model || DEFAULT_SETTINGS.model)
       setVisionCapability(restored.visionCapability)
       setMsg(tx('导入完成', 'Import complete'))
-    }).catch((e: any) => setMsg(e instanceof BackupError ? e.message : tx('导入失败', 'Import failed'))).finally(() => setBusy(false))
+    }).catch((e: any) => setMsg(localizedErrorText(e, e instanceof BackupError ? 'The backup could not be imported.' : 'Import failed.'))).finally(() => setBusy(false))
   }
 
   return (
@@ -164,7 +164,7 @@ export function SettingsDialog() {
         <Button variant="primary" onClick={onSave}>{saved ? tx('已保存', 'Saved') : tx('保存 API 设置', 'Save API settings')}</Button>
       </div>
       {mutation.status === 'error' && mutation.error && (
-        <div className={css.testResult} data-ok="false" data-testid="settings-mutation-error">{tx('设置保存失败：', 'Failed to save settings: ')}{mutation.error}</div>
+        <div className={css.testResult} data-ok="false" data-testid="settings-mutation-error">{localizedErrorText(mutation.error, 'Failed to save settings.')}</div>
       )}
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
       <div className={css.settingsHint}>{tx('“测试连接”仅调用 GET /models 验证服务可达与 Key 有效，不会发送聊天内容或文档。', 'Test connection only calls GET /models to verify connectivity and the key. It does not send chats or documents.')}</div>

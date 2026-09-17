@@ -6,6 +6,7 @@
 // failure, progress reporting, cancellation checks. The caller supplies renderPage
 // (PdfPanel singleton or a Reader-owned PdfSession) and owns preview object URLs.
 import { normalizePdfRanges, countPdfRangePages, expandPdfRangePages, exceedsPdfContextHardLimit, exceedsPdfGroupByteBudget, MAX_PDF_GROUP_RAW_BYTES, MAX_PDF_CONTEXT_PAGES, type PdfRange, type RenderedPdfPage } from './pdf-types'
+import { tx } from '../engine/locale'
 
 export type PdfContextRenderErrorKind = 'empty' | 'out-of-range' | 'hard-limit' | 'byte-budget' | 'render-failed' | 'cancelled'
 
@@ -39,7 +40,7 @@ export async function renderPdfContextRanges(opts: PdfContextRenderOptions): Pro
     if (r.startPage < 1 || r.endPage > opts.pageCount) throw new PdfContextRenderError('out-of-range', 'range out of bounds')
   }
   const total = countPdfRangePages(norm)
-  if (exceedsPdfContextHardLimit(total)) throw new PdfContextRenderError('hard-limit', '当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请选择较小的页码范围。')
+  if (exceedsPdfContextHardLimit(total)) throw new PdfContextRenderError('hard-limit', tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请选择较小的页码范围。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Select a smaller range.'))
   const pageNumbers = expandPdfRangePages(norm)
   const pages: RenderedPdfPage[] = []
   let bytes = 0
@@ -51,11 +52,11 @@ export async function renderPdfContextRanges(opts: PdfContextRenderOptions): Pro
     const n = pageNumbers[i]
     failingPage = n
     let r
-    try { r = await opts.renderPage(n) } catch { throw new PdfContextRenderError('render-failed', '第 ' + n + ' 页处理失败，本次范围未加入对话。', n) }
+    try { r = await opts.renderPage(n) } catch { throw new PdfContextRenderError('render-failed', tx('第 ' + n + ' 页处理失败，本次范围未加入对话。', 'Page ' + n + ' failed to process, so the range was not added.'), n) }
     if (opts.isCancelled && opts.isCancelled()) throw new PdfContextRenderError('cancelled', 'context render cancelled')
     bytes += r.blob.size
     const page: RenderedPdfPage = { pageNumber: n, ...r }
-    if (exceedsPdfGroupByteBudget(bytes)) throw new PdfContextRenderError('byte-budget', '该范围生成的图片数据过大，已超过当前单次 PDF Context 的安全限制（' + (MAX_PDF_GROUP_RAW_BYTES / (1024 * 1024)).toFixed(0) + ' MiB）。请减少选择的页面范围后重试。', n)
+    if (exceedsPdfGroupByteBudget(bytes)) throw new PdfContextRenderError('byte-budget', tx('该范围生成的图片数据过大，已超过当前单次 PDF Context 的安全限制（' + (MAX_PDF_GROUP_RAW_BYTES / (1024 * 1024)).toFixed(0) + ' MiB）。请减少选择的页面范围后重试。', 'The generated images exceed the ' + (MAX_PDF_GROUP_RAW_BYTES / (1024 * 1024)).toFixed(0) + ' MiB safety limit. Select fewer pages and try again.'), n)
     pages.push(page)
     opts.onPage && opts.onPage(page, i, total)
     opts.onProgress && opts.onProgress({ done: pages.length, total, bytes })

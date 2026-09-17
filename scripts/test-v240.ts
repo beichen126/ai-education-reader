@@ -2,7 +2,13 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { strFromU8, unzipSync } from 'fflate'
 import { BACKUP_ARCHIVE_ENTRY, buildBackupArchive, parseBackupArchive } from '../src/export/backup-archive'
-import { normalizeUiLanguage } from '../src/engine/locale'
+import {
+  applyUiLanguage, localizedArtifactSourceLabel, localizedArtifactTitle, localizedBranchTitle,
+  localizedConversationTitle, localizedErrorText, localizedPdfName, localizedStudyCardTitle,
+  normalizeUiLanguage,
+} from '../src/engine/locale'
+import { localizePromptDefinition, promptDisplayName } from '../src/prompts/prompt-display'
+import { BUILTIN_PROMPT_IDS, getBuiltinPrompt } from '../src/prompts/prompt-registry'
 import type { BackupV1 } from '../src/export/backup-types'
 
 const sample: BackupV1 = {
@@ -28,6 +34,28 @@ assert.throws(() => parseBackupArchive(new Uint8Array([0x50, 0x4b, 3, 4])), /ZIP
 assert.equal(normalizeUiLanguage('en'), 'en')
 assert.equal(normalizeUiLanguage('zh-CN'), 'zh-CN')
 assert.equal(normalizeUiLanguage('foreign'), 'zh-CN')
+
+applyUiLanguage('en')
+assert.equal(localizedConversationTitle('新会话'), 'New chat')
+assert.equal(localizedConversationTitle('图片对话'), 'Image chat')
+assert.equal(localizedConversationTitle('用户命名的中文'), '用户命名的中文', 'user titles must remain untouched')
+assert.equal(localizedBranchTitle('分支 12'), 'Branch 12')
+assert.equal(localizedBranchTitle('我的分支'), '我的分支', 'custom branch titles must remain untouched')
+assert.equal(localizedArtifactTitle('笔记', 'note'), 'Note')
+assert.equal(localizedArtifactSourceLabel('会话'), 'Chat')
+assert.equal(localizedStudyCardTitle('新会话-3', 'auto', 3), 'New chat-3')
+assert.equal(localizedStudyCardTitle('我的卡片-3', 'manual', 3), '我的卡片-3')
+assert.equal(localizedPdfName('未命名 PDF'), 'Untitled PDF')
+assert.equal(localizedErrorText('未配置 API Key', 'API key is not configured.'), 'API key is not configured.')
+assert.equal(localizedErrorText('Network unavailable', 'Fallback'), 'Network unavailable')
+const socratic = getBuiltinPrompt(BUILTIN_PROMPT_IDS.conversationSocratic)!
+const englishSocratic = localizePromptDefinition(socratic)
+assert.equal(promptDisplayName(socratic.name, socratic.id), 'Socratic learning')
+assert.equal(englishSocratic.name, 'Socratic learning')
+assert.doesNotMatch(englishSocratic.description, /[\u3400-\u9fff]/)
+assert.doesNotMatch('systemPrompt' in englishSocratic ? englishSocratic.systemPrompt : '', /[\u3400-\u9fff]/)
+applyUiLanguage('zh-CN')
+assert.equal(localizedBranchTitle('分支 12'), '分支 12')
 
 const html = readFileSync('index.html', 'utf8')
 assert.match(html, /aer-ui-language/)

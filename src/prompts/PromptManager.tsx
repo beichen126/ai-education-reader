@@ -21,7 +21,8 @@ import { resolveProtocolCanonicalRoot } from './protocol-lineage'
 import { promptContent } from './prompt-validation'
 import type { PromptDefinition, PromptKind, PromptUserPreferences } from './prompt-types'
 import css from './prompt-manager.module.css'
-import { tx } from '../engine/locale'
+import { localizedErrorText, tx } from '../engine/locale'
+import { localizePromptDefinition } from './prompt-display'
 
 type Category = 'all' | PromptKind
 type MobileStep = 'categories' | 'list' | 'detail'
@@ -91,9 +92,7 @@ function protocolActivationStatus(definition: PromptDefinition, catalog: readonl
 function assertNever(value: never): never { throw new Error('Unhandled prompt kind: ' + String(value)) }
 
 function errorText(error: unknown): string {
-  if (error instanceof PromptServiceError) return error.message
-  if (error instanceof Error) return error.message || tx('操作失败。', 'Operation failed.')
-  return tx('操作失败。', 'Operation failed.')
+  return localizedErrorText(error, error instanceof PromptServiceError ? 'The prompt operation failed.' : 'Operation failed.')
 }
 
 function usageText(definition: PromptDefinition, preferences: PromptUserPreferences): string {
@@ -307,7 +306,8 @@ export function PromptManager() {
   const loadCatalog = useCallback(async (preferredId?: StableId, scope: 'default' | 'protocol' = 'default') => {
     setLoading(true)
     try {
-      const [next, nextPreferences] = await Promise.all([listPromptCatalog(scope === 'protocol' ? 'protocol' : undefined), getPromptPreferences()])
+      const [loaded, nextPreferences] = await Promise.all([listPromptCatalog(scope === 'protocol' ? 'protocol' : undefined), getPromptPreferences()])
+      const next = loaded.map(localizePromptDefinition)
       if (scope === 'protocol') setProtocolCatalog(next)
       else setCatalog(next)
       setPreferences(nextPreferences)
@@ -403,7 +403,7 @@ export function PromptManager() {
     setSelectedId(result.definition.id)
     setEditorMode('edit')
     setDirty(false)
-    setNotice(result.warnings.length ? result.warnings.map((warning) => warning.message).join(' ') : message)
+    setNotice(result.warnings.length ? result.warnings.map((warning) => warning.code === 'duplicate-name' ? tx(warning.message, 'A prompt with the same name already exists; this copy was still saved.') : localizedErrorText(warning.message, 'The prompt was saved with a warning.')).join(' ') : message)
     window.dispatchEvent(new Event(PROMPT_CATALOG_CHANGED_EVENT))
     await loadCatalog(result.definition.id, result.definition.kind === 'protocol' ? 'protocol' : 'default')
   }
@@ -449,8 +449,9 @@ export function PromptManager() {
       const canonical = getBuiltinPrompt(definition.id)
       if (!canonical) throw new Error(tx('内置提示词不存在。', 'The built-in prompt does not exist.'))
       const result = await setPromptEnabled(definition.id, true)
-      setDraft(cloneDefinition(canonical))
-      await afterMutation({ ...result, definition: canonical }, tx('已恢复 canonical 内置提示词。', 'Canonical built-in prompt restored.'))
+      const displayedCanonical = localizePromptDefinition(canonical)
+      setDraft(cloneDefinition(displayedCanonical))
+      await afterMutation({ ...result, definition: displayedCanonical }, tx('已恢复 canonical 内置提示词。', 'Canonical built-in prompt restored.'))
     } catch (e) { setError(errorText(e)) } finally { setBusy(false) }
   }
 
@@ -663,7 +664,7 @@ function PromptEditor(props: {
             {definition.kind === 'conversation-mode' && !canonicalDefault && <button type="button" className={css.secondaryAction} disabled={busy || !definition.enabled || preferences?.defaultConversationModeId === definition.id} onClick={props.onSetDefault}>{preferences?.defaultConversationModeId === definition.id ? tx('当前默认', 'Current default') : tx('设为默认', 'Set as default')}</button>}
             {definition.kind === 'protocol' ? <>
               {!readonly && <button type="button" className={css.secondaryAction} data-testid="protocol-activate" disabled={busy || props.dirty || activeProtocol || !props.protocolStatus?.eligible} onClick={props.onActivateOverride}>{activeProtocol ? tx('当前实验协议', 'Active experimental protocol') : tx('启用实验协议', 'Activate experimental protocol')}</button>}
-              {!readonly && props.protocolStatus && !props.protocolStatus.eligible && <div className={css.editorError} data-testid="protocol-activation-reason" role="alert">{props.protocolStatus.reason}</div>}
+              {!readonly && props.protocolStatus && !props.protocolStatus.eligible && <div className={css.editorError} data-testid="protocol-activation-reason" role="alert">{localizedErrorText(props.protocolStatus.reason, 'This protocol is not eligible for activation.')}</div>}
               {!readonly && <button type="button" className={css.secondaryAction} data-testid="protocol-restore" disabled={busy || !activeProtocol} onClick={props.onRestoreProtocol}>{tx('恢复内置协议', 'Restore built-in protocol')}</button>}
               {!readonly && <><button type="button" className={css.secondaryAction} disabled={busy} onClick={props.onCopy}>{tx('复制', 'Copy')}</button><button type="button" className={css.dangerAction} data-testid="prompt-delete" disabled={busy} onClick={props.onDelete}>{tx('删除', 'Delete')}</button></>}
             </> : <>

@@ -74,7 +74,8 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
       if (raw.trim() === '' || !Number.isInteger(Number(raw.trim())) || Number(raw.trim()) < 1) {
         if (!blocking.includes(i)) { blocking.push(i); errorCount++ }
         issuesByRow[i] = issuesByRow[i] || []
-        if (!issuesByRow[i].includes('层级非法')) issuesByRow[i].push(tx('层级非法', 'Invalid level'))
+        const invalidLevel = tx('层级非法', 'Invalid level')
+        if (!issuesByRow[i].includes(invalidLevel)) issuesByRow[i].push(invalidLevel)
       }
     }
     return {

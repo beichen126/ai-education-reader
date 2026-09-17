@@ -1,3 +1,5 @@
+import { tx } from '../engine/locale'
+
 export type LocalPdfDocument = {
   fileName: string
   fileSize: number
@@ -111,14 +113,14 @@ export type PdfAddResult = { ok: boolean; count: number; error: string }
 export function validatePdfRange(startText: string, endText: string, pageCount: number): string | null {
   const startRaw = startText.trim()
   const endRaw = endText.trim()
-  if (startRaw === '' || endRaw === '') return '请输入开始页和结束页。'
+  if (startRaw === '' || endRaw === '') return tx('请输入开始页和结束页。', 'Enter a start and end page.')
   const start = Number(startRaw)
   const end = Number(endRaw)
-  if (!Number.isInteger(start) || !Number.isInteger(end)) return '页码必须是整数。'
-  if (start < 1 || end < 1) return '页码不能小于 1。'
-  if (start > pageCount) return '开始页超出范围，该 PDF 共 ' + pageCount + ' 页。'
-  if (end > pageCount) return '结束页超出范围，该 PDF 共 ' + pageCount + ' 页。'
-  if (start > end) return '开始页不能大于结束页。'
+  if (!Number.isInteger(start) || !Number.isInteger(end)) return tx('页码必须是整数。', 'Page numbers must be integers.')
+  if (start < 1 || end < 1) return tx('页码不能小于 1。', 'Page numbers cannot be less than 1.')
+  if (start > pageCount) return tx('开始页超出范围，该 PDF 共 ' + pageCount + ' 页。', 'The start page is out of range. This PDF has ' + pageCount + ' pages.')
+  if (end > pageCount) return tx('结束页超出范围，该 PDF 共 ' + pageCount + ' 页。', 'The end page is out of range. This PDF has ' + pageCount + ' pages.')
+  if (start > end) return tx('开始页不能大于结束页。', 'The start page cannot be greater than the end page.')
   return null
 }
 
@@ -132,4 +134,3 @@ export type PdfAddPayload = {
   selection: PdfSelection
   pages: RenderedPdfPage[]
 }
-import { tx } from '../engine/locale'

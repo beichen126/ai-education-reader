@@ -7,7 +7,7 @@ import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
-import { t, tx } from '../engine/locale'
+import { localizedArtifactSourceLabel, localizedArtifactTitle, localizedErrorText, localizedStudyCardTitle, t, tx } from '../engine/locale'
 import { MessageText, IconCloseOutline16, IconFolderOpenOutline16, Button } from '../dsh/primitives'
 import { useCopyFeedback } from '../dsh/primitives/use-copy-feedback'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
@@ -56,6 +56,7 @@ import type { CreateArtifactKind, StudyArtifact, QuizDocument } from '../artifac
 import type { ArtifactPromptBundleSnapshot, QuickFollowUpPrompt } from '../prompts/prompt-types'
 import type { Message as TMessage } from '../engine/types'
 import type { PromptTransition } from '../prompts/prompt-types'
+import { promptDisplayName } from '../prompts/prompt-display'
 import css from './cockpit.module.css'
 
 export function Conversation() {
@@ -199,7 +200,7 @@ export function Conversation() {
       setCreating(null); setOpenArtifact(out); void branchChat.refresh()
     } catch (e) {
       // A2: never swallow generation errors. The dialog stays open and shows the error.
-      setCreatingError(e instanceof ArtifactGenerationError ? e.message : tx('生成失败：', 'Generation failed: ') + String((e as any)?.message ?? e))
+      setCreatingError(localizedErrorText(e, e instanceof ArtifactGenerationError ? 'Unable to generate this study output.' : 'Generation failed.'))
       // A1: if the fresh draft was never claimed (busy / pre-flight failure), don't leak it.
       if (draftId) {
         const cur = await getArtifact(draftId)
@@ -227,25 +228,27 @@ export function Conversation() {
       const result = await createStudyCardFromAssistantMessage({ conversationId, assistantMessageId: messageId, ...(branchId ? { branchId } : {}), ...(rating !== undefined ? { rating } : {}) })
       if (result.kind === 'created' || result.kind === 'existing') {
         const card = result.card
+        const displayCardTitle = localizedStudyCardTitle(card.title, card.titleMode, card.autoTitleOrdinal)
         if (mountedRef.current) {
-          setCardSaves(previous => ({ ...previous, [messageId]: { state: 'saved', title: card.title, cardId: card.id, rating: card.rating } }))
+          setCardSaves(previous => ({ ...previous, [messageId]: { state: 'saved', title: displayCardTitle, cardId: card.id, rating: card.rating } }))
           if (result.kind === 'existing' && rating === undefined) {
             learningUiActions.openCard(card.id, { filter: { kind: 'all' }, query: '', sort: 'created-desc', seed: 1, orderedIds: [card.id] })
           }
           setCardNotice(rating !== undefined
-            ? tx('已保存学习卡片「' + card.title + '」并评为 ' + rating + ' 分', 'Saved study card “' + card.title + '” with a ' + rating + '-star rating')
+            ? tx('已保存学习卡片「' + displayCardTitle + '」并评为 ' + rating + ' 分', 'Saved study card “' + displayCardTitle + '” with a ' + rating + '-star rating')
             : result.kind === 'created'
-              ? tx('已保存为学习卡片「' + card.title + '」', 'Saved as study card “' + card.title + '”')
-              : tx('这条回复已经保存过，已打开原卡片「' + card.title + '」', 'This response was already saved. Opened “' + card.title + '”.'))
+              ? tx('已保存为学习卡片「' + displayCardTitle + '」', 'Saved as study card “' + displayCardTitle + '”')
+              : tx('这条回复已经保存过，已打开原卡片「' + displayCardTitle + '」', 'This response was already saved. Opened “' + displayCardTitle + '”.'))
         }
       } else {
         if (mountedRef.current) {
-          setCardSaves(previous => ({ ...previous, [messageId]: { state: 'failed', error: result.message } }))
-          setCardNotice(result.message)
+          const message = localizedErrorText(result.message, 'Unable to save this study card.')
+          setCardSaves(previous => ({ ...previous, [messageId]: { state: 'failed', error: message } }))
+          setCardNotice(message)
         }
       }
     } catch (error) {
-      const message = error instanceof Error && error.message ? error.message : tx('保存失败，请重试', 'Save failed. Try again.')
+      const message = localizedErrorText(error, 'Save failed. Try again.')
       if (mountedRef.current) {
         setCardSaves(previous => ({ ...previous, [messageId]: { state: 'failed', error: message } }))
         setCardNotice(tx('保存失败：', 'Save failed: ') + message)
@@ -279,7 +282,7 @@ export function Conversation() {
           {streaming && <button className={css.stopBtn} onClick={sessionsActions.stopGenerating}>{tx('停止生成', 'Stop')}</button>}
         </div>
       )}
-      {visibleSendError && !busy && <div className={css.errorBanner} role="alert" aria-live="assertive">{visibleSendError}</div>}
+      {visibleSendError && !busy && <div className={css.errorBanner} role="alert" aria-live="assertive">{localizedErrorText(visibleSendError, 'Unable to send the message. Try again.')}</div>}
       {session && promptPath && (<BranchBar
         conversationId={session.id}
         branches={branchChat.branches}
@@ -341,9 +344,10 @@ export function Conversation() {
 }
 
 function PromptTransitionDivider({ transition, onOpen }: { transition: PromptTransition; onOpen: () => void }) {
+  const displayName = promptDisplayName(transition.snapshot.name, transition.snapshot.profileId)
   return <div className={css.modeDivider} data-testid="mode-transition-divider" data-transition-id={transition.id}>
-    <span>{tx('模式：', 'Mode: ')}{transition.snapshot.name === '默认' ? tx('默认', 'Default') : transition.snapshot.name}</span>
-    <button type="button" onClick={onOpen} aria-label={tx('查看「' + transition.snapshot.name + '」当时提示词', 'View the prompt used for “' + transition.snapshot.name + '”')}>{tx('查看当时提示词', 'View prompt used')}</button>
+    <span>{tx('模式：', 'Mode: ')}{displayName}</span>
+    <button type="button" onClick={onOpen} aria-label={tx('查看「' + displayName + '」当时提示词', 'View the prompt used for “' + displayName + '”')}>{tx('查看当时提示词', 'View prompt used')}</button>
   </div>
 }
 
@@ -368,7 +372,7 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
       ) : (
         <div className={css.assistantBody} data-empty></div>
       )}
-      {m.status && m.error && <div className={css.errorBanner} role="alert" data-testid="assistant-generation-error">{m.status === 'aborted' ? tx('已停止生成：', 'Generation stopped: ') : tx('生成失败：', 'Generation failed: ')}{m.error}</div>}
+      {m.status && m.error && <div className={css.errorBanner} role="alert" data-testid="assistant-generation-error">{m.status === 'aborted' ? tx('已停止生成：', 'Generation stopped: ') : tx('生成失败：', 'Generation failed: ')}{localizedErrorText(m.error, m.status === 'aborted' ? 'The response was stopped.' : 'The model request failed.')}</div>}
       {(canCopySource || (stable && onToggleMenu && onBranch && onArtifact)) && (
         <div className={css.messageTools}>
           {canCopySource && <MessageSourceCopyButton source={m.content} />}
@@ -781,8 +785,8 @@ function ArtifactViewerOverlay({ artifact, onOpen, onClose, onChanged }: { artif
 
 function ArtifactPanelChrome({ artifact, sourceDeleted, onClose, actions }: { artifact: StudyArtifact; sourceDeleted: boolean; onClose: () => void; actions?: ReactNode }) {
   return (<div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--dsw-alias-border-l2)', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-    <strong style={{ color: 'var(--dsw-alias-label-primary)' }}>{artifact.title}</strong>
-    <span style={{ fontSize: '0.75rem', color: 'var(--dsw-alias-label-tertiary)' }}>{artifact.source.snapshot.sourceLabel}{sourceDeleted ? tx(' · 原会话已删除', ' · Source chat deleted') : ''}</span>
+    <strong style={{ color: 'var(--dsw-alias-label-primary)' }}>{localizedArtifactTitle(artifact.title, artifact.kind)}</strong>
+    <span style={{ fontSize: '0.75rem', color: 'var(--dsw-alias-label-tertiary)' }}>{localizedArtifactSourceLabel(artifact.source.snapshot.sourceLabel)}{sourceDeleted ? tx(' · 原会话已删除', ' · Source chat deleted') : ''}</span>
     <div style={{ flex: 1 }} />
     {actions}
     <Button size="sm" variant="outline" aria-label={tx('关闭', 'Close')} onClick={onClose}>{tx('关闭', 'Close')}</Button>
@@ -823,7 +827,7 @@ function ErrorArtifactBody({ artifact, sourceDeleted, onClose, onOpen, onChanged
     <ArtifactPanelChrome artifact={artifact} sourceDeleted={sourceDeleted} onClose={onClose} actions={<Button size="sm" variant="ghost" aria-label={tx('删除', 'Delete')} onClick={() => void del()}>{tx('删除', 'Delete')}</Button>} />
     <div style={{ flex: 1, overflow: 'auto', padding: '1rem' }}>
       <div style={{ color: 'var(--dsw-alias-state-error-primary)', fontWeight: 600, marginBottom: '0.5rem' }}>{tx('生成失败', 'Generation failed')}</div>
-      <p style={{ color: 'var(--dsw-alias-label-secondary)', margin: '0 0 0.75rem' }}>{artifact.error || tx('未知错误', 'Unknown error')}</p>
+      <p style={{ color: 'var(--dsw-alias-label-secondary)', margin: '0 0 0.75rem' }}>{artifact.error ? localizedErrorText(artifact.error, 'The study output could not be generated.') : tx('未知错误', 'Unknown error')}</p>
       {err && <p style={{ color: 'var(--dsw-alias-state-error-primary)', margin: '0 0 0.75rem' }}>{err}</p>}
       {artifact.generatedContent !== undefined && (<button type="button" className={css.filterBtn} onClick={() => setShowRaw(!showRaw)}>{showRaw ? tx('收起原始输出', 'Hide raw output') : tx('查看原始输出', 'View raw output')}</button>)}
       {showRaw && artifact.generatedContent !== undefined && (<pre style={{ marginTop: '0.75rem', maxHeight: '16rem', overflow: 'auto', background: 'var(--dsw-alias-bg-base)', border: '1px solid var(--dsw-alias-border-l2)', borderRadius: '0.5rem', padding: '0.625rem', whiteSpace: 'pre-wrap', fontSize: '0.8125rem', color: 'var(--dsw-alias-label-primary)' }}>{artifact.generatedContent}</pre>)}

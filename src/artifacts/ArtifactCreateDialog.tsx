@@ -7,6 +7,8 @@ import type { ArtifactPrompt, ArtifactPromptSnapshot, ProtocolPrompt, ProtocolPr
 import type { ArtifactKind, CreateArtifactKind } from './artifact-types'
 import css from './artifact.module.css'
 import { tx } from '../engine/locale'
+import { localizedArtifactSourceLabel, localizedErrorText } from '../engine/locale'
+import { localizePromptDefinition } from '../prompts/prompt-display'
 
 type Props = {
   sourceLabel: string
@@ -31,7 +33,8 @@ function preferredTemplate(candidates: ArtifactPrompt[], kind: CreateArtifactKin
 
 export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, initialKind, customEntry, error: genError }: Props) {
   const initKind: CreateArtifactKind = initialKind === 'quiz' ? 'quiz' : 'note'
-  const initialBuiltin = getBuiltinArtifactPrompt(initKind)
+  const initialBuiltinRaw = getBuiltinArtifactPrompt(initKind)
+  const initialBuiltin = initialBuiltinRaw ? localizePromptDefinition(initialBuiltinRaw) as ArtifactPrompt : undefined
   const [kind, setKind] = useState<CreateArtifactKind>(initKind)
   const [catalog, setCatalog] = useState<PromptDefinition[]>([])
   const [protocols, setProtocols] = useState<PromptDefinition[]>([])
@@ -48,9 +51,9 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
     let active = true
     void Promise.all([listPromptCatalog('artifact'), listPromptCatalog('protocol')]).then(([artifactRows, protocolRows]) => {
       if (!active) return
-      setCatalog(artifactRows)
-      setProtocols(protocolRows)
-    }).catch((e) => { if (active) setError(e instanceof Error ? e.message : tx('提示词目录读取失败', 'Unable to load the prompt catalog')) })
+      setCatalog(artifactRows.map(localizePromptDefinition))
+      setProtocols(protocolRows.map(localizePromptDefinition))
+    }).catch((e) => { if (active) setError(localizedErrorText(e, 'Unable to load the prompt catalog')) })
     return () => { active = false }
   }, [])
 
@@ -71,7 +74,8 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
   }, [selectedTemplate, selectedId])
 
   function selectKind(next: CreateArtifactKind) {
-    const builtin = getBuiltinArtifactPrompt(next)
+    const raw = getBuiltinArtifactPrompt(next)
+    const builtin = raw ? localizePromptDefinition(raw) as ArtifactPrompt : undefined
     setKind(next); setSelectedId(builtin?.id); setPrompt(builtin?.userPrompt ?? ''); setSaveAsName(''); setError(undefined); setNotice(undefined)
   }
 
@@ -99,7 +103,7 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
       const template = capturePromptSnapshot(selectedTemplate, resolvedAt) as ArtifactPromptSnapshot
       const userPrompt = prompt.trim()
       onSubmit({ kind, prompt: userPrompt, presetId: selectedTemplate.id, promptBundle: { template, userPrompt, ...(protocol ? { protocol } : {}), resolvedAt } })
-    } catch (e) { setError(e instanceof Error ? e.message : tx('提示词解析失败', 'Unable to resolve the prompt')) }
+    } catch (e) { setError(localizedErrorText(e, 'Unable to resolve the prompt')) }
   }
 
   async function saveAs() {
@@ -109,12 +113,12 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
     setSaving(true); setError(undefined); setNotice(undefined)
     try {
       const result = await saveAsArtifactPromptDefinition(selectedTemplate.id, { name: saveAsName, userPrompt: prompt.trim() })
-      const nextCatalog = await listPromptCatalog('artifact')
+      const nextCatalog = (await listPromptCatalog('artifact')).map(localizePromptDefinition)
       setCatalog(nextCatalog)
       setSelectedId(result.definition.id)
       setPrompt(result.definition.kind === 'artifact' ? result.definition.userPrompt : prompt)
       setNotice(result.warnings.length ? result.warnings.map((item) => item.message).join(' ') : tx('已另存为提示词。', 'Saved as a prompt.'))
-    } catch (e) { setError(e instanceof Error ? e.message : tx('另存为失败', 'Save as failed')) }
+    } catch (e) { setError(localizedErrorText(e, 'Unable to save this prompt')) }
     finally { setSaving(false) }
   }
 
@@ -126,7 +130,7 @@ export function ArtifactCreateDialog({ sourceLabel, onSubmit, onCancel, busy, in
 
   return (<div className={css.dialog} role="dialog" aria-modal="true" aria-label={tx('创建学习成果', 'Create study output')}>
     <h3 className={css.dialogTitle}>{tx('创建学习成果', 'Create study output')}</h3>
-    <div><div className={css.fieldLabel}>{tx('来源', 'Source')}</div><div className={css.sourceLine}>{sourceLabel}</div></div>
+    <div><div className={css.fieldLabel}>{tx('来源', 'Source')}</div><div className={css.sourceLine}>{localizedArtifactSourceLabel(sourceLabel)}</div></div>
     <div>
       <div className={css.fieldLabel}>{tx('类型', 'Type')}</div>
       {customEntry && <div className={css.cardMeta} data-testid="artifact-custom-format-hint">{tx('自定义提示词需要先确认结果格式：整理成笔记 = Markdown，生成题目 = Quiz。', 'Choose the output format for a custom prompt: note = Markdown, quiz = Quiz.')}</div>}

@@ -1,3 +1,5 @@
+import { localizedErrorText } from '../engine/locale'
+
 export type ReaderProgressReason = 'navigation' | 'debounce' | 'close' | 'switch' | 'hidden' | 'pagehide' | 'retry' | 'manual' | 'bind'
 
 export type ReaderProgressState = {
@@ -61,8 +63,7 @@ const DEFAULT_RETRY_BASE_MS = 800
 const DEFAULT_RETRY_MAX_MS = 30_000
 
 function errorText(error: unknown): string {
-  if (error instanceof Error && error.message) return error.message
-  return String(error || '阅读位置保存失败')
+  return localizedErrorText(error, 'Unable to save the reading position.')
 }
 
 function defaultIsTerminalError(error: unknown): boolean {

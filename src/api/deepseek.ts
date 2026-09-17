@@ -1,5 +1,6 @@
 // DeepSeek API adapter. Only boundary that performs fetch from the app.
 import { hasMeaningfulAssistantContent } from '../engine/types'
+import { tx } from '../engine/locale'
 
 export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 export type ApiChatMessage = { role: 'user' | 'assistant' | 'system'; content: string | ChatContentPart[] }
@@ -21,17 +22,17 @@ export class DeepSeekError extends Error {
 
 export function errorKindLabel(kind: ErrorKind): string {
   switch (kind) {
-    case 'no-api-key': return '未配置 API Key，请先在设置中填写。'
-    case 'network-or-cors': return '网络不可用，或请求被跨域(CORS)策略拦截。'
-    case 'unauthorized': return 'API Key 无效（401），请检查后重试。'
-    case 'billing': return '余额或计费问题（402），请检查账户。'
-    case 'rate-limited': return '请求过于频繁（429），请稍后重试。'
-    case 'bad-request': return '请求参数错误，请检查 Base URL 与 Model。'
-    case 'server': return 'DeepSeek 服务端错误，请稍后重试。'
-    case 'bad-json': return '返回内容不是有效的 JSON。'
-    case 'no-content': return '模型未返回有效内容，请重试。'
-    case 'aborted': return '已停止生成。'
-    default: return '请求失败。'
+    case 'no-api-key': return tx('未配置 API Key，请先在设置中填写。', 'No API key is configured. Add one in Settings.')
+    case 'network-or-cors': return tx('网络不可用，或请求被跨域(CORS)策略拦截。', 'The network is unavailable or the request was blocked by CORS.')
+    case 'unauthorized': return tx('API Key 无效（401），请检查后重试。', 'The API key is invalid (401). Check it and try again.')
+    case 'billing': return tx('余额或计费问题（402），请检查账户。', 'There is a balance or billing issue (402). Check the account.')
+    case 'rate-limited': return tx('请求过于频繁（429），请稍后重试。', 'Too many requests (429). Try again later.')
+    case 'bad-request': return tx('请求参数错误，请检查 Base URL 与 Model。', 'The request is invalid. Check the Base URL and model.')
+    case 'server': return tx('DeepSeek 服务端错误，请稍后重试。', 'The API service returned a server error. Try again later.')
+    case 'bad-json': return tx('返回内容不是有效的 JSON。', 'The response is not valid JSON.')
+    case 'no-content': return tx('模型未返回有效内容，请重试。', 'The model returned no usable content. Try again.')
+    case 'aborted': return tx('已停止生成。', 'Generation stopped.')
+    default: return tx('请求失败。', 'Request failed.')
   }
 }
 
@@ -96,11 +97,11 @@ export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChat
  * reachability, key validity and browser CORS. */
 export async function testConnection(args: { apiKey: string; baseUrl: string }): Promise<{ ok: boolean; label: string; status?: number }> {
   const { apiKey, baseUrl } = args
-  if (!apiKey) return { ok: false, label: '请先填写 API Key。' }
+  if (!apiKey) return { ok: false, label: tx('请先填写 API Key。', 'Enter an API key first.') }
   const endpoint = (baseUrl || DEFAULT_BASE).replace(/\/+$/, '') + '/models'
   try {
     const res = await fetch(endpoint, { method: 'GET', headers: { 'Authorization': 'Bearer ' + apiKey } })
-    if (res.ok) return { ok: true, label: '连接成功：API 服务可访问，Key 有效。', status: res.status }
+    if (res.ok) return { ok: true, label: tx('连接成功：API 服务可访问，Key 有效。', 'Connection successful. The API is reachable and the key is valid.'), status: res.status }
     let kind: ErrorKind = 'bad-request'
     if (res.status === 401) kind = 'unauthorized'
     else if (res.status === 402) kind = 'billing'
@@ -108,7 +109,7 @@ export async function testConnection(args: { apiKey: string; baseUrl: string }):
     else if (res.status >= 500) kind = 'server'
     // 404/405 on GET /models is NOT proof /chat/completions is unusable; report the distinction.
     if (res.status === 404 || res.status === 405) {
-      return { ok: false, label: '服务可访问，但未实现 GET /models 接口。这可能不影响 /chat/completions 调用；请直接发送一条消息以确认模型可用。', status: res.status }
+      return { ok: false, label: tx('服务可访问，但未实现 GET /models 接口。这可能不影响 /chat/completions 调用；请直接发送一条消息以确认模型可用。', 'The service is reachable but does not implement GET /models. Chat completions may still work; send a message to verify the model.'), status: res.status }
     }
     return { ok: false, label: errorKindLabel(kind) + '（HTTP ' + res.status + '）', status: res.status }
   } catch {

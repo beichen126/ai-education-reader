@@ -43,7 +43,7 @@ import { AiTocProgressDialog } from './AiTocProgressDialog'
 import { getSettingsSnapshot, useSettings } from '../engine/settings-store'
 import type { MappedTocItem } from './toc-mapping'
 import type { LearningDocument, ChapterNode } from './document-types'
-import { getUiLanguage, tx } from '../engine/locale'
+import { getUiLanguage, localizedConversationTitle, localizedErrorText, localizedStudyCardTitle, tx } from '../engine/locale'
 import { findConversationsByDocumentPage, type PdfPageConversationHit } from '../pdf/pdf-page-conversations'
 import { flushNoteEditorSession, type NoteEditorSession } from './note-session'
 import { NoteAvailabilityGate, NoteReadCache, noteAvailabilityFrom, noteHasContent, noteKey, notePersistedState, type NoteAvailability } from './note-availability'
@@ -685,11 +685,11 @@ export function DocumentReader() {
       })
       if (gen !== ctxGenRef.current) return // cancelled / stale during render -> silent
       const label = request.selection.title ? tx('已加入「' + request.selection.title + '」· ' + res.count + ' 页', 'Added “' + request.selection.title + '” · ' + res.count + ' pages') : tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages')
-      if (!res.ok && res.error) setCtxMsg({ text: res.error, ok: false })
+      if (!res.ok && res.error) setCtxMsg({ text: localizedErrorText(res.error, 'Unable to add the PDF context to the chat.'), ok: false })
       else if (res.ok) setCtxMsg({ text: label, ok: true })
     } catch (e) {
       if (gen !== ctxGenRef.current) return
-      setCtxMsg({ text: e instanceof PdfContextRenderError ? e.message : tx('无法生成上下文。', 'Unable to build context.'), ok: false })
+      setCtxMsg({ text: e instanceof PdfContextRenderError ? localizedErrorText(e.message, 'Unable to build context.') : tx('无法生成上下文。', 'Unable to build context.'), ok: false })
     } finally {
       if (gen === ctxGenRef.current) { setCtxBusy(false); setCtxProgress(null) }
     }
@@ -720,7 +720,7 @@ export function DocumentReader() {
       const res = await executeDocumentContext({ targetConversationId, documentId: doc.id, fileName: doc.fileName, pageCount, selection, existingSession: sessionRef.current, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxRunning({ total: p.total, done: p.done }) } })
       if (gen !== ctxGenRef.current) return
       const label = selection.title ? tx('已加入「' + selection.title + '」· ' + res.count + ' 页', 'Added “' + selection.title + '” · ' + res.count + ' pages') : tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages')
-      setCtxMsg(res.ok ? { text: label, ok: true } : { text: res.error, ok: false })
+      setCtxMsg(res.ok ? { text: label, ok: true } : { text: localizedErrorText(res.error, 'Unable to add the PDF context to the chat.'), ok: false })
     } catch { if (gen === ctxGenRef.current) setCtxMsg({ text: tx('无法生成上下文。', 'Unable to build context.'), ok: false }) }
     finally { if (gen === ctxGenRef.current) { setCtxBusy(false); setCtxRunning(null) } }
   }, [doc, conv, ctxBusy, pageCount])
@@ -807,9 +807,9 @@ export function DocumentReader() {
         onProgress: (p) => { if (gen === aiTocGenRef.current) setAiTocProgress(p) },
       })
       if (gen !== aiTocGenRef.current || docIdRef.current !== ownedDocId) return
-      if (!res.ok) { setAiTocError((res as { error: string }).error); return }
+      if (!res.ok) { setAiTocError(localizedErrorText((res as { error: string }).error, 'Unable to detect the outline. Try again.')); return }
       setAiTocItems(res.items)
-      setAiTocWarning(res.warning ?? null)
+      setAiTocWarning(res.warning ? localizedErrorText(res.warning, 'Text was detected, but the hierarchy needs review before saving.') : null)
       setAiTocMsg(null); setAiTocError(null)
       setTocReviewOpen(true)
     } catch {
@@ -1083,7 +1083,7 @@ export function DocumentReader() {
           {relatedConvState === 'ready' && relatedConversations.length === 0 && <div className={css.relatedMeta} data-testid="reader-related-conversations-empty">{tx('这一页还没有相关会话。', 'No related chats on this page yet.')}</div>}
           {relatedConversations.map((hit) => (
             <button type="button" className={css.relatedItem} data-testid="reader-related-item" key={hit.conversationId + ':' + hit.messageId + ':' + hit.documentId + ':' + hit.pageNumber} onClick={() => void openRelatedConversation(hit)}>
-              <span className={css.relatedConversation}>{hit.conversationTitle}</span>
+              <span className={css.relatedConversation}>{localizedConversationTitle(hit.conversationTitle)}</span>
               <span className={css.relatedMeta}>{new Date(hit.messageCreatedAt).toLocaleString(getUiLanguage() === 'en' ? 'en-US' : 'zh-CN')} · {tx('消息 ', 'Message ')}{hit.messageId.slice(0, 8)}</span>
               {hit.messagePreview && <span className={css.relatedPreview}>“{hit.messagePreview}”</span>}
             </button>
@@ -1094,8 +1094,8 @@ export function DocumentReader() {
           {relatedCardState === 'ready' && relatedCards.length === 0 && <div className={css.relatedMeta} data-testid="reader-related-cards-empty">{tx('这一页还没有学习卡片。', 'No study cards on this page yet.')}</div>}
           {relatedCards.map(card => (
             <button type="button" className={css.relatedItem} data-testid="reader-related-card" data-card-id={card.id} key={card.id} onClick={() => openRelatedCard(card)}>
-              <span className={css.relatedConversation}>{card.title}</span>
-              <span className={css.relatedMeta}>{card.source.conversationTitleSnapshot || tx('学习卡片', 'Study card')}</span>
+              <span className={css.relatedConversation}>{localizedStudyCardTitle(card.title, card.titleMode, card.autoTitleOrdinal)}</span>
+              <span className={css.relatedMeta}>{localizedConversationTitle(card.source.conversationTitleSnapshot) || tx('学习卡片', 'Study card')}</span>
             </button>
           ))}
           {relatedError && <div className={css.relatedError} data-testid="reader-related-error">{relatedError}</div>}

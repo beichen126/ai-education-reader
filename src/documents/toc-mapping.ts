@@ -4,6 +4,7 @@
 // a page: an unmappable label stays unresolved (kept in the review list) until the
 // user confirms it. Individual manual overrides survive a global remap.
 import { validateChapterDraft, type ChapterDraftItem } from './chapter-builder'
+import { tx } from '../engine/locale'
 export type MappedTocItem = {
   title: string
   level: number
@@ -252,10 +253,10 @@ export function validateMappedTocReview(items: MappedTocItem[], pageCount: numbe
   const issuesByRow: Record<number, string[]> = {}
   let unresolvedCount = 0
   items.forEach((it, i) => {
-    if (it.startPage == null) { unresolvedCount++; blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push('页码待确认'); return }
-    if (!Number.isInteger(it.startPage) || it.startPage < 1 || it.startPage > pageCount) { blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push('页码超出范围'); return }
-    if (!Number.isInteger(it.level) || it.level < 1) { blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push('层级非法'); return }
-    if (typeof it.title !== 'string' || it.title.trim() === '') { blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push('标题为空'); return }
+    if (it.startPage == null) { unresolvedCount++; blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push(tx('页码待确认', 'Page needs confirmation')); return }
+    if (!Number.isInteger(it.startPage) || it.startPage < 1 || it.startPage > pageCount) { blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push(tx('页码超出范围', 'Page is out of range')); return }
+    if (!Number.isInteger(it.level) || it.level < 1) { blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push(tx('层级非法', 'Invalid level')); return }
+    if (typeof it.title !== 'string' || it.title.trim() === '') { blocking.push(i); (issuesByRow[i] = issuesByRow[i] || []).push(tx('标题为空', 'Title is empty')); return }
   })
   // Derived draft-level validation (only rows with a valid integer page). Track the
   // draftIndex -> originalRowIndex mapping so ChapterDraft issues map back to the ORIGINAL row

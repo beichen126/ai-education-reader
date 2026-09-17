@@ -9,7 +9,8 @@ import { capturePromptSnapshot } from '../prompts/prompt-resolution'
 import { listConversationModeDefinitions, promptSnapshotNeedsApply, samePromptSnapshot, switchConversationMode } from '../prompts/prompt-mode-service'
 import { PROMPT_CATALOG_CHANGED_EVENT } from '../prompts/prompt-service'
 import type { ConversationModePrompt, PromptTransition } from '../prompts/prompt-types'
-import { tx } from '../engine/locale'
+import { promptDisplayName } from '../prompts/prompt-display'
+import { localizedBranchTitle, localizedErrorText, tx } from '../engine/locale'
 import css from './branch.module.css'
 
 type Props = {
@@ -174,7 +175,8 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
   const selectedDefinition = activeSnapshot?.profileId
     ? modes.find((mode) => mode.id === activeSnapshot.profileId)
     : modes.find((mode) => mode.id === defaultModeId)
-  const modeName = (name: string | undefined, id?: string) => id === 'builtin-conversation-default' || name === '默认' ? tx('默认', 'Default') : (name || tx('默认', 'Default'))
+  const modeName = (name: string | undefined, id?: string) => promptDisplayName(name, id) || tx('默认', 'Default')
+  const branchName = (title: string) => localizedBranchTitle(title)
   const activeModeName = legacy ? tx('模式未记录（来自 v1.x）', 'Mode not recorded (from v1.x)') : modeName(activeSnapshot?.name || selectedDefinition?.name, activeSnapshot?.profileId || selectedDefinition?.id)
   const hasNewRevision = !!activeSnapshot && !!selectedDefinition && promptSnapshotNeedsApply(activeSnapshot, selectedDefinition)
   const draftNonEmpty = draft.text.trim().length > 0 || draft.imageIds.length > 0
@@ -200,7 +202,7 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
       await onModeChanged()
       focusTrigger('mode')
     } catch (error) {
-      setModeError(error instanceof Error ? error.message : tx('无法切换会话模式。', 'Unable to switch chat mode.'))
+      setModeError(localizedErrorText(error, 'Unable to switch chat mode.'))
       closeMenu('mode')
     } finally {
       setSwitchingId(null)
@@ -215,7 +217,7 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
           <button type="button" className={css.branchItem + (!activeBranchId ? ' ' + css.active : '')} onClick={() => void go(undefined)} aria-label={tx('切换到主线', 'Switch to Main')}>{tx('主线', 'Main')}</button>
           {activeBranchId && lineage ? lineage.map((id, index) => {
             const branch = branches.find((item) => item.id === id)
-            return <span key={id} className={css.path}><span className={css.sep}>›</span><button type="button" className={css.branchItem + (id === activeBranchId ? ' ' + css.active : '')} onClick={() => void go(id)}>{branch ? branch.title : tx('分支 ', 'Branch ') + (index + 1)}</button></span>
+            return <span key={id} className={css.path}><span className={css.sep}>›</span><button type="button" className={css.branchItem + (id === activeBranchId ? ' ' + css.active : '')} onClick={() => void go(id)}>{branch ? branchName(branch.title) : tx('分支 ', 'Branch ') + (index + 1)}</button></span>
           }) : null}
         </span>
         {branches.length > 0 && <div className={css.switcher}>
@@ -223,11 +225,11 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
           {openMenu === 'route' && <div id={routeMenuId} className={css.menu} role="menu" aria-label={tx('路线', 'Routes')} onKeyDown={(event) => handleMenuKeyDown('route', event)}>
             <button type="button" className={css.menuItem + (!activeBranchId ? ' ' + css.active : '')} role="menuitem" data-selected={!activeBranchId ? 'true' : undefined} onClick={() => void go(undefined)}>{tx('主线', 'Main')}</button>
             {branches.map((branch) => <div key={branch.id}>
-              <div className={css.menuLine}><button type="button" className={css.menuItem + (branch.id === activeBranchId ? ' ' + css.active : '')} role="menuitem" data-selected={branch.id === activeBranchId ? 'true' : undefined} onClick={() => void go(branch.id)}>{branch.title}</button></div>
+              <div className={css.menuLine}><button type="button" className={css.menuItem + (branch.id === activeBranchId ? ' ' + css.active : '')} role="menuitem" data-selected={branch.id === activeBranchId ? 'true' : undefined} onClick={() => void go(branch.id)}>{branchName(branch.title)}</button></div>
               <div className={css.menuActions}>
                 {editId === branch.id ? <input className={css.editInput} value={editTitle} autoFocus aria-label={tx('分支名称', 'Branch name')} onChange={(event) => setEditTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void saveRename(); if (event.key === 'Escape') setEditId(null) }} /> : <>
-                  <button type="button" className={css.menuItem} role="menuitem" aria-label={tx('重命名 ', 'Rename ') + branch.title} onClick={() => { setEditId(branch.id); setEditTitle(branch.title) }}>✎ {tx('重命名', 'Rename')}</button>
-                  <button type="button" className={css.menuItem + ' ' + css.danger} role="menuitem" aria-label={tx('删除 ', 'Delete ') + branch.title} onClick={() => void removeBranch(branch.id)}>🗑 {tx('删除', 'Delete')}</button>
+                  <button type="button" className={css.menuItem} role="menuitem" aria-label={tx('重命名 ', 'Rename ') + branchName(branch.title)} onClick={() => { setEditId(branch.id); setEditTitle(branchName(branch.title)) }}>✎ {tx('重命名', 'Rename')}</button>
+                  <button type="button" className={css.menuItem + ' ' + css.danger} role="menuitem" aria-label={tx('删除 ', 'Delete ') + branchName(branch.title)} onClick={() => void removeBranch(branch.id)}>🗑 {tx('删除', 'Delete')}</button>
                 </>}
               </div>
             </div>)}

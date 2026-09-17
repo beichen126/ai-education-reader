@@ -7,6 +7,7 @@ import { saveGeneratedImagesAndDraft, saveGeneratedImages, deleteAttachment, sum
 import { getConversation } from '../storage/storage'
 import { newStableId } from '../engine/types'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult } from './pdf-types'
+import { tx } from '../engine/locale'
 
 export type DraftCommitDeps = { /** Test seam: simulate a failing draft-store commit. */
   addDraftImages?: typeof addDraftImages }
@@ -21,12 +22,12 @@ export async function addPdfContextToDraft(conversationId: string, payload: PdfA
     const existingBytes = await sumAttachmentBytes(existingIds)
     const newBytes = payload.pages.reduce((s, p) => s + p.blob.size, 0)
     if (wouldExceedInlineBudget(existingBytes, newBytes)) {
-      return { ok: false, count: 0, error: '当前消息中的图片内容已经较多。加入这一 PDF 范围后可能超过接口请求大小限制。请删除部分图片或减少 PDF 页面后重试。' }
+      return { ok: false, count: 0, error: tx('当前消息中的图片内容已经较多。加入这一 PDF 范围后可能超过接口请求大小限制。请删除部分图片或减少 PDF 页面后重试。', 'This message already contains many images. Adding this PDF range may exceed the request-size limit. Remove some images or select fewer PDF pages.') }
     }
     // Verify the target conversation still exists BEFORE committing metadata. Never allow
     // getDraft on a deleted conversation to silently create a durable orphan attachment graph.
     if (!(await getConversation(conversationId))) {
-      return { ok: false, count: 0, error: '目标会话已不存在，无法加入。' }
+      return { ok: false, count: 0, error: tx('目标会话已不存在，无法加入。', 'The target chat no longer exists.') }
     }
     const groupId = newStableId()
     const inputs = payload.pages.map(p => ({
@@ -52,6 +53,6 @@ export async function addPdfContextToDraft(conversationId: string, payload: PdfA
     updateDraftMemory(conversationId, { text: existing.text, imageIds: [...new Set([...existing.imageIds, ...atts.map(a => a.id)])] })
     return { ok: true, count: atts.length, error: '' }
   } catch (e) {
-    return { ok: false, count: 0, error: '无法将 PDF 页面加入对话。' }
+    return { ok: false, count: 0, error: tx('无法将 PDF 页面加入对话。', 'Unable to add the PDF pages to the chat.') }
   }
 }

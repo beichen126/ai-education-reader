@@ -7,6 +7,7 @@ import { readSessionPageViewport, renderSessionPageSurface, renderSessionPage } 
 import { ContinuousRenderController } from '../pdf/continuous-render-controller'
 import { ContinuousLayoutModel, type VirtualWindow } from '../pdf/continuous-layout-model'
 import type { CachedSurface } from '../pdf/reader-render-controller'
+import { tx } from '../engine/locale'
 
 /** Why a shared viewport changed its logical page. The same contract is used for
  *  observer, keyboard, TOC and programmatic scroll updates. */
@@ -198,7 +199,7 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
         }
         bumpLayout()
       },
-      onPageError: page => setPageErrors(previous => { if (previous.has(page)) return previous; const next = new Map(previous); next.set(page, '第 ' + page + ' 页渲染失败，可重试。'); return next }),
+      onPageError: page => setPageErrors(previous => { if (previous.has(page)) return previous; const next = new Map(previous); next.set(page, tx('第 ' + page + ' 页渲染失败，可重试。', 'Page ' + page + ' failed to render. You can retry.')); return next }),
       onRendering: setRendering,
       onRenderStart: () => telemetryRef.current?.mark('first-render-start'),
     })

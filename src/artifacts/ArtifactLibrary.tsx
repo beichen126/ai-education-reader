@@ -4,7 +4,7 @@ import { listArtifacts, deleteArtifact } from './artifact-store'
 import { filterLiveArtifactSources } from './artifact-service'
 import type { ArtifactKind, StudyArtifact } from './artifact-types'
 import css from './artifact.module.css'
-import { tx } from '../engine/locale'
+import { localizedArtifactSourceLabel, localizedArtifactTitle, tx } from '../engine/locale'
 
 // New outputs are Note / Quiz. Legacy kinds remain browsable under one history filter
 // so they are never deleted or mistaken for a currently supported creation type.
@@ -57,10 +57,10 @@ export function ArtifactLibrary({ onOpen }: Props) {
     {loaded && shown.length === 0 && <div className={css.empty}>{tx('还没有学习成果。在消息里选择「整理成笔记 / 生成题目」开始创建。', 'No study outputs yet. Create a note or quiz from a message to begin.')}</div>}
     <div className={css.grid}>
       {shown.map((a) => (
-        <div key={a.id} className={css.card} role="button" tabIndex={0} onClick={() => onOpen(a)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpen(a) }} aria-label={tx('打开 ', 'Open ') + a.title}>
-          <h3 className={css.cardTitle}>{a.title}</h3>
+        <div key={a.id} className={css.card} role="button" tabIndex={0} onClick={() => onOpen(a)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpen(a) }} aria-label={tx('打开 ', 'Open ') + localizedArtifactTitle(a.title, a.kind)}>
+          <h3 className={css.cardTitle}>{localizedArtifactTitle(a.title, a.kind)}</h3>
           <p className={css.cardKind}>{tx(KIND_LABEL[a.kind], KIND_LABEL_EN[a.kind])}</p>
-          <p className={css.cardMeta}>{a.source.snapshot.sourceLabel}{deletedIds.has(a.id) ? tx(' · 原会话已删除', ' · Source chat deleted') : ''}</p>
+          <p className={css.cardMeta}>{localizedArtifactSourceLabel(a.source.snapshot.sourceLabel)}{deletedIds.has(a.id) ? tx(' · 原会话已删除', ' · Source chat deleted') : ''}</p>
           <p className={css.cardMeta}>{new Date(a.updatedAt).toLocaleString()}</p>
           <div style={{ marginTop: '0.5rem' }}>
             <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); onOpen(a) }}>{tx('打开', 'Open')}</Button>

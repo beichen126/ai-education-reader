@@ -18,7 +18,7 @@ import { DocumentContextPicker } from './DocumentContextPicker'
 import { executeDocumentContext } from './document-context-service'
 import type { PdfSelection } from '../pdf/pdf-types'
 import css from './document-library.module.css'
-import { tx } from '../engine/locale'
+import { localizedErrorText, tx } from '../engine/locale'
 
 type PendingImport = { analysis: ImportAnalysis; file: File }
 
@@ -80,7 +80,7 @@ export function DocumentLibrary() {
       if (isCancelled()) return
       const res = await executeDocumentContext({ targetConversationId, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxBusy({ done: p.done, total: p.total }) } })
       if (gen !== ctxGenRef.current) return
-      if (!res.ok && res.error) setCtxMsg(res.error)
+      if (!res.ok && res.error) setCtxMsg(localizedErrorText(res.error, 'Unable to add the PDF context to the chat.'))
       else if (res.ok) setCtxMsg(tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages'))
     } catch { if (gen === ctxGenRef.current) setCtxMsg(tx('无法生成上下文。', 'Unable to build context.')) }
     finally { if (gen === ctxGenRef.current) { setCtxBusy(null); setCtxDocId(null); ctxOpRef.current = null } }

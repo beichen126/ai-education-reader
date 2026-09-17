@@ -19,7 +19,7 @@ import {
 } from './pdf-types'
 import type { PdfOutlineItem } from './pdf-outline'
 import css from './pdf-panel.module.css'
-import { tx } from '../engine/locale'
+import { localizedErrorText, tx } from '../engine/locale'
 
 export type { PdfAddResult } from './pdf-types'
 
@@ -151,7 +151,7 @@ export function PdfPanel({
         selection,
         pages,
       })
-      setAddMsg(res.ok ? tx('已加入 ' + res.count + ' 页', 'Added ' + res.count + ' pages') : res.error)
+      setAddMsg(res.ok ? tx('已加入 ' + res.count + ' 页', 'Added ' + res.count + ' pages') : localizedErrorText(res.error, 'Unable to add the PDF pages to the chat.'))
     } catch { setAddMsg(tx('无法将 PDF 页面加入对话。', 'Unable to add the PDF pages to the chat.')) }
     setAdding(false)
   }
@@ -170,7 +170,7 @@ export function PdfPanel({
 
           {status === 'error' && (
             <>
-              <div className={css.error} data-testid="pdf-error">{error || tx('PDF 处理失败。', 'PDF processing failed.')}</div>
+              <div className={css.error} data-testid="pdf-error">{error ? localizedErrorText(error, 'PDF processing failed.') : tx('PDF 处理失败。', 'PDF processing failed.')}</div>
               <div className={css.actions}><Button variant="outline" onClick={() => fileRef.current?.click()}>{tx('重新选择', 'Choose another')}</Button></div>
             </>
           )}
@@ -183,11 +183,11 @@ export function PdfPanel({
               </div>
 
               {documentSaveError && (
-                <div className={css.warning} data-testid="pdf-doc-warning">{documentSaveError}</div>
+                <div className={css.warning} data-testid="pdf-doc-warning">{localizedErrorText(documentSaveError, 'The PDF opened, but it could not be saved to the library.')}</div>
               )}
 
               {outlineStatus === 'loading' && <div className={css.empty} data-testid="pdf-outline-loading">{tx('正在读取 PDF 书签…', 'Reading PDF bookmarks…')}</div>}
-              {outlineStatus === 'error' && <div className={css.error} data-testid="pdf-outline-error">{outlineError || tx('无法读取该 PDF 的书签，可以继续手动选择页面。', 'Unable to read PDF bookmarks. You can still select pages manually.')}</div>}
+              {outlineStatus === 'error' && <div className={css.error} data-testid="pdf-outline-error">{outlineError ? localizedErrorText(outlineError, 'Unable to read PDF bookmarks. You can still select pages manually.') : tx('无法读取该 PDF 的书签，可以继续手动选择页面。', 'Unable to read PDF bookmarks. You can still select pages manually.')}</div>}
 
               {hasOutline && (
                 <div className={css.modeRow}>
@@ -229,7 +229,7 @@ export function PdfPanel({
               )}
 
               {selError && <div className={css.error} data-testid="pdf-error">{selError}</div>}
-              {error && <div className={css.error} data-testid="pdf-error">{error}</div>}
+              {error && <div className={css.error} data-testid="pdf-error">{localizedErrorText(error, 'PDF processing failed.')}</div>}
 
               <div className={css.actions}>
                 <Button variant="primary" data-testid="pdf-generate" disabled={generating || (inChapterMode && selectedNodes.length === 0)} onClick={onGenerate}>

@@ -20,7 +20,7 @@ import {
 import { documentUiActions } from '../documents/document-ui-store'
 import { learningUiActions, loadStudyCardPreferences, persistStudyCardPreferences, useLearningUi, type CardListContext } from './learning-ui-store'
 import css from './study-card.module.css'
-import { tx } from '../engine/locale'
+import { localizedConversationTitle, localizedErrorText, localizedPdfName, localizedStudyCardTitle, tx } from '../engine/locale'
 
 const SEARCH_DEBOUNCE_MS = 200
 /** The list mounts at most this many rows at once, so a 5000-card library never renders
@@ -43,11 +43,15 @@ function formatPages(pages: readonly number[]): string {
 
 export function formatDocumentRef(ref: StudyCardDocumentRef): string {
   const relation = ref.relation === 'turn' ? tx('本轮上下文', 'Current turn') : tx('此前上下文', 'Earlier context')
-  return ref.fileNameSnapshot + ' · ' + relation + ' · ' + formatPages(ref.pageNumbers)
+  return localizedPdfName(ref.fileNameSnapshot) + ' · ' + relation + ' · ' + formatPages(ref.pageNumbers)
 }
 
 function timestampLabel(value: number | undefined): string {
   return value === undefined ? '' : new Date(value).toLocaleString()
+}
+
+function cardTitle(card: StudyCard): string {
+  return localizedStudyCardTitle(card.title, card.titleMode, card.autoTitleOrdinal)
 }
 
 /**
@@ -103,7 +107,7 @@ export function LearningCenter() {
       })
       setError(null)
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : tx('学习卡片读取失败', 'Failed to load study cards'))
+      setError(localizedErrorText(e, 'Failed to load study cards'))
     } finally {
       setLoading(false)
     }
@@ -207,13 +211,13 @@ export function LearningCenter() {
                 {visibleCards.map(card => (
                   <li key={card.id}>
                     <button type="button" className={css.item} data-testid="card-item" data-card-id={card.id} aria-current={false} onClick={() => openCard(card.id)}>
-                      <span className={css.itemTitle} data-testid="card-item-title">{card.title}</span>
+                      <span className={css.itemTitle} data-testid="card-item-title">{cardTitle(card)}</span>
                       <span className={css.itemSummary}>{studyCardPlainText(card.bodyMarkdown).slice(0, 240)}</span>
                       <span className={css.itemMeta}>
                         {card.rating !== undefined && <span className={css.ratingBadge} data-testid="card-item-rating" aria-label={tx('评分 ' + card.rating + ' 分', 'Rating ' + card.rating + ' out of 5')}>★ {card.rating}/5</span>}
                         {!!card.annotations?.length && <span className={css.ratingBadge} data-testid="card-item-marks">{tx('已标记 ' + card.annotations.length + ' 处', card.annotations.length + ' marks')}</span>}
-                        <span data-testid="card-item-conversation">{card.source.conversationTitleSnapshot || tx('学习卡片', 'Study card')}</span>
-                        {card.documentRefs.length > 0 && <span data-testid="card-item-sources">{card.documentRefs.map(ref => ref.fileNameSnapshot).join('、')}</span>}
+                        <span data-testid="card-item-conversation">{localizedConversationTitle(card.source.conversationTitleSnapshot) || tx('学习卡片', 'Study card')}</span>
+                        {card.documentRefs.length > 0 && <span data-testid="card-item-sources">{card.documentRefs.map(ref => localizedPdfName(ref.fileNameSnapshot)).join(tx('、', ', '))}</span>}
                         <span>{tx('创建 ', 'Created ')}{timestampLabel(card.createdAt)}</span>
                         {card.lastOpenedAt !== undefined && <span>{tx('最近打开 ', 'Last opened ')}{timestampLabel(card.lastOpenedAt)}</span>}
                       </span>
@@ -282,7 +286,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
       if (!active) return
       setCard(found ?? null)
       setMissing(!found)
-      setTitle(found?.title ?? '')
+      setTitle(found ? cardTitle(found) : '')
       if (found) {
         void getStudyCardSourceStatus(found).then(status => { if (active) setSourceStatus(status) }).catch(() => { if (active) setSourceStatus(null) })
       }
@@ -327,14 +331,14 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
   const commitRename = async () => {
     if (!card) return
     const clean = title.trim()
-    if (!clean || clean === card.title) { setRenaming(false); setTitle(card.title); return }
+    if (!clean || clean === cardTitle(card)) { setRenaming(false); setTitle(cardTitle(card)); return }
     setBusy(true)
     try {
       const updated = await updateStudyCardTitle(card.id, clean, card.updatedAt)
       if (updated) { setCard(updated); setTitle(updated.title); setError(null); onChanged() }
       else setError(tx('卡片已在其它标签页中被修改，未覆盖较新的标题。', 'This card was changed in another tab. The newer title was not overwritten.'))
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : tx('重命名失败', 'Rename failed'))
+      setError(localizedErrorText(e, 'Rename failed'))
     } finally { setBusy(false); setRenaming(false) }
   }
 
@@ -346,7 +350,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
       if (updated) { setCard(updated); setError(null); onChanged() }
       else setError(tx('卡片已在其它标签页中被修改，请重新打开后再评分。', 'This card was changed in another tab. Reopen it before rating.'))
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : tx('评分保存失败', 'Unable to save rating'))
+      setError(localizedErrorText(e, 'Unable to save rating'))
     } finally {
       setBusy(false)
       setHoverRating(null)
@@ -363,7 +367,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
       if (neighbour) learningUiActions.openCard(neighbour, context)
       else onBack()
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : tx('删除失败', 'Delete failed'))
+      setError(localizedErrorText(e, 'Delete failed'))
     } finally { setBusy(false) }
   }
 
@@ -390,12 +394,12 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
             onChange={event => setTitle(event.target.value)}
             onKeyDown={event => {
               if (event.key === 'Enter') { event.preventDefault(); void commitRename() }
-              else if (event.key === 'Escape') { event.preventDefault(); setRenaming(false); setTitle(card.title) }
+              else if (event.key === 'Escape') { event.preventDefault(); setRenaming(false); setTitle(cardTitle(card)) }
             }}
             onBlur={() => { if (renaming) void commitRename() }}
           />
         ) : (
-          <button type="button" className={css.itemTitle + ' ' + css.titleButton} data-testid="card-title" title={tx('点击重命名', 'Click to rename')} onClick={() => setRenaming(true)}>{card.title}</button>
+          <button type="button" className={css.itemTitle + ' ' + css.titleButton} data-testid="card-title" title={tx('点击重命名', 'Click to rename')} onClick={() => setRenaming(true)}>{cardTitle(card)}</button>
         )}
         <div className={css.spacer} />
         <button type="button" className={css.small} data-testid="card-rename" disabled={busy} onClick={() => setRenaming(true)}>{tx('重命名', 'Rename')}</button>
@@ -434,7 +438,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
       <div className={css.sourceList} data-testid="card-sources">
         <div className={css.sourceRow}>
           <strong>{tx('来源会话', 'Source chat')}</strong>
-          <span data-testid="card-source-conversation">{card.source.conversationTitleSnapshot || tx('学习卡片', 'Study card')}</span>
+          <span data-testid="card-source-conversation">{localizedConversationTitle(card.source.conversationTitleSnapshot) || tx('学习卡片', 'Study card')}</span>
           {sourceStatus === 'live' && <button type="button" className={css.small} data-testid="card-back-to-conversation" onClick={() => void backToConversation()}>{tx('返回原会话', 'Open source chat')}</button>}
           {sourceStatus !== null && sourceStatus !== 'live' && (
             <span data-testid="card-source-deleted">

@@ -16,6 +16,7 @@
 //   - editing metadata never changes id (PdfSelection.selectedChapterIds may
 //     reference these ids); only genuinely new nodes get a fresh newStableId().
 import { newStableId } from '../engine/types'
+import { tx } from '../engine/locale'
 import type { ChapterNode, DocumentChapterSource } from './document-types'
 
 export type ChapterDraftItem = {
@@ -114,39 +115,39 @@ export function validateChapterDraft(items: ChapterDraftItem[], pageCount: numbe
   const seen = new Set<string>()
   for (let i = 0; i < items.length; i++) {
     const it = items[i]
-    const label = it.title || '第 ' + (i + 1) + ' 项'
+    const label = it.title || tx('第 ' + (i + 1) + ' 项', 'Item ' + (i + 1))
 
     if (it.title.trim() === '') {
-      issues.push({ index: i, code: 'blank-title', message: '第 ' + (i + 1) + ' 项标题不能为空。' })
+      issues.push({ index: i, code: 'blank-title', message: tx('第 ' + (i + 1) + ' 项标题不能为空。', 'Item ' + (i + 1) + ' must have a title.') })
     }
     if (!Number.isInteger(it.level)) {
-      issues.push({ index: i, code: 'level-not-int', message: '「' + label + '」的层级必须是整数。' })
+      issues.push({ index: i, code: 'level-not-int', message: tx('「' + label + '」的层级必须是整数。', '“' + label + '” must have an integer level.') })
     } else if (it.level < 1) {
-      issues.push({ index: i, code: 'level-zero', message: '「' + label + '」的层级不能小于 1。' })
+      issues.push({ index: i, code: 'level-zero', message: tx('「' + label + '」的层级不能小于 1。', '“' + label + '” cannot have a level below 1.') })
     } else if (it.level > MAX_CHAPTER_LEVEL) {
-      issues.push({ index: i, code: 'level-too-deep', message: '「' + label + '」的层级不能超过 ' + MAX_CHAPTER_LEVEL + '。' })
+      issues.push({ index: i, code: 'level-too-deep', message: tx('「' + label + '」的层级不能超过 ' + MAX_CHAPTER_LEVEL + '。', '“' + label + '” cannot exceed level ' + MAX_CHAPTER_LEVEL + '.') })
     }
     if (i === 0 && it.level !== 1) {
-      issues.push({ index: 0, code: 'first-not-level-1', message: '第 1 项必须是第 1 级（最顶层）。' })
+      issues.push({ index: 0, code: 'first-not-level-1', message: tx('第 1 项必须是第 1 级（最顶层）。', 'The first item must be level 1 (top level).') })
     }
     if (i > 0 && Number.isInteger(items[i - 1].level) && Number.isInteger(it.level) && items[i - 1].level >= 1 && it.level >= 1) {
       if (!isLevelTransitionAllowed(items[i - 1].level, it.level)) {
-        issues.push({ index: i, code: 'level-jump', message: '「' + label + '」不能从第 ' + items[i - 1].level + ' 级直接跳到第 ' + it.level + ' 级。' })
+        issues.push({ index: i, code: 'level-jump', message: tx('「' + label + '」不能从第 ' + items[i - 1].level + ' 级直接跳到第 ' + it.level + ' 级。', '“' + label + '” cannot jump directly from level ' + items[i - 1].level + ' to level ' + it.level + '.') })
       }
     }
 
     if (!Number.isInteger(it.startPage)) {
-      issues.push({ index: i, code: 'page-not-int', message: '「' + label + '」的起始页必须是整数。' })
+      issues.push({ index: i, code: 'page-not-int', message: tx('「' + label + '」的起始页必须是整数。', '“' + label + '” must have an integer start page.') })
     } else if (it.startPage < 1 || it.startPage > pageCount) {
-      issues.push({ index: i, code: 'page-out-of-range', message: '「' + label + '」的起始页超出范围（1–' + pageCount + '）。' })
+      issues.push({ index: i, code: 'page-out-of-range', message: tx('「' + label + '」的起始页超出范围（1–' + pageCount + '）。', '“' + label + '” has a start page outside 1–' + pageCount + '.') })
     }
     if (i > 0 && Number.isInteger(items[i - 1].startPage) && Number.isInteger(it.startPage)) {
       if (it.startPage < items[i - 1].startPage) {
-        issues.push({ index: i, code: 'page-decreases', message: '「' + label + '」的起始页不能小于上一章节。' })
+        issues.push({ index: i, code: 'page-decreases', message: tx('「' + label + '」的起始页不能小于上一章节。', '“' + label + '” cannot start before the previous chapter.') })
       }
     }
     if (seen.has(it.id)) {
-      issues.push({ index: i, code: 'duplicate-id', message: '存在重复的章节标识。' })
+      issues.push({ index: i, code: 'duplicate-id', message: tx('存在重复的章节标识。', 'Duplicate chapter identifiers were found.') })
     }
     seen.add(it.id)
   }

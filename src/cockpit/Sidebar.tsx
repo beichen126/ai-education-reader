@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react'
 import { useSessions, sessionsActions, type ChatSession } from '../engine/sessions-store'
-import { t, tx } from '../engine/locale'
+import { localizedConversationTitle, t, tx } from '../engine/locale'
 import { uiActions } from '../engine/ui-store'
 import { galleryActions } from '../gallery/gallery-store'
 import { documentUiActions } from '../documents/document-ui-store'
 import { layoutStore, persistSidebarLayout, useLayoutStore } from '../engine/layout-store'
 import { SIDEBAR_COMPACT_THRESHOLD } from '../dsh/layout/columns'
-import { NEW_TITLE } from '../engine/types'
 import { displayTitle, sanitizeTitle, MAX_TITLE_LEN } from '../engine/session-title'
 import { IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, IconClockOutline16, IconFullscreenOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconQuestionOutline14, Input } from '../dsh/primitives'
 import { learningUiActions } from '../study-cards/learning-ui-store'
@@ -21,8 +20,7 @@ function useFullscreen() {
 }
 
 function localizedSessionTitle(session: ChatSession): string {
-  const title = displayTitle(session)
-  return title === NEW_TITLE ? tx(NEW_TITLE, 'New chat') : title
+  return localizedConversationTitle(displayTitle(session))
 }
 
 export function Sidebar({ collapsed, width }: { collapsed: boolean; width: number }) {
