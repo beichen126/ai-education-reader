@@ -24,9 +24,9 @@ import { getProductGuideSeenVersion, markProductGuideSeen, PRODUCT_GUIDE_VERSION
 import { documentUiActions, useDocumentUi } from './documents/document-ui-store'
 import { useGallery } from './gallery/gallery-store'
 import { useLearningUi } from './study-cards/learning-ui-store'
+import { PromptManager } from './prompts/PromptManager'
 
 const SettingsDialog = lazy(() => import('./cockpit/SettingsDialog').then(module => ({ default: module.SettingsDialog })))
-const PromptManager = lazy(() => import('./prompts/PromptManager').then(module => ({ default: module.PromptManager })))
 const Gallery = lazy(() => import('./gallery/Gallery').then(module => ({ default: module.Gallery })))
 const DocumentLibrary = lazy(() => import('./documents/DocumentLibrary').then(module => ({ default: module.DocumentLibrary })))
 const DocumentReader = lazy(() => import('./documents/DocumentReader').then(module => ({ default: module.DocumentReader })))
