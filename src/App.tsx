@@ -40,6 +40,14 @@ function renderSlot(key: string, owner?: any): ReactNode {
 
 type BootState = 'loading' | 'ready' | 'error'
 
+function useLoadedOnce(active: boolean): boolean {
+  const [loaded, setLoaded] = useState(active)
+  useEffect(() => {
+    if (active) setLoaded(true)
+  }, [active])
+  return loaded
+}
+
 export function App() {
   useTheme()
   // Subscribing at the application boundary re-renders every visible surface when the
@@ -52,6 +60,12 @@ export function App() {
   const galleryOpen = useGallery(s => s.open)
   const documentView = useDocumentUi(s => s.view)
   const learningView = useLearningUi(s => s.view)
+  // These surfaces own state that intentionally survives closing (document summaries,
+  // reader cleanup controllers, study-card preferences). Lazy-load them on first use,
+  // then preserve their original application-lifetime mount contract.
+  const galleryLoaded = useLoadedOnce(galleryOpen)
+  const documentsLoaded = useLoadedOnce(documentView !== 'closed')
+  const learningCenterLoaded = useLoadedOnce(learningView !== 'closed')
   const apiKey = useSettings(s => s.apiKey)
   const [boot, setBoot] = useState<BootState>('loading')
   const productGuideCheckedRef = useRef(false)
@@ -125,10 +139,10 @@ export function App() {
       <Suspense fallback={null}>
         {settingsOpen && <SettingsDialog />}
         {promptManagerOpen && <PromptManager />}
-        {learningView !== 'closed' && <LearningCenter />}
-        {galleryOpen && <Gallery />}
-        {documentView === 'library' && <DocumentLibrary />}
-        {documentView === 'reader' && <DocumentReader />}
+        {learningCenterLoaded && <LearningCenter />}
+        {galleryLoaded && <Gallery />}
+        {documentsLoaded && <DocumentLibrary />}
+        {documentsLoaded && <DocumentReader />}
       </Suspense>
       <ProductGuideDialog
         open={productGuideOpen}

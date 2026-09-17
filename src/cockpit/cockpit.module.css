@@ -61,8 +61,6 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 220px;
 }
 .msgUser { align-items: flex-end; }
 .msgAssistant { align-items: flex-start; }
