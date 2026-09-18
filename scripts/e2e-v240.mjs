@@ -132,10 +132,12 @@ assert(await page.getByText('New chat', { exact: true }).count() >= 1, 'English 
 await page.locator('[data-testid="sidebar-settings"]').click()
 await page.locator('[data-testid="settings-language"]').waitFor({ state: 'visible' })
 page.once('dialog', dialog => dialog.accept())
+const importReload = page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 })
 await page.locator('input[type="file"][accept*=".zip"]').setInputFiles(downloadPath)
-await page.getByText('Import complete', { exact: true }).waitFor({ state: 'visible', timeout: 15000 })
+await importReload
+await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
+await dismissProductGuide(page)
 assert(await page.evaluate(() => document.documentElement.lang) === 'en', 'ZIP import restores the language preference')
-await page.getByRole('button', { name: 'Close' }).first().click()
 await page.locator('[data-testid="sidebar-settings"]').click()
 assert(await page.locator('input[placeholder="sk-..."]').inputValue() === '', 'ZIP import never restores an API key')
 

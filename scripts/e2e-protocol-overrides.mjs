@@ -78,9 +78,9 @@ await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'att
 await dismissProductGuide(page)
 await page.getByRole('button', { name: /打开设置|设置/ }).first().click()
 const importInput = page.locator('input[type="file"][accept*=".zip"]')
+const importReload = page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 })
 await importInput.setInputFiles(backupPath)
-await page.locator('text=导入完成').waitFor({ state: 'visible', timeout: 20000 })
-await page.reload({ waitUntil: 'networkidle' })
+await importReload
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
 await dismissProductGuide(page)
 const restoredPreference = await openAppDb(page, { store: 'settings', operation: 'get', key: 'promptPreferences' })
