@@ -20,7 +20,7 @@ import {
   mapTocSourcePages, reindexRows, dedupeWindowBoundary,
   TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT, buildTocStructureRepairPrompt, buildTocTranscriptionRepairPrompt,
   buildTocStructureInput,
-  inferFallbackTocLevels, tocTranscriptionDiagnosticEnglish,
+  inferFallbackTocLevels, tocTranscriptionDiagnosticEnglish, validateTocPageLabelCoverage,
   type TocTranscriptionRow, type TocLocalRow, type TocTranscriptionLine,
   type TocStructureDiagnostic,
 } from './ai-toc'
@@ -149,6 +149,9 @@ type TranscribeMappedBatchOptions = {
   isMock: boolean
   mock: ((request: AiTocMockRequest) => string | undefined) | undefined
   signal?: AbortSignal
+  /** Bound adaptive recovery to one split so a bad provider response cannot fan
+   * out into dozens of slow, paid requests for a large selected range. */
+  splitDepth?: number
 }
 
 /** Two schema-aware attempts, followed by an adaptive split for failures that a
@@ -162,6 +165,8 @@ async function transcribeMappedBatchResilient(opts: TranscribeMappedBatchOptions
       const rows = await transcribeBatch({ ...opts, repairPrompt: attempt === 1 ? transcriptionRetryPrompt(lastError) : '' })
       const mapped = mapTocSourcePages(rows, opts.batch)
       if (!mapped.ok) throw new TocTranscriptionValidationError((mapped as { diagnostics: string[] }).diagnostics)
+      const coverage = validateTocPageLabelCoverage(mapped.rows)
+      if (coverage.ok === false) throw new TocTranscriptionValidationError(coverage.diagnostics)
       return mapped.rows
     } catch (error) {
       lastError = error
@@ -169,13 +174,14 @@ async function transcribeMappedBatchResilient(opts: TranscribeMappedBatchOptions
     }
   }
 
-  if (opts.batch.length > 1 && canSplitFailedBatch(lastError)) {
+  const splitDepth = opts.splitDepth ?? 0
+  if (opts.batch.length > 1 && splitDepth < 1 && canSplitFailedBatch(lastError)) {
     const midpoint = Math.ceil(opts.batch.length / 2)
     const leftBatch = opts.batch.slice(0, midpoint)
     const rightBatch = opts.batch.slice(midpoint)
-    const left = await transcribeMappedBatchResilient({ ...opts, batch: leftBatch })
+    const left = await transcribeMappedBatchResilient({ ...opts, batch: leftBatch, splitDepth: splitDepth + 1 })
     const nextTail = opts.tail.concat(left).slice(-PREV_TAIL_SIZE)
-    const right = await transcribeMappedBatchResilient({ ...opts, batch: rightBatch, tail: nextTail })
+    const right = await transcribeMappedBatchResilient({ ...opts, batch: rightBatch, tail: nextTail, splitDepth: splitDepth + 1 })
     return left.concat(dedupeWindowBoundary(left, right))
   }
 

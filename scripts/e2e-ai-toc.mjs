@@ -48,6 +48,11 @@ await page.locator('[data-testid="toc-review"]').waitFor({ state: 'visible', tim
 assert(await page.locator('[data-testid="toc-review-progress"]').count() === 1, 'B: review opens with progress')
 const itemCount = await page.locator('[data-testid^="toc-review-item-"]').count()
 assert(itemCount === 2, 'B: review lists 2 items (got ' + itemCount + ')')
+assert(await page.locator('[data-testid="toc-review-invalid"]').count() === 0, 'B: missing PDF PageLabels are not misreported as two content corrections')
+assert((await page.locator('[data-testid="toc-review-calibration-needed"]').textContent()).includes('不需要逐条修正 2 项'), 'B: unresolved numeric labels explain that only one calibration is needed')
+await page.locator('[data-testid="toc-review-start-calibration"]').click()
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-page-input"]')?.value === '7')
+assert((await inputVal()).trim() === '7', 'B: calibration action jumps to the PDF outline page containing the unresolved row')
 const structureCalls = await page.evaluate(() => (globalThis).__dshStructureCalls)
 assert(structureCalls.length === 2, 'B1: structure repair uses exactly one retry (got ' + structureCalls.length + ')')
 assert(structureCalls[0].repair === false && structureCalls[1].repair === true, 'B1: second structure request is marked as repair')
@@ -67,11 +72,12 @@ assert(active0.includes('active'), 'B2: blocking continue STAYS on the current (
 // --- C: click first item -> jump (unresolved -> stays; assign page then jump) ---
 await page.locator('[data-testid="toc-review-title"]').fill('第一章 自然地理')
 await page.locator('[data-testid="toc-review-page"]').fill('5')
+await page.locator('[data-testid="toc-review-calibrate"]').click()
+assert(await page.locator('[data-testid="toc-review-item-1"]').getAttribute('data-sp') === '6', 'C: one anchor maps the remaining numeric page labels automatically')
 await page.locator('[data-testid="toc-review-ok-0"]').click()
-// advance to item 1, set its page too
+// advance to item 1; its page was resolved by the single calibration
 await page.locator('[data-testid="toc-review-next"]').click()
 await page.locator('[data-testid="toc-review-title"]').fill('第二章 地球')
-await page.locator('[data-testid="toc-review-page"]').fill('8')
 await page.locator('[data-testid="toc-review-ok-1"]').click()
 
 // --- D: save (all resolved + valid) ---
@@ -80,8 +86,8 @@ await page.locator('[data-testid="toc-review"]').waitFor({ state: 'detached', ti
 await page.waitForTimeout(600)
 const toc = await page.locator('[data-testid^="reader-chapter-"]').allTextContents()
 assert(toc.join('|').includes('第一章 自然地理') && toc.join('|').includes('第二章 地球'), 'D: TOC shows ai-toc chapters (got ' + toc.join('|') + ')')
-// current page preserved (was 1 before save)
-assert((await inputVal()).trim() === '1', 'D: reader page unchanged after ai-toc save (got ' + await inputVal() + ')')
+// The last selected review row resolved to PDF page 6; saving preserves that useful location.
+assert((await inputVal()).trim() === '6', 'D: reader stays on the page selected while reviewing (got ' + await inputVal() + ')')
 const aiTocBack = page.locator('[data-testid="reader-toc-back"]')
 assert(await aiTocBack.isVisible(), 'D: ai-toc exposes 返回阅读')
 await aiTocBack.click()
@@ -145,8 +151,26 @@ assert(await page.locator('[data-testid^="toc-review-item-"]').count() === 2, 'G
 const splitCalls = await page.evaluate(() => (globalThis).__dshAllCalls.filter(c => c.phase === 'transcribe').map(c => c.pages.length))
 assert(splitCalls.join(',') === '2,2,1,1', 'G: combined batch retries once, then splits into bounded single-page requests (got ' + splitCalls.join(',') + ')')
 
-// --- H: abort stops extraction without retry or opening a partial review ---
+// --- G2: an all-empty pageLabel response is a model failure, never N manual fixes ---
 await page.locator('[data-testid="toc-review-close"]').click()
+await page.evaluate(() => { (globalThis).__dshAllCalls = []; (globalThis).__dshMockAiToc = (req) => {
+  (globalThis).__dshAllCalls.push({ phase: req.phase, pages: [...req.pages] })
+  if (req.phase === 'structure') return '{"levels":[1]}'
+  return req.pages.map((_, i) => '{"title":"Missing label ' + (i + 1) + '","pageLabel":"","sourceImageIndex":' + (i + 1) + '}').join('\n')
+} })
+await page.locator('[data-testid="reader-toc-ai"]').click()
+await page.locator('[data-testid="toc-picker"]').waitFor({ state: 'visible', timeout: 10000 })
+await page.locator('[data-testid="toc-thumb-7"]').click()
+await page.locator('[data-testid="toc-thumb-8"]').click()
+await page.locator('[data-testid="toc-picker-start"]').click()
+await page.locator('[data-testid="ai-toc-progress-error"]').waitFor({ state: 'visible', timeout: 20000 })
+assert((await page.locator('[data-testid="ai-toc-progress-error"]').textContent()).includes('pageLabel'), 'G2: all-empty page labels surface a specific field error')
+assert(await page.locator('[data-testid="toc-review"]').count() === 0, 'G2: all-empty page labels never open a giant manual-correction review')
+const emptyLabelCalls = await page.evaluate(() => (globalThis).__dshAllCalls.filter(c => c.phase === 'transcribe').map(c => c.pages.length))
+assert(emptyLabelCalls.join(',') === '2,2,1,1', 'G2: empty-label recovery stays bounded to one split level (got ' + emptyLabelCalls.join(',') + ')')
+await page.locator('[data-testid="ai-toc-progress-close"]').click()
+
+// --- H: abort stops extraction without retry or opening a partial review ---
 await page.evaluate(() => { (globalThis).__dshAllCalls = []; (globalThis).__dshMockAiToc = (req) => {
   (globalThis).__dshAllCalls.push({ phase: req.phase, attempt: req.attempt, repair: req.repair })
   if (req.phase === 'structure') return '{"levels":[1,1]}'

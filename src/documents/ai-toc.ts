@@ -67,13 +67,15 @@ export function tocTranscriptionDiagnosticEnglish(diagnostic: string): string {
   if (match) return 'Row ' + match[1] + ' used a sourceImageIndex outside the current image batch.'
   match = /^第 (\d+) 行映射到非法物理页$/.exec(diagnostic)
   if (match) return 'Row ' + match[1] + ' could not be mapped to a valid PDF page.'
+  match = /^全部 (\d+) 个目录条目均缺少 pageLabel$/.exec(diagnostic)
+  if (match) return 'All ' + match[1] + ' outline rows had an empty pageLabel even though destination page numbers may be visible.'
   return 'The response did not match the required outline JSONL schema.'
 }
 
 export function buildTocTranscriptionRepairPrompt(diagnostics: string[]): string {
   const details = [...new Set(diagnostics)].slice(0, 8).map(item => '- ' + tocTranscriptionDiagnosticEnglish(item)).join('\n')
   return 'The previous response failed local validation:\n' + (details || '- The response did not match the required outline JSONL schema.') + '\n' +
-    'Correct every listed issue and transcribe the same images again. Return JSONL only. Every row must include title, pageLabel, and sourceImageIndex. Use pageLabel:"" when no printed destination-page label is visible; never omit the key. Return no explanation.'
+    'Correct every listed issue and transcribe the same images again. Return JSONL only. Every row must include title, pageLabel, and sourceImageIndex. Read the destination page number printed at the end of each outline row and put it in pageLabel. Use pageLabel:"" only for an individual row that truly has no printed or readable destination page number; do not leave every pageLabel empty when page numbers are visible; never omit the key. Return no explanation.'
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
@@ -142,6 +144,19 @@ export function parseTocJsonl(text: string, options: { defaultSourceImageIndex?:
   if (diagnostics.length > 0) return { ok: false, line: 0, diagnostics }
   if (rows.length === 0) return { ok: false, line: 0, diagnostics: ['未识别到目录条目'] }
   return { ok: true, rows }
+}
+
+/**
+ * A few outline headings genuinely have no printed destination page number, so
+ * the row parser keeps an empty pageLabel reviewable. An entirely empty batch is
+ * different: accepting it would turn one model-format failure into hundreds of
+ * fake "manual corrections". Reject that batch so the schema-aware retry can
+ * explicitly ask the model to read the printed numbers (and, if needed, retry a
+ * smaller image batch).
+ */
+export function validateTocPageLabelCoverage(rows: Pick<TocTranscriptionLine, 'pageLabel'>[]): { ok: true } | { ok: false; diagnostics: string[] } {
+  if (rows.length === 0 || rows.some(row => row.pageLabel.trim() !== '')) return { ok: true }
+  return { ok: false, diagnostics: ['全部 ' + rows.length + ' 个目录条目均缺少 pageLabel'] }
 }
 
 /** Assign stable LOCAL ids (r0001…) in row order; never trusts model ids. The physical

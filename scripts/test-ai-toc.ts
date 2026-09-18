@@ -4,7 +4,7 @@ import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary, normalizeTitle, normalizeTocLevels,
   describeTocStructureFailure, buildTocStructureRepairPrompt, buildTocStructureInput, inferFallbackTocLevels,
-  buildTocTranscriptionRepairPrompt, tocTranscriptionDiagnosticEnglish,
+  buildTocTranscriptionRepairPrompt, tocTranscriptionDiagnosticEnglish, validateTocPageLabelCoverage,
 } from '../src/documents/ai-toc.ts'
 import {
   exactLabelToPage, labelsArePlainNumeric, buildInitialMapping, numericOffsetFromAnchor,
@@ -66,6 +66,14 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   assert(retry.includes('Row 2 was not valid JSON'), 'transcription retry includes the prior malformed-row error')
   assert(retry.includes('pageLabel:""') && retry.includes('never omit'), 'transcription retry repeats the missing-pageLabel recovery contract')
   assert(tocTranscriptionDiagnosticEnglish('第 4 行 sourceImageIndex 超出当前请求图片范围').includes('Row 4'), 'source-image mapping errors have a specific safe English diagnostic')
+}
+// --- a wholly empty page-label batch is retried instead of creating N manual fixes ---
+{
+  const allMissing = validateTocPageLabelCoverage([{ pageLabel: '' }, { pageLabel: '  ' }])
+  assert(allMissing.ok === false && allMissing.diagnostics[0].includes('2'), 'all-empty page labels fail batch coverage validation with a count')
+  const partial = validateTocPageLabelCoverage([{ pageLabel: '' }, { pageLabel: '12' }])
+  assert(partial.ok, 'an individual heading without a printed page remains reviewable')
+  assert(tocTranscriptionDiagnosticEnglish('全部 138 个目录条目均缺少 pageLabel').includes('138'), 'all-empty coverage failure has a specific English diagnostic')
 }
 // --- normalizeTitle ---
 { assert(normalizeTitle('  第  一章  ') === '第 一章', 'normalizeTitle collapses + trims') }

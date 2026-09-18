@@ -37,6 +37,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   // so when BOTH unchecked and issue conditions exist the UI confirms each in turn.
   const uncheckedAckRef = useRef(false)
   const issueAckRef = useRef(false)
+  const pageInputRef = useRef<HTMLInputElement | null>(null)
   const [levelRaw, setLevelRaw] = useState<Record<number, string>>({})
 
   // Rebuild rows when a new mapped draft arrives.
@@ -91,6 +92,11 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   const unresolvedCount = validation.unresolvedCount
   const invalidCount = validation.errorCount
   const isBlocking = (i: number) => validation.blockingRowIndices.includes(i)
+  const unresolvedNumericIndices = useMemo(() => rows.flatMap((row, i) => row.startPage == null && canonicalNumericPageNumber(row.pageLabel) != null ? [i] : []), [rows])
+  const unresolvedBlankCount = useMemo(() => rows.filter(row => row.startPage == null && row.pageLabel.trim() === '').length, [rows])
+  const unresolvedOtherCount = unresolvedCount - unresolvedNumericIndices.length - unresolvedBlankCount
+  const nonMappingInvalidCount = validation.blockingRowIndices.filter(i => rows[i]?.startPage != null).length
+  const needsSingleCalibration = unresolvedCount > 0 && unresolvedNumericIndices.length === unresolvedCount && nonMappingInvalidCount === 0
 
   // v1.1.3: numeric offset / anchor calibration is available whenever at least one row's
   // printed page label can be read as a safe integer. This deliberately does NOT depend on
@@ -99,7 +105,32 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   // PageLabels, which is exactly when it is needed most).
   const canOffset = useMemo(() => canUseNumericOffset(rows), [rows])
 
-  const jump = (i: number) => { const p = rows[i]?.startPage; if (p != null) onJump(p); setIdx(i) }
+  // A resolved row jumps to its destination. An unresolved/invalid mapping still
+  // has trustworthy local provenance (`tocPage`), so selecting the error jumps to
+  // the exact PDF outline page where the row was recognized instead of doing
+  // nothing and leaving the user to hunt for it.
+  const jump = (i: number) => {
+    const row = rows[i]
+    const target = row?.startPage ?? row?.tocPage
+    if (Number.isInteger(target) && (target as number) >= 1 && (target as number) <= pageCount) onJump(target as number)
+    setIdx(i)
+  }
+
+  const beginCalibration = () => {
+    const target = unresolvedNumericIndices[0]
+    if (target == null) return
+    jump(target)
+    setSaveError(null)
+    window.requestAnimationFrame(() => pageInputRef.current?.focus())
+  }
+
+  const beginIssueReview = () => {
+    const target = validation.blockingRowIndices[0]
+    if (target == null) return
+    jump(target)
+    window.requestAnimationFrame(() => pageInputRef.current?.focus())
+  }
+
   const markVerified = (i: number) => setState(s => ({ ...s, [i]: 'verified' }))
   // 9.4C.1: verify is a no-op (with a hint) for a blocking/unresolved row — never marked verified.
   const verifyButton = (i: number) => { if (isBlocking(i)) { setSaveError(tx('第 ' + (i + 1) + ' 项仍需修正后才能标记为正确。', 'Item ' + (i + 1) + ' must be corrected before it can be verified.')); return } markVerified(i) }
@@ -108,7 +139,12 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   // on it (never silently jump to the next item). Otherwise mark verified and advance.
   const continueReview = () => {
     const cur = rows[idx]
-    if (cur && isBlocking(idx)) { setSaveError(tx('第 ' + (idx + 1) + ' 项仍需修正后才能继续检查。', 'Item ' + (idx + 1) + ' must be corrected before continuing.')); return }
+    if (cur && isBlocking(idx)) {
+      setSaveError(cur.startPage == null && canonicalNumericPageNumber(cur.pageLabel) != null
+        ? tx('只需在右侧填写当前项的 PDF 物理页，再点击“按此对应关系匹配其余页码”。', 'Enter this item\'s physical PDF page on the right, then choose “Match remaining pages from this pair”. You do not need to correct every row.')
+        : tx('第 ' + (idx + 1) + ' 项仍需修正后才能继续检查。', 'Item ' + (idx + 1) + ' must be corrected before continuing.'))
+      return
+    }
     if (cur) markVerified(idx)
     const next = rows.findIndex((_, i) => state[i] === 'unchecked' && i > idx)
     const target = next >= 0 ? next : rows.findIndex((_, k) => state[k] === 'unchecked')
@@ -170,6 +206,11 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   // in turn (unchecked first, then issue) before the final save runs.
   const requestSave = () => {
     if (saving) return
+    if (needsSingleCalibration) {
+      setSaveError(tx('无需逐条修正。请先确认一个“印刷页→PDF 物理页”的对应关系，系统会自动映射其余数字页码。', 'No row-by-row correction is needed. First confirm one printed-page → physical-PDF-page pair and the remaining numeric pages will be mapped automatically.'))
+      beginCalibration()
+      return
+    }
     uncheckedAckRef.current = false
     issueAckRef.current = false
     advanceSave()
@@ -184,7 +225,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
       uncheckedAck: uncheckedAckRef.current,
       issueAck: issueAckRef.current,
     })
-    if (stage.kind === 'invalid') { setSaveError(tx('还有 ' + stage.invalidCount + ' 项需要修正后才能保存。', stage.invalidCount + ' items must be corrected before saving.')); return }
+    if (stage.kind === 'invalid') { setSaveError(tx('还有 ' + stage.invalidCount + ' 项需要修正后才能保存。已定位到第一个问题所在的 PDF 页。', stage.invalidCount + ' items must be corrected before saving. The reader has jumped to the PDF page containing the first issue.')); beginIssueReview(); return }
     if (stage.kind === 'confirm-unchecked') { setConfirmUnchecked(true); return }
     if (stage.kind === 'confirm-issue') { setConfirmIssue(true); return }
     void doSave()
@@ -221,8 +262,23 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
         </div>
         {notice && <div className={css.warn} data-testid="toc-review-notice">{notice}</div>}
         {saveError && <div className={css.err} data-testid="toc-review-error">{saveError}</div>}
-        {invalid && <div className={css.err} data-testid="toc-review-invalid">{tx('还有 ' + invalidCount + ' 项需要修正后才能保存。', invalidCount + ' items must be corrected before saving.')}</div>}
-        {unresolvedCount > 0 && <div className={css.warn} data-testid="toc-review-unresolved">{tx('有 ' + unresolvedCount + ' 项页码待确认。', unresolvedCount + ' page mappings need confirmation.')}</div>}
+        {nonMappingInvalidCount > 0 && (
+          <div className={css.issueHelp} data-testid="toc-review-invalid">
+            <span>{tx('还有 ' + nonMappingInvalidCount + ' 项内容需要修正后才能保存。', nonMappingInvalidCount + ' content items must be corrected before saving.')}</span>
+            <button type="button" className={css.mini} data-testid="toc-review-locate-issue" onClick={beginIssueReview}>{tx('定位第一个问题页', 'Go to first issue page')}</button>
+          </div>
+        )}
+        {needsSingleCalibration ? (
+          <div className={css.mappingHelp} data-testid="toc-review-calibration-needed">
+            <span>{tx('PDF 没有提供可靠的内置页码映射。不需要逐条修正 ' + unresolvedCount + ' 项：只需确认一个印刷页对应的 PDF 物理页，其余数字页码会自动映射。', 'This PDF has no reliable embedded page-label mapping. You do not need to correct ' + unresolvedCount + ' rows individually: confirm one printed-page → physical-PDF-page pair and the remaining numeric pages will be mapped automatically.')}</span>
+            <button type="button" className={css.mini} data-testid="toc-review-start-calibration" onClick={beginCalibration}>{tx('开始一次校准', 'Calibrate once')}</button>
+          </div>
+        ) : unresolvedCount > 0 && (
+          <div className={css.mappingHelp} data-testid="toc-review-unresolved">
+            <span>{tx('有 ' + unresolvedCount + ' 项页码无法自动映射' + (unresolvedBlankCount > 0 ? '（其中 ' + unresolvedBlankCount + ' 项未识别到印刷页码）' : '') + '。', unresolvedCount + ' page mappings could not be resolved automatically' + (unresolvedBlankCount > 0 ? '; ' + unresolvedBlankCount + ' rows have no recognized printed page number' : '') + (unresolvedOtherCount > 0 ? '; ' + unresolvedOtherCount + ' use non-numeric labels' : '') + '.')}</span>
+            <button type="button" className={css.mini} data-testid="toc-review-locate-unresolved" onClick={beginIssueReview}>{tx('定位第一个问题页', 'Go to first issue page')}</button>
+          </div>
+        )}
         <div className={css.reviewBody}>
           <div className={css.list} data-testid="toc-review-list">
             {rows.map((it, i) => (
@@ -241,7 +297,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
             <div className={css.adjustCurrent} data-testid="toc-review-current-title">{rows[idx]?.title || '—'}</div>
             <label className={css.field}>{tx('标题', 'Title')} <input className={css.input} data-testid="toc-review-title" value={rows[idx]?.title || ''} onChange={e => editRow(idx, { title: e.target.value })} /></label>
             <label className={css.field}>{tx('层级', 'Level')} <input className={css.input} data-testid="toc-review-level" value={levelRaw[idx] ?? String(rows[idx]?.level ?? '')} inputMode="numeric" onChange={e => onLevelInput(idx, e.target.value)} /></label>
-            <label className={css.field}>{tx('PDF页', 'PDF page')} <input className={css.input} data-testid="toc-review-page" value={rows[idx]?.startPage ?? ''} placeholder={tx('待确认', 'Unconfirmed')} onChange={e => onPageInput(idx, e.target.value)} /></label>
+            <label className={css.field}>{tx('PDF页', 'PDF page')} <input ref={pageInputRef} className={css.input} data-testid="toc-review-page" value={rows[idx]?.startPage ?? ''} placeholder={tx('待确认', 'Unconfirmed')} onChange={e => onPageInput(idx, e.target.value)} /></label>
             {canOffset && (
               <div className={css.offset}>
                 <div className={css.adjustTitle}>{tx('页码映射', 'Page mapping')}</div>
