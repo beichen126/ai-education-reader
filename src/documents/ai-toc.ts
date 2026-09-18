@@ -50,6 +50,32 @@ export type TocJsonlParseResult =
   | { ok: true; rows: TocTranscriptionLine[] }
   | { ok: false; line: number; diagnostics: string[] }
 
+/** Translate stable parser/map diagnostics into safe English retry context. Raw
+ * model output is deliberately never echoed back into a subsequent request. */
+export function tocTranscriptionDiagnosticEnglish(diagnostic: string): string {
+  if (diagnostic === '空响应') return 'The response was empty.'
+  if (diagnostic === '未识别到目录条目') return 'No outline rows were detected.'
+  let match = /^第 (\d+) 行不是合法 JSON$/.exec(diagnostic)
+  if (match) return 'Row ' + match[1] + ' was not valid JSON.'
+  match = /^第 (\d+) 行不是对象$/.exec(diagnostic)
+  if (match) return 'Row ' + match[1] + ' was not a JSON object.'
+  match = /^第 (\d+) 行缺少有效 title$/.exec(diagnostic)
+  if (match) return 'Row ' + match[1] + ' was missing a non-empty title.'
+  match = /^第 (\d+) 行缺少合法的 sourceImageIndex$/.exec(diagnostic)
+  if (match) return 'Row ' + match[1] + ' was missing a valid sourceImageIndex.'
+  match = /^第 (\d+) 行 sourceImageIndex 超出当前请求图片范围$/.exec(diagnostic)
+  if (match) return 'Row ' + match[1] + ' used a sourceImageIndex outside the current image batch.'
+  match = /^第 (\d+) 行映射到非法物理页$/.exec(diagnostic)
+  if (match) return 'Row ' + match[1] + ' could not be mapped to a valid PDF page.'
+  return 'The response did not match the required outline JSONL schema.'
+}
+
+export function buildTocTranscriptionRepairPrompt(diagnostics: string[]): string {
+  const details = [...new Set(diagnostics)].slice(0, 8).map(item => '- ' + tocTranscriptionDiagnosticEnglish(item)).join('\n')
+  return 'The previous response failed local validation:\n' + (details || '- The response did not match the required outline JSONL schema.') + '\n' +
+    'Correct every listed issue and transcribe the same images again. Return JSONL only. Every row must include title, pageLabel, and sourceImageIndex. Use pageLabel:"" when no printed destination-page label is visible; never omit the key. Return no explanation.'
+}
+
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
 
 /** Normalize a raw title string: trim runs of whitespace to single spaces. */
@@ -59,7 +85,7 @@ export function normalizeTitle(raw: string): string {
 
 function normalizePageLabel(v: unknown): string | null {
   if (typeof v === 'number' && Number.isFinite(v)) return String(v)
-  if (typeof v === 'string') { const t = v.trim(); return t === '' ? null : t }
+  if (typeof v === 'string') return v.trim()
   return null
 }
 
@@ -95,9 +121,13 @@ export function parseTocJsonl(text: string, options: { defaultSourceImageIndex?:
     try { json = JSON.parse(raw) } catch { diagnostics.push('第 ' + (idx + 1) + ' 行不是合法 JSON'); continue }
     if (!isRecord(json)) { diagnostics.push('第 ' + (idx + 1) + ' 行不是对象'); continue }
     if (typeof json.title !== 'string' || json.title.trim() === '') { diagnostics.push('第 ' + (idx + 1) + ' 行缺少有效 title'); continue }
-    const pl = normalizePageLabel(json.pageLabel)
-    if (pl === null) { diagnostics.push('第 ' + (idx + 1) + ' 行缺少 pageLabel'); continue }
-    const suppliedIndex = json.sourceImageIndex ?? json.source_image_index
+    // Compatible vision models sometimes use a conventional page-number alias,
+    // or omit the field entirely when a printed TOC row has no readable page
+    // number. Keep that otherwise useful row and send it to review as unresolved
+    // instead of rejecting the whole batch forever. The raw label is never guessed.
+    const suppliedPageLabel = json.pageLabel ?? json.page_label ?? json.pageNumber ?? json.page_number ?? json.printedPage ?? json.page
+    const pl = normalizePageLabel(suppliedPageLabel) ?? ''
+    const suppliedIndex = json.sourceImageIndex ?? json.source_image_index ?? json.imageIndex ?? json.image_index ?? json.sourcePageIndex ?? json.physicalPage ?? json.pdfPage
     const numericIndex = typeof suppliedIndex === 'string' && /^\d+$/.test(suppliedIndex.trim()) ? Number(suppliedIndex) : suppliedIndex
     const sii = numericIndex == null ? options.defaultSourceImageIndex : numericIndex
     if (!Number.isInteger(sii) || (sii as number) < 1) { diagnostics.push('第 ' + (idx + 1) + ' 行缺少合法的 sourceImageIndex'); continue }
@@ -302,22 +332,22 @@ export function describeTocStructureFailure(diagnostics: TocStructureDiagnostic[
 export function buildTocStructureRepairPrompt(rowsCount: number, diagnostics: TocStructureDiagnostic[]): string {
   const details = diagnostics.map((d) => {
     if (d.code === 'LEVEL_COUNT_MISMATCH') {
-      return '层级数量不匹配：需要 ' + d.expectedRows + ' 项，实际返回 ' + d.actualLevels + ' 项。'
+      return 'Level count mismatch: expected ' + d.expectedRows + ', received ' + d.actualLevels + '.'
     }
     if (d.code === 'INVALID_LEVEL') {
-      return '第 ' + ((d.rowIndex ?? 0) + 1) + ' 项不是正整数。'
+      return 'Item ' + ((d.rowIndex ?? 0) + 1) + ' is not a positive integer.'
     }
     if (d.code === 'LEVEL_JUMP') {
-      return '第 ' + ((d.rowIndex ?? 0) + 1) + ' 项发生非法层级跳变。'
+      return 'Item ' + ((d.rowIndex ?? 0) + 1) + ' has an invalid hierarchy jump.'
     }
-    if (d.code === 'EMPTY_OUTPUT') return '上一次没有返回层级。'
-    if (d.code === 'MALFORMED_OUTPUT') return '上一次输出不是合法的紧凑 JSON 对象。'
-    if (d.code === 'API_ERROR') return '上一次结构分析请求失败。'
-    return '上一次结构分析未通过校验。'
+    if (d.code === 'EMPTY_OUTPUT') return 'The previous response contained no levels.'
+    if (d.code === 'MALFORMED_OUTPUT') return 'The previous response was not a valid compact JSON object.'
+    if (d.code === 'API_ERROR') return 'The previous structure request failed.'
+    return 'The previous structure response failed validation.'
   }).join('\n')
-  return '上一次目录结构输出未通过校验。\n' + details + '\n' +
-    '请基于同一份输入重新输出完整结构。只输出一个 JSON 对象：{"levels":[...]}。\n' +
-    '必须正好包含 ' + rowsCount + ' 个正整数，严格按输入顺序对应每一行。不要返回 id、title、pageLabel 或任何解释。'
+  return 'The previous outline-structure response failed validation.\n' + details + '\n' +
+    'Return the complete structure again for the same input. Output exactly one JSON object: {"levels":[...]}.\n' +
+    'It must contain exactly ' + rowsCount + ' positive integers in input-row order. Do not return id, title, pageLabel, or any explanation.'
 }
 
 /** Normalized identity used ONLY for EXACT boundary-duplicate detection
@@ -369,16 +399,16 @@ export { newStableId }
 // Kept in the PURE domain module so a node regression test can assert the exact
 // production prompt contract without pulling the PDF renderer / Vite ?url assets.
 export const TOC_TRANSCRIPTION_SYSTEM_PROMPT =
-  '你是 PDF 目录页的视觉转录助手。你只负责忠实抄录目录中印刷的章节行。\n' +
-  '你绝不能：构建层级结构、判断整本最终层级、输出子节点、输出数组格式、添加不存在的章节、概括或改写标题。\n' +
-  '中文字符必须严格保持图片中的简体/繁体形式：不得进行简繁转换、同义改写或文字规范化。若图片是繁体，就输出繁体；若图片是简体，就输出简体；绝不允许统一改成简体或繁体。\n' +
-  '输出必须是 JSONL（每行一个 JSON 对象，一行 = 一条目录行）。\n' +
-  '每条只包含：title（原样完整标题，忠实保留标题字符、编号和真实标点）、pageLabel（只表示真正印刷的页码内容；版面中用于连接标题与页码的视觉装饰、点线、斜杠等，如果明显不是页码本体，不要混入 pageLabel）、sourceImageIndex（本条来自当前请求的第几张图片，从 1 开始）、visualIndent（看到的缩进层级，可选）、numbering（原样编号前缀如 第一章/一、/（一）/1.，可选）。\n' +
-  '示例（仅一条）：{"title":"第一章 绪论","pageLabel":"1","sourceImageIndex":1,"visualIndent":0,"numbering":"第一章"}\n' +
-  '请按阅读顺序逐条抄录，不遗漏、不概括、不编造、不改写标题。若输入提示中有“上一批最后几条目录转录…”，请只转录当前图片中新出现的目录行，不要重复输出以上内容。只输出 JSONL，不要任何解释。'
+  'You are a visual transcription assistant for PDF table-of-contents pages. Faithfully copy only printed outline rows.\n' +
+  'Never infer the final hierarchy, return child objects or an array, add chapters, summarize, translate, normalize, or rewrite titles.\n' +
+  'Preserve every language and character exactly as printed, including Simplified or Traditional Chinese, capitalization, numbering, and punctuation.\n' +
+  'Output JSONL: exactly one JSON object per printed outline row. Do not use a Markdown fence.\n' +
+  'Every row MUST contain title, pageLabel, and sourceImageIndex. title is the complete printed title. pageLabel is only the printed destination-page label, without decorative leader dots or slashes. If no destination-page label is printed or it is unreadable, set pageLabel to the empty string ""; never omit the key. sourceImageIndex is the 1-based index of the current request image. visualIndent and numbering are optional.\n' +
+  'Example: {"title":"Chapter 1 Introduction","pageLabel":"1","sourceImageIndex":1,"visualIndent":0,"numbering":"Chapter 1"}\n' +
+  'Copy rows in reading order. Omit nothing, invent nothing, and return no explanation. If the user message includes previous-batch tail rows for continuity, transcribe only new rows visible in the current images and do not repeat the tail rows.'
 
 export const TOC_STRUCTURE_PROMPT =
-  '你是 PDF 目录结构分析助手。输入是逐行目录转录（含阅读顺序、缩进、编号），仅文本。\n' +
-  '你只负责整体判断每条目录的绝对层级。输入第 1 行对应 levels[0]，输入第 2 行对应 levels[1]，依此类推。\n' +
-  '输出必须是一个紧凑 JSON 对象：{"levels":[1,2,3]}。levels 必须严格按输入行顺序，且正好包含与输入行数相同的正整数。\n' +
-  '你不可以返回或修改 title、pageLabel、tocPage、rowOrder、numbering、visualIndent 等任何其他字段；这些全部由本地转录和页码映射保留。不要返回 id，不要返回 JSONL，不要解释。'
+  'You analyze the hierarchy of transcribed PDF outline rows. The input is text in reading order with indentation and numbering cues.\n' +
+  'Infer only the absolute level of each row. Input row 1 maps to levels[0], row 2 to levels[1], and so on.\n' +
+  'Output exactly one compact JSON object: {"levels":[1,2,3]}. levels must contain exactly one positive integer per input row in the same order.\n' +
+  'Do not return or modify title, pageLabel, tocPage, rowOrder, numbering, visualIndent, ids, or any other field. Do not return JSONL or an explanation.'

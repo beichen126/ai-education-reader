@@ -4,6 +4,7 @@ import {
   parseTocJsonl, parseTocStructure, validateTocStructure, assignLocalRowIds,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary, normalizeTitle, normalizeTocLevels,
   describeTocStructureFailure, buildTocStructureRepairPrompt, buildTocStructureInput, inferFallbackTocLevels,
+  buildTocTranscriptionRepairPrompt, tocTranscriptionDiagnosticEnglish,
 } from '../src/documents/ai-toc.ts'
 import {
   exactLabelToPage, labelsArePlainNumeric, buildInitialMapping, numericOffsetFromAnchor,
@@ -45,6 +46,26 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   assert(wrapped.ok && wrapped.rows[0].sourceImageIndex === 1, 'single-image batch can safely supply the only source index')
   const invalidWrapped = parseTocJsonl('{"items":[{"title":"A","pageLabel":"1","sourceImageIndex":1},{"title":"","pageLabel":"2","sourceImageIndex":1}]}')
   assert(!invalidWrapped.ok, 'wrapper compatibility remains all-or-nothing when a row is malformed')
+}
+// --- compatible page-label omissions/aliases stay reviewable instead of failing the batch ---
+{
+  const missing = parseTocJsonl('{"title":"Preface","sourceImageIndex":1}')
+  assert(missing.ok && missing.rows[0].pageLabel === '', 'missing pageLabel becomes an unresolved review row')
+  const empty = parseTocJsonl('{"title":"Introduction","pageLabel":"","sourceImageIndex":1}')
+  assert(empty.ok && empty.rows[0].pageLabel === '', 'explicit empty pageLabel remains reviewable')
+  const aliases = parseTocJsonl('{"title":"Chapter 1","page_number":7,"sourceImageIndex":1}\n{"title":"Chapter 2","page":"12","sourceImageIndex":1}')
+  assert(aliases.ok && aliases.rows.map(row => row.pageLabel).join(',') === '7,12', 'common printed-page aliases are normalized without guessing')
+}
+// --- corrective retry carries the previous stable validation errors, not raw output ---
+{
+  const retry = buildTocTranscriptionRepairPrompt([
+    '第 1 行缺少合法的 sourceImageIndex',
+    '第 2 行不是合法 JSON',
+  ])
+  assert(retry.includes('Row 1 was missing a valid sourceImageIndex'), 'transcription retry includes the prior missing-field error')
+  assert(retry.includes('Row 2 was not valid JSON'), 'transcription retry includes the prior malformed-row error')
+  assert(retry.includes('pageLabel:""') && retry.includes('never omit'), 'transcription retry repeats the missing-pageLabel recovery contract')
+  assert(tocTranscriptionDiagnosticEnglish('第 4 行 sourceImageIndex 超出当前请求图片范围').includes('Row 4'), 'source-image mapping errors have a specific safe English diagnostic')
 }
 // --- normalizeTitle ---
 { assert(normalizeTitle('  第  一章  ') === '第 一章', 'normalizeTitle collapses + trims') }
@@ -136,9 +157,9 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
     { code: 'LEVEL_COUNT_MISMATCH', message: 'local', expectedRows: 3, actualLevels: 2 },
     { code: 'LEVEL_JUMP', message: 'local', rowIndex: 2 },
   ]);
-  assert(prompt.includes('需要 3 项，实际返回 2 项'), 'repair prompt carries expected/actual count');
-  assert(prompt.includes('第 3 项发生非法层级跳变'), 'repair prompt carries row-level jump diagnostic');
-  assert(prompt.includes('{"levels":[...]}') && prompt.includes('正好包含 3 个正整数'), 'repair prompt preserves compact exact-count contract');
+  assert(prompt.includes('expected 3, received 2'), 'repair prompt carries expected/actual count');
+  assert(prompt.includes('Item 3 has an invalid hierarchy jump'), 'repair prompt carries row-level jump diagnostic');
+  assert(prompt.includes('{"levels":[...]}') && prompt.includes('exactly 3 positive integers'), 'repair prompt preserves compact exact-count contract');
   assert(!prompt.includes('local'), 'repair prompt excludes diagnostic message text');
 }
 // --- normalization: pure min->1 shift, deterministic, no semantic reorder ---

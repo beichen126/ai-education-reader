@@ -10,7 +10,7 @@
 // model can only report which image a row came from.
 import { renderSessionThumbnail } from '../pdf/pdf-session'
 import type { PdfSession } from '../pdf/pdf-session'
-import { sendTextChat } from '../api/deepseek'
+import { DeepSeekError, errorKindLabel, isVisionModel, sendTextChat, type ErrorKind, type VisionCapability } from '../api/deepseek'
 import { resolveCurrentProtocol } from '../prompts/prompt-resolution'
 import { compileMachineProtocolMessages } from '../prompts/protocol-request'
 import type { StableId } from '../engine/types'
@@ -18,12 +18,13 @@ import type { ProtocolPromptSnapshot } from '../prompts/prompt-types'
 import {
   parseTocJsonl, parseTocStructure, validateTocStructure,
   mapTocSourcePages, reindexRows, dedupeWindowBoundary,
-  TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT, buildTocStructureRepairPrompt,
+  TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT, buildTocStructureRepairPrompt, buildTocTranscriptionRepairPrompt,
   buildTocStructureInput,
-  inferFallbackTocLevels,
+  inferFallbackTocLevels, tocTranscriptionDiagnosticEnglish,
   type TocTranscriptionRow, type TocLocalRow, type TocTranscriptionLine,
   type TocStructureDiagnostic,
 } from './ai-toc'
+import { tx } from '../engine/locale'
 import { buildInitialMapping, labelsArePlainNumeric, type MappedTocItem } from './toc-mapping'
 import {
   aiTocNowMs, elapsedAiTocMs, finalizeAiTocTiming, createAiTocTiming,
@@ -83,7 +84,102 @@ function buildTailContext(prevRows: TocTranscriptionRow[]): string {
   if (prevRows.length === 0) return ''
   const tail = prevRows.slice(-PREV_TAIL_SIZE)
   const lines2 = tail.map(r => r.id + ' | ' + r.title + ' | p' + r.pageLabel).join('\n')
-  return '上一批最后几条目录转录，仅用于理解跨页连续性：\n' + lines2 + '\n请只转录当前图片中新出现的目录行。不要重新输出以上内容。';
+  return 'Previous-batch tail rows, provided only for cross-page continuity:\n' + lines2 + '\nTranscribe only new rows in the current images. Do not repeat the tail rows.';
+}
+
+class TocTranscriptionValidationError extends Error {
+  readonly diagnostics: string[]
+  constructor(diagnostics: string[]) {
+    super(diagnostics[0] || '目录识别结果格式异常')
+    this.name = 'TocTranscriptionValidationError'
+    this.diagnostics = diagnostics
+  }
+}
+
+function transcriptionFailureMessage(error: unknown): string {
+  if (error instanceof DeepSeekError) return errorKindLabel(error.kind)
+  if (error instanceof TocTranscriptionValidationError) {
+    const zh = error.diagnostics[0] || '目录识别结果格式异常'
+    const en = tocTranscriptionDiagnosticEnglish(zh)
+    return tx('模型返回的目录格式不正确：' + zh + '。已根据该错误自动修复并重试，但仍未通过。', 'The model returned an invalid outline format: ' + en + ' An automatic corrective retry also failed.')
+  }
+  return tx('目录页面转录失败，请重试。', 'Outline-page transcription failed. Try again.')
+}
+
+function transportRetryPrompt(kind: ErrorKind): string {
+  const reasons: Record<ErrorKind, string> = {
+    'no-api-key': 'the API key was unavailable',
+    'network-or-cors': 'the network request or CORS check failed',
+    unauthorized: 'the API rejected authentication',
+    billing: 'the API reported a billing or balance problem',
+    'rate-limited': 'the API rate-limited the request',
+    'bad-request': 'the API rejected the request parameters or payload',
+    server: 'the API returned a server error',
+    'bad-json': 'the API response was not valid JSON',
+    'no-content': 'the model returned no usable content',
+    aborted: 'the request was cancelled',
+  }
+  return 'The previous attempt failed because ' + reasons[kind] + '. Retry the same images and follow the JSONL schema exactly. Every row must include title, pageLabel, and sourceImageIndex. Use pageLabel:"" when no printed destination-page label is visible.'
+}
+
+function transcriptionRetryPrompt(error: unknown): string {
+  if (error instanceof TocTranscriptionValidationError) return buildTocTranscriptionRepairPrompt(error.diagnostics)
+  if (error instanceof DeepSeekError) return transportRetryPrompt(error.kind)
+  return buildTocTranscriptionRepairPrompt([])
+}
+
+function canSplitFailedBatch(error: unknown): boolean {
+  return error instanceof TocTranscriptionValidationError
+    || (error instanceof DeepSeekError && (error.kind === 'bad-request' || error.kind === 'bad-json' || error.kind === 'no-content'))
+}
+
+function isNonRetryableTransportFailure(error: unknown): boolean {
+  return error instanceof DeepSeekError
+    && (error.kind === 'no-api-key' || error.kind === 'unauthorized' || error.kind === 'billing' || error.kind === 'aborted')
+}
+
+type TranscribeMappedBatchOptions = {
+  batch: number[]
+  pageDataUrls: Record<number, string>
+  apiKey: string
+  baseUrl: string
+  model: string
+  tail: TocTranscriptionRow[]
+  protocol: ProtocolPromptSnapshot
+  isMock: boolean
+  mock: ((request: AiTocMockRequest) => string | undefined) | undefined
+  signal?: AbortSignal
+}
+
+/** Two schema-aware attempts, followed by an adaptive split for failures that a
+ * smaller vision payload can repair. Transport failures such as auth/rate limits
+ * remain bounded to two attempts and are never multiplied by recursive splitting. */
+async function transcribeMappedBatchResilient(opts: TranscribeMappedBatchOptions): Promise<TocTranscriptionRow[]> {
+  let lastError: unknown = new TocTranscriptionValidationError(['未识别到目录条目'])
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (opts.signal?.aborted) throw new DeepSeekError('aborted', 'request aborted')
+    try {
+      const rows = await transcribeBatch({ ...opts, repairPrompt: attempt === 1 ? transcriptionRetryPrompt(lastError) : '' })
+      const mapped = mapTocSourcePages(rows, opts.batch)
+      if (!mapped.ok) throw new TocTranscriptionValidationError((mapped as { diagnostics: string[] }).diagnostics)
+      return mapped.rows
+    } catch (error) {
+      lastError = error
+      if (isNonRetryableTransportFailure(error)) break
+    }
+  }
+
+  if (opts.batch.length > 1 && canSplitFailedBatch(lastError)) {
+    const midpoint = Math.ceil(opts.batch.length / 2)
+    const leftBatch = opts.batch.slice(0, midpoint)
+    const rightBatch = opts.batch.slice(midpoint)
+    const left = await transcribeMappedBatchResilient({ ...opts, batch: leftBatch })
+    const nextTail = opts.tail.concat(left).slice(-PREV_TAIL_SIZE)
+    const right = await transcribeMappedBatchResilient({ ...opts, batch: rightBatch, tail: nextTail })
+    return left.concat(dedupeWindowBoundary(left, right))
+  }
+
+  throw lastError
 }
 
 /**
@@ -101,12 +197,13 @@ export async function extractAiToc(opts: {
   apiKey: string
   baseUrl: string
   model: string
+  visionCapability?: VisionCapability
   getPageLabels: () => Promise<string[] | null>
   signal?: AbortSignal;
   /** Real phase progress at stage boundaries (never guessed from a timeout). */
   onProgress?: (p: AiTocProgress) => void
 }): Promise<AiTocExtractionResult> {
-  const { session, selectedPages, apiKey, baseUrl, model, getPageLabels, signal, onProgress } = opts;
+  const { session, selectedPages, apiKey, baseUrl, model, visionCapability, getPageLabels, signal, onProgress } = opts;
   const totalStartMs = aiTocNowMs()
   const timing = createAiTocTiming()
 
@@ -122,6 +219,9 @@ export async function extractAiToc(opts: {
   const isMock = typeof mock === 'function'
 
   if (!apiKey && !isMock) return timedAiTocResult({ ok: false, error: 'AI 目录识别需要配置 API Key。' }, timing, totalStartMs)
+  if (!isMock && !isVisionModel(model, visionCapability)) {
+    return timedAiTocResult({ ok: false, error: '当前模型未配置为支持图片。请在设置中选择支持视觉输入的模型，或将视觉能力设为“支持图片”。' }, timing, totalStartMs)
+  }
   if (selectedPages.length === 0) return timedAiTocResult({ ok: false, error: '请至少选择一页目录。' }, timing, totalStartMs)
 
   // Window strategy: small TOC (<=8 pages) sent ONCE so the model sees full
@@ -176,26 +276,17 @@ export async function extractAiToc(opts: {
       }
     }
     onProgress?.({ phase: 'transcribing', windowIndex: w, windowCount: windows.length })
-    let transcription: TocTranscriptionRow[] | null = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      if (signal?.aborted) { finishTranscription(); return abortedAiTocResult('transcribing', timing, totalStartMs) }
-      try {
-        const lines3 = await transcribeBatch({ batch, pageDataUrls, apiKey, baseUrl, model, tail, protocol: transcriptionProtocol, isMock, mock, signal });
-        const mapped = mapTocSourcePages(lines3, batch);
-        if (!mapped.ok) {
-          const d = (mapped as { diagnostics: string[] }).diagnostics;
-          throw new Error(d.length ? d[0] : '目录识别结果格式异常，请重试。');
-        }
-        transcription = mapped.rows;
-        break;
-      } catch (e) {
-        if (signal?.aborted) { finishTranscription(); return abortedAiTocResult('transcribing', timing, totalStartMs) }
-        if (attempt === 0) { continue } // retry once
+    let transcription: TocTranscriptionRow[]
+    try {
+      transcription = await transcribeMappedBatchResilient({ batch, pageDataUrls, apiKey, baseUrl, model, tail, protocol: transcriptionProtocol, isMock, mock, signal })
+    } catch (error) {
+      if (signal?.aborted || (error instanceof DeepSeekError && error.kind === 'aborted')) {
         finishTranscription()
-        return timedAiTocResult({ ok: false, error: (e instanceof Error && e.message) ? e.message : '目录页面转录失败，请重试。' }, timing, totalStartMs)
+        return abortedAiTocResult('transcribing', timing, totalStartMs)
       }
+      finishTranscription()
+      return timedAiTocResult({ ok: false, error: transcriptionFailureMessage(error) }, timing, totalStartMs)
     }
-    if (!transcription) { finishTranscription(); return timedAiTocResult({ ok: false, error: '目录页面转录失败，请重试。' }, timing, totalStartMs) }
     finishTranscription()
     // Boundary-only dedupe: drop the head rows of this window that EXACTLY duplicate the tail
     // of the accumulated rows (a previous-window continuity hint re-output) — NEVER dedupes
@@ -290,21 +381,23 @@ async function transcribeBatch(opts: {
   apiKey: string; baseUrl: string; model: string;
   tail: TocTranscriptionRow[];
   protocol: ProtocolPromptSnapshot;
+  repairPrompt: string;
   isMock: boolean;
   mock: ((request: AiTocMockRequest) => string | undefined) | undefined;
   signal?: AbortSignal;
 }): Promise<TocLocalRow[]> {
-  const { batch, pageDataUrls, apiKey, baseUrl, model, tail, protocol, isMock, mock, signal } = opts;
+  const { batch, pageDataUrls, apiKey, baseUrl, model, tail, protocol, repairPrompt, isMock, mock, signal } = opts;
   if (isMock) {
     const raw = mock!({ pages: batch, phase: 'transcribe' });
     if (typeof raw !== 'string') return [];
     const pr = parseTocJsonl(raw, batch.length === 1 ? { defaultSourceImageIndex: 1 } : {});
-    if (!pr.ok) { const d = (pr as { diagnostics: string[] }).diagnostics; throw new Error(d.length ? d[0] : '目录识别结果格式异常，请重试。'); }
+    if (!pr.ok) throw new TocTranscriptionValidationError((pr as { diagnostics: string[] }).diagnostics)
     // Mock rows use a pageBatch-appropriate sourceImageIndex; assign local ids.
     return pr.rows.map((r: TocTranscriptionLine, i: number) => ({ ...r, id: 'r' + String(i + 1).padStart(4, '0'), rowOrder: i }));
   }
   const contentLines: string[] = []
   if (tail.length > 0) contentLines.push(buildTailContext(tail))
+  if (repairPrompt) contentLines.push(repairPrompt)
   const images: { id: StableId; dataUrl: string }[] = []
   for (let k = 0; k < batch.length; k++) {
     const physicalPage = batch[k];
@@ -314,7 +407,7 @@ async function transcribeBatch(opts: {
   const messages = await compileMachineProtocolMessages({ domain: 'ai-toc-transcription', protocol, content: contentLines.join('\n'), images })
   const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal, reasoningEffort: 'low' });
   const pr = parseTocJsonl(res.content, batch.length === 1 ? { defaultSourceImageIndex: 1 } : {});
-  if (!pr.ok) { const d = (pr as { diagnostics: string[] }).diagnostics; throw new Error(d.length ? d[0] : '目录识别结果格式异常，请重试。'); }
+  if (!pr.ok) throw new TocTranscriptionValidationError((pr as { diagnostics: string[] }).diagnostics)
   return pr.rows.map((r: TocTranscriptionLine, i: number) => ({ ...r, id: 'r' + String(i + 1).padStart(4, '0'), rowOrder: i }));
 }
 

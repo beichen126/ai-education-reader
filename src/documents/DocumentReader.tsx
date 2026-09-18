@@ -801,7 +801,7 @@ export function DocumentReader() {
       const s = getSettingsSnapshot()
       const res = await extractAiToc({
         session, pageCount, selectedPages,
-        apiKey: s.apiKey, baseUrl: s.apiBaseUrl, model: s.model,
+        apiKey: s.apiKey, baseUrl: s.apiBaseUrl, model: s.model, visionCapability: s.visionCapability,
         getPageLabels: async () => readSessionPageLabels(session),
         signal: controller.signal,
         onProgress: (p) => { if (gen === aiTocGenRef.current) setAiTocProgress(p) },
