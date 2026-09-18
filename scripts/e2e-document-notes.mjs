@@ -90,10 +90,15 @@ assert(settledWrites === 1, 'debounce: rapid input persists once after quiet per
 await note.fill('切页前的最新内容')
 await page.locator('[data-testid="reader-page-input"]').fill('2')
 await page.locator('[data-testid="reader-page-input"]').press('Enter')
-await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
+// The page canvas remains mounted while the next PDF page is rendering. Waiting
+// only for visibility can therefore observe the previous page on slower CI
+// runners and immediately navigate back before the page-note session has
+// actually changed. The accessible label is tied to the committed page state.
+await page.locator('[data-testid="reader-page-img"][aria-label="PDF 第 2 页"]').waitFor({ state: 'visible', timeout: 30000 })
 await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'open', null, { timeout: 10000 })
 await page.locator('[data-testid="reader-page-input"]').fill('1')
 await page.locator('[data-testid="reader-page-input"]').press('Enter')
+await page.locator('[data-testid="reader-page-img"][aria-label="PDF 第 1 页"]').waitFor({ state: 'visible', timeout: 30000 })
 await note.waitFor({ state: 'visible', timeout: 10000 })
 await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes"] textarea')?.value === '切页前的最新内容', null, { timeout: 10000 })
 assert(await note.inputValue() === '切页前的最新内容', 'page change: latest page A text is flushed and restored')
