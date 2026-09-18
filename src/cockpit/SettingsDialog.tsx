@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { useSettings, patchSettings, DEFAULT_SETTINGS, getSettingsSnapshot, useSettingsMutation } from '../engine/settings-store'
+import { useSettings, patchSettings, DEFAULT_SETTINGS, useSettingsMutation } from '../engine/settings-store'
 import { testConnection, type VisionCapability } from '../api/deepseek'
 import { uiActions } from '../engine/ui-store'
 import { useSessions } from '../engine/sessions-store'
@@ -122,12 +122,12 @@ export function SettingsDialog() {
     if (!window.confirm(tx('导入将替换当前所有本地数据。\n建议先导出当前备份。\n\n取消 / 继续导入', 'Importing will replace all current local data.\nExport a backup first.\n\nCancel / Continue'))) return
     setBusy(true); setMsg(null)
     void importBackupFile(file).then(() => {
-      const restored = getSettingsSnapshot()
-      setBase(restored.apiBaseUrl || DEFAULT_SETTINGS.apiBaseUrl)
-      setKey('')
-      setModel(restored.model || DEFAULT_SETTINGS.model)
-      setVisionCapability(restored.visionCapability)
-      setMsg(tx('导入完成', 'Import complete'))
+      // A restore replaces every durable store and OPFS reference. Reload through the
+      // normal boot path so no mounted PDF.js session, object URL, document list, or
+      // domain cache can keep reading the pre-restore world. The previous partial
+      // in-place reinitialization left migrated PDFs transiently unparseable until the
+      // user refreshed manually.
+      window.location.reload()
     }).catch((e: any) => setMsg(localizedErrorText(e, e instanceof BackupError ? 'The backup could not be imported.' : 'Import failed.'))).finally(() => setBusy(false))
   }
 
