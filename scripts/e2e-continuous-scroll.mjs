@@ -101,15 +101,29 @@ const initialPageBox = await page.locator('[data-testid^="reader-continuous-page
 assert(!!initialPageBox && initialPageBox.height / initialPageBox.width > 1.15 && initialPageBox.height / initialPageBox.width < 1.6,
   'continuous page height follows the real PDF aspect ratio instead of the full stage width')
 
-// Reader zoom is independent of browser zoom and can go below 100% so a wide screen
-// can show more document content at once.
+// Reader zoom is independent of browser zoom and now supports continuous slider and
+// Ctrl+wheel / trackpad pinch input instead of forcing users through coarse presets.
 const initialStackBox = await page.locator('[data-testid="reader-continuous-scroll"]').boundingBox()
-await page.locator('[data-testid="reader-zoom-out"]').click()
-await page.waitForFunction(() => document.querySelector('[data-testid="reader-zoom-value"]')?.textContent?.trim() === '80%')
+const zoomSlider = page.locator('[data-testid="reader-zoom-slider"]')
+assert(await zoomSlider.getAttribute('min') === '40' && await zoomSlider.getAttribute('max') === '250' && await zoomSlider.getAttribute('step') === '1', 'Reader exposes continuous 40%–250% zoom')
+await zoomSlider.fill('73')
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-zoom-value"]')?.textContent?.trim() === '73%')
 await page.waitForTimeout(250)
 const smallerStackBox = await page.locator('[data-testid="reader-continuous-scroll"]').boundingBox()
-assert((await page.locator('[data-testid="reader-zoom-value"]').innerText()).trim() === '80%', 'continuous Reader zooms below 100%')
-assert(!!initialStackBox && !!smallerStackBox && smallerStackBox.width < initialStackBox.width * 0.85, 'zooming out visibly reduces the PDF page width')
+assert((await page.locator('[data-testid="reader-zoom-value"]').innerText()).trim() === '73%', 'slider selects a non-preset zoom value')
+assert(!!initialStackBox && !!smallerStackBox && smallerStackBox.width < initialStackBox.width * 0.8, 'zooming out visibly reduces the PDF page width')
+await page.locator('[data-testid="reader-zoom-value"]').click()
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-zoom-value"]')?.textContent?.trim() === '100%')
+
+const viewport = page.locator('[data-testid="reader-viewport"]')
+const viewportBox = await viewport.boundingBox()
+if (viewportBox) await page.mouse.move(viewportBox.x + viewportBox.width / 2, viewportBox.y + viewportBox.height / 2)
+await page.keyboard.down('Control')
+await page.mouse.wheel(0, -37)
+await page.keyboard.up('Control')
+await page.waitForTimeout(100)
+const ctrlWheelZoom = (await page.locator('[data-testid="reader-zoom-value"]').innerText()).trim()
+assert(ctrlWheelZoom !== '100%' && Number.parseInt(ctrlWheelZoom, 10) > 100 && Number.parseInt(ctrlWheelZoom, 10) < 110, 'Ctrl+wheel accepts smooth, non-preset zoom deltas (' + ctrlWheelZoom + ')')
 await page.locator('[data-testid="reader-zoom-value"]').click()
 await page.waitForFunction(() => document.querySelector('[data-testid="reader-zoom-value"]')?.textContent?.trim() === '100%')
 

@@ -102,6 +102,8 @@
 .pageInput { width: 72px; text-align: center; min-height: 38px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 4px 6px; font-size: 14px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
 .counterTotal { font-size: 13px; color: var(--dsw-alias-label-secondary); }
 .readerZoom { display: flex; align-items: center; gap: 4px; margin-left: 4px; padding-left: 12px; border-left: 1px solid var(--dsw-alias-border-l2); }
+.zoomSlider { width: clamp(92px, 12vw, 150px); height: 38px; margin: 0 4px; cursor: pointer; accent-color: var(--dsw-alias-button-primary-fill); }
+.zoomSlider:focus-visible { outline: 2px solid var(--dsw-alias-button-primary-fill); outline-offset: 1px; border-radius: 4px; }
 .zoomStepBtn, .zoomValueBtn { min-height: 38px; box-sizing: border-box; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; }
 .zoomStepBtn { width: 38px; border-radius: 8px; font-size: 18px; }
 .zoomValueBtn { min-width: 62px; padding: 4px 9px; border-radius: 8px; font-size: 13px; font-variant-numeric: tabular-nums; }
@@ -117,4 +119,5 @@
   .navBar { gap: 6px; flex-wrap: wrap; }
   .navBtn { min-width: 68px; }
   .readerZoom { margin-left: 0; padding-left: 0; border-left: 0; }
+  .zoomSlider { width: 88px; }
 }

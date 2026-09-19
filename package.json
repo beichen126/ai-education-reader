@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "2.4.6",
+  "version": "2.4.7",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -106,7 +106,8 @@
     "test:study-card-backup": "npx tsx scripts/test-study-card-backup.ts",
     "test:reader-render": "npx tsx scripts/test-reader-render.ts",
     "test:continuous-render-controller": "npx tsx scripts/test-continuous-render-controller.ts",
-    "test:reader-zoom-ownership": "npx tsx scripts/test-reader-zoom-ownership.ts",
+    "test:reader-zoom-ownership": "npx tsx scripts/test-reader-zoom-ownership.ts && npm run test:reader-zoom",
+    "test:reader-zoom": "npx tsx scripts/test-reader-zoom.ts",
     "test:document-lifecycle": "npx tsx scripts/test-document-lifecycle.ts",
     "test:document-library": "npx tsx scripts/test-document-library.ts",
     "test:reader-context": "npx tsx scripts/test-reader-context.ts",

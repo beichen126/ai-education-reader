@@ -5,7 +5,7 @@
 // cleanup (render generation invalidated, page URL revoked, viewer closed,
 // progress flushed with the document id bound at call time). App-level unmount
 // effect only keeps pagehide/visibility flush.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { getDocument, getDocumentRecordMeta, getDocumentBinary, updateLastReadPage, updateDocumentChapters, DocumentBinaryMissingError } from './document-service'
 import { getDocumentNote, saveDocumentNote } from './document-note-service'
 import { useSessions, getSessionsCurrent, sessionsActions } from '../engine/sessions-store'
@@ -49,6 +49,7 @@ import { flushNoteEditorSession, type NoteEditorSession } from './note-session'
 import { NoteAvailabilityGate, NoteReadCache, noteAvailabilityFrom, noteHasContent, noteKey, notePersistedState, type NoteAvailability } from './note-availability'
 import { ReaderProgressController } from './reader-progress-controller'
 import { createPdfPerformanceTelemetry, type PdfPerformanceTelemetry } from './pdf-performance-telemetry'
+import { READER_ZOOM_MAX, READER_ZOOM_MIN, clampReaderZoom, readerZoomFromWheel, stepReaderZoom } from './reader-zoom'
 import css from './document-reader.module.css'
 
 type TocTreeState = { expanded: ReadonlySet<string> }
@@ -58,14 +59,6 @@ const EMPTY_DOC_STATE = {
   pageCount: 0,
   page: 1,
   pageInput: '',
-}
-
-const READER_ZOOM_STEPS = [0.5, 0.67, 0.8, 1, 1.25, 1.5] as const
-
-function neighbouringReaderZoom(current: number, direction: -1 | 1): number {
-  const index = READER_ZOOM_STEPS.findIndex(step => Math.abs(step - current) < 0.001)
-  const base = index >= 0 ? index : READER_ZOOM_STEPS.findIndex(step => step >= current)
-  return READER_ZOOM_STEPS[Math.max(0, Math.min(READER_ZOOM_STEPS.length - 1, base + direction))] ?? 1
 }
 
 export function DocumentReader() {
@@ -86,6 +79,16 @@ export function DocumentReader() {
   const urlOwnerRef = useRef(createUrlOwner())
   const [pageInput, setPageInput] = useState('')
   const [readerZoom, setReaderZoom] = useState(1)
+  const readerZoomRef = useRef(1)
+  const pendingReaderZoomRef = useRef<number | null>(null)
+  const readerZoomFrameRef = useRef<number | null>(null)
+  const readerZoomAnchorRef = useRef<{
+    element: HTMLElement
+    ratioX: number
+    ratioY: number
+    offsetX: number
+    offsetY: number
+  } | null>(null)
   const pageInputRef = useRef<HTMLInputElement | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
   const [progressError, setProgressError] = useState<string | null>(null)
@@ -577,7 +580,11 @@ export function DocumentReader() {
   //      never installs a Blob for a page the user already left. Installed zoom URLs are
   //      separately revoked in the docId effect cleanup / reader-close branch above. ----
   useEffect(() => { zoomGenRef.current++ }, [page, docId])
-  useEffect(() => { setReaderZoom(1) }, [docId])
+  useEffect(() => {
+    pendingReaderZoomRef.current = null
+    readerZoomRef.current = 1
+    setReaderZoom(1)
+  }, [docId])
 
   // ---- Reader正文 display render: now handled by useReaderDisplay (viewport-aware
   //      scale, real RenderTask cancel, bounded cache, neighbor prefetch). No JPEG Blob. ----
@@ -617,6 +624,67 @@ export function DocumentReader() {
     onCurrentPageChange: next => go(next, pageCount),
     onFirstPixelReady,
   })
+
+  const captureReaderZoomAnchor = useCallback((element: HTMLElement, clientX?: number, clientY?: number) => {
+    const rect = element.getBoundingClientRect()
+    const offsetX = clientX == null ? element.clientWidth / 2 : Math.max(0, Math.min(element.clientWidth, clientX - rect.left))
+    const offsetY = clientY == null ? element.clientHeight / 2 : Math.max(0, Math.min(element.clientHeight, clientY - rect.top))
+    readerZoomAnchorRef.current = {
+      element,
+      ratioX: (element.scrollLeft + offsetX) / Math.max(1, element.scrollWidth),
+      ratioY: (element.scrollTop + offsetY) / Math.max(1, element.scrollHeight),
+      offsetX,
+      offsetY,
+    }
+  }, [])
+
+  const scheduleReaderZoom = useCallback((value: number, anchor?: { element: HTMLElement; clientX?: number; clientY?: number }) => {
+    const next = clampReaderZoom(value)
+    if (anchor) captureReaderZoomAnchor(anchor.element, anchor.clientX, anchor.clientY)
+    pendingReaderZoomRef.current = next
+    readerZoomRef.current = next
+    if (readerZoomFrameRef.current !== null) return
+    readerZoomFrameRef.current = window.requestAnimationFrame(() => {
+      readerZoomFrameRef.current = null
+      const pending = pendingReaderZoomRef.current
+      pendingReaderZoomRef.current = null
+      if (pending !== null) setReaderZoom(pending)
+    })
+  }, [captureReaderZoomAnchor])
+
+  useEffect(() => () => {
+    if (readerZoomFrameRef.current !== null) window.cancelAnimationFrame(readerZoomFrameRef.current)
+  }, [])
+
+  useLayoutEffect(() => {
+    const anchor = readerZoomAnchorRef.current
+    readerZoomAnchorRef.current = null
+    if (!anchor) return
+    const frame = window.requestAnimationFrame(() => {
+      const { element } = anchor
+      if (!element.isConnected) return
+      element.scrollLeft = anchor.ratioX * element.scrollWidth - anchor.offsetX
+      element.scrollTop = anchor.ratioY * element.scrollHeight - anchor.offsetY
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [readerZoom])
+
+  useEffect(() => {
+    const stage = display.stageRef.current
+    if (!stage || display.mode !== 'continuous') return
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.metaKey) return
+      event.preventDefault()
+      const current = pendingReaderZoomRef.current ?? readerZoomRef.current
+      scheduleReaderZoom(readerZoomFromWheel(current, event.deltaY), {
+        element: stage,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      })
+    }
+    stage.addEventListener('wheel', onWheel, { passive: false })
+    return () => stage.removeEventListener('wheel', onWheel)
+  }, [display.mode, display.stageRef, scheduleReaderZoom, docId])
 
   const openRelatedConversation = useCallback(async (hit: PdfPageConversationHit) => {
     flushCurrentNote()
@@ -1285,10 +1353,22 @@ export function DocumentReader() {
         </div>
         <button className={css.navBtn} data-testid="reader-next" disabled={pageCount === 0 || page >= pageCount} onClick={() => go(page + 1, pageCount)}>{tx('下一页', 'Next')}</button>
         {display.mode === 'continuous' && (
-          <div className={css.readerZoom} role="group" aria-label={tx('PDF 阅读缩放', 'PDF zoom')}>
-            <button type="button" className={css.zoomStepBtn} data-testid="reader-zoom-out" aria-label={tx('缩小 PDF', 'Zoom out')} disabled={readerZoom <= READER_ZOOM_STEPS[0]} onClick={() => setReaderZoom(value => neighbouringReaderZoom(value, -1))}>−</button>
-            <button type="button" className={css.zoomValueBtn} data-testid="reader-zoom-value" title={tx('恢复 100%', 'Reset to 100%')} onClick={() => setReaderZoom(1)}>{Math.round(readerZoom * 100)}%</button>
-            <button type="button" className={css.zoomStepBtn} data-testid="reader-zoom-in" aria-label={tx('放大 PDF', 'Zoom in')} disabled={readerZoom >= READER_ZOOM_STEPS[READER_ZOOM_STEPS.length - 1]} onClick={() => setReaderZoom(value => neighbouringReaderZoom(value, 1))}>＋</button>
+          <div className={css.readerZoom} role="group" aria-label={tx('PDF 阅读缩放', 'PDF zoom')} title={tx('拖动滑杆，或按住 Ctrl 使用滚轮 / 触控板双指缩放', 'Drag the slider, or hold Ctrl and use the wheel / pinch gesture')}>
+            <button type="button" className={css.zoomStepBtn} data-testid="reader-zoom-out" aria-label={tx('缩小 PDF', 'Zoom out')} disabled={readerZoom <= READER_ZOOM_MIN} onClick={() => scheduleReaderZoom(stepReaderZoom(readerZoomRef.current, -1), display.stageRef.current ? { element: display.stageRef.current } : undefined)}>−</button>
+            <input
+              type="range"
+              className={css.zoomSlider}
+              data-testid="reader-zoom-slider"
+              min={Math.round(READER_ZOOM_MIN * 100)}
+              max={Math.round(READER_ZOOM_MAX * 100)}
+              step="1"
+              value={Math.round(readerZoom * 100)}
+              aria-label={tx('PDF 缩放比例', 'PDF zoom level')}
+              aria-valuetext={Math.round(readerZoom * 100) + '%'}
+              onChange={event => scheduleReaderZoom(Number(event.currentTarget.value) / 100, display.stageRef.current ? { element: display.stageRef.current } : undefined)}
+            />
+            <button type="button" className={css.zoomValueBtn} data-testid="reader-zoom-value" title={tx('恢复 100%', 'Reset to 100%')} onClick={() => scheduleReaderZoom(1, display.stageRef.current ? { element: display.stageRef.current } : undefined)}>{Math.round(readerZoom * 100)}%</button>
+            <button type="button" className={css.zoomStepBtn} data-testid="reader-zoom-in" aria-label={tx('放大 PDF', 'Zoom in')} disabled={readerZoom >= READER_ZOOM_MAX} onClick={() => scheduleReaderZoom(stepReaderZoom(readerZoomRef.current, 1), display.stageRef.current ? { element: display.stageRef.current } : undefined)}>＋</button>
           </div>
         )}
       </div>
