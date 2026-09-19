@@ -80,6 +80,8 @@ await page.getByRole('button', { name: /打开设置|设置/ }).first().click()
 const importInput = page.locator('input[type="file"][accept*=".zip"]')
 const importReload = page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 })
 await importInput.setInputFiles(backupPath)
+await page.locator('[data-testid="import-overwrite-warning"] input[type="checkbox"]').check()
+await page.locator('[data-testid="confirm-import-overwrite"]').click()
 await importReload
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
 await dismissProductGuide(page)

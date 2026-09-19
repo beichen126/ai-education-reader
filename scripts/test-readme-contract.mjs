@@ -6,6 +6,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const readmePath = path.join(root, 'README.md')
 const readme = fs.readFileSync(readmePath, 'utf8')
 const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'))
+const roadmap = fs.readFileSync(path.join(root, 'docs/ROADMAP.md'), 'utf8')
+const changelog = fs.readFileSync(path.join(root, 'docs/CHANGELOG.md'), 'utf8')
 
 let pass = 0
 let fail = 0
@@ -38,6 +40,9 @@ for (const heading of headings) expect(readme.includes(heading), 'required user 
 const faq = readme.match(/## FAQ\n([\s\S]*?)(?=\n## |$)/)?.[1] || ''
 const faqItems = faq.match(/^### \d+\. /gm) || []
 expect(faqItems.length >= 18, 'FAQ has at least 18 numbered questions (got ' + faqItems.length + ')')
+const faqNumbers = faqItems.map(item => Number(item.match(/\d+/)?.[0]))
+expect(new Set(faqNumbers).size === faqNumbers.length, 'FAQ question numbers are unique')
+expect(faqNumbers.every((number, index) => number === index + 1), 'FAQ question numbers are sequential')
 expect(readme.includes('摘要式笔记') && !/^### .*摘要成果/m.test(readme), 'summary is documented as Markdown, not a standalone artifact button')
 expect(readme.includes('只有你选择的页面才会生成图片上下文') || readme.includes('只有你在 Context 中选择的页面'), 'selected PDF pages are the only model context')
 expect(readme.includes('OPFS') && readme.includes('IndexedDB'), 'local binary storage facts are documented')
@@ -46,6 +51,11 @@ expect(readme.includes('一次最多选择 **120 页**') && readme.includes('超
 
 const badge = new RegExp('status-v' + pkg.version.replaceAll('.', '\\.') + '-').test(readme)
 expect(badge, 'status badge matches package version ' + pkg.version)
+expect(roadmap.includes('## 当前版本：v' + pkg.version), 'Roadmap current version matches package version ' + pkg.version)
+const latestChangelogVersion = changelog.match(/^## \[([^\]]+)\]/m)?.[1]
+expect(latestChangelogVersion === pkg.version, 'latest Changelog version matches package version ' + pkg.version)
+expect(readme.includes('40%–150%') && !readme.includes('缩放支持 50%–150%'), 'README documents the current 40% PDF zoom minimum')
+expect(readme.includes('导入会先明确提示覆盖') && readme.includes('数据安全中心'), 'README documents destructive import safety and the data safety center')
 
 const imagePaths = [
   ...[...readme.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((match) => match[1]),

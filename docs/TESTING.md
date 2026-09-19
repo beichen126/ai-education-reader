@@ -1,6 +1,6 @@
 # Testing — AI Education Reader
 
-本文档说明 v2.0.0 的测试分层与如何运行。所有测试默认本地、离线（除标注的 paid smoke）。
+本文档说明 v2.5.0 的测试分层与如何运行。所有测试默认本地、离线（除标注的 paid smoke）。
 
 ## 快速运行
 
@@ -8,6 +8,7 @@
 npm test           # 全部单元/领域测试（test:all，无网络）
 npm run typecheck  # tsc --noEmit
 npm run build      # production 构建
+npm run test:v250  # 数据安全阈值与 API 配置检查领域测试
 npm run test:pdf-codec   # PDF Codec（浏览器专用）
 ```
 
@@ -30,7 +31,7 @@ npm run test:pdf-codec   # PDF Codec（浏览器专用）
 
 ### 2. 存储
 
-OPFS / IndexedDB / 迁移 / 诊断：`test:opfs-storage`, `test:document-migration`, `test:binary-store`, `test:backup-*`, `test:storage-diagnostics`。
+OPFS / IndexedDB / 迁移 / 诊断：`test:opfs-storage`, `test:document-migration`, `test:binary-store`, `test:backup-*`, `test:storage-diagnostics`, `test:v250`。v2.5.0 额外覆盖配额风险阈值、备份过期阈值和 API 配置字段检查。
 
 ### 3. PDF Codec
 
@@ -69,7 +70,7 @@ OPFS / IndexedDB / 迁移 / 诊断：`test:opfs-storage`, `test:document-migrati
 ### 7. 真实付费 AI smoke
 
 - 调用真实 DeepSeek 的行为**不是**默认 CI；需配置真实 API Key、网络与额度。
-- 此类冒烟仅本地手动执行：`testConnection`（GET /models）验证服务可达与 Key 有效；视觉识别走 `e2e-ai-toc` 的 mock 路径。
+- 此类冒烟仅本地手动执行：`testConnection`（GET /models）验证服务可达、Key 有效并在服务提供列表时核对模型名；不会发送聊天、图片或文档，也不会改变会话推理强度。视觉识别走 `e2e-ai-toc` 的 mock 路径。
 
 ## 一致性保证
 

@@ -100,6 +100,8 @@ const impInput = page.locator('input[type="file"][accept*=".zip"]')
 await impInput.waitFor({ state: 'attached', timeout: 8000 })
 const restoredReload = page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 })
 await impInput.setInputFiles(dlPath)
+await page.locator('[data-testid="import-overwrite-warning"] input[type="checkbox"]').check()
+await page.locator('[data-testid="confirm-import-overwrite"]').click()
 await restoredReload
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
 await dismissProductGuide(page)

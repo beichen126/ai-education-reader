@@ -95,13 +95,52 @@ export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChat
 /** Connection test: GET {baseUrl}/models (OpenAI-compatible). Sends NO chat history,
  * NO images/PDFs/user content — only the Authorization header. Verifies endpoint
  * reachability, key validity and browser CORS. */
-export async function testConnection(args: { apiKey: string; baseUrl: string }): Promise<{ ok: boolean; label: string; status?: number }> {
-  const { apiKey, baseUrl } = args
+export type ConnectionTestResult = {
+  ok: boolean
+  label: string
+  status?: number
+  modelAvailable?: boolean
+  modelIds?: string[]
+}
+
+export async function testConnection(args: { apiKey: string; baseUrl: string; model?: string }): Promise<ConnectionTestResult> {
+  const { apiKey, baseUrl, model } = args
   if (!apiKey) return { ok: false, label: tx('请先填写 API Key。', 'Enter an API key first.') }
   const endpoint = (baseUrl || DEFAULT_BASE).replace(/\/+$/, '') + '/models'
   try {
     const res = await fetch(endpoint, { method: 'GET', headers: { 'Authorization': 'Bearer ' + apiKey } })
-    if (res.ok) return { ok: true, label: tx('连接成功：API 服务可访问，Key 有效。', 'Connection successful. The API is reachable and the key is valid.'), status: res.status }
+    if (res.ok) {
+      let modelIds: string[] = []
+      try {
+        const payload = await res.json()
+        modelIds = Array.isArray(payload?.data)
+          ? payload.data.map((entry: any) => entry?.id).filter((id: unknown): id is string => typeof id === 'string')
+          : []
+      } catch { /* A successful non-JSON /models response still proves reachability and auth. */ }
+      const requestedModel = model?.trim()
+      const modelAvailable = requestedModel && modelIds.length > 0 ? modelIds.includes(requestedModel) : undefined
+      if (modelAvailable === false) {
+        return {
+          ok: true,
+          label: tx(
+            `连接成功，但模型列表中没有“${requestedModel}”。请检查模型名，或确认服务是否使用别名。`,
+            `Connection succeeded, but “${requestedModel}” is not in the model list. Check the model name or whether the service uses an alias.`,
+          ),
+          status: res.status,
+          modelAvailable,
+          modelIds,
+        }
+      }
+      return {
+        ok: true,
+        label: modelAvailable
+          ? tx('连接成功：端点、API Key 与模型名均已验证。', 'Connection successful. The endpoint, API key, and model name were verified.')
+          : tx('连接成功：API 服务可访问，Key 有效。服务未返回可核对的模型列表。', 'Connection successful. The API is reachable and the key is valid. The service did not return a model list that can be checked.'),
+        status: res.status,
+        ...(modelAvailable !== undefined ? { modelAvailable } : {}),
+        ...(modelIds.length ? { modelIds } : {}),
+      }
+    }
     let kind: ErrorKind = 'bad-request'
     if (res.status === 401) kind = 'unauthorized'
     else if (res.status === 402) kind = 'billing'

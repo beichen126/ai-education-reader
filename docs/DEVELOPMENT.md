@@ -27,12 +27,15 @@ npm run build           # production 构建
 npm run preview         # 预览 production 构建
 npm run test:release    # release runner：类型、全量测试、构建和关键 E2E
 npm run test:readme-contract # README 结构、链接、图片和事实契约
+npm run test:v250          # v2.5.0 数据安全与 API 配置领域契约
 npm run test:product-guide    # Product Guide 与 README canonical block 一致性
 npm run sync:product-guide    # 从 src/help/product-guide.md 同步同一 README 章节
 npm run docs:screenshots     # 从 production preview 生成 README 截图
 ```
 
 `npm test` 不调用付费模型；AI 目录等需要模型的浏览器测试使用确定性 mock。真实 API smoke 不属于默认 CI，执行前不要把 API Key 写入仓库、Issue、日志或 Backup。
+
+发布时 package、README badge、Roadmap 当前版本和 Changelog 顶部版本必须一致；`test:readme-contract` 会把这组发布元数据作为门禁。ZIP 恢复属于破坏性整包替换，任何 UI 调整都必须保留覆盖清单、显式勾选确认和“先备份”入口。
 
 ## 测试分层
 

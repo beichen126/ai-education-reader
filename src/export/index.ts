@@ -26,7 +26,7 @@ export async function exportBackupJson(): Promise<void> {
   const backup = await buildBackup()
   downloadJson('ai-education-reader-backup-' + stamp() + '.json', backup)
 }
-export async function exportBackupZip(): Promise<void> {
+export async function exportBackupZip(): Promise<{ fileName: string; estimatedBytes: number }> {
   const fileName = 'ai-education-reader-backup-' + stamp() + '.zip'
   const picker = (globalThis as typeof globalThis & {
     showSaveFilePicker?: (options: { suggestedName: string; types: Array<{ description: string; accept: Record<string, string[]> }> }) => Promise<{
@@ -50,10 +50,11 @@ export async function exportBackupZip(): Promise<void> {
       await writable.abort().catch(() => undefined)
       throw error
     }
-    return
+    return { fileName, estimatedBytes }
   }
   if (estimatedBytes > 256 * 1024 * 1024) throw new BackupError('当前浏览器不支持流式保存，备份超过 256 MB。请使用最新版 Chrome 或 Edge 导出，避免内存不足。')
   downloadBlob(fileName, await buildPortableBackupArchive(plan))
+  return { fileName, estimatedBytes }
 }
 export async function exportConversationMd(convId: string): Promise<void> {
   const conv = await getConversation(convId); if (!conv) return
