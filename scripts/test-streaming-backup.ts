@@ -9,6 +9,7 @@ import { getAttachmentRow } from '../src/storage/storage.ts'
 
 const files = new Map<string, Blob>()
 let incrementalWrites = 0
+let failNextWriteWithQuota = false
 const mock: OpfsFileSystem = {
   async read(path) { const blob = files.get(path); if (!blob) throw new Error('missing'); return blob },
   async write(path, blob) { files.set(path, blob) },
@@ -19,7 +20,14 @@ const mock: OpfsFileSystem = {
   async createWriter(path) {
     const parts: BlobPart[] = []
     return {
-      async write(chunk) { incrementalWrites++; parts.push(chunk.slice().buffer as ArrayBuffer) },
+      async write(chunk) {
+        if (failNextWriteWithQuota) {
+          failNextWriteWithQuota = false
+          throw new DOMException('quota exhausted', 'QuotaExceededError')
+        }
+        incrementalWrites++
+        parts.push(chunk.slice().buffer as ArrayBuffer)
+      },
       async close() { files.set(path, new Blob(parts)) },
       async abort() { files.delete(path) },
     }
@@ -50,6 +58,32 @@ const archive = await buildPortableBackupArchive({
   manifest,
   binaries: [{ entry: 'attachments/attachment-1.bin', blob: new Blob([attachmentBytes], { type: 'image/png' }) }],
 })
+
+// Restore capacity is derived from the browser's current per-origin quota, not a fixed
+// archive-size ceiling. The old navigator descriptor is restored so later tests exercise
+// the normal OPFS path.
+const navigatorDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator')
+Object.defineProperty(globalThis, 'navigator', {
+  configurable: true,
+  value: { storage: { estimate: async () => ({ quota: 1024 * 1024, usage: 128 * 1024 }) } },
+})
+await assert.rejects(
+  () => parseBackupArchiveFileForRestore(archive),
+  /浏览器存储配额不足.*恢复需要约.*当前站点剩余约/,
+  'the live origin quota must reject a restore that cannot coexist with current data',
+)
+if (navigatorDescriptor) Object.defineProperty(globalThis, 'navigator', navigatorDescriptor)
+else delete (globalThis as { navigator?: unknown }).navigator
+
+const filesBeforeQuotaWrite = files.size
+failNextWriteWithQuota = true
+await assert.rejects(
+  () => parseBackupArchiveFileForRestore(archive),
+  /恢复写入过程中浏览器存储配额不足.*原有数据没有被覆盖/,
+  'an actual OPFS quota failure must be explicit and preserve the previous dataset',
+)
+assert.equal(files.size, filesBeforeQuotaWrite, 'a quota failure removes the partially staged OPFS file')
+
 const parsed = await parseBackupArchiveFileForRestore(archive)
 assert.equal(parsed.backup.version, 7)
 const stored = parsed.binaries?.attachments.get(attachment.id)

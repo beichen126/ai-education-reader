@@ -13,7 +13,7 @@
 [隐私与备份](#数据隐私与备份) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v2.5.1-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v2.5.2-green?style=flat-square)
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
 ![BYOK](https://img.shields.io/badge/BYOK-self--hosted-green?style=flat-square)
@@ -148,7 +148,7 @@ AI 先读取你选择的目录页，再提出标题、层级和页码映射。�
 
 ### 15. 如何备份和恢复？
 
-在设置中导出“完整备份 ZIP”，安全保存文件；“本地数据安全中心”会显示浏览器清理保护、配额风险和最近一次完整备份。导入不是自动合并：选择 ZIP / JSON 后会先显示覆盖清单，可以取消、先导出当前数据，或勾选确认后继续。继续导入会整包替换当前会话、PDF、附件、笔记、卡片和界面偏好。ZIP 会一起迁移会话、分支、草稿、附件、PDF 原文件、页面笔记、提示词、学习成果、学习卡片及界面偏好；仍兼容旧版 V1–V7 JSON。v2.5.1 起，portable ZIP 按块读取，PDF 与图片直接写入暂存区，不再把整个 ZIP 与全部解压内容同时放进内存；当前安全上限为 ZIP 2 GB、解压内容 1 GB。API Key 不会写入备份，导入时当前 Key 也会被清除，需要重新配置。
+在设置中导出“完整备份 ZIP”，安全保存文件；“本地数据安全中心”会显示浏览器清理保护、配额风险和最近一次完整备份。导入不是自动合并：选择 ZIP / JSON 后会先显示覆盖清单，可以取消、先导出当前数据，或勾选确认后继续。继续导入会整包替换当前会话、PDF、附件、笔记、卡片和界面偏好。ZIP 会一起迁移会话、分支、草稿、附件、PDF 原文件、页面笔记、提示词、学习成果、学习卡片及界面偏好；仍兼容旧版 V1–V7 JSON。v2.5.1 起，portable ZIP 按块读取，PDF 与图片直接写入暂存区，不再把整个 ZIP 与全部解压内容同时放进内存；v2.5.2 起，恢复容量取自浏览器实时报告的当前站点 `quota - usage`，不再设置臆造的 1 GB / 2 GB“安全上限”。当前解析器尚不支持 ZIP64（ZIP 文件超过 4 GB），这是文件格式支持边界，不是存储配额。API Key 不会写入备份，导入时当前 Key 也会被清除，需要重新配置。
 
 ### 16. 如何切换英文界面？
 

@@ -48,6 +48,12 @@ assert.equal(localizedStudyCardTitle('我的卡片-3', 'manual', 3), '我的卡�
 assert.equal(localizedPdfName('未命名 PDF'), 'Untitled PDF')
 assert.equal(localizedErrorText('未配置 API Key', 'API key is not configured.'), 'API key is not configured.')
 assert.equal(localizedErrorText('Network unavailable', 'Fallback'), 'Network unavailable')
+assert.equal(
+  localizedErrorText('浏览器存储配额不足：恢复需要约 1.2 GB，当前站点剩余约 800 MB。请释放站点空间后重试。', 'Fallback'),
+  'Not enough browser storage: this restore needs about 1.2 GB, but this site currently has about 800 MB available. Free some site storage and try again.',
+)
+assert.match(localizedErrorText('恢复写入过程中浏览器存储配额不足，已撤销本次暂存写入；原有数据没有被覆盖。', 'Fallback'), /existing data was not replaced/)
+assert.match(localizedErrorText('该备份使用超过 4 GB 的 ZIP64 格式，当前 ZIP 解析器尚不支持', 'Fallback'), /ZIP64/)
 const socratic = getBuiltinPrompt(BUILTIN_PROMPT_IDS.conversationSocratic)!
 const englishSocratic = localizePromptDefinition(socratic)
 assert.equal(promptDisplayName(socratic.name, socratic.id), 'Socratic learning')

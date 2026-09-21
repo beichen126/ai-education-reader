@@ -180,10 +180,10 @@ export type BackupBinarySource = {
   documents: Map<string, Uint8Array | StoredBinary>
 }
 
-const MAX_STREAM_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
 const MAX_STREAM_MANIFEST_BYTES = 256 * 1024 * 1024
 const ZIP_EOCD_MAX_BYTES = 65_535 + 22
 const MAX_CENTRAL_DIRECTORY_BYTES = 64 * 1024 * 1024
+const MAX_ZIP32_BYTES = 0xffffffff
 
 type PortableEntrySpec = {
   kind: 'attachments' | 'documents'
@@ -195,7 +195,7 @@ type PortableEntrySpec = {
 /** Validate the end-of-central-directory without materializing the archive. Streaming unzip
  * alone can successfully emit local-file entries from a truncated ZIP whose central
  * directory is missing, so the tail must be checked independently before any staging. */
-async function validateStreamingZipEnvelope(file: Blob): Promise<Map<string, number>> {
+async function validateStreamingZipEnvelope(file: Blob): Promise<{ entries: Map<string, number>; totalUncompressedBytes: number }> {
   if (file.size < 22) throw new BackupError('ZIP 备份已损坏或不完整')
   const tailOffset = Math.max(0, file.size - ZIP_EOCD_MAX_BYTES)
   const tail = new Uint8Array(await file.slice(tailOffset).arrayBuffer())
@@ -219,6 +219,7 @@ async function validateStreamingZipEnvelope(file: Blob): Promise<Map<string, num
   if (centralOffset + centralSize !== eocdOffset || centralOffset + 4 > file.size) throw new BackupError('ZIP 备份中央目录不完整')
   const central = new Uint8Array(await file.slice(centralOffset, centralOffset + centralSize).arrayBuffer())
   const declared = new Map<string, number>()
+  let totalUncompressedBytes = 0
   let cursor = 0
   for (let index = 0; index < entries; index++) {
     if (cursor + 46 > central.length || u32(central, cursor) !== 0x02014b50) throw new BackupError('ZIP 备份中央目录已损坏')
@@ -232,10 +233,35 @@ async function validateStreamingZipEnvelope(file: Blob): Promise<Map<string, num
     const name = strFromU8(central.subarray(cursor + 46, cursor + 46 + nameLength))
     if (!name || name.length > 512 || declared.has(name)) throw new BackupError('ZIP 备份中央目录包含非法或重复路径')
     declared.set(name, originalSize)
+    totalUncompressedBytes += originalSize
     cursor = next
   }
   if (cursor !== central.length) throw new BackupError('ZIP 备份中央目录长度不一致')
-  return declared
+  return { entries: declared, totalUncompressedBytes }
+}
+
+function formatCapacity(bytes: number): string {
+  if (bytes >= 1024 ** 3) return (bytes / 1024 ** 3).toFixed(2).replace(/\.00$/, '') + ' GB'
+  return Math.ceil(bytes / 1024 ** 2) + ' MB'
+}
+
+/** The staged restore must coexist with current data until the final atomic metadata swap.
+ * Use the browser's live origin quota rather than a product-wide size guess. When the API is
+ * unavailable, OPFS remains the authority and a quota failure still rolls the staging back. */
+async function assertRestoreQuota(requiredBytes: number): Promise<void> {
+  try {
+    const nav = typeof navigator !== 'undefined' ? navigator as Navigator & { storage?: StorageManager } : undefined
+    const estimate = await nav?.storage?.estimate?.()
+    if (!estimate || typeof estimate.quota !== 'number' || !Number.isFinite(estimate.quota)) return
+    const usage = typeof estimate.usage === 'number' && Number.isFinite(estimate.usage) ? estimate.usage : 0
+    const available = Math.max(0, estimate.quota - usage)
+    if (requiredBytes > available) {
+      throw new BackupError('浏览器存储配额不足：恢复需要约 ' + formatCapacity(requiredBytes) + '，当前站点剩余约 ' + formatCapacity(available) + '。请释放站点空间或删除不需要的本地资料后重试。')
+    }
+  } catch (error) {
+    if (error instanceof BackupError) throw error
+    // estimate() is optional/best-effort; the streamed OPFS write is still quota-enforced.
+  }
 }
 
 /** Incremental restore parser used by the file picker path. It reads the ZIP a chunk at a
@@ -246,9 +272,13 @@ async function validateStreamingZipEnvelope(file: Blob): Promise<Map<string, num
  * streaming restore prevents untrusted binary entries from being staged before validation.
  * The older single-JSON ZIP remains supported as long as it contains only that one entry. */
 export async function parseBackupArchiveFileForRestore(file: Blob): Promise<{ backup: Backup; binaries?: BackupBinarySource }> {
-  if (file.size > MAX_STREAM_ARCHIVE_BYTES) throw new BackupError('ZIP 备份超过 2 GB，超出当前版本支持的安全范围')
+  if (file.size > MAX_ZIP32_BYTES) throw new BackupError('该备份使用超过 4 GB 的 ZIP64 格式，当前 ZIP 解析器尚不支持')
   if (typeof file.stream !== 'function') throw new BackupError('当前浏览器不支持流式读取大型备份，请升级浏览器后重试')
-  const centralEntries = await validateStreamingZipEnvelope(file)
+  const envelope = await validateStreamingZipEnvelope(file)
+  const centralEntries = envelope.entries
+  // The manifest becomes IndexedDB metadata after validation, so include it alongside the
+  // staged binaries instead of understating the space required for the atomic replacement.
+  await assertRestoreQuota(envelope.totalUncompressedBytes)
 
   let failure: unknown
   let work = Promise.resolve()
@@ -312,7 +342,7 @@ export async function parseBackupArchiveFileForRestore(file: Blob): Promise<{ ba
       schedule(async () => {
         if (error) throw new BackupError('ZIP 备份已损坏或无法解压')
         outputBytes += owned.byteLength
-        if (outputBytes > MAX_UNCOMPRESSED_BYTES) throw new BackupError('ZIP 备份解压后超过 1 GB，超出当前版本支持的安全范围')
+        if (outputBytes > envelope.totalUncompressedBytes) throw new BackupError('ZIP 实际解压大小超过中央目录声明，文件可能已损坏')
         if (name === BACKUP_ARCHIVE_ENTRY) {
           manifestBytes += owned.byteLength
           if (manifestBytes > MAX_STREAM_MANIFEST_BYTES) throw new BackupError('ZIP 备份清单超过 256 MB')
@@ -353,7 +383,7 @@ export async function parseBackupArchiveFileForRestore(file: Blob): Promise<{ ba
       const { done, value } = await reader.read()
       if (done) { unzip.push(new Uint8Array(0), true); break }
       compressedBytes += value.byteLength
-      if (compressedBytes > MAX_STREAM_ARCHIVE_BYTES) throw new BackupError('ZIP 备份超过 2 GB，超出当前版本支持的安全范围')
+      if (compressedBytes > MAX_ZIP32_BYTES) throw new BackupError('该备份使用超过 4 GB 的 ZIP64 格式，当前 ZIP 解析器尚不支持')
       try { unzip.push(value) } catch { throw new BackupError('ZIP 备份已损坏或使用了不支持的压缩方式') }
       await work
       if (failure) throw failure
@@ -362,6 +392,7 @@ export async function parseBackupArchiveFileForRestore(file: Blob): Promise<{ ba
     if (failure) throw failure
     if (!backup || entryCount === 0) throw new BackupError('ZIP 备份结构不正确')
     if (entryCount !== centralEntries.size) throw new BackupError('ZIP 备份条目数量与中央目录不一致')
+    if (outputBytes !== envelope.totalUncompressedBytes) throw new BackupError('ZIP 实际解压大小与中央目录不一致，文件可能被截断')
     if (!portable) {
       if (entryCount !== 1) throw new BackupError('ZIP 备份结构不正确')
       return { backup }
@@ -373,6 +404,12 @@ export async function parseBackupArchiveFileForRestore(file: Blob): Promise<{ ba
     for (const sink of activeSinks) { try { await sink.abort() } catch { /* best effort */ } }
     for (const ref of staged) { try { await deleteBinary(ref) } catch { /* best effort */ } }
     if (error instanceof BackupError) throw error
+    if (error && typeof error === 'object' && (
+      (error as { name?: unknown }).name === 'QuotaExceededError' ||
+      (error as { kind?: unknown }).kind === 'quota'
+    )) {
+      throw new BackupError('恢复写入过程中浏览器存储配额不足，已撤销本次暂存写入；原有数据没有被覆盖。请释放站点空间后重试。')
+    }
     throw new BackupError(error instanceof Error && error.message ? error.message : 'ZIP 备份恢复失败')
   }
 }

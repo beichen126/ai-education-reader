@@ -1,6 +1,6 @@
 # Testing — AI Education Reader
 
-本文档说明 v2.5.1 的测试分层与如何运行。所有测试默认本地、离线（除标注的 paid smoke）。
+本文档说明 v2.5.2 的测试分层与如何运行。所有测试默认本地、离线（除标注的 paid smoke）。
 
 ## 快速运行
 

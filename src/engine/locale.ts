@@ -126,7 +126,12 @@ export function localizedPdfName(name: string): string {
 export function localizedErrorText(value: unknown, englishFallback: string): string {
   const message = value instanceof Error ? value.message : typeof value === 'string' ? value : ''
   if (!message) return current === 'en' ? englishFallback : '操作失败。'
-  return current === 'en' && /\p{Script=Han}/u.test(message) ? englishFallback : message
+  if (current !== 'en' || !/\p{Script=Han}/u.test(message)) return message
+  const quota = /^浏览器存储配额不足：恢复需要约 (.+?)，当前站点剩余约 (.+?)。/.exec(message)
+  if (quota) return `Not enough browser storage: this restore needs about ${quota[1]}, but this site currently has about ${quota[2]} available. Free some site storage and try again.`
+  if (message.startsWith('恢复写入过程中浏览器存储配额不足')) return 'The browser ran out of storage while restoring. Staged files were removed and your existing data was not replaced. Free some site storage and try again.'
+  if (message.includes('ZIP64') && message.includes('当前 ZIP 解析器尚不支持')) return 'This backup uses ZIP64 (a ZIP file larger than 4 GB), which the current ZIP parser does not support yet.'
+  return englishFallback
 }
 
 export const locale = { t }
