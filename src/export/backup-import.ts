@@ -513,12 +513,20 @@ function restoreArtifacts(artifacts: StudyArtifact[]): StudyArtifact[] {
 // idbReplaceAll transaction, then cleans up old OPFS refs best-effort. A failure at ANY step
 // leaves the existing data intact (staged OPFS files deleted, old IDB untouched).
 export async function restoreBackup(backup: Backup, binaries?: {
-  attachments: Map<string, Uint8Array>
-  documents: Map<string, Uint8Array>
+  attachments: Map<string, Uint8Array | StoredBinary>
+  documents: Map<string, Uint8Array | StoredBinary>
 }): Promise<void> {
   // Validate all metadata, including prompt namespace/preferences, before any
   // binary is staged or the existing durable database can be replaced.
-  backup = parseAndValidate(backup)
+  try { backup = parseAndValidate(backup) }
+  catch (error) {
+    // Streaming callers transfer ownership of every staged ref to restoreBackup.
+    // Even an unexpected second-pass validation failure must not orphan them.
+    for (const source of [...(binaries?.attachments.values() ?? []), ...(binaries?.documents.values() ?? [])]) {
+      if (!(source instanceof Uint8Array) && source.storage === 'opfs') { try { await deleteBinary(source) } catch { /* orphan */ } }
+    }
+    throw error
+  }
   const v2 = 'documents' in backup ? (backup as BackupV2) : null;
   const v6 = backup.version >= 6 ? (backup as BackupV6) : null;
   const v7 = backup.version === 7 ? (backup as BackupV7) : null;
@@ -532,11 +540,12 @@ export async function restoreBackup(backup: Backup, binaries?: {
     // A. Decode + stage each attachment binary to a UNIQUE new path (never overwrite).
     const attachRows: any[] = [];
     for (const at of backup.attachments) {
-      const bytes = binaries?.attachments.get(at.id)
-      const blob = bytes
-        ? new Blob([bytes as unknown as BlobPart], { type: at.mimeType || at.meta.mimeType || 'application/octet-stream' })
-        : base64ToBlob(at.data, at.mimeType || at.meta.mimeType);
-      const ref = await persistBinary('attachments', at.id, blob, { mimeType: at.mimeType || at.meta.mimeType });
+      const source = binaries?.attachments.get(at.id)
+      const ref = source && !(source instanceof Uint8Array)
+        ? source
+        : await persistBinary('attachments', at.id, source
+          ? new Blob([source as unknown as BlobPart], { type: at.mimeType || at.meta.mimeType || 'application/octet-stream' })
+          : base64ToBlob(at.data, at.mimeType || at.meta.mimeType), { mimeType: at.mimeType || at.meta.mimeType });
       binaries?.attachments.delete(at.id)
       if (ref.storage === 'opfs') staged.push({ ref, path: ref.path });
       attachRows.push({ id: at.id, meta: at.meta as Attachment, binary: ref, recordVersion: 2 });
@@ -545,11 +554,12 @@ export async function restoreBackup(backup: Backup, binaries?: {
     const documentsArray = v2 ? v2.documents : [];
     const documentRows: any[] = [];
     for (const d of documentsArray) {
-      const bytes = binaries?.documents.get(d.id)
-      const blob = bytes
-        ? new Blob([bytes as unknown as BlobPart], { type: d.mimeType || 'application/pdf' })
-        : base64ToBlob(d.data, d.mimeType);
-      const ref = await persistBinary('documents', d.id, blob, { mimeType: d.mimeType });
+      const source = binaries?.documents.get(d.id)
+      const ref = source && !(source instanceof Uint8Array)
+        ? source
+        : await persistBinary('documents', d.id, source
+          ? new Blob([source as unknown as BlobPart], { type: d.mimeType || 'application/pdf' })
+          : base64ToBlob(d.data, d.mimeType), { mimeType: d.mimeType });
       binaries?.documents.delete(d.id)
       if (ref.storage === 'opfs') staged.push({ ref, path: ref.path });
       // recordVersion 3 + lastReadAt backfill (old backups lack the field).
@@ -598,6 +608,11 @@ export async function restoreBackup(backup: Backup, binaries?: {
   } catch (e) {
     // Rollback: delete every staged OPFS file. Old IDB is untouched.
     for (const s of staged) { if (s.path) { try { await deleteBinary(s.ref) } catch { /* orphan */ } } }
+    // A streaming ZIP parser may already have staged entries that this loop had not
+    // reached yet. They are still owned by the failed restore and must not leak in OPFS.
+    for (const source of [...(binaries?.attachments.values() ?? []), ...(binaries?.documents.values() ?? [])]) {
+      if (!(source instanceof Uint8Array) && source.storage === 'opfs') { try { await deleteBinary(source) } catch { /* orphan */ } }
+    }
     throw e;
   }
   // F. Post-success cleanup of old OPFS refs (best-effort; only orphans, never new data).

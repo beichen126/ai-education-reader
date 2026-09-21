@@ -53,6 +53,13 @@ export interface OpfsFileSystem {
   listAppFiles(): Promise<{ path: string; size: number; lastModified: number }[]>
   /** Delete the APP OWNED root subtree; reports which app files could not be removed. */
   clearAppRoot(): Promise<{ completed: boolean; failedPaths: string[] }>
+  /** Optional incremental writer. The browser adapter implements this so a large
+   * restore never needs to assemble a complete PDF/image Blob in JS memory. */
+  createWriter?(path: string): Promise<{
+    write(chunk: Uint8Array): Promise<void>
+    close(): Promise<void>
+    abort(): Promise<void>
+  }>
 }
 
 // ---- real OPFS adapter (origin-private, never a user picker) ----
@@ -79,6 +86,33 @@ async function getAppRoot(create: boolean): Promise<any> {
 }
 
 const realOpfs: OpfsFileSystem = {
+  async createWriter(path: string) {
+    const dir = await getAppRoot(true)
+    const { dirSegs, file } = splitPath(path)
+    const nested = await dirAt(dir, dirSegs.slice(1), true)
+    const fh = await nested.getFileHandle(file, { create: true })
+    const writable = await fh.createWritable()
+    let settled = false
+    return {
+      async write(chunk: Uint8Array) {
+        if (settled) throw new BinaryStorageError('write-failed', 'binary writer is closed')
+        await writable.write(chunk)
+      },
+      async close() {
+        if (settled) return
+        try { await writable.close() }
+        catch (error) { try { await writable.abort() } catch { /* best effort */ }; throw error }
+        finally { settled = true }
+      },
+      async abort() {
+        if (!settled) {
+          settled = true
+          try { await writable.abort() } catch { /* best effort */ }
+        }
+        try { await nested.removeEntry(file) } catch { /* best effort */ }
+      },
+    }
+  },
   async write(path: string, blob: Blob): Promise<void> {
     const dir = await getAppRoot(true)
     const { dirSegs, file } = splitPath(path)
@@ -210,6 +244,74 @@ function isQuota(e: unknown): boolean {
 }
 
 export type PersistBinaryOptions = { mimeType?: string; requireOpfsWhenAvailable?: boolean }
+
+export type BinaryWriteSink = {
+  write(chunk: Uint8Array): Promise<void>
+  close(): Promise<StoredBinary>
+  abort(): Promise<void>
+  readonly streamsToDisk: boolean
+}
+
+/** Create a staged binary incrementally. OPFS-capable browsers write each chunk straight
+ * to disk. The fallback retains chunks only for compatibility with browsers that have no
+ * OPFS; callers can reject very large archives when streamsToDisk is false. */
+export async function createBinaryWriteSink(namespace: BinaryNamespace, ownerId: string, mimeType: string): Promise<BinaryWriteSink> {
+  const mime = mimeType || 'application/octet-stream'
+  const d = await getDriver()
+  if (d?.createWriter) {
+    const path = buildBinaryPath(namespace, ownerId, crypto.randomUUID())
+    const writer = await d.createWriter(path)
+    let size = 0
+    let settled = false
+    return {
+      streamsToDisk: true,
+      async write(chunk) {
+        if (settled) throw new BinaryStorageError('write-failed', 'binary sink is closed')
+        if (!chunk.byteLength) return
+        await writer.write(chunk)
+        size += chunk.byteLength
+      },
+      async close() {
+        if (settled) throw new BinaryStorageError('write-failed', 'binary sink is closed')
+        settled = true
+        try {
+          await writer.close()
+          const stored = await d.read(path)
+          if (stored.size !== size) throw new BinaryStorageError('write-failed', 'opfs streamed write size mismatch')
+          return { storage: 'opfs', path, size, mimeType: mime }
+        } catch (error) {
+          try { await d.delete(path) } catch { /* orphan cleanup is best effort */ }
+          throw error
+        }
+      },
+      async abort() {
+        if (!settled) { settled = true; await writer.abort() }
+        else { try { await d.delete(path) } catch { /* best effort */ } }
+      },
+    }
+  }
+
+  const parts: BlobPart[] = []
+  let size = 0
+  let settled = false
+  return {
+    streamsToDisk: false,
+    async write(chunk) {
+      if (settled) throw new BinaryStorageError('write-failed', 'binary sink is closed')
+      if (!chunk.byteLength) return
+      const owned = chunk.slice()
+      parts.push(owned.buffer as ArrayBuffer)
+      size += owned.byteLength
+    },
+    async close() {
+      if (settled) throw new BinaryStorageError('write-failed', 'binary sink is closed')
+      settled = true
+      const blob = new Blob(parts, { type: mime })
+      return { storage: 'idb', blob, size, mimeType: mime }
+    },
+    async abort() { settled = true; parts.length = 0; size = 0 },
+  }
+}
 
 /**
  * Persist a Blob. OPFS-first: writes to an app-owned path, verifies the size, and

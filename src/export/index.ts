@@ -3,7 +3,7 @@ import { parseAndValidate, restoreBackup, BackupError } from './backup-import'
 import { conversationMarkdown, markedOnlyMarkdown } from './markdown'
 import { downloadText, downloadJson, downloadBlob } from './download'
 import { buildConversationBundle, ConversationBundleError } from './conversation-bundle'
-import { buildPortableBackupArchive, isBackupArchive, MAX_ARCHIVE_BYTES, parseBackupArchiveForRestore, writePortableBackupArchive } from './backup-archive'
+import { buildPortableBackupArchive, isBackupArchive, MAX_ARCHIVE_BYTES, parseBackupArchiveFileForRestore, parseBackupArchiveForRestore, writePortableBackupArchive } from './backup-archive'
 import { writeBookmarkedPdf, PdfOutlineError } from './pdf-outline-writer'
 import { readDocumentSourceBlob } from '../documents/document-service'
 import type { ChapterNode } from '../documents/document-types'
@@ -95,12 +95,19 @@ export async function importBackupText(text: string): Promise<void> {
 }
 
 export async function importBackupFile(file: File): Promise<void> {
-  if (file.size > MAX_ARCHIVE_BYTES) throw new BackupError('备份文件超过 512 MB，当前浏览器无法安全地在内存中恢复。')
-  let bytes = new Uint8Array(await file.arrayBuffer())
-  if (isBackupArchive(bytes)) {
-    const parsed = parseBackupArchiveForRestore(bytes)
-    bytes = new Uint8Array(0)
-    await restoreBackup(parsed.backup, parsed.binaries)
+  const header = new Uint8Array(await file.slice(0, 4).arrayBuffer())
+  if (isBackupArchive(header)) {
+    const parsed = typeof file.stream === 'function'
+      ? await parseBackupArchiveFileForRestore(file)
+      : (() => undefined)()
+    if (parsed) {
+      await restoreBackup(parsed.backup, parsed.binaries)
+    } else {
+      if (file.size > MAX_ARCHIVE_BYTES) throw new BackupError('当前浏览器不支持流式读取大型备份，请升级浏览器后重试')
+      const bytes = new Uint8Array(await file.arrayBuffer())
+      const fallback = parseBackupArchiveForRestore(bytes)
+      await restoreBackup(fallback.backup, fallback.binaries)
+    }
     resetDrafts()
     await migrateLegacyPrompts()
     await migratePromptSimplification()
@@ -110,5 +117,7 @@ export async function importBackupFile(file: File): Promise<void> {
     clearAnnotationCache()
     return
   }
+  if (file.size > MAX_ARCHIVE_BYTES) throw new BackupError('JSON 备份超过 512 MB，无法安全地一次性解析；请改用完整 ZIP 备份')
+  const bytes = new Uint8Array(await file.arrayBuffer())
   await importBackupText(new TextDecoder().decode(bytes))
 }

@@ -1,6 +1,6 @@
 # Testing — AI Education Reader
 
-本文档说明 v2.5.0 的测试分层与如何运行。所有测试默认本地、离线（除标注的 paid smoke）。
+本文档说明 v2.5.1 的测试分层与如何运行。所有测试默认本地、离线（除标注的 paid smoke）。
 
 ## 快速运行
 
@@ -21,7 +21,7 @@ npm run test:pdf-codec   # PDF Codec（浏览器专用）
 - 缩放/平移数学（`test:zoom`）、表格操作、Math 解析
 - 会话 / 草稿 / 附件 / 发送 / 持久化（`test:session-lifecycle`, `test:draft-*`）
 - 标注（annotation-ops / annotation-storage / annotation-ownership）
-- 备份校验与安全/来源（`test:backup-validation`, `test:backup-security`）
+- 备份校验、安全、来源与低内存流式恢复（`test:backup-validation`, `test:backup-security`, `test:streaming-backup`）
 - PDF 书签解析、多范围、附件、运行时资源（`test:pdf-*`）
 - 章节模型、Document 模型/存储/备份/来源（`test:document-*`）
 - Document → Context 领域（`test:document-context`）、Context 渲染（`test:context-render`）

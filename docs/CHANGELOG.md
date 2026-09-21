@@ -4,6 +4,23 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。正式发布的改动按版本记录，未发布改动再单独进入 `Unreleased`。
 
+## [2.5.1] - 2026-09-21
+
+### Changed
+
+- portable ZIP 恢复改为流式读取：备份文件不再整体进入 JavaScript 内存，PDF / 图片条目逐块解压并直接写入 OPFS 暂存文件。
+- 恢复仍保持“先暂存、后原子替换”的语义；清单、路径、条目数量、解压总量和 ZIP 中央目录记录的每个二进制真实大小均通过校验后才提交元数据；历史附件中不准确的展示尺寸不会阻塞恢复。
+- 超过 512 MB 的 portable ZIP 可在支持 OPFS 流式写入的现代浏览器中恢复；当前安全范围为 ZIP 2 GB、解压内容 1 GB。超大 JSON 备份仍会被拒绝，建议使用完整 ZIP。
+
+### Compatibility
+
+- Backup V7 与 portable ZIP v2 格式不变；旧 V1–V7 JSON、旧单 JSON ZIP 和已有 portable ZIP v2 均继续支持。
+- 不支持流式文件读取或流式磁盘暂存的浏览器仍可导入普通大小备份，并会对大型备份显示明确的升级提示。
+
+### Tests
+
+- 新增流式 ZIP 回归测试，覆盖增量 OPFS 写入、恢复元数据提交、旧 ZIP 兼容、文件大小校验与失败暂存清理。
+
 ## [2.5.0] - 2026-09-19
 
 ### Added

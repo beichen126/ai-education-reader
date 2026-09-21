@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "2.5.0",
+  "version": "2.5.1",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -18,7 +18,7 @@
     "test:e2e-v240": "node scripts/e2e-v240.mjs",
     "sync:product-guide": "node scripts/sync-product-guide.mjs",
     "test:product-guide": "node scripts/test-product-guide.mjs",
-    "pretest": "npm run test:v240 && npm run test:v250",
+    "pretest": "npm run test:v240 && npm run test:v250 && npm run test:streaming-backup",
     "test": "npm run test:all",
     "test:storage": "npx tsx scripts/test-storage.ts",
     "test:idb-lifecycle": "npx tsx scripts/test-idb-lifecycle.ts",
@@ -119,6 +119,7 @@
     "test:backup-source": "npx tsx scripts/test-backup-source.ts",
     "test:large-context": "npx tsx scripts/test-large-context.ts",
     "test:backup-security": "npx tsx scripts/test-backup-security.ts",
+    "test:streaming-backup": "npx tsx scripts/test-streaming-backup.ts",
     "test:zoom": "npx tsx scripts/test-zoom.ts",
     "test:e2e-viewer": "node scripts/e2e-viewer-edge.mjs",
     "test:e2e-gallery-layout": "node scripts/e2e-gallery-layout.mjs",
