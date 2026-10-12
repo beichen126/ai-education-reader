@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MarkdownBlocks } from '../markdown/MarkdownBlocks'
 import { parseMarkdown } from '../markdown/parse'
 import { mapSelection } from './selection-mapper'
@@ -43,6 +43,8 @@ function eventOwnerForSelection(): [string, AnnotationEventOwner] | null {
 }
 
 const delegatedPointerDown = (event: Event) => {
+  const previous = activeEventOwner ? eventOwners.get(activeEventOwner) : undefined
+  if (previous && !containsNode(previous.element, event.target as Node | null)) previous.pointerDown(event)
   const found = eventOwnerForNode(event.target as Node | null)
   activeEventOwner = found?.[0] ?? null
   found?.[1].pointerDown(event)
@@ -79,10 +81,36 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   const wrapRef = useRef<HTMLDivElement>(null)
   const highlightOwnerId = messageId + ':' + useId()
   const [pending, setPending] = useState<SelectionMapping | null>(null)
+  const [toolbarPosition, setToolbarPosition] = useState<{ left: number; top: number } | null>(null)
   const annotations = useMessageAnnotations(conversationId, messageId)
   const parsedRoot = useMemo(() => parseMarkdown(content), [content])
   const { blocks, canonicalOf } = useMemo(() => buildBlockMapFromRoot(parsedRoot, messageId), [parsedRoot, messageId])
   const hasHl = highlightSupported()
+  useLayoutEffect(() => {
+    const root = wrapRef.current
+    if (!pending || !root) { setToolbarPosition(null); return }
+    const selection = window.getSelection()
+    const anchor = pending.kind === 'math'
+      ? Array.from(root.querySelectorAll<HTMLElement>('[data-math-id]')).find(el => el.dataset.mathId === pending.mathId)?.getBoundingClientRect()
+      : selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null
+    if (!anchor || !anchor.width || !anchor.height) { setToolbarPosition(null); return }
+    const bounds = root.getBoundingClientRect()
+    setToolbarPosition({
+      left: Math.max(0, Math.min(anchor.left - bounds.left, bounds.width - 112)),
+      top: anchor.bottom - bounds.top + 6,
+    })
+  }, [pending])
+
+  useEffect(() => {
+    if (!pending) return
+    const dismiss = () => setPending(null)
+    document.addEventListener('scroll', dismiss, true)
+    window.addEventListener('resize', dismiss)
+    return () => {
+      document.removeEventListener('scroll', dismiss, true)
+      window.removeEventListener('resize', dismiss)
+    }
+  }, [pending])
   useEffect(() => { void refreshMessageAnnotations(conversationId, messageId) }, [conversationId, messageId])
 
   useEffect(() => {
@@ -107,6 +135,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   useEffect(() => {
     let pressedMath: { id: string; kind: 'inline' | 'block' } | null = null
     function onPointerDown(e: Event) {
+      setPending(null)
       // Ownership guard: only the instance whose wrapper contains the target may
       // register a math press. A formula in ANOTHER message must never put this
       // instance into pending-math.
@@ -117,8 +146,12 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
       // Math click: pointerup landed on a formula inside THIS message (guarded by
       // ownedMath in onPointerDown). Only the owning instance may enter pending-math.
       if (pressedMath) { setPending({ kind: 'math', mathId: pressedMath.id, mathKind: pressedMath.kind }); pressedMath = null; return }
-      if (!sel || sel.rangeCount === 0) { setPending(null); return }
-      if (sel.isCollapsed) { setPending(null); return }
+      // A formula click can produce a delayed collapsed selectionchange after
+      // click. Keep its action open until an explicit dismissal or annotation.
+      if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+        setPending(current => current?.kind === 'math' ? current : null)
+        return
+      }
       const range = sel.getRangeAt(0)
       // Ownership: only respond to a selection ENTIRELY inside this message. A
       // selection or formula in another message must never drive this instance.
@@ -167,7 +200,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   }, [messageId, content, canonicalOf, highlightOwnerId])
 
   const markCrossCell = () => { if (!pending || pending.kind !== 'table-cross-cell') return; const a = pending.startCell, b = pending.endCell; const bounds = normalizeBounds(a.row, a.column, b.row, b.column); void toggleTableCellsMessage(conversationId, messageId, pending.tableId, bounds, branchId); window.getSelection()?.removeAllRanges(); setPending(null) }
-  const onMathAction = (mathId: string, kind: 'inline' | 'block') => { setPending({ kind: 'math', mathId, mathKind: kind }) }
+  const onMathAction = (mathId: string, kind: 'inline' | 'block') => { activeEventOwner = highlightOwnerId; setPending({ kind: 'math', mathId, mathKind: kind }) }
   function doToggle() {
     try {
     if (!pending) return
@@ -183,7 +216,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
 
   const onTableAction = (tableId: string) => { void toggleWholeTableMessage(conversationId, messageId, tableId, branchId) }
   return (
-    <div ref={wrapRef} className={css.wrap} data-highlight={hasHl} data-annotation-owner={highlightOwnerId}>
+    <div ref={wrapRef} className={css.wrap} style={{ '--annotation-left': `${toolbarPosition?.left ?? 0}px`, '--annotation-top': `${toolbarPosition?.top ?? 0}px`, '--annotation-visibility': toolbarPosition ? 'visible' : 'hidden' } as React.CSSProperties} data-highlight={hasHl} data-annotation-owner={highlightOwnerId}>
       <MarkdownBlocks content={content} messageId={messageId} annotations={annotations} onTableAction={onTableAction} onMathAction={onMathAction} parsedRoot={parsedRoot} />
       {pending && pending.kind === 'math' && (
         <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{mathCovered ? tx('取消标记', 'Unmark') : tx('标记公式', 'Mark formula')}</button></div>
