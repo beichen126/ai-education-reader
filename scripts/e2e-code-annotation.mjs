@@ -1,6 +1,7 @@
 // Code / inline-code selection + reload persistence/render-restoration e2e.
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot } from './e2e-fixture.mjs'
+import { mathComparison } from './fixtures/math-comparison.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const results = []
@@ -50,6 +51,7 @@ const conversation = {
       '  缩进 CJK',
       '```',
     ].join('\n')),
+    msg('comparison-assistant', 'assistant', mathComparison + '\n\n> 引用中的公式\n> \\[\n> x^2\n> \\]\n> 引用结尾'),
   ],
 }
 
@@ -212,6 +214,22 @@ assert(afterReload.annotations.some(a => a.messageId === 'code-assistant' && a.t
 assert(await message.locator('[data-math][data-annotatable="false"]').count() === 1, 'reload keeps math atomic')
 assert(await message.locator('[data-table-id]').count() === 1, 'reload keeps table rendering')
 
+const comparison = page.locator('[data-message-id="comparison-assistant"]').first()
+assert(await comparison.locator('[data-math-kind="block"]').count() === 3, 'list and quote display formulas render instead of disappearing')
+assert(await comparison.locator('strong').allTextContents().then(texts => texts.includes('收敛') && texts.includes('发散')), 'both conclusions after the display formulas remain visible')
+const nestedFormula = comparison.locator('[data-math-kind="block"]').first()
+await nestedFormula.scrollIntoViewIfNeeded()
+await nestedFormula.locator('.katex-html').click()
+await page.getByRole('button', { name: '标记公式', exact: true }).click()
+await page.waitForFunction(() => new Promise(resolve => {
+  const req = indexedDB.open('ai-education-reader')
+  req.onsuccess = () => {
+    const db = req.result
+    const read = db.transaction('studyCards', 'readonly').objectStore('studyCards').getAll()
+    read.onsuccess = () => { db.close(); resolve(read.result.some(card => card.sourceAssistantMessageId === 'comparison-assistant' && card.annotations?.some(a => a.target.type === 'math' && a.target.mathKind === 'block'))) }
+  }
+}))
+assert(true, 'nested display formula marking persists on its source learning card')
 await browser.close()
 for (const line of results) console.log(line)
 for (const error of errors) console.error(error)

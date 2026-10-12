@@ -74,6 +74,13 @@ function inline(node: any, cur: Cur, ctx: RenderCtx): ReactNode {
 function inlineList(nodes: any[] | undefined, cur: Cur, ctx: RenderCtx): ReactNode { return nodes ? nodes.map((n, i) => <span key={i}>{inline(n, cur, ctx)}</span>) : null }
 
 function innerBlock(node: any, cur: Cur, ctx: RenderCtx): ReactNode {
+  if (node.type === 'math') {
+    // List/quote canonical text historically includes the TeX value. Preserve
+    // those offsets while rendering the nested formula through the same path
+    // as top-level math (source-copy metadata, marking and highlights).
+    cur.v += (node.value || '').length
+    return blockEl(node, ctx)
+  }
   if (node.type === 'paragraph') return <p>{inlineList(node.children, cur, ctx)}</p>
   if (node.type === 'list') { const rows = node.children || []; return node.ordered ? <ol>{rows.map((li: any, i: number) => <li key={i}>{innerList(li, cur, ctx)}</li>)}</ol> : <ul>{rows.map((li: any, i: number) => <li key={i}>{innerList(li, cur, ctx)}</li>)}</ul> }
   if (node.type === 'listItem') return <li>{innerList(node, cur, ctx)}</li>
