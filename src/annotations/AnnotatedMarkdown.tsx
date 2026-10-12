@@ -95,19 +95,33 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
       : selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null
     if (!anchor || !anchor.width || !anchor.height) { setToolbarPosition(null); return }
     const bounds = root.getBoundingClientRect()
+    let visibleBottom = window.innerHeight
+    for (let parent = root.parentElement; parent; parent = parent.parentElement) {
+      if (/(auto|scroll|hidden|clip)/.test(getComputedStyle(parent).overflowY)) {
+        visibleBottom = Math.min(visibleBottom, parent.getBoundingClientRect().bottom)
+      }
+    }
     setToolbarPosition({
       left: Math.max(0, Math.min(anchor.left - bounds.left, bounds.width - 112)),
-      top: anchor.bottom - bounds.top + 6,
+      top: (anchor.bottom + 48 <= visibleBottom ? anchor.bottom + 6 : anchor.top - 42) - bounds.top,
     })
   }, [pending])
 
   useEffect(() => {
     if (!pending) return
+    const root = wrapRef.current
+    const initialBounds = root?.getBoundingClientRect()
     const dismiss = () => setPending(null)
-    document.addEventListener('scroll', dismiss, true)
+    const onScroll = (event: Event) => {
+      const bounds = root?.getBoundingClientRect()
+      // Ignore queued scroll events from bringing the selection into view before
+      // the toolbar opened. Only a subsequent movement should dismiss it.
+      if (containsNode(root, event.target as Node | null) || bounds?.top !== initialBounds?.top || bounds?.left !== initialBounds?.left) dismiss()
+    }
+    document.addEventListener('scroll', onScroll, true)
     window.addEventListener('resize', dismiss)
     return () => {
-      document.removeEventListener('scroll', dismiss, true)
+      document.removeEventListener('scroll', onScroll, true)
       window.removeEventListener('resize', dismiss)
     }
   }, [pending])

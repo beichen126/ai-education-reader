@@ -166,6 +166,12 @@ await formulaButton.waitFor({ state: 'visible' })
 const formulaBox = await formula.boundingBox()
 const toolbarBox = await formulaButton.boundingBox()
 assert(Math.abs(toolbarBox.y - (formulaBox.y + formulaBox.height + 6)) < 2, 'formula toolbar is anchored beside its formula, not the composer')
+await formula.evaluate(el => {
+  let parent = el.parentElement
+  while (parent && !/(auto|scroll)/.test(getComputedStyle(parent).overflowY)) parent = parent.parentElement
+  parent?.dispatchEvent(new Event('scroll'))
+})
+assert(await formulaButton.isVisible(), 'a queued scroll notification without movement does not dismiss a newly opened toolbar')
 await page.locator('textarea').first().click()
 assert(await formulaButton.count() === 0, 'clicking the composer dismisses the formula toolbar')
 await formulaVisual.click()
