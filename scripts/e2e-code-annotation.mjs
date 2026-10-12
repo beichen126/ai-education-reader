@@ -2,6 +2,7 @@
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot } from './e2e-fixture.mjs'
 import { mathComparison } from './fixtures/math-comparison.mjs'
+import { mathSummary } from './fixtures/math-summary.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const results = []
@@ -52,6 +53,7 @@ const conversation = {
       '```',
     ].join('\n')),
     msg('comparison-assistant', 'assistant', mathComparison + '\n\n> 引用中的公式\n> \\[\n> x^2\n> \\]\n> 引用结尾'),
+    msg('summary-assistant', 'assistant', mathSummary),
   ],
 }
 
@@ -236,6 +238,14 @@ await page.waitForFunction(() => new Promise(resolve => {
   }
 }))
 assert(true, 'nested display formula marking persists on its source learning card')
+const summary = page.locator('[data-message-id="summary-assistant"]').first()
+assert(await summary.locator('tr').count() === 4 && await summary.locator('tr').last().locator('td').count() === 2, 'summary table retains four rows and two columns')
+assert(await summary.locator('td').last().locator('[data-math-kind="inline"]').count() === 2, 'absolute integral and conditional convergence formulas both render inside their cell')
+assert(await summary.locator('.katex-error').count() === 0, 'summary formulas render without KaTeX errors')
+assert((await summary.locator('td').last().locator('strong').textContent()).includes('绝对收敛'), 'bold text surrounding the absolute integral remains intact')
+const absoluteFormula = summary.locator('annotation[encoding="application/x-tex"]').filter({ hasText: String.raw`\int|f|` })
+assert(await absoluteFormula.count() === 1, 'absolute-value bars reach the math renderer unchanged')
+assert(await summary.locator('ol li').count() === 3, 'follow-up exercises after the table remain visible')
 await browser.close()
 for (const line of results) console.log(line)
 for (const error of errors) console.error(error)

@@ -1,5 +1,6 @@
 import { parseMarkdown } from '../src/markdown/parse.ts'
 import { buildBlockModels, flattenText } from '../src/markdown/block-layer.ts'
+import { mathSummary } from './fixtures/math-summary.mjs'
 let pass=0, fail=0
 function assert(c:boolean,m:string){ if(c){pass++;console.log('  ok: '+m)}else{fail++;console.log('  FAIL: '+m)} }
 const md = '# 第五章 存储\n\n**平均存储器**访问时间，见[链接](https://x)与*斜体*。\n\n- 列表项A\n- 列表项B\n\n> 重要引用\n\n| 概念 | 含义 |\n|---|---|\n| AMAT | **平均**访问 |\n\n```js\nconst a = 1\n```'
@@ -65,6 +66,26 @@ let cjkStrong = false
 assert(cjkStrong, 'bold adjacent to CJK after punctuation (**（AMAT）**值) renders a strong node')
 const cjkText = flattenText((cjkRoot.children as any).find((c: any) => c.type === 'paragraph'))
 assert(!cjkText.includes('**'), 'no literal ** remains in the CJK-adjacent bold paragraph')
+
+const summaryRoot = parseMarkdown(mathSummary)
+const summaryTable = summaryRoot.children.find((node: any) => node.type === 'table') as any
+assert(summaryTable.children.length === 4 && summaryTable.children.every((row: any) => row.children.length === 2), 'TeX absolute-value pipes do not split summary table cells')
+const summaryMath: any[] = []
+;(function walk(node: any) { if (node.type === 'inlineMath') summaryMath.push(node); node.children?.forEach(walk) })(summaryRoot)
+const absoluteMath = summaryMath.find(node => node.value === String.raw`\int|f|`)
+assert(!!absoluteMath, 'absolute-value formula remains an inline math node')
+assert(mathSummary.slice(absoluteMath?.position.start.offset, absoluteMath?.position.end.offset) === String.raw`\(\int|f|\)`, 'math positions still point to the exact original source')
+assert(summaryTable.children[3].children[1].children.some((node: any) => node.type === 'strong'), 'bold around the formula remains intact')
+for (const formulaSource of [String.raw`$|x|$`, String.raw`\(\left|x\right|\)`, String.raw`$\|x\|$`, String.raw`$a|b|c$`]) {
+  const sample = '| A | B |\n|---|---|\n| value | ' + formulaSource + ' |'
+  const parsed = parseMarkdown(sample)
+  const table = parsed.children[0] as any
+  assert(table.type === 'table' && table.children[1].children.length === 2 && table.children[1].children[1].children[0].type === 'inlineMath', 'table math pipe compatibility: ' + formulaSource)
+}
+const plainPipes = parseMarkdown('| A | B |\n|---|---|\n| a | b | c |').children[0] as any
+assert(plainPipes.children[1].children.length === 3, 'ordinary table separators are unchanged')
+const fenced = parseMarkdown('```tex\n$|x|$\n```').children[0] as any
+assert(fenced.type === 'code' && fenced.value === '$|x|$', 'code content is unchanged')
 
 console.log('\nRESULT pass='+pass+' fail='+fail)
 process.exit(fail===0?0:1)
