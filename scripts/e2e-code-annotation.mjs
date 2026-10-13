@@ -61,6 +61,13 @@ const conversation = {
 await seedAndBoot(page, { convs: [conversation], settings: { lastConversationId: conversation.id } })
 const message = page.locator('[data-message-id="code-assistant"]').first()
 await message.waitFor({ state: 'visible', timeout: 15000 })
+const shortBubble = await page.locator('[data-message-id="code-user"]').evaluate(row => {
+  const bubble = row.firstElementChild
+  const paragraph = bubble.querySelector('p')
+  const style = getComputedStyle(bubble)
+  return { height: bubble.getBoundingClientRect().height, expected: paragraph.getBoundingClientRect().height + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) }
+})
+assert(Math.abs(shortBubble.height - shortBubble.expected) < 2, 'single-line user bubble has only its original padding, without extra Markdown margins')
 const codeBlocks = message.locator('pre[data-block-type="code"][data-annotatable="true"]')
 assert(await codeBlocks.count() === 4, 'four code blocks are rendered as annotatable')
 assert(await message.locator('p code').count() === 1, 'inline code is rendered')
