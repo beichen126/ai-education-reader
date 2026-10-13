@@ -54,6 +54,7 @@ const conversation = {
     ].join('\n')),
     msg('comparison-assistant', 'assistant', mathComparison + '\n\n> 引用中的公式\n> \\[\n> x^2\n> \\]\n> 引用结尾'),
     msg('summary-assistant', 'assistant', mathSummary),
+    msg('markdown-user', 'user', mathSummary + '\n\n\\[\nx^2 + y^2 = z^2\n\\]\n\n```js\nconst value = 42\n```'),
   ],
 }
 
@@ -246,6 +247,26 @@ assert((await summary.locator('td').last().locator('strong').textContent()).incl
 const absoluteFormula = summary.locator('annotation[encoding="application/x-tex"]').filter({ hasText: String.raw`\int|f|` })
 assert(await absoluteFormula.count() === 1, 'absolute-value bars reach the math renderer unchanged')
 assert(await summary.locator('ol li').count() === 3, 'follow-up exercises after the table remain visible')
+const userMessage = page.locator('[data-message-id="markdown-user"]').first()
+assert(await userMessage.locator('h1').count() === 1 && await userMessage.locator('strong').count() > 0, 'sent user text renders Markdown headings and bold')
+assert(await userMessage.locator('[data-math-kind="block"]').count() === 1, 'sent user text renders display LaTeX')
+assert(await userMessage.locator('tr').last().locator('td').count() === 2, 'sent user text uses the same math-compatible table parser')
+assert((await userMessage.locator('pre code').textContent()).includes('const value = 42'), 'sent user code blocks render without changing their source')
+const userFormula = userMessage.locator('[data-math-kind="inline"]').filter({ hasText: String.raw`\int|f|` }).first()
+const userCopied = await userFormula.evaluate(el => {
+  const range = document.createRange()
+  range.selectNodeContents(el)
+  const selection = window.getSelection()
+  selection.removeAllRanges()
+  selection.addRange(range)
+  const data = new DataTransfer()
+  el.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true, cancelable: true }))
+  selection.removeAllRanges()
+  return data.getData('text/plain')
+})
+assert(userCopied === String.raw`\(\int|f|\)`, 'partial copy of a rendered user formula restores its exact LaTeX source')
+assert(await userMessage.locator('[data-testid="user-message-copy-source"]').count() === 1, 'sent user message offers full-source copying')
+assert(await userMessage.locator('[data-table-action]').count() === 0, 'user rendering does not expose assistant-only study-card actions')
 await browser.close()
 for (const line of results) console.log(line)
 for (const error of errors) console.error(error)

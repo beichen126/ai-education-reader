@@ -8,10 +8,11 @@ import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDr
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
 import { localizedArtifactSourceLabel, localizedArtifactTitle, localizedErrorText, localizedStudyCardTitle, t, tx } from '../engine/locale'
-import { MessageText, IconCloseOutline16, IconFolderOpenOutline16, Button } from '../dsh/primitives'
+import { IconCloseOutline16, IconFolderOpenOutline16, Button } from '../dsh/primitives'
 import { useCopyFeedback } from '../dsh/primitives/use-copy-feedback'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
+import { RenderedMarkdown } from '../markdown/RenderedMarkdown'
 import { galleryActions } from '../gallery/gallery-store'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult, type RenderedPdfPage } from '../pdf/pdf-types'
@@ -354,7 +355,8 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
   if (m.role === 'user') {
     return (
       <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>
-        <div className={css.bubble}><MessageText text={m.content} /></div>
+        <div className={css.bubble}><RenderedMarkdown content={m.content} messageId={m.id} /></div>
+        {m.content && <div className={css.messageTools}><MessageSourceCopyButton source={m.content} user /></div>}
         {m.quickFollowUp && <div className={css.quickFollowUpHistory} data-testid="quick-follow-up-history"><span>{tx('快捷追问', 'Quick follow-up')} · {m.quickFollowUp.labelSnapshot}</span><button type="button" data-testid="quick-follow-up-history-inspect" onClick={() => onInspectQuickFollowUp?.(m.quickFollowUp)}>{tx('查看实际提示词', 'View exact prompt')}</button></div>}
         {m.images.length > 0 && <MessageAttachmentStrip convId={convId} message={m} imgOffset={imgOffset} />}
         {pdfContextsOf(m).map((context, index) => <PdfSourceButton key={context.documentId + ':' + index} context={context} />)}
@@ -406,13 +408,13 @@ const StableAssistantContent = memo(function StableAssistantContent(props: { con
   return <div className={css.assistantBody}><AnnotatedMarkdown content={props.content} messageId={props.messageId} conversationId={props.conversationId} branchId={props.branchId} /></div>
 })
 
-function MessageSourceCopyButton({ source }: { source: string }) {
+function MessageSourceCopyButton({ source, user = false }: { source: string; user?: boolean }) {
   const copy = useCopyFeedback(source)
   return <button
     type="button"
     className={css.messageToolButton}
-    data-testid="message-copy-source"
-    aria-label={copy.copied ? tx('已复制回复原文', 'Response source copied') : tx('复制回复原始 Markdown 和 LaTeX', 'Copy original Markdown and LaTeX')}
+    data-testid={user ? 'user-message-copy-source' : 'message-copy-source'}
+    aria-label={copy.copied ? (user ? tx('已复制消息原文', 'Message source copied') : tx('已复制回复原文', 'Response source copied')) : (user ? tx('复制消息原始 Markdown 和 LaTeX', 'Copy message original Markdown and LaTeX') : tx('复制回复原始 Markdown 和 LaTeX', 'Copy original Markdown and LaTeX'))}
     title={tx('复制完整的原始 Markdown / LaTeX', 'Copy complete original Markdown / LaTeX')}
     onClick={copy.onCopy}
   >{copy.copied ? tx('已复制', 'Copied') : tx('复制全文', 'Copy all')}</button>

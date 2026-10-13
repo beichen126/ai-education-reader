@@ -64,6 +64,9 @@
 }
 .msgUser { align-items: flex-end; }
 .msgAssistant { align-items: flex-start; }
+.bubble { min-width: 0; --dsw-alias-label-primary: var(--dsw-alias-label-primary-foreground); }
+.bubble a { color: inherit; text-decoration: underline; }
+.bubble [data-math-kind="block"] { background: transparent; }
 .bubble { max-width: 72%; padding: 10px 14px; border-radius: 14px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 14px; line-height: 22px; white-space: pre-wrap; word-break: break-word; }
 .msgAssistant .assistantBody { max-width: 80%; padding: 10px 14px; border-radius: 14px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); font-size: 14px; line-height: 22px; white-space: pre-wrap; word-break: break-word; }
 .messageTools { display: flex; align-items: center; gap: 2px; min-height: 24px; }
