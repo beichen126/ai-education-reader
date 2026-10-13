@@ -1,6 +1,7 @@
 import { parseMarkdown } from '../src/markdown/parse.ts'
 import { buildBlockModels, flattenText } from '../src/markdown/block-layer.ts'
 import { mathSummary } from './fixtures/math-summary.mjs'
+import { leverageParagraph } from './fixtures/currency.mjs'
 let pass=0, fail=0
 function assert(c:boolean,m:string){ if(c){pass++;console.log('  ok: '+m)}else{fail++;console.log('  FAIL: '+m)} }
 const md = '# 第五章 存储\n\n**平均存储器**访问时间，见[链接](https://x)与*斜体*。\n\n- 列表项A\n- 列表项B\n\n> 重要引用\n\n| 概念 | 含义 |\n|---|---|\n| AMAT | **平均**访问 |\n\n```js\nconst a = 1\n```'
@@ -87,5 +88,19 @@ assert(plainPipes.children[1].children.length === 3, 'ordinary table separators 
 const fenced = parseMarkdown('```tex\n$|x|$\n```').children[0] as any
 assert(fenced.type === 'code' && fenced.value === '$|x|$', 'code content is unchanged')
 
+const currencyRoot = parseMarkdown(leverageParagraph)
+assert(flattenText(currencyRoot) === leverageParagraph, 'financial prose preserves every dollar sign and space instead of becoming math')
+for (const sample of ['Pay $100 and $90, then calculate $x^2$.', 'Amounts $1,000.50 and $20.25; formula $2x + 1$.', 'Pay $100-$90, then $10; equation $100 + 20$.', 'Loss $-100 and cost $.50; formula $-2x$.']) {
+  const nodes: any[] = []
+  ;(function walk(node: any) { if (node.type === 'inlineMath') nodes.push(node); node.children?.forEach(walk) })(parseMarkdown(sample))
+  assert(nodes.length === 1, 'mixed currency and genuine math: ' + sample)
+  assert(sample.slice(nodes[0].position.start.offset, nodes[0].position.end.offset) === '$' + nodes[0].value + '$', 'mixed math retains original source positions')
+}
+const currencyTable = parseMarkdown('| Cost | Debt | Formula |\n|---|---|---|\n| $100 | $90 | $x + 1$ |').children[0] as any
+assert(currencyTable.children[1].children.length === 3, 'currency across table cells never hides real column separators')
+assert(currencyTable.children[1].children[0].children[0].value === '$100', 'currency in a table stays literal')
+for (const formula of ['$100$', '$100 + 20$', '$2 xy$', '$100 sin x$', '$$100$$', String.raw`\(100\)`]) {
+  assert(flattenText(parseMarkdown('Formula: ' + formula)).includes('\uFFFF'), 'explicit numeric math remains supported: ' + formula)
+}
 console.log('\nRESULT pass='+pass+' fail='+fail)
 process.exit(fail===0?0:1)

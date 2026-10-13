@@ -3,6 +3,7 @@ import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot } from './e2e-fixture.mjs'
 import { mathComparison } from './fixtures/math-comparison.mjs'
 import { mathSummary } from './fixtures/math-summary.mjs'
+import { leverageParagraph } from './fixtures/currency.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const results = []
@@ -55,6 +56,8 @@ const conversation = {
     msg('comparison-assistant', 'assistant', mathComparison + '\n\n> 引用中的公式\n> \\[\n> x^2\n> \\]\n> 引用结尾'),
     msg('summary-assistant', 'assistant', mathSummary),
     msg('markdown-user', 'user', mathSummary + '\n\n\\[\nx^2 + y^2 = z^2\n\\]\n\n```js\nconst value = 42\n```'),
+    msg('currency-assistant', 'assistant', leverageParagraph + '\n\nPay $100 and calculate $x^2$ or $100 + 20$.'),
+    msg('currency-user', 'user', leverageParagraph),
   ],
 }
 
@@ -275,6 +278,12 @@ const userCopied = await userFormula.evaluate(el => {
 assert(userCopied === String.raw`\(\int|f|\)`, 'partial copy of a rendered user formula restores its exact LaTeX source')
 assert(await userMessage.locator('[data-testid="user-message-copy-source"]').count() === 1, 'sent user message offers full-source copying')
 assert(await userMessage.locator('[data-table-action]').count() === 0, 'user rendering does not expose assistant-only study-card actions')
+const currencyReply = page.locator('[data-message-id="currency-assistant"]').first()
+assert(await currencyReply.locator('p').first().textContent() === leverageParagraph, 'financial paragraph renders every dollar amount and original space')
+assert(await currencyReply.locator('p').first().locator('.katex').count() === 0, 'dollar amounts do not turn financial prose into italic math')
+assert(await currencyReply.locator('.katex').count() === 2, 'genuine formulas still render alongside currency')
+const currencyUser = page.locator('[data-message-id="currency-user"]').first()
+assert(await currencyUser.locator('p').textContent() === leverageParagraph && await currencyUser.locator('.katex').count() === 0, 'user messages apply the same dollar-amount handling')
 await browser.close()
 for (const line of results) console.log(line)
 for (const error of errors) console.error(error)

@@ -1,3 +1,5 @@
+import { isCurrencyMathCandidate } from './currency-aware-math'
+
 /** Protect TeX bars from GFM's table splitting before inline math is parsed.
  * A one-code-unit placeholder preserves every original source offset.
  */
@@ -48,6 +50,7 @@ export function protectMathTablePipes(source: string, tableRanges: { start: numb
       close = source.indexOf(closing, close + closing.length)
     }
     if (close < 0 || close >= limit) { start += opening.length - 1; continue }
+    if (opening === '$' && isCurrencyMathCandidate(source.slice(start, close + 1), close + 1 < source.length ? source.charCodeAt(close + 1) : null)) continue
     for (let index = start + opening.length; index < close; index++) {
       if (source[index] === '|' && !escaped(index)) { chars[index] = placeholder; changed = true }
     }

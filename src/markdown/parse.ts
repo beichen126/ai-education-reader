@@ -3,7 +3,7 @@ import { fromMarkdown, type Options } from 'mdast-util-from-markdown'
 import { gfmFromMarkdown } from 'mdast-util-gfm'
 import { mathFromMarkdown } from 'mdast-util-math'
 import { gfm } from 'micromark-extension-gfm'
-import { math } from 'micromark-extension-math'
+import { currencyAwareMath } from './currency-aware-math'
 import { mathCompatibility } from './mathCompatibility'
 import { cjkFriendlyStrong } from './cjkFriendlyStrong'
 import type { Root } from 'mdast'
@@ -12,7 +12,7 @@ import { protectMathTablePipes } from './math-table-pipes'
  *  Supports `$...
  / `$...$` (native) and `\(...\)` / `\[...\]` (via DSH mathCompatibility). */
 export function parseMarkdown(content: string): Root {
-  const options = { extensions: [gfm(), math(), mathCompatibility(), cjkFriendlyStrong()], mdastExtensions: [gfmFromMarkdown(), mathFromMarkdown()] } as Options
+  const options = { extensions: [gfm(), currencyAwareMath(), mathCompatibility(), cjkFriendlyStrong()], mdastExtensions: [gfmFromMarkdown(), mathFromMarkdown()] } as Options
   let root = fromMarkdown(content, options)
   const tableRanges: { start: number; end: number }[] = []
   const findTables = (node: any) => {
