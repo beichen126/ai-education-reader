@@ -15,5 +15,5 @@ export const RenderedMarkdown = memo(function RenderedMarkdown({ content, messag
       event.preventDefault()
     } catch { /* Fall back to the browser's rendered-text copy. */ }
   }
-  return <div onCopy={onCopy}><MarkdownBlocks content={content} messageId={messageId} /></div>
+  return <div onCopy={onCopy}><MarkdownBlocks content={content} messageId={messageId} exposeMessageId={false} /></div>
 })

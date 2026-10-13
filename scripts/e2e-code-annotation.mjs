@@ -248,6 +248,7 @@ const absoluteFormula = summary.locator('annotation[encoding="application/x-tex"
 assert(await absoluteFormula.count() === 1, 'absolute-value bars reach the math renderer unchanged')
 assert(await summary.locator('ol li').count() === 3, 'follow-up exercises after the table remain visible')
 const userMessage = page.locator('[data-message-id="markdown-user"]').first()
+assert(await page.locator('[data-message-id="markdown-user"]').count() === 1, 'user message retains one navigation root including text and attachments')
 assert(await userMessage.locator('h1').count() === 1 && await userMessage.locator('strong').count() > 0, 'sent user text renders Markdown headings and bold')
 assert(await userMessage.locator('[data-math-kind="block"]').count() === 1, 'sent user text renders display LaTeX')
 assert(await userMessage.locator('tr').last().locator('td').count() === 2, 'sent user text uses the same math-compatible table parser')
