@@ -278,7 +278,7 @@ function createMathFlow(marker: number, openMarker: number, closeMarker: number,
 
   return {
     concrete: true,
-    name: marker === codes.dollarSign ? 'sameLineDollarMathFlow' : 'backslashMathFlow',
+    name: marker === codes.dollarSign ? 'dollarMathFlow' : 'backslashMathFlow',
     tokenize,
   }
 }
@@ -322,23 +322,23 @@ const backslashMathFlow = createMathFlow(
   true,
 )
 
-const sameLineDollarMathFlow = createMathFlow(
+const dollarMathFlow = createMathFlow(
   codes.dollarSign,
   codes.dollarSign,
   codes.dollarSign,
-  false,
+  true,
 )
 
 const backslashMath: Extension = {
   flow: {
     [codes.backslash]: backslashMathFlow,
-    [codes.dollarSign]: sameLineDollarMathFlow,
+    [codes.dollarSign]: dollarMathFlow,
   },
   text: { [codes.backslash]: backslashMathText },
 }
 
 /**
- * TeX backslash delimiters and same-line display-dollar blocks as a micromark
+ * TeX backslash delimiters and display-dollar blocks as a micromark
  * syntax extension reusing `micromark-extension-math`'s token vocabulary; the
  * caller must also register `math()` on the same parse so the emitted tokens
  * compile to standard math nodes.

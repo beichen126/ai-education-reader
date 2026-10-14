@@ -4,6 +4,7 @@ import { msg, seedAndBoot } from './e2e-fixture.mjs'
 import { mathComparison } from './fixtures/math-comparison.mjs'
 import { mathSummary } from './fixtures/math-summary.mjs'
 import { leverageParagraph } from './fixtures/currency.mjs'
+import { multilineDollarMath } from './fixtures/multiline-dollar-math.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const results = []
@@ -58,6 +59,7 @@ const conversation = {
     msg('markdown-user', 'user', mathSummary + '\n\n\\[\nx^2 + y^2 = z^2\n\\]\n\n```js\nconst value = 42\n```'),
     msg('currency-assistant', 'assistant', leverageParagraph + '\n\nPay $100 and calculate $x^2$ or $100 + 20$.'),
     msg('currency-user', 'user', leverageParagraph),
+    msg('multiline-dollar-assistant', 'assistant', multilineDollarMath),
   ],
 }
 
@@ -284,6 +286,11 @@ assert(await currencyReply.locator('p').first().locator('.katex').count() === 0,
 assert(await currencyReply.locator('.katex').count() === 2, 'genuine formulas still render alongside currency')
 const currencyUser = page.locator('[data-message-id="currency-user"]').first()
 assert(await currencyUser.locator('p').textContent() === leverageParagraph && await currencyUser.locator('.katex').count() === 0, 'user messages apply the same dollar-amount handling')
+const dollarReply = page.locator('[data-message-id="multiline-dollar-assistant"]').first()
+assert(await dollarReply.locator('[data-math-kind="block"]').count() === 9, 'attached multiline dollar formulas render as nine independent blocks')
+assert(await dollarReply.locator('.katex-error').count() === 0, 'multiline dollar formulas render without red KaTeX errors')
+assert((await dollarReply.locator('p').allTextContents()).some(text => text.includes('部分分式')), 'prose between multiline dollar blocks remains outside formulas')
+assert((await dollarReply.locator('strong').allTextContents()).some(text => text.startsWith('总结：')), 'summary after multiline dollar formulas remains formatted Markdown')
 await browser.close()
 for (const line of results) console.log(line)
 for (const error of errors) console.error(error)

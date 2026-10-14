@@ -2,6 +2,7 @@ import { parseMarkdown } from '../src/markdown/parse.ts'
 import { buildBlockModels, flattenText } from '../src/markdown/block-layer.ts'
 import { mathSummary } from './fixtures/math-summary.mjs'
 import { leverageParagraph } from './fixtures/currency.mjs'
+import { multilineDollarMath } from './fixtures/multiline-dollar-math.mjs'
 let pass=0, fail=0
 function assert(c:boolean,m:string){ if(c){pass++;console.log('  ok: '+m)}else{fail++;console.log('  FAIL: '+m)} }
 const md = '# 第五章 存储\n\n**平均存储器**访问时间，见[链接](https://x)与*斜体*。\n\n- 列表项A\n- 列表项B\n\n> 重要引用\n\n| 概念 | 含义 |\n|---|---|\n| AMAT | **平均**访问 |\n\n```js\nconst a = 1\n```'
@@ -101,6 +102,17 @@ assert(currencyTable.children[1].children.length === 3, 'currency across table c
 assert(currencyTable.children[1].children[0].children[0].value === '$100', 'currency in a table stays literal')
 for (const formula of ['$100$', '$100 + 20$', '$2 xy$', '$100 sin x$', '$$100$$', String.raw`\(100\)`]) {
   assert(flattenText(parseMarkdown('Formula: ' + formula)).includes('\uFFFF'), 'explicit numeric math remains supported: ' + formula)
+}
+const dollarRoot = parseMarkdown(multilineDollarMath)
+const dollarBlocks = dollarRoot.children.filter((node: any) => node.type === 'math') as any[]
+assert(dollarBlocks.length === 9, 'attached multiline dollar delimiters produce nine separate formulas')
+assert(dollarBlocks[0].value.startsWith(String.raw`I=\int_0^{\pi/2}`), 'opening-line TeX remains formula content instead of metadata')
+assert(dollarBlocks.every(node => !node.meta && !node.value.includes('部分分式') && !node.value.includes('积分：')), 'formula boundaries do not swallow surrounding prose')
+assert(dollarBlocks.every(node => multilineDollarMath.slice(node.position.start.offset, node.position.end.offset).startsWith('$$') && multilineDollarMath.slice(node.position.start.offset, node.position.end.offset).endsWith('$$')), 'formula positions preserve attached source delimiters')
+assert(flattenText(dollarRoot.children.at(-1)).startsWith('总结：'), 'final summary stays ordinary Markdown')
+for (const sample of ['$$\nx=1\n$$', '$$x=1\n+y=2\n$$', '$$\nx=1\n+y=2$$']) {
+  const formula = parseMarkdown(sample).children[0] as any
+  assert(formula.type === 'math' && formula.value.includes('x=1') && !formula.value.includes('$$'), 'standalone and mixed multiline dollar delimiters remain supported')
 }
 console.log('\nRESULT pass='+pass+' fail='+fail)
 process.exit(fail===0?0:1)
