@@ -7,7 +7,7 @@ import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
 import { useAttachmentPreview } from '../engine/use-attachment-preview'
-import { localizedArtifactSourceLabel, localizedArtifactTitle, localizedErrorText, localizedStudyCardTitle, t, tx } from '../engine/locale'
+import { localizedArtifactSourceLabel, localizedArtifactTitle, localizedErrorText, localizedStudyCardTitle, t, tx, useUiLanguage } from '../engine/locale'
 import { IconCloseOutline16, IconFolderOpenOutline16, Button } from '../dsh/primitives'
 import { useCopyFeedback } from '../dsh/primitives/use-copy-feedback'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
@@ -61,6 +61,7 @@ const PdfPanel = lazy(() => import('../pdf/PdfPanel').then(module => ({ default:
 const DocumentContextPicker = lazy(() => import('../documents/DocumentContextPicker').then(module => ({ default: module.DocumentContextPicker })))
 
 export function Conversation() {
+  useUiLanguage()
   const session = useSessions(s => s.byId[s.current || ''])
   const focusMessage = useSessions(s => s.focusMessage)
   const status = useSessions(s => s.status)
@@ -356,7 +357,7 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
     return (
       <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>
         <div className={css.bubble}><RenderedMarkdown content={m.content} messageId={m.id} /></div>
-        {m.content && <div className={css.messageTools}><MessageSourceCopyButton source={m.content} user /></div>}
+        <div className={css.messageTools}>{m.content && <MessageSourceCopyButton source={m.content} user />}<MessageTimestamp createdAt={m.createdAt} /></div>
         {m.quickFollowUp && <div className={css.quickFollowUpHistory} data-testid="quick-follow-up-history"><span>{tx('快捷追问', 'Quick follow-up')} · {m.quickFollowUp.labelSnapshot}</span><button type="button" data-testid="quick-follow-up-history-inspect" onClick={() => onInspectQuickFollowUp?.(m.quickFollowUp)}>{tx('查看实际提示词', 'View exact prompt')}</button></div>}
         {m.images.length > 0 && <MessageAttachmentStrip convId={convId} message={m} imgOffset={imgOffset} />}
         {pdfContextsOf(m).map((context, index) => <PdfSourceButton key={context.documentId + ':' + index} context={context} />)}
@@ -374,9 +375,9 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
         <div className={css.assistantBody} data-empty></div>
       )}
       {m.status && m.error && <div className={css.errorBanner} role="alert" data-testid="assistant-generation-error">{m.status === 'aborted' ? tx('已停止生成：', 'Generation stopped: ') : tx('生成失败：', 'Generation failed: ')}{localizedErrorText(m.error, m.status === 'aborted' ? 'The response was stopped.' : 'The model request failed.')}</div>}
-      {(canCopySource || (stable && onToggleMenu && onBranch && onArtifact)) && (
         <div className={css.messageTools}>
           {canCopySource && <MessageSourceCopyButton source={m.content} />}
+          <MessageTimestamp createdAt={m.createdAt} />
           {stable && onToggleMenu && onBranch && onArtifact && <div className={css.messageMenuAnchor}>
             <button type="button" className={css.messageToolButton} aria-label={tx('消息操作', 'Message actions')} data-testid="message-actions" title={tx('从这里分支 / 特殊分支 / 学习卡片', 'Branch / study output / study card')} aria-haspopup="menu" aria-expanded={!!menuOpen} onClick={() => onToggleMenu(!menuOpen)}>⋯</button>
             {menuOpen && <MessageActionMenu
@@ -395,7 +396,6 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
             />}
           </div>}
         </div>
-      )}
     </div>
   )
 }
@@ -407,6 +407,21 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
 const StableAssistantContent = memo(function StableAssistantContent(props: { content: string; messageId: string; conversationId: string; branchId?: string }) {
   return <div className={css.assistantBody}><AnnotatedMarkdown content={props.content} messageId={props.messageId} conversationId={props.conversationId} branchId={props.branchId} /></div>
 })
+
+function MessageTimestamp({ createdAt }: { createdAt: number }) {
+  const value = useMemo(() => {
+    const date = new Date(createdAt)
+    if (!Number.isFinite(date.getTime())) return null
+    const pad = (part: number) => String(part).padStart(2, '0')
+    const month = pad(date.getMonth() + 1), day = pad(date.getDate())
+    const clock = `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+    return { iso: date.toISOString(), month, day, clock, full: `${date.getFullYear()}-${month}-${day} ${clock}` }
+  }, [createdAt])
+  if (!value) return null
+  return <time className={css.messageTimestamp} dateTime={value.iso} title={tx('消息创建时间：', 'Message created: ') + value.full}>
+    {tx(`${value.month}月${value.day}日`, `${value.month}/${value.day}`)} {value.clock}
+  </time>
+}
 
 function MessageSourceCopyButton({ source, user = false }: { source: string; user?: boolean }) {
   const copy = useCopyFeedback(source)

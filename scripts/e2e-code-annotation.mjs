@@ -12,7 +12,7 @@ const errors = []
 const assert = (condition, message) => results.push((condition ? 'PASS  ' : 'FAIL  ') + message)
 
 const browser = await launchBrowser()
-const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+const ctx = await browser.newContext({ viewport: { width: 1280, height: 900 }, timezoneId: 'Asia/Shanghai' })
 const page = await ctx.newPage()
 page.on('pageerror', e => errors.push('pageerror: ' + e.message))
 page.on('dialog', d => { void d.accept() })
@@ -63,6 +63,7 @@ const conversation = {
   ],
 }
 
+conversation.messages[1].createdAt = Date.UTC(2026, 9, 15, 6, 8, 36)
 await seedAndBoot(page, { convs: [conversation], settings: { lastConversationId: conversation.id } })
 const message = page.locator('[data-message-id="code-assistant"]').first()
 await message.waitFor({ state: 'visible', timeout: 15000 })
@@ -291,6 +292,20 @@ assert(await dollarReply.locator('[data-math-kind="block"]').count() === 9, 'att
 assert(await dollarReply.locator('.katex-error').count() === 0, 'multiline dollar formulas render without red KaTeX errors')
 assert((await dollarReply.locator('p').allTextContents()).some(text => text.includes('部分分式')), 'prose between multiline dollar blocks remains outside formulas')
 assert((await dollarReply.locator('strong').allTextContents()).some(text => text.startsWith('总结：')), 'summary after multiline dollar formulas remains formatted Markdown')
+const messageTime = message.locator('time')
+assert(await messageTime.textContent().then(text => text.trim()) === '10月15日 14:08:36', 'Chinese message time displays local month, day and time down to seconds')
+assert(await messageTime.getAttribute('datetime') === '2026-10-15T06:08:36.000Z', 'message time uses saved creation time rather than current time or later updates')
+assert(await messageTime.evaluate(el => el.previousElementSibling?.dataset.testid === 'message-copy-source' && !!el.nextElementSibling?.querySelector('[data-testid="message-actions"]')), 'timestamp sits between full-source copy and the message menu')
+assert(await userMessage.locator('time').count() === 1, 'user messages also display their saved timestamp')
+await page.locator('[data-testid="sidebar-settings"]').click()
+await page.locator('[data-testid="language-en"]').click()
+await page.waitForFunction(() => document.documentElement.lang === 'en')
+await page.waitForFunction(() => Array.from(document.querySelectorAll('[data-message-id="code-assistant"] time')).some(el => el.textContent.trim() === '10/15 14:08:36'))
+assert((await messageTime.getAttribute('title')).startsWith('Message created: '), 'English mode changes timestamp and hover text immediately')
+await page.locator('[data-testid="language-zh-cn"]').click()
+await page.waitForFunction(() => document.documentElement.lang === 'zh-CN')
+await page.waitForFunction(() => Array.from(document.querySelectorAll('[data-message-id="code-assistant"] time')).some(el => el.textContent.trim() === '10月15日 14:08:36'))
+assert((await messageTime.getAttribute('title')).startsWith('消息创建时间：'), 'switching back restores Chinese timestamp and hover text')
 await browser.close()
 for (const line of results) console.log(line)
 for (const error of errors) console.error(error)
