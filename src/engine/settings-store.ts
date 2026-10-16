@@ -7,11 +7,11 @@ import { applyUiLanguage, normalizeUiLanguage, type UiLanguage } from './locale'
 
 export type { VisionCapability }
 export type { PdfNavigationMode }
-export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage }
+export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean }
 export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-v4-flash-vision-exp', customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN' }
 
 /** A partial settings change. Every mutation goes through {@link patchSettings}. */
-export type SettingsPatch = Partial<Pick<Settings, 'apiBaseUrl' | 'apiKey' | 'model' | 'customSystemPrompt' | 'customSystemPromptEnabled' | 'appearance' | 'visionCapability' | 'pdfNavigationMode' | 'uiLanguage'>>
+export type SettingsPatch = Partial<Settings>
 
 let state: Settings = { ...DEFAULT_SETTINGS }
 const subs = new Set<() => void>()
@@ -52,6 +52,7 @@ export function normalizeSettings(input: Settings): Settings {
     visionCapability,
     pdfNavigationMode: normalizePdfNavigationMode(input.pdfNavigationMode),
     uiLanguage: normalizeUiLanguage(input.uiLanguage),
+    webSearchEnabled: input.webSearchEnabled === true,
   }
 }
 
@@ -60,7 +61,8 @@ export async function initSettings(): Promise<void> {
   const resolvedAppearance: AppearanceMode = (appearance === 'light' || appearance === 'dark') ? appearance : DEFAULT_APPEARANCE
   const resolvedVision: VisionCapability = (visionCapability === 'supports-image' || visionCapability === 'text-only') ? visionCapability : 'auto'
   const resolvedLanguage = applyUiLanguage(uiLanguage)
-  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: model || DEFAULT_SETTINGS.model, customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage })
+  const webSearchEnabled = await getSetting('webSearchEnabled') === 'true'
+  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: model || DEFAULT_SETTINGS.model, customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled })
   writeAppearanceHint(resolvedAppearance)
 }
 
@@ -88,6 +90,7 @@ async function commitPatch(patch: SettingsPatch): Promise<Settings> {
       apiBaseUrl: next.apiBaseUrl, apiKey: next.apiKey, model: next.model,
       customSystemPrompt: next.customSystemPrompt, customSystemPromptEnabled: String(next.customSystemPromptEnabled),
       appearance: next.appearance, visionCapability: next.visionCapability, pdfNavigationMode: next.pdfNavigationMode, uiLanguage: next.uiLanguage,
+      webSearchEnabled: String(next.webSearchEnabled === true),
     })
   } catch (error) {
     // The transaction did not commit: the previously committed state stays published

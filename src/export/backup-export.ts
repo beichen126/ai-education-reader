@@ -121,6 +121,7 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
     model: (typeof model === 'string' ? model : 'deepseek-chat'),
     customSystemPrompt: (typeof customSystemPrompt === 'string' ? customSystemPrompt : ''),
     customSystemPromptEnabled: customSystemPromptEnabled === 'true',
+    webSearchEnabled: await getSetting('webSearchEnabled') === 'true',
     customArtifactActions: await listCustomActions(),
     visionCapability: (visionCapability === 'supports-image' || visionCapability === 'text-only') ? visionCapability : 'auto',
     pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode),

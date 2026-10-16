@@ -27,6 +27,9 @@ IDBObjectStore.prototype.put = function (this: IDBObjectStore, ...args: unknown[
 
 await initSettings()
 assert(getSettingsSnapshot().pdfNavigationMode === 'paged', 'fresh install starts paged')
+assert(getSettingsSnapshot().webSearchEnabled === false, 'web search is off by default')
+await patchSettings({ webSearchEnabled: true })
+assert(await durable('webSearchEnabled') === 'true', 'web search preference is persisted')
 
 // ---- 1. a single-field patch persists and publishes ----
 await patchSettings({ pdfNavigationMode: 'continuous' })
@@ -96,6 +99,7 @@ await initSettings()
 assert(getSettingsSnapshot().apiKey === 'sk-whole', 'reopen reads the committed API key')
 assert(getSettingsSnapshot().appearance === 'system', 'reopen reads the committed appearance')
 assert(getSettingsSnapshot().pdfNavigationMode === 'paged', 'reopen reads the committed navigation mode')
+assert(getSettingsSnapshot().webSearchEnabled === true, 'web search preference survives other settings changes and reopen')
 
 console.log(`RESULT pass=${pass} fail=${fail}`)
 if (fail > 0) process.exitCode = 1

@@ -50,7 +50,7 @@ assert(msgsAfterStream && msgsAfterStream.some(m => m.content === '流分支追�
 
 // ---- DELETE the branch DURING generation (real BranchBar UI) ----
 page.on('dialog', d => d.accept())
-await page.locator('text=切换').first().click()
+await page.getByRole('button', { name: '切换路线', exact: true }).click()
 await page.waitForTimeout(400)
 const delBtn = page.locator('[role="menuitem"]:has-text("删除")').first()
 await delBtn.click()

@@ -14,6 +14,7 @@ import { localizedBranchTitle, localizedErrorText, tx } from '../engine/locale'
 import css from './branch.module.css'
 
 type Props = {
+  contextSummary?: React.ReactNode
   conversationId: string
   branches: ConversationBranch[]
   activeBranchId?: string
@@ -28,7 +29,7 @@ type Props = {
 type OpenMenu = 'route' | 'mode' | null
 
 /** Route context for the active thread, including the mode used by future messages. */
-export function BranchBar({ conversationId, branches, activeBranchId, effectiveMessageCount, effectiveTransitions, busy, onSwitch, onChanged, onModeChanged }: Props) {
+export function BranchBar({ conversationId, branches, activeBranchId, effectiveMessageCount, effectiveTransitions, busy, onSwitch, onChanged, onModeChanged, contextSummary }: Props) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
   const [editId, setEditId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -77,6 +78,18 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
     initialMenuFocus.current = 'selected'
     items[focusIndex]?.focus()
   }, [openMenu, modeMenuId, routeMenuId, branches, activeBranchId, modes, defaultModeId])
+
+  useEffect(() => {
+    if (!openMenu) return
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as Node | null
+      const trigger = openMenu === 'mode' ? modeTriggerRef.current : routeTriggerRef.current
+      const menu = document.getElementById(openMenu === 'mode' ? modeMenuId : routeMenuId)
+      if (target && !trigger?.contains(target) && !menu?.contains(target)) setOpenMenu(null)
+    }
+    document.addEventListener('pointerdown', dismiss)
+    return () => document.removeEventListener('pointerdown', dismiss)
+  }, [openMenu, modeMenuId, routeMenuId])
 
   const lineage = activeBranchId ? resolveBranchLineage(branches, activeBranchId) : null
 
@@ -213,15 +226,9 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
     <div className={css.bar} role="navigation" aria-label={tx('会话上下文', 'Chat context')}>
       <div className={css.contextRow} data-testid="conversation-context-row">
         <span className={css.contextLabel}>{tx('当前路线', 'Current route')}</span>
-        <span className={css.crumb}>
-          <button type="button" className={css.branchItem + (!activeBranchId ? ' ' + css.active : '')} onClick={() => void go(undefined)} aria-label={tx('切换到主线', 'Switch to Main')}>{tx('主线', 'Main')}</button>
-          {activeBranchId && lineage ? lineage.map((id, index) => {
-            const branch = branches.find((item) => item.id === id)
-            return <span key={id} className={css.path}><span className={css.sep}>›</span><button type="button" className={css.branchItem + (id === activeBranchId ? ' ' + css.active : '')} onClick={() => void go(id)}>{branch ? branchName(branch.title) : tx('分支 ', 'Branch ') + (index + 1)}</button></span>
-          }) : null}
-        </span>
-        {branches.length > 0 && <div className={css.switcher}>
-          <Button ref={routeTriggerRef} size="sm" variant="outline" aria-haspopup="menu" aria-expanded={openMenu === 'route'} aria-controls={routeMenuId} aria-label={tx('切换路线', 'Switch route')} onKeyDown={(event) => handleTriggerKeyDown('route', event)} onClick={() => toggleMenu('route')}>{tx('切换', 'Switch')} ▾</Button>
+        {activeBranchId && <button type="button" className={css.branchItem} onClick={() => void go(undefined)} aria-label={tx('切换到主线', 'Switch to Main')}>{tx('主线', 'Main')} ›</button>}
+        <div className={css.switcher}>
+          <Button ref={routeTriggerRef} size="sm" variant="outline" aria-haspopup="menu" aria-expanded={openMenu === 'route'} aria-controls={routeMenuId} aria-label={tx('切换路线', 'Switch route')} title={lineage?.map(id => branchName(branches.find(branch => branch.id === id)?.title || '')).join(' › ')} onKeyDown={(event) => handleTriggerKeyDown('route', event)} onClick={() => toggleMenu('route')}>{activeBranchId ? branchName(branches.find(branch => branch.id === activeBranchId)?.title || tx('分支', 'Branch')) : tx('主线', 'Main')} ▾</Button>
           {openMenu === 'route' && <div id={routeMenuId} className={css.menu} role="menu" aria-label={tx('路线', 'Routes')} onKeyDown={(event) => handleMenuKeyDown('route', event)}>
             <button type="button" className={css.menuItem + (!activeBranchId ? ' ' + css.active : '')} role="menuitem" data-selected={!activeBranchId ? 'true' : undefined} onClick={() => void go(undefined)}>{tx('主线', 'Main')}</button>
             {branches.map((branch) => <div key={branch.id}>
@@ -234,16 +241,14 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
               </div>
             </div>)}
           </div>}
-        </div>}
+        </div>
       </div>
 
       <div className={css.contextRow} data-testid="conversation-context-row">
         <span className={css.contextLabel}>{tx('模式', 'Mode')}</span>
-        <span className={css.activeMode} data-testid="active-conversation-mode" aria-live="polite">{activeModeName}</span>
-        {legacy && <span className={css.legacyHint} data-testid="legacy-mode-hint">{tx('模式未记录', 'Mode not recorded')}</span>}
         {hasNewRevision && selectedDefinition && <><span className={css.revisionHint}>{tx('有新版本', 'Update available')}</span><button type="button" className={css.applyButton} disabled={!!disabledReason} onClick={() => void applyMode(selectedDefinition)}>{tx('应用新版本', 'Apply update')}</button></>}
         <div className={css.switcher}>
-          <Button ref={modeTriggerRef} size="sm" variant="outline" disabled={!!disabledReason} aria-haspopup="menu" aria-expanded={openMenu === 'mode'} aria-controls={modeMenuId} aria-label={tx('切换对话模式', 'Switch chat mode')} title={disabledReason} onKeyDown={(event) => handleTriggerKeyDown('mode', event)} onClick={() => toggleMenu('mode')}>{tx('切换', 'Switch')} ▾</Button>
+          <Button ref={modeTriggerRef} size="sm" variant="outline" disabled={!!disabledReason} aria-haspopup="menu" aria-expanded={openMenu === 'mode'} aria-controls={modeMenuId} aria-label={tx('切换对话模式', 'Switch chat mode')} title={disabledReason} onKeyDown={(event) => handleTriggerKeyDown('mode', event)} onClick={() => toggleMenu('mode')}><span className={css.activeMode} data-testid="active-conversation-mode" aria-live="polite">{activeModeName}</span> ▾</Button>
           {openMenu === 'mode' && <div id={modeMenuId} className={css.menu + ' ' + css.modeMenu} role="menu" aria-label={tx('模式', 'Modes')} onKeyDown={(event) => handleMenuKeyDown('mode', event)}>
             <div className={css.menuHeading}>{tx('模式', 'Modes')}</div>
             {modes.map((mode) => {
@@ -253,8 +258,8 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
             {disabledReason && <div className={css.disabledHint} role="status">{disabledReason}</div>}
           </div>}
         </div>
-        {disabledReason && <span className={css.disabledHint} data-testid="mode-disabled-reason">{disabledReason}</span>}
       </div>
+      <div className={css.summary}>{contextSummary}</div>
       {modeError && <div className={css.modeError} role="alert">{modeError}</div>}
     </div>
   )

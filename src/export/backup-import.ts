@@ -267,6 +267,7 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
   if ((settings as any).visionCapability !== undefined && (settings as any).visionCapability !== 'auto' && (settings as any).visionCapability !== 'supports-image' && (settings as any).visionCapability !== 'text-only') throw new BackupError('settings.visionCapability 非法')
   if ((settings as any).pdfNavigationMode !== undefined && !isPdfNavigationMode((settings as any).pdfNavigationMode)) throw new BackupError('settings.pdfNavigationMode 非法')
   if ((settings as any).uiLanguage !== undefined && (settings as any).uiLanguage !== 'zh-CN' && (settings as any).uiLanguage !== 'en') throw new BackupError('settings.uiLanguage 非法')
+  if ((settings as any).webSearchEnabled !== undefined && typeof (settings as any).webSearchEnabled !== 'boolean') throw new BackupError('settings.webSearchEnabled must be a boolean')
   if ((settings as any).documentSort !== undefined && !isDocumentSortKey((settings as any).documentSort)) throw new BackupError('settings.documentSort 非法')
   if ((settings as any).productGuideSeenVersion !== undefined && !isStr((settings as any).productGuideSeenVersion)) throw new BackupError('settings.productGuideSeenVersion 非法')
   if ((settings as any).lastConversationId !== undefined && !isStr((settings as any).lastConversationId)) throw new BackupError('settings.lastConversationId 非法')
@@ -581,6 +582,7 @@ export async function restoreBackup(backup: Backup, binaries?: {
       { key: 'visionCapability', value: (backup.settings as { visionCapability?: unknown } | undefined)?.visionCapability || 'auto' },
       { key: 'pdfNavigationMode', value: isPdfNavigationMode((backup.settings as { pdfNavigationMode?: unknown } | undefined)?.pdfNavigationMode) ? (backup.settings as { pdfNavigationMode: string }).pdfNavigationMode : 'paged' },
       { key: 'uiLanguage', value: (backup.settings as { uiLanguage?: unknown } | undefined)?.uiLanguage === 'en' ? 'en' : 'zh-CN' },
+      { key: 'webSearchEnabled', value: backup.settings?.webSearchEnabled === true ? 'true' : 'false' },
       { key: LAYOUT_PREFERENCES_KEY, value: normalizeLayoutPreferences((backup.settings as { layoutPreferences?: unknown } | undefined)?.layoutPreferences) },
       { key: 'productGuideSeenVersion', value: typeof (backup.settings as { productGuideSeenVersion?: unknown } | undefined)?.productGuideSeenVersion === 'string' ? (backup.settings as { productGuideSeenVersion: string }).productGuideSeenVersion : '' },
       { key: 'lastConversationId', value: typeof (backup.settings as { lastConversationId?: unknown } | undefined)?.lastConversationId === 'string' && backup.conversations.some(conversation => conversation.id === (backup.settings as { lastConversationId: string }).lastConversationId) ? (backup.settings as { lastConversationId: string }).lastConversationId : '' },

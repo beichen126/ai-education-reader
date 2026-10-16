@@ -6,10 +6,11 @@ function assert(value: boolean, label: string) { if (value) { pass++; console.lo
 assert(estimateTextTokens('测试') === 2, 'CJK text uses a dense estimate')
 assert(estimateTextTokens('abcd') === 1, 'Latin text uses the characters / 4 estimate')
 const usage = estimateContextUsage({ messages: [{ role: 'user', content: 'first', images: ['old-1', 'old-2'] }, { role: 'assistant', content: '回答', images: [] }, { role: 'user', content: 'latest', images: ['new-1'] }], draftText: '草稿', promptTexts: ['prompt'], systemPrompt: 'system' })
-assert(usage.imageCount === 1, 'only the newest image-bearing turn is counted')
+assert(usage.imageCount === 3, 'images from every user turn are counted cumulatively')
 assert(usage.messageCount === 4, 'non-empty draft counts as the pending message')
 const draftUsage = estimateContextUsage({ messages: [{ role: 'user', content: '', images: ['old'] }], draftImageIds: ['draft-1', 'draft-2'] })
-assert(draftUsage.imageCount === 2, 'draft images take precedence over historical images')
+assert(draftUsage.imageCount === 1, 'pending images are not yet part of the sent conversation')
+assert(estimateContextUsage({ messages: [{ role: 'user', content: '', images: ['same', 'new'] }, { role: 'user', content: '', images: ['same'] }] }).imageCount === 2, 'reused image IDs are not counted twice')
 assert(formatEstimatedTokens(999) === '999', 'small token values stay exact')
 assert(formatEstimatedTokens(3200) === '3.2K', 'thousands use compact display')
 

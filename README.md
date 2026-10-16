@@ -13,7 +13,17 @@
 [隐私与备份](#数据隐私与备份) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v2.5.9-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v2.6.0-green?style=flat-square)
+
+### v2.6.0 联网与会话布局 / Web research and chat layout
+
+- 添加资料菜单提供并列的「本地文件」（图片或单个 PDF）和「资料库」，下方可开启联网搜索；默认关闭，开关保存在本地并随备份迁移。
+- 开启后使用当前 API 地址和 Key 调用 DeepSeek Search 与 Fetch，再将有限长度的网页参考交给模型，回答保留来源链接。搜索和网页读取可能单独计费；网页内容是不可信参考，不作为系统指令。停止生成会取消联网请求。自定义代理需要支持 `/v1/tools/search`、`/v1/tools/fetch` 和浏览器 CORS；不会把代理 Key 转发到另一个域名。
+- 顶部集中显示可点击的模式、路线、文本上下文估算和当前路线累计图片数；输入框从单行自动增长，最高为可视高度的四分之一。侧栏默认 220px 窄单栏，已有拖动宽度记忆不变。
+- The material menu offers **Local files** (images or one PDF) and **Library**, plus an optional **Web search** switch. It is off by default and saved locally/in backups. Enabled requests use the configured provider URL and key for DeepSeek Search and Fetch, and save source links with the answer. Tool requests may be billed separately. Stop cancels research as well as generation. Custom proxies must support the tool endpoints and browser CORS. Chat reasoning effort is unchanged.
+- The header groups clickable mode/route controls, estimated text context and cumulative conversation-path images. The composer grows up to one quarter of the viewport. The default sidebar is a compact 220px; existing saved widths remain respected.
+
+API contract: [DeepSeek Search & Fetch documentation](https://api-docs.deepseek.com/guides/search/).
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
 ![BYOK](https://img.shields.io/badge/BYOK-self--hosted-green?style=flat-square)

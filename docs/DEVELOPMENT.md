@@ -4,6 +4,8 @@
 
 ## 环境
 
+v2.6.0 联网检索入口为 `src/api/deepseek-web.ts`，主线和分支统一由 `runThreadReply` 调用。默认不开启，不增加后端。联网使用当前提供商的 Key 与 API Base，Search/Fetch 独立请求、可取消、带超时并限制参考长度；自定义代理需转发相应工具端点并允许浏览器 CORS。不要修改会话的 `reasoning_effort=max`。搜索/网页内容只是不可信参考，不能覆盖系统指令；完成的回答保留来源链接用于导出和离线回看。测试使用模拟 API，不在 CI 使用真实 Key。
+
 - Node.js `>=20.0.0 <26`；
 - npm；
 - Microsoft Edge（本地浏览器 E2E 默认使用）或 CI 使用的 Chromium；

@@ -6,6 +6,7 @@ import { generationRegistry, type GenerationLease } from './generation-registry'
 import { projectLogicalPromptContext } from '../prompts/prompt-compile-strategies'
 import type { AcceptedSendContext } from '../prompts/prompt-send'
 import type { SendFailure, SendOutcome } from './send-outcome'
+import { prepareWebResearch, WebResearchError } from '../api/deepseek-web'
 
 /**
  * Thread-agnostic streaming reply engine. ONE generation pipeline is shared by the ROOT
@@ -98,8 +99,16 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     }
     thread.setStreaming()
     if (onStreamStart) onStreamStart(controller, assistantId)
+    let webFooter = ''
+    if (settings.webSearchEnabled) {
+      const question = [...contextMessages].reverse().find(message => message.role === 'user')?.content || ''
+      const research = await prepareWebResearch({ baseUrl: settings.apiBaseUrl, apiKey: settings.apiKey, question, signal: controller.signal })
+      if (!ownedLease.isCurrent()) throw new DeepSeekError('aborted', 'Aborted')
+      reqMessages.push(research.message)
+      webFooter = research.footer
+    }
     const r = await streamTextChat({ apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages, signal: controller.signal, onDelta })
-    received = r.content
+    received = r.content + webFooter
     update(received, true)
     if (!(await thread.exists())) throw new DeepSeekError('aborted', '目标已删除')
     await thread.persistFinal()
@@ -124,7 +133,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       ownedLease.release(); thread.setIdle()
       return { kind: 'aborted', ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
     }
-    const label = errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : '')
+    const label = e instanceof WebResearchError ? e.message : errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : '')
     const failure: SendFailure = { kind: 'failed', code: err.kind, message: label, ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
     if (placeholderCreated) thread.settleAssistant('failed', label)
     await thread.persistFinal()

@@ -60,8 +60,12 @@ const readPreferences = () => page.evaluate(() => new Promise(resolve => {
 }))
 
 const initialWidth = (await sidebar.boundingBox())?.width ?? 0
+assert(initialWidth === 220, 'default sidebar uses the narrow 220px single-column layout')
+assert(await sidebar.getAttribute('data-compact') !== null, 'default layout is compact')
+await dragBoundaryBy(60)
+await page.waitForFunction(() => !document.querySelector('[data-testid="sidebar"]')?.hasAttribute('data-compact'))
 const initialRows = await rows()
-assert(initialWidth >= 244, 'default sidebar starts in the normal width range (got ' + initialWidth + ')')
+assert(((await sidebar.boundingBox())?.width ?? 0) >= 244, 'dragging right reaches the normal width range')
 assert(!await sidebar.getAttribute('data-compact'), 'normal width uses the two-column layout')
 assert(Math.abs(initialRows.image.y - initialRows.file.y) < 2, 'normal width keeps 图片 and 文件 side by side')
 assert(Math.abs(initialRows.fullscreen.y - initialRows.settings.y) < 2, 'normal width keeps 全屏 and 设置 side by side')

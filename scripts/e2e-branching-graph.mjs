@@ -42,14 +42,9 @@ assert(mainBody.includes('图问二') && mainBody.includes('图答二'), 'Main s
 assert(!mainBody.includes('A追问') && !mainBody.includes('B追问'), 'Main NOT polluted by A/B messages')
 
 // Canonical inherited-message branch: from Branch B, branch on the INHERITED A1 (trigger index 0).
-const showAB = async () => { await page.locator('button[aria-label="切换到主线"]').first().click(); await page.waitForTimeout(400) }
 // Return to Branch B (open switcher, click the deepest branch).
-await page.locator('button[aria-label="切换到主线"]').first().click()
-await page.waitForTimeout(500)
-await page.locator('text=切换').first().click()
-const branchItems = await page.locator('[role="menuitem"]').all()
-const lastBranchBtn = branchItems[branchItems.length - 1]
-if (lastBranchBtn) await lastBranchBtn.click()
+await page.getByRole('button', { name: '切换路线', exact: true }).click()
+await page.getByRole('menuitem', { name: '分支 2', exact: true }).click()
 await page.waitForTimeout(700)
 // Branch on the inherited A1.
 await page.locator('button[aria-label="消息操作"]').nth(0).click()
@@ -70,9 +65,7 @@ await page.waitForTimeout(500)
 await page.locator('textarea[class*="composerText"]').fill('主线草稿')
 await page.waitForTimeout(300)
 // Switch to Branch A.
-await page.locator('button[aria-label="切换到主线"]').first().click()
-await page.waitForTimeout(400)
-await page.locator('text=切换').first().click()
+await page.getByRole('button', { name: '切换路线', exact: true }).click()
 await page.locator('[role="menuitem"]:has-text("分支 1")').first().click()
 await page.waitForTimeout(400)
 await page.locator('textarea[class*="composerText"]').fill('A草稿')

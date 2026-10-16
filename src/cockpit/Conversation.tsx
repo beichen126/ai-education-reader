@@ -1,8 +1,8 @@
 
-import { Fragment, lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/sessions-store'
-import { useSettings } from '../engine/settings-store'
+import { patchSettings, useSettings, useSettingsMutation } from '../engine/settings-store'
 import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
@@ -68,6 +68,7 @@ export function Conversation() {
   const sendError = useSessions(s => s.sendError)
   const sendErrorTarget = useSessions(s => s.sendErrorTarget)
   const hasKey = useSettings(s => !!s.apiKey)
+  const webSearchEnabled = useSettings(s => s.webSearchEnabled === true)
   const listRef = useRef<HTMLDivElement | null>(null)
   const atBottomRef = useRef(true)
   const branchChat = useBranchChat(session)
@@ -279,7 +280,7 @@ export function Conversation() {
       )}
       {busy && (
         <div className={css.sendingBar}>
-          <span>{streaming ? tx('正在生成…', 'Generating…') : tx('正在发送…', 'Sending…')}</span>
+          <span>{streaming ? (webSearchEnabled ? tx('正在联网检索并生成…', 'Searching the web and generating…') : tx('正在生成…', 'Generating…')) : tx('正在发送…', 'Sending…')}</span>
           {streaming && <button className={css.stopBtn} onClick={sessionsActions.stopGenerating}>{tx('停止生成', 'Stop')}</button>}
         </div>
       )}
@@ -291,6 +292,7 @@ export function Conversation() {
         effectiveMessageCount={promptPath.messageIds.length}
         effectiveTransitions={promptPath.transitions}
         busy={busy}
+        contextSummary={<ContextSummary messages={messages} promptTexts={promptPath.transitions.map(transition => transition.snapshot.content)} draftKey={branchChat.activeBranchId ? branchThreadKey(branchChat.activeBranchId) : session.id} />}
         onSwitch={async (id) => { await branchChat.switchBranch(id); setMenuMsgId(null) }}
         onChanged={() => void branchChat.refresh()}
         onModeChanged={async () => { await sessionsActions.reload(session.id); await branchChat.refresh() }}
@@ -325,7 +327,7 @@ export function Conversation() {
           </>}
         </div>
         <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" onClick={openLibrary}>{tx('学习成果', 'Study outputs')}</Button></div>
-        <Composer sessionId={session?.id} busy={busy} thread={activeThread} contextMessages={messages} promptTexts={promptPath?.transitions.map(transition => transition.snapshot.content) ?? []} onBranchSent={() => void branchChat.refresh()} />
+        <Composer sessionId={session?.id} busy={busy} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
       </div>
       {turns.length > 1 && <ConversationTurnRail turns={turns} activeId={activeTurnId} onSelect={(turn) => {
         const el = listRef.current
@@ -535,11 +537,40 @@ function PendingThumb({ id, onRemove, onOpen }: { id: string; onRemove: () => vo
   )
 }
 
-function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBranchSent }: { sessionId: string | undefined; busy: boolean; thread?: { type: 'root' | 'branch'; conversationId: string; branchId?: string }; contextMessages: readonly TMessage[]; promptTexts: readonly string[]; onBranchSent?: () => void }) {
+function ContextSummary({ messages, promptTexts, draftKey }: { messages: readonly TMessage[]; promptTexts: readonly string[]; draftKey: string }) {
+  const draft = useDraft(draftKey)
+  const systemPrompt = useSettings(s => s.customSystemPromptEnabled ? s.customSystemPrompt : '')
+  const base = useMemo(() => estimateContextUsage({ messages, promptTexts, systemPrompt }), [messages, promptTexts, systemPrompt])
+  return <div className={css.contextUsage} data-testid="composer-context-usage" aria-live="polite">
+    {tx('已占用上下文 · 约 ', 'Context used · about ')}{formatEstimatedTokens(base.estimatedTextTokens + estimateTextTokens(draft.text))} tokens{tx(' · 累计 ' + base.imageCount + ' 张图', ' · ' + base.imageCount + ' images total')}
+  </div>
+}
+
+function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string | undefined; busy: boolean; thread?: { type: 'root' | 'branch'; conversationId: string; branchId?: string }; onBranchSent?: () => void }) {
   // Draft is keyed by thread (root conversation or branch), so switching A<->B shows each one's own text/images.
   const isBranch = thread?.type === 'branch'
   const key = isBranch ? branchThreadKey(thread!.branchId!) : (sessionId ?? '__none__')
   const draft = useDraft(key)
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const webSearchEnabled = useSettings(s => s.webSearchEnabled === true)
+  const settingsPending = useSettingsMutation().status === 'pending'
+  useLayoutEffect(() => {
+    const element = textareaRef.current
+    if (!element) return
+    const resize = () => {
+      const maxHeight = Math.max(44, (window.visualViewport?.height ?? window.innerHeight) / 4)
+      element.style.height = 'auto'
+      element.style.height = Math.min(element.scrollHeight + 2, maxHeight) + 'px'
+      element.style.overflowY = element.scrollHeight + 2 > maxHeight ? 'auto' : 'hidden'
+    }
+    resize()
+    let width = element.parentElement?.clientWidth
+    const observer = new ResizeObserver(() => { const next = element.parentElement?.clientWidth; if (next !== width) { width = next; resize() } })
+    if (element.parentElement) observer.observe(element.parentElement)
+    window.addEventListener('resize', resize)
+    window.visualViewport?.addEventListener('resize', resize)
+    return () => { observer.disconnect(); window.removeEventListener('resize', resize); window.visualViewport?.removeEventListener('resize', resize) }
+  }, [draft.text, key])
   const [openId, setOpenId] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | undefined>(undefined)
   const [pdfPanel, setPdfPanel] = useState<{ open: boolean; file?: File }>({ open: false })
@@ -615,15 +646,6 @@ function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBra
   }, [attachMenuOpen])
   const text = draft.text
   const picIds = draft.imageIds
-  const customSystemPrompt = useSettings(s => s.customSystemPromptEnabled ? s.customSystemPrompt : '')
-  const baseContextUsage = useMemo(() => estimateContextUsage({ messages: contextMessages, promptTexts, systemPrompt: customSystemPrompt }), [contextMessages, promptTexts, customSystemPrompt])
-  // Typing only measures the small draft delta; it never rescans a long conversation on
-  // every keystroke.
-  const contextUsage = useMemo(() => ({
-    estimatedTextTokens: baseContextUsage.estimatedTextTokens + estimateTextTokens(text),
-    imageCount: picIds.length || baseContextUsage.imageCount,
-    messageCount: baseContextUsage.messageCount + ((text.trim() || picIds.length) ? 1 : 0),
-  }), [baseContextUsage, text, picIds])
   const metas = useAttachmentMetas(picIds)
   const composerItems = buildAttachmentDisplayItems(picIds, metas)
   const removeGroup = (item: Extract<AttachmentDisplayItem, { type: 'pdf-group' }>) => {
@@ -711,20 +733,23 @@ function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBra
             the existing image / local-PDF / library actions. The hidden file inputs stay;
             the trigger merely dispatches into them. No domain merge. */}
         <button type="button" ref={attachBtnRef} className={css.attachBtn} role="button" aria-label={tx('添加资料', 'Add material')} title={tx('添加资料', 'Add material')} data-testid="composer-attach" aria-haspopup="menu" aria-expanded={attachMenuOpen} onClick={() => setAttachMenuOpen(v => !v)}>
-          <IconDocument16 />
+          <IconDocument16 />{webSearchEnabled && <span className={css.searchBadge} aria-label={tx('联网搜索已开启', 'Web search enabled')}>●</span>}
         </button>
         {attachMenuOpen && (
           <div className={css.addFileMenu} data-testid="composer-add-file-menu" ref={attachMenuRef}>
             <div className={css.menuTitle}>{tx('添加资料', 'Add material')}</div>
-            <button type="button" className={css.menuItem} data-testid="composer-add-image" onClick={() => { setAttachMenuOpen(false); imageInputRef.current?.click() }}><IconPhoto16 /> {tx('打开本地图片', 'Open local images')}</button>
-            <button type="button" className={css.menuItem} data-testid="composer-add-pdf" onClick={() => { setAttachMenuOpen(false); pdfInputRef.current?.click() }}><IconDocument16 /> {tx('打开本地 PDF', 'Open local PDF')}</button>
-            <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}><IconFolderOpenOutline16 /> {tx('从资料库添加', 'Add from library')}</button>
+            <div className={css.materialActions}>
+              <button type="button" className={css.menuItem} data-testid="composer-add-local" onClick={() => { setAttachMenuOpen(false); materialsInputRef.current?.click() }}><IconDocument16 /><span>{tx('本地文件', 'Local files')}<small>{tx('图片或单个 PDF', 'Images or one PDF')}</small></span></button>
+              <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}><IconFolderOpenOutline16 /><span>{tx('资料库', 'Library')}<small>{tx('选择已保存的资料', 'Choose saved materials')}</small></span></button>
+            </div>
+            <label className={css.webSearchToggle}><input type="checkbox" checked={webSearchEnabled} disabled={busy || settingsPending} onChange={event => { void patchSettings({ webSearchEnabled: event.target.checked }).catch(() => setPhotoError(tx('无法保存联网设置，请重试。', 'Unable to save web search settings. Try again.'))) }} />{tx('联网搜索', 'Web search')}</label>
+            <small className={css.webSearchHint}>{tx('使用当前 API 配置；搜索和网页读取单独计费。', 'Uses current API settings. Search and webpage reads are billed separately.')}</small>
           </div>
         )}
         <input ref={imageInputRef} data-testid="composer-images-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
         <input ref={pdfInputRef} data-testid="composer-pdf-input" type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
         <input ref={materialsInputRef} data-testid="composer-materials-input" type="file" accept=".pdf,application/pdf,.jpg,.jpeg,.png,.gif,.webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onMaterialsSelected(e.target.files); e.target.value = '' }} />
-        <textarea className={css.composerText} value={text} aria-label={tx('输入消息', 'Message')} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
+        <textarea ref={textareaRef} rows={1} className={css.composerText} value={text} aria-label={tx('输入消息', 'Message')} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
           onChange={e => setDraftText(key, e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }} />
         <button className={css.sendBtn} onClick={send} disabled={busy}>{busy ? tx('生成中', 'Generating') : tx('发送', 'Send')}</button>
@@ -744,9 +769,6 @@ function Composer({ sessionId, busy, thread, contextMessages, promptTexts, onBra
           )}
           {libMsg && <div className={css.ctxHint} data-testid="composer-ctx-msg">{libMsg}</div>}
         </div>
-        {sessionId && <div className={css.contextUsage} data-testid="composer-context-usage" title={tx('文本 token 为本地估算；图片占用由模型决定。发送时仅保留最近一轮含图消息。', 'Text tokens are estimated locally. Image usage depends on the model. Only the latest turn containing images is sent.')} aria-label={tx('已占用上下文，约 ' + contextUsage.estimatedTextTokens + ' tokens，' + contextUsage.imageCount + ' 张图', 'Context used, about ' + contextUsage.estimatedTextTokens + ' tokens and ' + contextUsage.imageCount + ' images')}>
-          {tx('已占用上下文 · 约 ', 'Context used · about ')}{formatEstimatedTokens(contextUsage.estimatedTextTokens)} tokens{contextUsage.imageCount > 0 ? tx(' · ' + contextUsage.imageCount + ' 张图', ' · ' + contextUsage.imageCount + ' images') : ''}
-        </div>}
       </div>
     </div>
   )

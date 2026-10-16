@@ -26,8 +26,8 @@ export function estimateTextTokens(text: string): number {
   return Math.ceil(cjk + other / 4)
 }
 
-/** Mirrors the send path's multimodal policy: all text stays in the path, while only
- * the newest image-bearing turn is sent. Pending draft images take precedence. */
+/** Text is a local estimate; image count is the cumulative distinct images on this
+ * conversation path, not the provider's retained-image window. */
 export function estimateContextUsage(input: {
   messages: readonly ContextUsageMessage[]
   draftText?: string
@@ -42,14 +42,7 @@ export function estimateContextUsage(input: {
     input.draftText ?? '',
   ]
   const draftImages = input.draftImageIds ?? []
-  let imageCount = draftImages.length
-  if (imageCount === 0) {
-    for (let index = input.messages.length - 1; index >= 0; index--) {
-      if (input.messages[index].role !== 'user') continue
-      const images = input.messages[index].images ?? []
-      if (images.length > 0) { imageCount = images.length; break }
-    }
-  }
+  const imageCount = new Set(input.messages.filter(message => message.role === 'user').flatMap(message => [...(message.images ?? [])])).size
   return {
     estimatedTextTokens: pieces.reduce((sum, piece) => sum + estimateTextTokens(piece), 0),
     imageCount,

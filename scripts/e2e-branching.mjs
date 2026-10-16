@@ -59,9 +59,7 @@ assert(mainBody.includes('问题二') && mainBody.includes('答案二'), 'Main s
 assert(!mainBody.includes('这是分支回答'), 'Main does NOT contain the branch continuation (无污染)')
 
 // Switch back to the branch -> branch continuation preserved.
-await page.locator('button[aria-label="切换到主线"]').first().click()
-await page.waitForTimeout(400)
-await page.locator('text=切换').first().click()
+await page.getByRole('button', { name: '切换路线', exact: true }).click()
 await page.locator('[role="menuitem"]:has-text("分支 1")').first().click()
 await page.waitForTimeout(500)
 assert((await page.textContent('body')).includes('这是分支回答'), 'branch continuation preserved after returning to the branch')

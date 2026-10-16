@@ -1,5 +1,6 @@
 // Sidebar + Composer closure E2E (A1 collapsed-rail history-first, A2 unified attach trigger).
 import { chromium } from 'playwright-core'
+import { dismissProductGuide } from './e2e-navigation.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const results = [], errors = []
 const assert = (c, m) => results.push((c ? 'PASS  ' : 'FAIL  ') + m)
@@ -8,6 +9,7 @@ const page = await (await browser.newContext({ viewport: { width: 1440, height: 
 page.on('pageerror', e => errors.push('pageerror: ' + e.message))
 await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('[data-testid="composer-materials-input"]').waitFor({ state: 'attached', timeout: 25000 })
+await dismissProductGuide(page)
 
 // ===== A1: COLLAPSED sidebar — rail-history must be the FIRST interactive rail control ======
 // Collapse the sidebar via the collapse button.
@@ -27,7 +29,7 @@ const railOrder = await page.evaluate(() => {
 assert(railOrder.length >= 2, 'A1: collapsed rail exposes interactive buttons (got ' + railOrder.length + ')')
 assert(railOrder[0] === 'rail-history', 'A1: rail-history is the FIRST rail control (got ' + railOrder[0] + ')')
 assert(railOrder.indexOf('rail-new-chat') > railOrder.indexOf('rail-history'), 'A1: rail-new-chat comes AFTER rail-history')
-assert(railOrder[railOrder.length - 1] === 'rail-settings' || railOrder[railOrder.length - 1] === 'rail-fullscreen', 'A1: bottom utility controls stay at the bottom (last = ' + railOrder[railOrder.length - 1] + ')')
+assert(railOrder.slice(-3).join(',') === 'rail-fullscreen,rail-settings,rail-help', 'A1: bottom utility controls stay grouped at the bottom')
 
 // Clicking rail-history restores the expanded sidebar.
 await page.locator('[data-testid="rail-history"]').click()
@@ -61,8 +63,7 @@ await page.locator('[data-testid="sidebar-collapse"]').waitFor({ state: 'visible
   // Open the unified menu.
   await page.locator('[data-testid="composer-attach"]').click()
   await page.locator('[data-testid="composer-add-file-menu"]').waitFor({ state: 'visible', timeout: 5000 })
-  assert(await page.locator('[data-testid="composer-add-image"]').count() === 1, 'A2: unified menu exposes 图片 action')
-  assert(await page.locator('[data-testid="composer-add-pdf"]').count() === 1, 'A2: unified menu exposes 打开本地 PDF action')
+  assert(await page.locator('[data-testid="composer-add-local"]').count() === 1, 'A2: unified menu exposes combined local image/PDF action')
   assert(await page.locator('[data-testid="composer-from-library"]').count() === 1, 'A2: unified menu exposes 从文件资料库选择 action')
   // Escape closes the menu.
   await page.keyboard.press('Escape')
@@ -98,12 +99,10 @@ await page.locator('[data-testid="sidebar-collapse"]').waitFor({ state: 'visible
   // Re-open menu and assert every entry's exact accessible text (no emoji, no photo-only label).
   await page.locator('[data-testid="composer-attach"]').click()
   await page.locator('[data-testid="composer-add-file-menu"]').waitFor({ state: 'visible', timeout: 5000 })
-  const imgLabel = (await page.locator('[data-testid="composer-add-image"]').textContent()).trim()
-  const pdfLabel = (await page.locator('[data-testid="composer-add-pdf"]').textContent()).trim()
+  const localLabel = (await page.locator('[data-testid="composer-add-local"]').textContent()).trim()
   const libLabel = (await page.locator('[data-testid="composer-from-library"]').textContent()).trim()
-  assert(imgLabel === '打开本地图片', 'A3: menu image entry is 打开本地图片 (got ' + imgLabel + ')')
-  assert(pdfLabel === '打开本地 PDF', 'A3: menu pdf entry is 打开本地 PDF (got ' + pdfLabel + ')')
-  assert(libLabel === '从资料库添加', 'A3: menu library entry is 从资料库添加 (got ' + libLabel + ')')
+  assert(localLabel.includes('本地文件') && localLabel.includes('图片或单个 PDF'), 'A3: local file action explains accepted formats')
+  assert(libLabel.includes('资料库'), 'A3: menu library action is clear')
   const menuText = (await page.locator('[data-testid="composer-add-file-menu"]').textContent()) || ''
   assert(menuText.includes('添加资料') && !menuText.includes('添加内容'), 'A3: menu title is 添加资料 (no more 添加内容)')
   assert(!menuText.startsWith('🖼') && !menuText.includes('📚') && !menuText.includes('📄'), 'A3: menu no longer uses emoji icons')

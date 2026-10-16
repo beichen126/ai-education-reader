@@ -25,7 +25,7 @@ export const SIDEBAR_MIN = 184
 /** Sidebar drag clamp ceiling. */
 export const SIDEBAR_MAX = 420
 /** Sidebar width before any user drag. */
-export const SIDEBAR_DEFAULT = 280
+export const SIDEBAR_DEFAULT = 220
 /** Expanded sidebars below this width switch their paired actions to one column. */
 export const SIDEBAR_COMPACT_THRESHOLD = 244
 /** Raw pointer width at or below this point collapses the sidebar on release. */
