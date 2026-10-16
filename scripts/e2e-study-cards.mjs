@@ -43,8 +43,8 @@ await rail.locator('[data-testid="conversation-turn-mark"]').nth(1).click()
 assert(await rail.locator('[data-testid="conversation-turn-mark"]').nth(1).getAttribute('aria-current') === 'true', 'clicking a rail marker selects that round')
 const contextUsage = page.locator('[data-testid="composer-context-usage"]')
 await contextUsage.waitFor({ state: 'visible', timeout: 10000 })
-assert((await contextUsage.innerText()).includes('已占用上下文 · 约'), 'the composer shows a local context usage estimate on the right')
-assert((await contextUsage.getAttribute('title')).includes('本地估算'), 'the context indicator explains its estimate and image policy')
+assert((await contextUsage.innerText()).includes('已占用上下文 · 约'), 'the header shows a local context usage estimate on the right')
+assert(await contextUsage.getAttribute('title') === null && (await contextUsage.innerText()).includes('累计'), 'the header directly shows cumulative images without a hover tooltip')
 
 // ---- 1. menu structure ----
 await openMessageActions(page, 0)
