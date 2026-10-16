@@ -716,7 +716,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
     if (outcome.kind !== 'rejected') { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null) }
   }
   return (
-    <div className={css.composer}>
+    <div className={css.composer} data-testid="composer">
       {photoError && <div className={css.errorBanner}>{photoError}</div>}
       {picIds.length > 0 && (
         <div className={css.composerPics}>
@@ -759,7 +759,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
         {pdfPanel.open && <PdfPanel initialFile={pdfPanel.file} onClose={() => setPdfPanel({ open: false })} onAddToDraft={addPdfToDraft} />}
         {libPickerOpen && <DocumentContextPicker documentId={undefined} onCancel={() => { setLibPickerOpen(false); setLibMsg(null) }} onAdd={(selection, docId, fileName) => { void addFromLibrary(selection, docId, fileName) }} />}
       </Suspense>
-      <div className={css.composerStatusRow}>
+      {(libBusy || libMsg) && <div className={css.composerStatusRow} data-testid="composer-status-row">
         <div>
           {libBusy && (
             <div className={css.ctxHint} data-testid="composer-ctx-progress">
@@ -769,7 +769,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
           )}
           {libMsg && <div className={css.ctxHint} data-testid="composer-ctx-msg">{libMsg}</div>}
         </div>
-      </div>
+      </div>}
     </div>
   )
 }

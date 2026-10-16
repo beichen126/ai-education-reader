@@ -116,6 +116,8 @@ await page.locator('[data-testid="doc-context-check-' + parent2.id + '"]').click
 await page.locator('[data-testid="doc-context-add"]').click()
 if (await page.locator('[data-testid="doc-context-confirm"]').count()) await page.locator('[data-testid="doc-context-confirm-yes"]').click()
 const B = await expectDraftContext('B', parent2.endPage - parent2.startPage + 1, bBefore)
+await page.locator('[data-testid="composer-ctx-msg"]').waitFor({ state: 'visible', timeout: 10000 })
+assert(await page.locator('[data-testid="composer-status-row"]').isVisible(), 'B: a real library result still renders the footer status row')
 assert(B.sel && B.sel.selectedChapterIds && B.sel.selectedChapterIds.includes(parent2.id), 'B: provenance selectedChapterIds includes the parent chapter')
 
 // ========== FLOW C: Reader nested page -> choose ancestor -> actual parent range ==========

@@ -22,6 +22,12 @@ try {
   await route.click()
   await page.getByRole('menuitem', { name: 'Main', exact: true }).click()
   const textarea = page.getByRole('textbox', { name: 'Message', exact: true })
+  assert.equal(await page.locator('[data-testid="composer-status-row"]').count(), 0, 'no empty footer status row')
+  assert.ok(await textarea.evaluate(element => {
+    const bar = element.parentElement.getBoundingClientRect()
+    const composer = element.closest('[data-testid="composer"]').getBoundingClientRect()
+    return Math.abs(composer.bottom - bar.bottom) <= 1
+  }), 'nothing reserves an empty line below the composer bar')
   assert.ok((await textarea.boundingBox()).height <= 48)
   await textarea.fill('line\n'.repeat(70))
   assert.ok((await textarea.boundingBox()).height <= 225)
@@ -93,5 +99,10 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1))
   assert.deepEqual(errors.filter(error => !/attachment|image/i.test(error)), [])
+  const emptyContext = await browser.newContext({ viewport: { width: 390, height: 844 } })
+  const emptyPage = await emptyContext.newPage()
+  await seedAndBoot(emptyPage, { settings: { uiLanguage: 'zh-CN' } })
+  assert.equal(await emptyPage.locator('[data-testid="composer-status-row"]').count(), 0, 'empty Chinese chat has no reserved status row either')
+  await emptyContext.close()
   console.log('PASS v2.6.0: cumulative count after two real image sends and branch switch, one-row header, autosize, two-column menu, persisted Search/Fetch + sources, unchanged max reasoning, Stop during research')
 } finally { await browser.close() }

@@ -13,7 +13,7 @@
 [隐私与备份](#数据隐私与备份) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v2.6.0-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v2.6.1-green?style=flat-square)
 
 ### v2.6.0 联网与会话布局 / Web research and chat layout
 
