@@ -20,7 +20,8 @@ export async function openDocumentLibrary(page) {
     if (await railEntry.isVisible().catch(() => false)) {
       await railEntry.click()
     } else {
-      const railHistory = page.locator('[data-testid="rail-history"]')
+      const phoneMenu = page.locator('[data-testid="mobile-menu-toggle"]')
+      const railHistory = await phoneMenu.isVisible().catch(() => false) ? phoneMenu : page.locator('[data-testid="rail-history"]')
       if (!(await railHistory.isVisible().catch(() => false))) {
         throw new Error('Document Library navigation unavailable: no visible files or history rail')
       }
@@ -50,7 +51,10 @@ export async function openSettings(page) {
   if (await dialog.isVisible().catch(() => false)) return dialog
   const sidebarEntry = page.locator('[data-testid="sidebar-settings"]')
   if (await sidebarEntry.isVisible().catch(() => false)) await sidebarEntry.click()
-  else await page.locator('[data-testid="rail-settings"]').click()
+  else if (await page.locator('[data-testid="mobile-menu-toggle"]').isVisible().catch(() => false)) {
+    await page.locator('[data-testid="mobile-menu-toggle"]').click()
+    await page.locator('[data-testid="mobile-history-drawer"] [data-testid="sidebar-settings"]').click()
+  } else await page.locator('[data-testid="rail-settings"]').click()
   await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
   return dialog
 }

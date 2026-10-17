@@ -147,6 +147,7 @@ export function AppFrame({
   // the narrow rail <-> drawer transition independent from the desktop width
   // preference.
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
+  const phone = viewport <= 760
   useEffect(() => { actions.setNarrow(narrow) }, [actions, narrow])
   const sidebarCollapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
   const sidebarPreference = sidebarCollapsed
@@ -201,10 +202,11 @@ const productTitle = ((globalThis as any).process?.env?.DSH_CLIENT_TITLE) ?? t('
     <div
       ref={frameRef}
       className={css.frame}
-      style={{ gridTemplateColumns: narrow && panels.narrowExpanded ? `0px minmax(0, 1fr) 0px` : `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
+      style={{ gridTemplateColumns: phone || (narrow && panels.narrowExpanded) ? `0px minmax(0, 1fr) 0px` : `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
       data-narrow={narrow || undefined}
+      data-phone={phone || undefined}
       data-dragging={dragging || undefined}
     >
       <DocumentTitle

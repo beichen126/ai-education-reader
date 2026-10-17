@@ -79,11 +79,9 @@ function emptyWindow(): VirtualWindow {
 
 /** The at most `limit` window pages closest to the page the user is looking at. */
 function pickTargets(window: VirtualWindow, centrePage: number, limit: number): number[] {
-  if (window.pages.length <= limit) return [...window.pages]
   return [...window.pages]
     .sort((a, b) => Math.abs(a - centrePage) - Math.abs(b - centrePage) || a - b)
     .slice(0, limit)
-    .sort((a, b) => a - b)
 }
 
 type ContinuousViewportApi = {
@@ -179,7 +177,7 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
     const controller = new ContinuousRenderController({
       readViewport1: page => { notePdfRendererCall('continuous', 'readViewport'); return readSessionPageViewport(ownedSession, page) },
       startRender: (page, scale) => { notePdfRendererCall('continuous', 'startRender'); return renderSessionPageSurface(ownedSession, page, scale) },
-    }, { pageCount, cacheCapacity: MAX_CANVAS_PAGES }, {
+    }, { pageCount, cacheCapacity: MAX_CANVAS_PAGES, maxConcurrentRenders: window.matchMedia('(max-width: 760px)').matches ? 2 : 4 }, {
       onPageReady: (page, surface) => {
         setSurfaces(previous => { const next = new Map(previous); next.set(page, surface); return next })
         setPageErrors(previous => { const next = new Map(previous); next.delete(page); return next })

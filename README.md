@@ -13,7 +13,11 @@
 [隐私与备份](#数据隐私与备份) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v2.6.1-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v2.6.2-green?style=flat-square)
+
+v2.6.2：手机端（≤760px）取消常驻左侧栏，改用顶部两道长短横线打开导航抽屉；收紧消息留白，桌面与平板侧栏不变。目录文字抄录关闭思考，结构整理使用 high 推理，会话仍为 max。图片按附近可见区域延迟读取、异步解码，原图读取限制为 2–4 路；手机连续 PDF 同时最多 2 页渲染，复用 PDF.js Worker，避免多画布争抢内存。
+
+On phones (≤760px), v2.6.2 replaces the persistent rail with a top-left two-line navigation button and wider reading space. TOC transcription disables thinking; structure analysis uses high reasoning; chat stays at max. Nearby-only preview reads, asynchronous image decoding and bounded PDF concurrency reduce cold-open contention without adding heavyweight workers.
 
 ### v2.6.0 联网与会话布局 / Web research and chat layout
 

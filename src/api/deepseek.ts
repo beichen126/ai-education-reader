@@ -4,7 +4,7 @@ import { tx } from '../engine/locale'
 
 export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 export type ApiChatMessage = { role: 'user' | 'assistant' | 'system'; content: string | ChatContentPart[] }
-export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal; reasoningEffort?: DeepSeekReasoningEffort }
+export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal; reasoningEffort?: DeepSeekReasoningEffort; thinking?: 'enabled' | 'disabled' }
 export type SendTextChatResult = { content: string }
 
 /** DeepSeek vision API limit: max images in ONE chat request (API limit, not product). */
@@ -66,7 +66,7 @@ export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChat
     res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify({ model, messages, stream: false, ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort) }),
+      body: JSON.stringify({ model, messages, stream: false, ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'disabled' ? { thinking: { type: 'disabled' } } : { ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'enabled' ? { thinking: { type: 'enabled' } } : {}) }) }),
       signal,
     })
   } catch {

@@ -92,7 +92,7 @@ await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'hidden'
 
 // ---- mobile drawer keeps 资料 + Settings and always reaches Help ----
 await page.setViewportSize({ width: 375, height: 812 })
-await page.locator('[data-testid="rail-history"]').click()
+await page.locator('[data-testid="mobile-menu-toggle"]').click()
 const drawer = page.locator('[data-testid="mobile-history-drawer"]')
 await drawer.waitFor({ state: 'visible', timeout: 10000 })
 assert(await drawer.locator('[data-testid="sidebar-entry-images"]').count() === 1 && await drawer.locator('[data-testid="sidebar-entry-files"]').count() === 1, 'mobile drawer keeps 图片 and 文件')

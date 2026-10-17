@@ -37,6 +37,18 @@
   display: block;
   visibility: visible;
 }
+.frame[data-phone] .sidebarCol:not([data-drawer-open]) {
+  visibility: hidden;
+  border-right: 0;
+  pointer-events: none;
+}
+@media (max-width: 760px) {
+  /* Apply immediately on rotation/resize, before ResizeObserver publishes its
+     next frame. The phone must never briefly keep the desktop grid track. */
+  .frame { grid-template-columns: 0px minmax(0, 1fr) 0px !important; transition: none; }
+  .frame .sidebarCol:not([data-drawer-open]) { visibility: hidden; border-right: 0; pointer-events: none; }
+  .frame .sidebarCol[data-drawer-open] > * { width: 100% !important; }
+}
 
 .frame[data-narrow] .sidebarCol[data-drawer-open] {
   visibility: visible;

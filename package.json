@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "2.6.1",
+  "version": "2.6.2",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -17,6 +17,8 @@
     "test:v250": "npx tsx scripts/test-v250.ts",
     "test:web-research": "npx tsx scripts/test-web-research.ts",
     "test:e2e-v260": "node scripts/e2e-v260.mjs",
+    "test:e2e-mobile-space": "node scripts/e2e-mobile-space.mjs",
+    "test:preview-read-queue": "npx tsx scripts/test-preview-read-queue.ts",
     "test:e2e-v240": "node scripts/e2e-v240.mjs",
     "sync:product-guide": "node scripts/sync-product-guide.mjs",
     "test:product-guide": "node scripts/test-product-guide.mjs",
@@ -42,7 +44,7 @@
     "test:sse": "npx tsx scripts/test-sse.ts",
     "test:sse-framing": "npx tsx scripts/test-sse-framing.ts",
     "test:stream": "npx tsx scripts/test-stream-store.ts",
-    "test:attachments": "npx tsx scripts/test-attachments.ts",
+    "test:attachments": "npx tsx scripts/test-attachments.ts && npm run test:preview-read-queue",
     "test:block": "npx tsx scripts/test-block-layer.ts",
     "test:table": "npx tsx scripts/test-table-ops.ts",
     "test:export": "npx tsx scripts/test-export.ts",

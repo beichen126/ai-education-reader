@@ -24,6 +24,12 @@ assert(body?.reasoning_effort === 'max', 'sendTextChat sends max reasoning effor
 
 await sendTextChat({ apiKey: 'test', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', messages: [], reasoningEffort: 'low' })
 assert(body?.reasoning_effort === 'low', 'sendTextChat forwards a low reasoning override')
+await sendTextChat({ apiKey: 'test', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', messages: [], thinking: 'disabled' })
+assert((body?.thinking as any)?.type === 'disabled' && !('reasoning_effort' in body!), 'transcription can disable thinking without an incompatible reasoning_effort field')
+await sendTextChat({ apiKey: 'test', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', messages: [], thinking: 'enabled', reasoningEffort: 'high' })
+assert((body?.thinking as any)?.type === 'enabled' && body?.reasoning_effort === 'high', 'structure analysis can explicitly enable high reasoning')
+await sendTextChat({ apiKey: 'test', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', messages: [] })
+assert(body?.reasoning_effort === 'max' && !('thinking' in body!), 'task overrides do not change subsequent chat defaults')
 globalThis.fetch = originalFetch
 
 console.log('RESULT pass=' + pass + ' fail=' + fail)

@@ -4,7 +4,7 @@
 // delete a single page.
 import { useState } from 'react'
 import type { AttachmentDisplayItem } from '../attachments/attachment-display'
-import { useAttachmentPreview } from '../engine/use-attachment-preview'
+import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { IconCloseOutline16 } from '../dsh/primitives'
 import { PDF_GROUP_PREVIEW_BATCH, pdfRangesText } from '../pdf/pdf-types'
@@ -75,11 +75,11 @@ export function PdfContextCard({
 }
 
 function GroupPageThumb({ id, readOnly, onRemove, onOpen }: { id: string; readOnly?: boolean; onRemove?: () => void; onOpen?: () => void }) {
-  const { url } = useAttachmentPreview(id)
+  const { ref, url } = useLazyAttachmentPreview(id)
   return (
     <span className={css.groupPage}>
-      <button type="button" className={css.groupPageBtn} data-testid={'pdf-page-open-' + id} aria-label={tx('查看这一页', 'View this page')} onClick={onOpen}>
-        {url ? <img src={url} alt="" /> : <span className={css.photoLoading}>…</span>}
+      <button ref={ref} type="button" className={css.groupPageBtn} data-testid={'pdf-page-open-' + id} aria-label={tx('查看这一页', 'View this page')} onClick={onOpen}>
+        {url ? <img src={url} alt="" loading="lazy" decoding="async" /> : <span className={css.photoLoading}>…</span>}
       </button>
       {!readOnly && onRemove && (
         <button className={css.picDel} data-testid={'pdf-page-del-' + id} onClick={onRemove} aria-label={tx('删除这一页', 'Delete this page')}><IconCloseOutline16 size={12} /></button>

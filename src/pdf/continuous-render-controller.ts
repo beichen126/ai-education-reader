@@ -13,6 +13,7 @@ export type ContinuousRenderEvents = {
 }
 
 export type ContinuousRenderOptions = {
+  maxConcurrentRenders?: number
   cacheCapacity?: number
   pageCount?: number
   computeScale?: ScaleFn
@@ -56,11 +57,14 @@ export class ContinuousRenderController {
   private targets = new Set<number>()
   private disposed = false
   private renderCount = 0
+  private readonly maxConcurrentRenders: number
+  private readonly failedPages = new Set<number>()
 
   constructor(backend: RenderBackend, options: ContinuousRenderOptions, events: ContinuousRenderEvents) {
     this.backend = backend
     this.events = events
     this.computeScale = options.computeScale ?? computeDisplayScale
+    this.maxConcurrentRenders = Math.max(1, Math.min(4, Math.trunc(options.maxConcurrentRenders ?? 4) || 1))
     this.pageCount = options.pageCount ?? 0
     this.cache = new BoundedPageCache<CachedSurface>(options.cacheCapacity ?? 11, (surface, key) => {
       surface.dispose()
@@ -82,6 +86,7 @@ export class ContinuousRenderController {
     )
     this.geometry = geometry
     if (changed) {
+      this.failedPages.clear()
       this.cancelOperations()
       // A viewport read cannot be cancelled before PDF.js creates its render
       // task. Its identity token makes the old read stale while a fresh read can
@@ -100,6 +105,7 @@ export class ContinuousRenderController {
   }
 
   setTargetPages(pages: number[]): void {
+    this.failedPages.clear()
     const next = new Set(pages.filter(page => Number.isInteger(page) && page >= 1 && page <= this.pageCount))
     this.targets = next
     for (const [page, operation] of this.operations) {
@@ -140,12 +146,14 @@ export class ContinuousRenderController {
     }
   }
 
-  private startTargets(): void {
+  private startTargets(emitCached = true): void {
     if (this.disposed || !this.geometry) return
     for (const page of this.targets) {
       const cached = this.cache.get(String(page))
-      if (cached) { this.events.onPageReady(page, cached, true); continue }
-      if (!this.operations.has(page)) void this.startPage(page)
+      if (cached) { if (emitCached) this.events.onPageReady(page, cached, true); continue }
+      if (this.failedPages.has(page) || this.operations.has(page)) continue
+      if (this.operations.size >= this.maxConcurrentRenders) break
+      void this.startPage(page)
     }
   }
 
@@ -178,10 +186,11 @@ export class ContinuousRenderController {
     } catch {
       const current = this.operations.get(pageNumber)?.token === token
       if (current) this.operations.delete(pageNumber)
-      if (current && !this.disposed && this.targets.has(pageNumber) && this.geometry === geometry) this.events.onPageError(pageNumber)
+      if (current && !this.disposed && this.targets.has(pageNumber) && this.geometry === geometry) { this.failedPages.add(pageNumber); this.events.onPageError(pageNumber) }
     } finally {
       if (this.operations.get(pageNumber)?.token === token) this.operations.delete(pageNumber)
       this.events.onRendering(this.renderingCount() > 0)
+      this.startTargets(false)
     }
   }
 }

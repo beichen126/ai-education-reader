@@ -6,6 +6,7 @@ import { idbScan, idbGetAll, idbRunTxn } from '../storage/idb'
 import { allBranches, getBranch } from '../branches/branch-store'
 import { BRANCH_DRAFT_PREFIX } from '../branches/branch-types'
 import { persistBinary, readBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
+import { PreviewReadQueue } from './preview-read-queue'
 
 export type AttachmentErrorKind = 'unsupported-format' | 'read-failed' | 'missing-attachment' | 'image-too-large' | 'vision-unsupported'
 export class AttachmentError extends Error { readonly kind: AttachmentErrorKind; constructor(kind: AttachmentErrorKind, m: string) { super(m); this.kind = kind } }
@@ -25,6 +26,7 @@ export const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 export const MAX_INLINE_IMAGE_RAW_BYTES = 30 * 1024 * 1024
 type PreviewUrlEntry = { url?: string; pending?: Promise<string>; refs: number }
 const urlRegistry = new Map<string, PreviewUrlEntry>()
+const previewReads = new PreviewReadQueue(typeof navigator !== 'undefined' && navigator.hardwareConcurrency >= 8 ? 4 : 2)
 
 export function isSupportedImage(file: { type: string; size: number }): boolean { return SUPPORTED_MIME.has(file.type) && file.size > 0 }
 
@@ -258,7 +260,10 @@ export async function ensurePreviewUrl(id: StableId): Promise<string> {
   }
   const entry: PreviewUrlEntry = { refs: 1 }
   urlRegistry.set(id, entry)
-  entry.pending = blobOf(id).then(blob => {
+  entry.pending = previewReads.run(() => {
+    if (urlRegistry.get(id) !== entry || entry.refs <= 0) throw new AttachmentError('read-failed', 'preview released')
+    return blobOf(id)
+  }).then(blob => {
     // The last consumer may have unmounted while IndexedDB/OPFS was still being read.
     // Do not create an ownerless object URL after that happens.
     if (urlRegistry.get(id) !== entry || entry.refs <= 0) throw new AttachmentError('read-failed', 'preview released')

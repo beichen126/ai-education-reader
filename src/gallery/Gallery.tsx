@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useSessions } from '../engine/sessions-store'
 import { useGallery, galleryActions } from './gallery-store'
-import { useAttachmentPreview } from '../engine/use-attachment-preview'
+import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
 import { ZoomableImageDialog } from './ZoomableImageDialog'
 import { clampIndex } from './zoom'
 import css from './gallery.module.css'
@@ -40,10 +40,10 @@ export function Gallery() {
   )
 }
 function Thumb({ id, index }: { id: string; index: number }) {
-  const { url, error } = useAttachmentPreview(id)
+  const { ref, url, error } = useLazyAttachmentPreview(id)
   return (
-    <button type="button" className={css.thumb} data-testid="gallery-thumbnail" aria-label={tx('查看第 ' + (index + 1) + ' 张图片', 'View image ' + (index + 1))} onClick={() => galleryActions.openViewer(index)}>
-      {url ? <img src={url} alt="" /> : <span className={css.missing}>{error ? tx('图片已丢失', 'Image missing') : '…'}</span>}
+    <button ref={ref} type="button" className={css.thumb} data-testid="gallery-thumbnail" aria-label={tx('查看第 ' + (index + 1) + ' 张图片', 'View image ' + (index + 1))} onClick={() => galleryActions.openViewer(index)}>
+      {url ? <img src={url} alt="" loading="lazy" decoding="async" /> : <span className={css.missing}>{error ? tx('图片已丢失', 'Image missing') : '…'}</span>}
       <span className={css.index} aria-hidden="true">{index + 1}</span>
     </button>
   )

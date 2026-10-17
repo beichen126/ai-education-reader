@@ -6,7 +6,7 @@ import { patchSettings, useSettings, useSettingsMutation } from '../engine/setti
 import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
-import { useAttachmentPreview } from '../engine/use-attachment-preview'
+import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
 import { localizedArtifactSourceLabel, localizedArtifactTitle, localizedErrorText, localizedStudyCardTitle, t, tx, useUiLanguage } from '../engine/locale'
 import { IconCloseOutline16, IconFolderOpenOutline16, Button } from '../dsh/primitives'
 import { useCopyFeedback } from '../dsh/primitives/use-copy-feedback'
@@ -56,6 +56,7 @@ import type { Message as TMessage } from '../engine/types'
 import type { PromptTransition } from '../prompts/prompt-types'
 import { promptDisplayName } from '../prompts/prompt-display'
 import css from './cockpit.module.css'
+import { layoutStore, useLayoutStore } from '../engine/layout-store'
 
 const PdfPanel = lazy(() => import('../pdf/PdfPanel').then(module => ({ default: module.PdfPanel })))
 const DocumentContextPicker = lazy(() => import('../documents/DocumentContextPicker').then(module => ({ default: module.DocumentContextPicker })))
@@ -69,6 +70,8 @@ export function Conversation() {
   const sendErrorTarget = useSessions(s => s.sendErrorTarget)
   const hasKey = useSettings(s => !!s.apiKey)
   const webSearchEnabled = useSettings(s => s.webSearchEnabled === true)
+  const navigationOpen = useLayoutStore(s => s.narrowExpanded)
+  const mobileNavigation = <button type="button" className={css.mobileMenuToggle} data-testid="mobile-menu-toggle" aria-label={tx('展开导航', 'Open navigation')} aria-expanded={navigationOpen} aria-controls="mobile-navigation" onClick={() => layoutStore.actions.openNarrowSidebar()}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8h18M3 16h11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></button>
   const listRef = useRef<HTMLDivElement | null>(null)
   const atBottomRef = useRef(true)
   const branchChat = useBranchChat(session)
@@ -286,6 +289,7 @@ export function Conversation() {
       )}
       {visibleSendError && !busy && <div className={css.errorBanner} role="alert" aria-live="assertive">{localizedErrorText(visibleSendError, 'Unable to send the message. Try again.')}</div>}
       {session && promptPath && (<BranchBar
+        leadingControl={mobileNavigation}
         conversationId={session.id}
         branches={branchChat.branches}
         activeBranchId={branchChat.activeBranchId}
@@ -297,6 +301,7 @@ export function Conversation() {
         onChanged={() => void branchChat.refresh()}
         onModeChanged={async () => { await sessionsActions.reload(session.id); await branchChat.refresh() }}
       />)}
+      {(!session || !promptPath) && <div className={css.mobileHeader}>{mobileNavigation}</div>}
       {/* Composer sits inside the scroll body, position:sticky bottom:0 (as in DSH), so the
           mobile browser's native focus scroll lifts it above the on-screen keyboard. */}
       <div className={css.messagesShell}>
@@ -511,10 +516,10 @@ function MessageAttachmentStrip({ message, convId, imgOffset }: { message: any; 
 }
 
 function Thumb({ id, onOpen }: { id: string; onOpen: () => void }) {
-  const { url } = useAttachmentPreview(id)
+  const { ref, url } = useLazyAttachmentPreview(id)
   return (
-    <button className={css.photo} onClick={onOpen}>
-      {url ? <img src={url} alt="image" /> : <span className={css.photoLoading}>…</span>}
+    <button ref={ref} className={css.photo} data-testid="message-image-thumb" onClick={onOpen}>
+      {url ? <img src={url} alt="image" loading="lazy" decoding="async" /> : <span className={css.photoLoading}>…</span>}
     </button>
   )
 }

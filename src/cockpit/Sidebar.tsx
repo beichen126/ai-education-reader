@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSessions, sessionsActions, type ChatSession } from '../engine/sessions-store'
 import { localizedConversationTitle, t, tx } from '../engine/locale'
 import { uiActions } from '../engine/ui-store'
@@ -42,6 +42,18 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   const openHistory = () => { if (narrow) layoutStore.actions.openNarrowSidebar(); else toggleDesktopSidebar() }
   const collapseSidebar = () => { if (narrow) layoutStore.actions.closeNarrowSidebar(); else toggleDesktopSidebar() }
   const compact = !narrow && width < SIDEBAR_COMPACT_THRESHOLD
+  const drawerRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!narrow || collapsed) return
+    const opener = document.activeElement as HTMLElement | null
+    const frame = requestAnimationFrame(() => drawerRef.current?.querySelector<HTMLButtonElement>('button')?.focus())
+    const onEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || Array.from(document.querySelectorAll('[role="dialog"]')).some(dialog => dialog.getClientRects().length)) return
+      event.preventDefault(); layoutStore.actions.closeNarrowSidebar()
+    }
+    document.addEventListener('keydown', onEscape)
+    return () => { document.removeEventListener('keydown', onEscape); cancelAnimationFrame(frame); if (opener?.isConnected && opener.getClientRects().length) opener.focus() }
+  }, [narrow, collapsed])
 
   if (collapsed) {
     return (
@@ -59,7 +71,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
     )
   }
   return (
-    <div className={css.sidebar} style={{ width }} data-testid={narrow ? 'mobile-history-drawer' : 'sidebar'} data-compact={compact || undefined} role={narrow ? 'navigation' : undefined} aria-label={narrow ? tx('主导航', 'Main navigation') : undefined}>
+    <div ref={drawerRef} id={narrow ? 'mobile-navigation' : undefined} className={css.sidebar} style={{ width }} data-testid={narrow ? 'mobile-history-drawer' : 'sidebar'} data-compact={compact || undefined} role={narrow ? 'navigation' : undefined} aria-label={narrow ? tx('主导航', 'Main navigation') : undefined} onKeyDown={event => { if (narrow && event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); layoutStore.actions.closeNarrowSidebar(); document.querySelector<HTMLButtonElement>('[data-testid="mobile-menu-toggle"]')?.focus() } }}>
       <div className={css.sidebarHead}>
         <div className={css.sidebarTitle}>{t('brand.localBuild')}</div>
         <div className={css.sidebarHeadBtns}>

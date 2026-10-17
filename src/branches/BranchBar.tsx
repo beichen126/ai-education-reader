@@ -14,6 +14,7 @@ import { localizedBranchTitle, localizedErrorText, tx } from '../engine/locale'
 import css from './branch.module.css'
 
 type Props = {
+  leadingControl?: React.ReactNode
   contextSummary?: React.ReactNode
   conversationId: string
   branches: ConversationBranch[]
@@ -29,7 +30,7 @@ type Props = {
 type OpenMenu = 'route' | 'mode' | null
 
 /** Route context for the active thread, including the mode used by future messages. */
-export function BranchBar({ conversationId, branches, activeBranchId, effectiveMessageCount, effectiveTransitions, busy, onSwitch, onChanged, onModeChanged, contextSummary }: Props) {
+export function BranchBar({ conversationId, branches, activeBranchId, effectiveMessageCount, effectiveTransitions, busy, onSwitch, onChanged, onModeChanged, contextSummary, leadingControl }: Props) {
   const [openMenu, setOpenMenu] = useState<OpenMenu>(null)
   const [editId, setEditId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
@@ -224,7 +225,8 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
 
   return (
     <div className={css.bar} role="navigation" aria-label={tx('会话上下文', 'Chat context')}>
-      <div className={css.contextRow} data-testid="conversation-context-row">
+      {leadingControl}
+      <div className={css.contextRow + ' ' + css.routeRow} data-testid="conversation-context-row">
         <span className={css.contextLabel}>{tx('当前路线', 'Current route')}</span>
         {activeBranchId && <button type="button" className={css.branchItem} onClick={() => void go(undefined)} aria-label={tx('切换到主线', 'Switch to Main')}>{tx('主线', 'Main')} ›</button>}
         <div className={css.switcher}>

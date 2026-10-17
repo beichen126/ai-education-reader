@@ -21,6 +21,7 @@
 
 /* Conversation */
 .conversation { position: relative; height: 100%; display: flex; flex-direction: column; background: var(--dsw-alias-bg-base); }
+.mobileMenuToggle, .mobileHeader { display: none; }
 .messagesShell { position: relative; flex: 1; min-height: 0; }
 .messages { height: 100%; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
 .messagesInner { flex: 1 0 auto; min-height: 0; padding: 20px 42px 20px 24px; display: flex; flex-direction: column; gap: 14px; }
@@ -281,8 +282,18 @@
 .cardNoticeClose { margin-left: auto; border: 0; background: transparent; color: var(--dsw-alias-label-tertiary); font-size: 16px; line-height: 1; cursor: pointer; }
 
 @media (max-width: 760px) {
-  .messagesInner { padding-right: 26px; }
-  .turnRail { width: 20px; margin-right: 2px; }
+  .mobileHeader { display: flex; padding: 4px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+  .mobileMenuToggle { display: inline-flex; order: -1; flex: none; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; }
+  .mobileMenuToggle:hover { background: var(--dsw-alias-interactive-bg-hover); }
+  .mobileMenuToggle:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; }
+  .messagesInner { padding: 12px 14px 12px 8px; }
+  .msgAssistant .assistantBody { box-sizing: border-box; max-width: 100%; padding: 8px 10px; }
+  .bubble { max-width: 90%; padding: 8px 10px; }
+  .composerBar { gap: 6px; padding: 8px; }
+  .composerText { padding: 10px; }
+  .sendBtn { padding-left: 12px; padding-right: 12px; }
+  .composerPics { padding: 8px 8px 0; flex-wrap: wrap; }
+  .turnRail { right: 1px; width: 12px; margin-right: 0; }
   .turnRailMark { width: 7px; }
   .turnRailMark[aria-current="true"] { width: 14px; }
   .composerStatusRow { align-items: flex-end; flex-wrap: wrap; gap: 2px 10px; }

@@ -115,6 +115,32 @@ function makeBackend() {
   await sleep(15)
   assert(controller.getStats().cacheSize === 0 && fake.getDisposed() > 0, 'close clears cached surfaces and releases backing resources')
 
+  const phoneBackend = makeBackend()
+  let active = 0, peak = 0
+  const finished: number[] = []
+  const limited = new ContinuousRenderController({
+    ...phoneBackend.backend,
+    startRender(page, scale) {
+      const handle = phoneBackend.backend.startRender(page, scale)
+      active++; peak = Math.max(peak, active)
+      return { ...handle, promise: handle.promise.finally(() => { active-- }) }
+    },
+  }, { pageCount: 20, maxConcurrentRenders: 2 }, {
+    onPageReady: page => finished.push(page), onPageEvicted() {}, onPageViewport() {}, onPageError() {}, onRendering() {},
+  })
+  limited.setGeometry({ box: { width: 390, height: 700 }, dpr: 2 })
+  limited.setTargetPages([5, 4, 6, 3, 7])
+  await waitUntil(() => finished.length === 5)
+  assert(peak <= 2 && peak > 0, 'phone rendering keeps at most two active canvases')
+  assert(finished.length === 5 && finished[0] === 5, 'queued neighbours drain after the current-page priority target')
+  limited.cancelAll()
+  let failures = 0
+  const broken = new ContinuousRenderController({ readViewport1: async () => { failures++; throw new Error('bad page') }, startRender: phoneBackend.backend.startRender }, { pageCount: 2, maxConcurrentRenders: 1 }, { onPageReady() {}, onPageEvicted() {}, onPageViewport() {}, onPageError() {}, onRendering() {} })
+  broken.setGeometry({ box: { width: 390, height: 700 }, dpr: 2 })
+  broken.setTargetPages([1, 2])
+  await sleep(30)
+  assert(failures === 2, 'failed pages release their slot without an infinite retry loop')
+  broken.cancelAll()
   console.log('\nRESULT pass=' + pass + ' fail=' + fail)
   process.exit(fail === 0 ? 0 : 1)
 })()

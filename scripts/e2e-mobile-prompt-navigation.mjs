@@ -102,7 +102,7 @@ for (const size of [
   await page.reload({ waitUntil: 'networkidle' })
   await page.locator('textarea[aria-label="输入消息"]').waitFor({ state: 'attached', timeout: 20000 })
 
-  const rail = page.locator('[data-testid="rail-history"]')
+  const rail = page.locator('[data-testid="mobile-menu-toggle"]')
   await rail.waitFor({ state: 'visible', timeout: 10000 })
   await rail.click()
   const nav = page.locator('[data-testid="mobile-history-drawer"]')

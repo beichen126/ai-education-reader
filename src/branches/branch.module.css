@@ -13,7 +13,7 @@
 
 .contextRow { display: flex; align-items: center; gap: 0.5rem; min-height: 28px; min-width: 0; }
 .contextLabel { flex: none; font-weight: 600; color: var(--dsw-alias-label-primary); white-space: nowrap; }
-.contextRow:first-child { order: 1; }
+.routeRow { order: 1; }
 .summary { order: 2; margin-left: auto; min-width: 0; max-width: 100%; }
 .contextRow button[aria-haspopup="menu"] { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activeMode { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-primary); }

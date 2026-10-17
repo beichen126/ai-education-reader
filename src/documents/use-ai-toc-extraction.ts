@@ -331,7 +331,7 @@ export async function extractAiToc(opts: {
       else {
         const userContent = repair ? structureInput + '\n\n' + repairPrompt : structureInput
         const messages = await compileMachineProtocolMessages({ domain: 'ai-toc-structure', protocol: structureProtocol, content: userContent })
-        const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal, reasoningEffort: 'low' });
+        const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal, thinking: 'enabled', reasoningEffort: 'high' });
         structureRaw = res.content;
       }
       const sp = parseTocStructure(structureRaw || '');
@@ -411,7 +411,7 @@ async function transcribeBatch(opts: {
     images.push({ id: 'ai-toc-page-' + physicalPage + '-' + k, dataUrl: pageDataUrls[physicalPage] })
   }
   const messages = await compileMachineProtocolMessages({ domain: 'ai-toc-transcription', protocol, content: contentLines.join('\n'), images })
-  const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal, reasoningEffort: 'low' });
+  const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal, thinking: 'disabled' });
   const pr = parseTocJsonl(res.content, batch.length === 1 ? { defaultSourceImageIndex: 1 } : {});
   if (!pr.ok) throw new TocTranscriptionValidationError((pr as { diagnostics: string[] }).diagnostics)
   return pr.rows.map((r: TocTranscriptionLine, i: number) => ({ ...r, id: 'r' + String(i + 1).padStart(4, '0'), rowOrder: i }));
