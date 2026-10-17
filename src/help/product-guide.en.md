@@ -4,6 +4,10 @@ AI Education Reader is a local-first workspace for reading PDFs, discussing mate
 
 Your chats, files, reading progress, prompts, and study data stay in this browser. The app has no relay server. When you send a message, only the selected text and images are sent directly to the API service you configured.
 
+Select text in an answer to mark it or choose **Read aloud**. Language is detected automatically: the defaults are Chinese at 1×, English at 0.9×, and three complete passes through the selection. Adjust speed and repetitions in **Settings → General**. Edge uses available online natural voices preferentially; other browsers use their available voices. Online voices send the selected text to the speech provider, never the entire PDF.
+
+The **Learning center** brings together study cards, marks, notes, and quizzes. Reviewing a text mark centers it with two surrounding sentences on each side. Outline editing supports confirmed bulk deletion, undo, and locally saved version history. Loading a saved version changes only the draft until you click Save. Settings provides **API / General / Security / Help** navigation.
+
 ## Start with a PDF
 
 Choose **Import PDF** or open **Files** from the sidebar. The reader supports page-by-page and continuous scrolling, zoom below or above 100%, page notes, native bookmarks, manual chapters, and AI-assisted outline detection.

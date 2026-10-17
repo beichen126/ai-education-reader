@@ -373,7 +373,7 @@ export function SettingsDialog() {
       </div>
       <div className={css.storageSection}>
         <div className={css.exportTitle}>{tx('隐私', 'Privacy')}</div>
-        <div className={css.storageHint}>{tx('数据保存在浏览器本地；PDF 在浏览器内处理；仅在发送消息时，所选内容会发送到你配置的 API 服务；本项目无自有后端。详见仓库 PRIVACY.md。', 'Data stays in this browser and PDFs are processed locally. Selected content is sent only when you message your configured API service. This project has no backend. See PRIVACY.md.')}</div>
+        <div className={css.storageHint}>{tx('数据保存在浏览器本地，PDF 在浏览器内处理。AI 请求会将所选内容发送到你配置的服务；使用在线朗读时，浏览器会将所选文字交给语音服务。本项目无自有中转后端。详见仓库 PRIVACY.md。', 'Data stays in this browser and PDFs are processed locally. AI requests send selected content to your configured service. Online read aloud sends selected text to the browser’s speech provider. This project has no relay backend. See PRIVACY.md.')}</div>
         <div className={css.settingsActions}>
           <Button variant="outline" disabled={clearing} data-testid="settings-clear-data" onClick={() => void onClearData()}>{clearing ? tx('正在清除…', 'Clearing…') : tx('清除本地数据', 'Clear local data')}</Button>
         </div>
