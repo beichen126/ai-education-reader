@@ -25,6 +25,7 @@ import { documentUiActions, useDocumentUi } from './documents/document-ui-store'
 import { useGallery } from './gallery/gallery-store'
 import { useLearningUi } from './study-cards/learning-ui-store'
 import { PromptManager } from './prompts/PromptManager'
+import { ReadAloudPlayer } from './speech/ReadAloudPlayer'
 
 const SettingsDialog = lazy(() => import('./cockpit/SettingsDialog').then(module => ({ default: module.SettingsDialog })))
 const Gallery = lazy(() => import('./gallery/Gallery').then(module => ({ default: module.Gallery })))
@@ -144,6 +145,7 @@ export function App() {
         {documentsLoaded && <DocumentLibrary />}
         {documentsLoaded && <DocumentReader />}
       </Suspense>
+      <ReadAloudPlayer />
       <ProductGuideDialog
         open={productGuideOpen}
         onClose={uiActions.closeProductGuide}

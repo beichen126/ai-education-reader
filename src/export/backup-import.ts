@@ -99,6 +99,16 @@ function validateDocuments(input: Record<string, any>): void {
     }
     const chapterIds = new Set<string>()
     if (!Array.isArray(m.chapters) || !m.chapters.every((c: unknown) => validateChapterTree(c, m.pageCount, 0, chapterIds))) throw new BackupError('document.chapters 非法（章节页码/层级/结构/id 不合法）')
+    if (m.chapterVersions !== undefined) {
+      if (!Array.isArray(m.chapterVersions)) throw new BackupError('document.chapterVersions 非法')
+      const versionIds = new Set<string>()
+      for (const version of m.chapterVersions) {
+        if (!isObj(version) || !isNonEmptyStr(version.id) || versionIds.has(version.id) || !isNum(version.createdAt) || version.createdAt < 0 || !VALID_DOC_CHAPTER_SOURCES.has(version.chapterSource) || !Array.isArray(version.chapters)) throw new BackupError('document.chapterVersions 版本信息非法')
+        versionIds.add(version.id)
+        const ids = new Set<string>()
+        if (!version.chapters.every((c: unknown) => validateChapterTree(c, m.pageCount, 0, ids))) throw new BackupError('document.chapterVersions 目录结构非法')
+      }
+    }
     if (m.bookmarkRangePreferences !== undefined) {
       if (!isObj(m.bookmarkRangePreferences)) throw new BackupError('document.bookmarkRangePreferences 非法')
       for (const [chapterId, mode] of Object.entries(m.bookmarkRangePreferences)) {
@@ -269,6 +279,11 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
   if ((settings as any).pdfNavigationMode !== undefined && !isPdfNavigationMode((settings as any).pdfNavigationMode)) throw new BackupError('settings.pdfNavigationMode 非法')
   if ((settings as any).uiLanguage !== undefined && (settings as any).uiLanguage !== 'zh-CN' && (settings as any).uiLanguage !== 'en') throw new BackupError('settings.uiLanguage 非法')
   if ((settings as any).webSearchEnabled !== undefined && typeof (settings as any).webSearchEnabled !== 'boolean') throw new BackupError('settings.webSearchEnabled must be a boolean')
+  for (const key of ['chineseSpeechRate','englishSpeechRate']) {
+    const rate = (settings as any)[key]
+    if (rate !== undefined && (!isNum(rate) || rate < 0.5 || rate > 2)) throw new BackupError('settings.' + key + ' must be between 0.5 and 2')
+  }
+  if (settings.speechRepeatCount !== undefined && (!isInt(settings.speechRepeatCount) || settings.speechRepeatCount<1 || settings.speechRepeatCount>10)) throw new BackupError('settings.speechRepeatCount must be an integer between 1 and 10')
   if ((settings as any).documentSort !== undefined && !isDocumentSortKey((settings as any).documentSort)) throw new BackupError('settings.documentSort 非法')
   if ((settings as any).productGuideSeenVersion !== undefined && !isStr((settings as any).productGuideSeenVersion)) throw new BackupError('settings.productGuideSeenVersion 非法')
   if ((settings as any).lastConversationId !== undefined && !isStr((settings as any).lastConversationId)) throw new BackupError('settings.lastConversationId 非法')
@@ -584,6 +599,9 @@ export async function restoreBackup(backup: Backup, binaries?: {
       { key: 'pdfNavigationMode', value: isPdfNavigationMode((backup.settings as { pdfNavigationMode?: unknown } | undefined)?.pdfNavigationMode) ? (backup.settings as { pdfNavigationMode: string }).pdfNavigationMode : 'paged' },
       { key: 'uiLanguage', value: (backup.settings as { uiLanguage?: unknown } | undefined)?.uiLanguage === 'en' ? 'en' : 'zh-CN' },
       { key: 'webSearchEnabled', value: backup.settings?.webSearchEnabled === true ? 'true' : 'false' },
+      { key: 'chineseSpeechRate', value: String(backup.settings?.chineseSpeechRate ?? 1) },
+      { key: 'englishSpeechRate', value: String(backup.settings?.englishSpeechRate ?? 0.9) },
+      { key: 'speechRepeatCount', value: String(backup.settings?.speechRepeatCount ?? 3) },
       { key: LAYOUT_PREFERENCES_KEY, value: normalizeLayoutPreferences((backup.settings as { layoutPreferences?: unknown } | undefined)?.layoutPreferences) },
       { key: 'productGuideSeenVersion', value: typeof (backup.settings as { productGuideSeenVersion?: unknown } | undefined)?.productGuideSeenVersion === 'string' ? (backup.settings as { productGuideSeenVersion: string }).productGuideSeenVersion : '' },
       { key: 'lastConversationId', value: typeof (backup.settings as { lastConversationId?: unknown } | undefined)?.lastConversationId === 'string' && backup.conversations.some(conversation => conversation.id === (backup.settings as { lastConversationId: string }).lastConversationId) ? (backup.settings as { lastConversationId: string }).lastConversationId : '' },

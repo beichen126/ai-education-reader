@@ -18,6 +18,8 @@ const SKIP_UNIT = process.env.RELEASE_SKIP_UNIT === '1'
 const EXTRA_E2E = process.env.RELEASE_EXTRA_E2E === '1'
 
 const CORE_E2E = [
+  'e2e-v300',
+  'e2e-toc-thumbnails',
   'e2e-mobile-space',
   'e2e-v260',
   'e2e-v240',
@@ -68,6 +70,7 @@ const CORE_E2E = [
   'e2e-root-stop',
   'e2e-backup',
   'e2e-chapter-editor-gate',
+  'e2e-chapter-delete-versions',
 ]
 const OPTIONAL_E2E = [
   'e2e-opfs-storage',
@@ -76,7 +79,6 @@ const OPTIONAL_E2E = [
   'e2e-ai-toc-calibration',
   'e2e-chapter-builder-v113',
   'e2e-custom-actions',
-  'e2e-toc-thumbnails',
   'e2e-toc-review-layout',
 ]
 const E2E = shardE2EList(resolveE2EList({ releaseE2E: process.env.RELEASE_E2E, extraE2E: EXTRA_E2E, core: CORE_E2E, optional: OPTIONAL_E2E }), process.env.RELEASE_SHARD_INDEX, process.env.RELEASE_SHARD_TOTAL)

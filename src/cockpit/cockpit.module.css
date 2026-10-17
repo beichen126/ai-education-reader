@@ -259,6 +259,12 @@
 .groupPageBtn { display: block; border: none; padding: 0; background: none; cursor: zoom-in; border-radius: 8px; overflow: hidden; }
 .groupPageBtn img { display: block; width: 56px; height: 56px; object-fit: cover; border-radius: 8px; }
 .settingsDialog { width: min(640px, 100%) !important; }
+.settingsNav { position: sticky; top: -1px; z-index: 3; display: flex; gap: 6px; padding: 8px 0; background: var(--dsw-alias-bg-layer-1); }
+.settingsNav button { flex: 1; min-width: 0; min-height: 38px; padding: 6px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; }
+.settingsNav button[aria-current] { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); }
+.settingsSection { scroll-margin-top: 58px; }
+.speechRateRow { display: flex; align-items: center; gap: 16px; margin: 8px 0; }
+.speechRateRow select { min-height: 36px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); border-radius: 8px; padding: 4px 12px; font-size: 16px; }
 @media (max-width: 640px) { .settingsDialog { width: 100% !important; } }
 @media (max-width: 540px) {
   .apiChecklist, .safetyCards { grid-template-columns: 1fr; }
@@ -272,6 +278,7 @@
 .ctxHint { font-size: 12px; color: var(--dsw-alias-label-tertiary); padding: 6px 0; }
 .composerStatusRow { min-height: 28px; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 16px 6px; }
 .composerStatusRow > div:first-child { min-width: 0; }
+.composerNotice { position: absolute; bottom: 100%; left: 12px; right: 12px; z-index: 10; background: var(--dsw-alias-bg-layer-2); border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px; box-shadow: 0 2px 10px #0003; }
 .contextUsage { margin-left: auto; flex: none; font-size: 12px; color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: right; }
 .appearanceRow { display: flex; gap: 8px; }
 .appearanceOpt { min-height: 32px; padding: 4px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }

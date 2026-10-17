@@ -6,11 +6,11 @@
 // saving/error/close timing. A failed save NEVER fabricates success: the Builder
 // stays open, the draft is preserved, and an explicit error is shown.
 import { useEffect, useRef, useState } from 'react'
-import type { ChapterNode, DocumentChapterSource } from './document-types'
+import type { ChapterNode, ChapterVersion, DocumentChapterSource } from './document-types'
 import {
   validateChapterDraft, buildManualChapterTree, buildChapterTreeFromDraft, flattenManualChapters,
   cloneChapterDraft, makeNewChapterItem, chapterSourceForTree,
-  deleteDraftSubtree, draftHasChildren, indentSubtree, outdentSubtree,
+  deleteDraftSubtree, deleteSelectedDraftItems, undoDraftDeletion, chaptersToEditableDraft, draftHasChildren, indentSubtree, outdentSubtree,
   moveUp, moveDown,
   insertChapterByPage, canApplyChapterDraftOperation,
   setDraftItemLevel, setDraftItemsLevel, shiftDraftItemsLevel, MAX_CHAPTER_LEVEL,
@@ -35,6 +35,7 @@ type Props = {
    *  'ai-toc' (AI review -> edit all; stays ai-toc even after human fixes).
    *  The Reader/UI never guesses. Defaults to 'manual'. */
   saveSource?: 'manual' | 'ai-toc'
+  versions?: ChapterVersion[]
   onSave: (save: ChapterBuilderSave) => Promise<void>
   onClose: () => void
 }
@@ -53,7 +54,7 @@ function idsBetween(orderedIds: readonly string[], anchorId: string | null, targ
   return orderedIds.slice(start, end + 1)
 }
 
-export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftSeed, hint, skippedUnresolved = 0, saveSource = 'manual', onSave, onClose }: Props) {
+export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftSeed, hint, skippedUnresolved = 0, saveSource = 'manual', versions = [], onSave, onClose }: Props) {
   const [items, setItems] = useState<ChapterDraftItem[]>(() => {
     // A pre-computed draftSeed (native / ai-toc) wins; otherwise derive from the tree.
     return draftSeed ? cloneChapterDraft(draftSeed) : cloneChapterDraft(flattenManualChapters(initialChapters))
@@ -61,6 +62,11 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
   const [validation, setValidation] = useState<ChapterDraftValidation>({ ok: true, issues: [] })
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({})
   const [pendingDelete, setPendingDelete] = useState<number | null>(null)
+  const [pendingBulkDelete, setPendingBulkDelete] = useState<string[] | null>(null)
+  const [deletions, setDeletions] = useState<Array<{ before: ChapterDraftItem[]; after: ChapterDraftItem[] }>>([])
+  const [versionId, setVersionId] = useState('')
+  const [pendingVersion, setPendingVersion] = useState<ChapterVersion | null>(null)
+  const [draftSource, setDraftSource] = useState(saveSource)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -202,10 +208,10 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
     }
     setRowErrors({})
     // Empty tree -> 'none' (canonical cleared state); otherwise the caller's provenance.
-    const tree = buildChapterTreeFromDraft(items, pageCount, saveSource)
+    const tree = buildChapterTreeFromDraft(items, pageCount, draftSource)
     setSaving(true)
     try {
-      await onSave({ chapters: tree, source: tree.length === 0 ? 'none' : saveSource })
+      await onSave({ chapters: tree, source: tree.length === 0 ? 'none' : draftSource })
       // Success: the Reader's onSave closes this Builder (unmount). No need to reset.
     } catch {
       // A failed save must NOT fabricate success: builder stays open, draft kept.
@@ -228,6 +234,8 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
       e.preventDefault()
       if (saving) return
       if (confirmDiscard) { setConfirmDiscard(false); return }
+      if (pendingVersion) { setPendingVersion(null); return }
+      if (pendingBulkDelete) { setPendingBulkDelete(null); return }
       if (pendingDelete != null) { setPendingDelete(null); return }
       if (selectedIds.size > 0) { setSelectedIds(new Set()); setSelectionAnchorId(null); setBulkError(null); return }
       if (dirty) { setConfirmDiscard(true); return }
@@ -235,7 +243,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [confirmDiscard, pendingDelete, onClose, saving, selectedIds])
+  }, [confirmDiscard, pendingDelete, pendingBulkDelete, pendingVersion, onClose, saving, selectedIds])
 
   const delIndex = pendingDelete
   const delItem = delIndex != null ? items[delIndex] : null
@@ -244,7 +252,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
   const delCount = delIndex != null ? subtreeCount(items, delIndex) : 0
   return (
     <div className={css.overlay} data-testid="chapter-builder">
-      <div className={css.panel}>
+      <div className={css.panel} ref={el=>{if(el)el.inert=saving||pendingBulkDelete!==null||pendingVersion!==null||pendingDelete!==null||confirmDiscard}}>
         <div className={css.header}>
           <span className={css.title}>{tx('编辑章节', 'Edit chapters')}</span>
           <div className={css.headerBtns}>
@@ -257,6 +265,13 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
         {insertError && <div className={css.error} data-testid="cb-insert-error">{insertError}</div>}
         {hint && <div className={css.hint} data-testid="cb-hint">{hint}</div>}
         {skippedUnresolved > 0 && <div className={css.warn} data-testid="cb-skipped">{tx('原目录中有 ' + skippedUnresolved + ' 项无法定位页码，未自动加入编辑结果。', skippedUnresolved + ' original outline items had no page mapping and were not added.')}</div>}
+        {versions.length > 0 && <div className={css.versionRow}>
+          <select className={css.versionSelect} data-testid="cb-versions" value={versionId} disabled={saving} aria-label={tx('已保存的目录版本', 'Saved outline versions')} onChange={e => setVersionId(e.target.value)}>
+            <option value="">{tx('历史目录版本（本地保存）', 'Outline history (saved locally)')}</option>
+            {[...versions].reverse().map((version, i) => <option key={version.id} value={version.id}>{'V' + (versions.length - i) + ' · ' + new Date(version.createdAt).toLocaleString(tx('zh-CN', 'en-US'), { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</option>)}
+          </select>
+          <button type="button" className={css.btn} data-testid="cb-restore-version" disabled={saving || !versionId} onClick={() => setPendingVersion(versions.find(version => version.id === versionId) ?? null)}>{tx('载入版本', 'Load version')}</button>
+        </div>}
         <div className={css.searchRow}>
           <input
             className={css.searchInput}
@@ -270,11 +285,17 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
             {normalizedSearch ? tx(`显示 ${visibleEntries.length} / ${items.length}`, `Showing ${visibleEntries.length} / ${items.length}`) : tx(`共 ${items.length} 项`, `${items.length} items`)}
           </span>
         </div>
-        <div className={css.list} data-testid="cb-list">
+        <div className={css.list} data-testid="cb-list" ref={el => { if (el) el.inert = saving }}>
           <div className={css.bulkToolbar} data-testid="cb-bulk-toolbar">
             <div className={css.bulkSummary}>
               <span data-testid="cb-selected-count">{tx('已选 ' + selectedIds.size + ' 项', selectedIds.size + ' selected')}</span>
               <button type="button" className={css.bulkBtn} data-testid="cb-clear-selection" onClick={clearSelection}>{tx('清除选择', 'Clear selection')}</button>
+              <button type="button" className={css.bulkBtn + ' ' + css.opDanger} data-testid="cb-bulk-delete" disabled={saving || selectedIds.size === 0} onClick={() => setPendingBulkDelete([...selectedIds])}>{tx('删除已选', 'Delete selected')}</button>
+              {deletions.length > 0 && <button type="button" className={css.bulkBtn} data-testid="cb-undo-delete" disabled={saving} onClick={() => {
+                const last = deletions[deletions.length - 1]
+                setItems(prev => undoDraftDeletion(prev, last.before, last.after))
+                setDeletions(prev => prev.slice(0, -1)); setRowErrors({}); clearSelection()
+              }}>{tx('撤回删除', 'Undo deletion')}</button>}
             </div>
             <div className={css.bulkGroup}>
               <span className={css.bulkLabel}>{tx('选择当前：', 'Select:')}</span>
@@ -326,6 +347,37 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
           </div>
         </div>
       </div>
+      {pendingBulkDelete && (
+        <div className={css.confirm} data-testid="cb-bulk-delete-confirm" role="dialog" aria-modal="true" aria-label={tx('批量删除章节', 'Delete selected chapters')}>
+          <div className={css.confirmBox}>
+            <div>{tx('确认删除已选的 ' + pendingBulkDelete.length + ' 项章节？仅删除选中项，未选中的子章节会保留并上移层级。保存前不会修改原目录。', 'Delete the ' + pendingBulkDelete.length + ' selected chapters? Unselected children are kept and promoted. The original outline is unchanged until you save.')}</div>
+            <div className={css.confirmBtns}>
+              <button type="button" autoFocus className={css.btn} data-testid="cb-bulk-delete-no" onClick={() => setPendingBulkDelete(null)}>{tx('取消', 'Cancel')}</button>
+              <button type="button" className={css.btnPrimary} data-testid="cb-bulk-delete-yes" onClick={() => {
+                const after = deleteSelectedDraftItems(items, pendingBulkDelete)
+                setDeletions(prev => [...prev, { before: cloneChapterDraft(items), after: cloneChapterDraft(after) }])
+                setItems(after)
+                setPendingBulkDelete(null); setRowErrors({}); setSaveError(null); clearSelection()
+              }}>{tx('确认删除', 'Delete')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {pendingVersion && <div className={css.confirm} data-testid="cb-version-confirm" role="dialog" aria-modal="true" aria-label={tx('载入目录版本', 'Load outline version')}>
+        <div className={css.confirmBox}>
+          <div>{tx('载入此版本将替换当前编辑草稿。历史版本不会删除，点击保存后才更新本地目录并记录新版本。', 'Loading this version replaces the current draft. History is preserved. Only Save updates the local outline and records a new version.')}</div>
+          <div className={css.confirmBtns}>
+            <button type="button" autoFocus className={css.btn} data-testid="cb-version-no" onClick={() => setPendingVersion(null)}>{tx('取消', 'Cancel')}</button>
+            <button type="button" className={css.btnPrimary} data-testid="cb-version-yes" onClick={() => {
+              const draft = chaptersToEditableDraft(pendingVersion.chapters)
+              setItems(draft.items); setDraftSource(pendingVersion.chapterSource === 'ai-toc' ? 'ai-toc' : 'manual')
+              setRowErrors({}); setDeletions([]); setSaveError(null); clearSelection()
+              if (draft.skippedUnresolved) setBulkError(tx('此版本有 ' + draft.skippedUnresolved + ' 项无法定位页码，未载入编辑草稿。', draft.skippedUnresolved + ' entries in this version have no page mapping and were not loaded into the draft.'))
+              setPendingVersion(null)
+            }}>{tx('确认载入', 'Load version')}</button>
+          </div>
+        </div>
+      </div>}
       {pendingDelete != null && (
         <div className={css.confirm} data-testid="cb-confirm">
           <div className={css.confirmBox}>

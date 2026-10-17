@@ -1,5 +1,5 @@
 .wrap { position: relative; }
 .annotBtn { padding: 4px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); font-size: 12px; cursor: pointer; }
 .annotBtn:hover { background: var(--dsw-alias-interactive-bg-hover); }
-.annotBar { position: absolute; left: var(--annotation-left); top: var(--annotation-top); visibility: var(--annotation-visibility); z-index: 1300; display: flex; justify-content: center; }
-.annotBar .annotBtn { min-width: 96px; padding: 8px 18px; font-size: 14px; }
+.annotBar { position: absolute; left: var(--annotation-left); top: var(--annotation-top); visibility: var(--annotation-visibility); z-index: 1300; display: flex; justify-content: center; gap: 4px; max-width: 100%; }
+.annotBar .annotBtn { min-width: 0; white-space: nowrap; padding: 8px 14px; font-size: 14px; }

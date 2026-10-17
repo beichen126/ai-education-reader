@@ -95,7 +95,7 @@ export async function commitAcceptedUserMessage(conv: any, lastConversationId: s
  * failure can no longer leave a mixed configuration after reload (e.g. apiKey committed
  * but model not). Values commit first, then the caller publishes them as saved state.
  */
-export async function saveSettingsAtomic(values: { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string; pdfNavigationMode: string; uiLanguage: string; webSearchEnabled?: string }): Promise<void> {
+export async function saveSettingsAtomic(values: { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string; pdfNavigationMode: string; uiLanguage: string; webSearchEnabled?: string; chineseSpeechRate?: string; englishSpeechRate?: string; speechRepeatCount?: string }): Promise<void> {
   await idbRunTxn(['settings'], (txn) => {
     const os = txn.objectStore('settings')
     os.put({ key: 'apiBaseUrl', value: values.apiBaseUrl })
@@ -108,6 +108,9 @@ export async function saveSettingsAtomic(values: { apiBaseUrl: string; apiKey: s
     os.put({ key: 'pdfNavigationMode', value: values.pdfNavigationMode })
     os.put({ key: 'uiLanguage', value: values.uiLanguage })
     os.put({ key: 'webSearchEnabled', value: values.webSearchEnabled ?? 'false' })
+    os.put({ key: 'chineseSpeechRate', value: values.chineseSpeechRate ?? '1' })
+    os.put({ key: 'englishSpeechRate', value: values.englishSpeechRate ?? '0.9' })
+    os.put({ key: 'speechRepeatCount', value: values.speechRepeatCount ?? '3' })
   })
 }
 

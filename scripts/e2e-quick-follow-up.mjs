@@ -146,9 +146,10 @@ await page.evaluate(() => {
   button.click()
   button.click()
 })
-await page.locator('text=正在生成…').waitFor({ state: 'visible', timeout: 10000 })
+await page.getByRole('button', { name: '停止生成', exact: true }).waitFor({ state: 'visible', timeout: 10000 })
+assert(await page.locator('[class*="sendingBar"]').count() === 0, 'generation uses the composer Stop action without a space-consuming top status bar')
 assert(await page.locator('[data-testid="quick-follow-up-send"]').count() === 0, 'quick follow-ups hide while the new assistant is streaming')
-await page.waitForFunction(() => document.body.innerText.includes('快捷回答二') && !document.body.innerText.includes('正在生成…'), null, { timeout: 15000 })
+await page.waitForFunction(() => document.body.innerText.includes('快捷回答二') && document.querySelector('[data-testid="composer-send-stop"]')?.textContent === '发送', null, { timeout: 15000 })
 const rootAfterDoubleClick = await readConversation(page, conversationId)
 assert(rootAfterDoubleClick.messages.filter((item) => item.quickFollowUp?.promptId === 'quick-example').length === 1, 'double click accepts only one quick follow-up message')
 

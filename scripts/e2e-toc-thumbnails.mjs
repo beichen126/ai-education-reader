@@ -1,12 +1,12 @@
 // Stage 9.4D.1: TOC thumbnail no-duplicate-render / no URL leak e2e. Opens the picker, waits
 // for a thumbnail to render, records its object URL, loads more pages, then asserts the
 // already-rendered page's URL is unchanged (no re-render) and that no duplicate is created.
-import { chromium } from 'playwright-core'
+import { launchBrowser } from './e2e-browser.mjs'
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF = 'test/fixtures/many-pages.pdf'
 const results = [], errors = []
 const assert = (c, m) => results.push((c ? 'PASS  ' : 'FAIL  ') + m)
-const browser = await chromium.launch({ channel: 'msedge', headless: true })
+const browser = await launchBrowser()
 const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage()
 page.on('pageerror', e => errors.push('pageerror: ' + e.message))
 await page.goto(BASE, { waitUntil: 'networkidle' })

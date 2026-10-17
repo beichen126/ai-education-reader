@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
-import { mapTocBatches } from '../src/documents/toc-work-queue.ts'
+import { mapTocBatches, pipelineTocBatches } from '../src/documents/toc-work-queue.ts'
+import { describeTocRepairReasons } from '../src/documents/toc-repair-reasons.ts'
+import { prioritizeThumbnails } from '../src/documents/thumbnail-priority.ts'
 import { countStreamedTocLevels, inferNumberedTocLevels, inferFallbackTocLevels, validateTocStructure, buildTocStructureRepairPrompt } from '../src/documents/ai-toc.ts'
 import { resolveStoredModel, DEFAULT_MODEL } from '../src/api/model-defaults.ts'
 import { isVisionModel, streamTextChat } from '../src/api/deepseek.ts'
@@ -11,6 +13,46 @@ await new Promise(resolve => setTimeout(resolve, 0))
 assert.equal(peak, 2)
 pending[1](); await new Promise(resolve => setTimeout(resolve, 0)); pending[2](); pending[0]()
 assert.deepEqual(await task, [0, 1, 2], 'out-of-order requests retain PDF source order')
+const prepared: number[] = [], releases: Array<() => void> = []
+let allPrepared: () => void = () => {}
+const preparationDone = new Promise<void>(resolve=>allPrepared=resolve)
+let preparing = 0, preparationPeak = 0, requesting = 0, requestPeak = 0
+const pipelined = pipelineTocBatches([0,1,2,3,4,5,6], 3, 5, async value => {
+  preparing++; preparationPeak = Math.max(preparationPeak, preparing)
+  await new Promise(resolve => setTimeout(resolve, 1))
+  prepared.push(value); preparing--; if(prepared.length===7)allPrepared(); return value
+}, async value => {
+  requesting++; requestPeak = Math.max(requestPeak, requesting)
+  await new Promise<void>(resolve => releases[value] = resolve)
+  requesting--; return value
+})
+await preparationDone
+await new Promise(resolve => setTimeout(resolve, 0))
+assert.equal(preparationPeak, 3)
+assert.equal(requestPeak, 5)
+assert.equal(prepared.length, 7, 'all batches prepare even while five network requests are held')
+releases[4](); releases[3]()
+await new Promise(resolve => setTimeout(resolve, 0))
+releases[6](); releases[5](); releases[2](); releases[1](); releases[0]()
+assert.deepEqual(await pipelined, [0,1,2,3,4,5,6])
+const pipelineAbort = new AbortController()
+let requestsStarted = 0
+const cancelled = pipelineTocBatches([0,1,2,3,4,5,6], 3, 5, async v => v, async (v, _, __, signal) => {
+  requestsStarted++
+  await new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener('abort', () => resolve(), { once: true }) })
+  return v
+}, pipelineAbort.signal)
+await new Promise(resolve => setTimeout(resolve, 0)); pipelineAbort.abort()
+await assert.rejects(cancelled, /Aborted/)
+assert.equal(requestsStarted, 5, 'cancelled queued requests never start')
+await assert.rejects(pipelineTocBatches([0,1,2], 3, 5, async v => { if (v === 0) throw new Error('prepare failed'); return v }, async v => v), /prepare failed/)
+await assert.rejects(pipelineTocBatches([0,1,2], 3, 5, async v => v, async () => { throw new Error('request failed') }), /request failed/)
+assert.match(describeTocRepairReasons([{code:'LEVEL_COUNT_MISMATCH', message:'private', actualLevels:240, expectedRows:942}], true), /240.*942/)
+assert.match(describeTocRepairReasons([{code:'OUTPUT_TRUNCATED', message:'private'}], true), /truncated/)
+assert.match(describeTocRepairReasons([{code:'SUSPICIOUS_FLAT', message:'private'}], false), /扁平化/)
+const measure = (page:number) => ({top:page*100,bottom:page*100+80})
+assert.deepEqual(prioritizeThumbnails([1,2,3,4,5,6,7,8,9],{top:300,bottom:700},measure),[5,4,6,3,7,2,8,1])
+assert.deepEqual(prioritizeThumbnails([1,2,3,4,5,6,7,8,9],{top:700,bottom:900},measure),[8,7,9,6,5], 'scrolling reorders around the new viewport and drops stale queued pages')
 const controller = new AbortController(), started: number[] = []
 await assert.rejects(mapTocBatches([0, 1, 2, 3], 2, async (value, _, signal) => { started.push(value); if (value === 0) throw new Error('fatal'); await new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener('abort', () => resolve(), { once: true }) }); return value }), /fatal/)
 assert.deepEqual(started, [0, 1], 'fatal error aborts siblings without starting queued requests')

@@ -29,6 +29,12 @@ API Key 仅保存在当前浏览器本地；导出备份时**不会**包含 API 
 
 卡片只保存文本与结构化来源信息（会话 id、来源 PDF 的 documentId、文件名快照、页码快照），**不保存** PDF 或图片的二进制、object URL 或 base64。删除来源会话或 PDF 不会删除卡片，卡片仍可阅读并保留文件名/页码快照，但跳转会被停用。完整备份 JSON 从 v2.2.0 起包含学习卡片，仍然不包含 API Key。
 
+## 选区朗读
+
+只有点击“朗读”后才会调用浏览器的 SpeechSynthesis 接口；默认完整朗读所选内容三遍，中英文倍速和次数保存在本地设置中。不会为朗读读取整份 PDF、会话或 API Key。
+
+应用优先选择浏览器公开提供的 Microsoft Online/Natural 声音；使用在线声音时，浏览器会将所选文字发送给相应语音服务。其他浏览器或手机不一定提供这些声音，会回退到其可用的系统语音；没有可用语音时显示失败提示。语音的可用性、网络处理与数据规则由浏览器/语音服务决定，本项目没有语音中转服务器，也没有内置云端密钥。参见 [Microsoft Edge 在线语音说明](https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/configureonlinetexttospeech)。
+
 ## PDF
 
 打开一份 PDF 时：**不会因为“打开 PDF”就把整个 PDF 上传到项目服务器。**

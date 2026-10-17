@@ -10,7 +10,7 @@ import type { UiLanguage } from '../engine/locale'
 import type { LayoutPreferences } from '../engine/layout-store'
 import type { DocumentSortKey } from '../documents/document-sort'
 
-export type BackupSettings = { apiBaseUrl: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; customArtifactActions?: CustomArtifactAction[]; visionCapability?: 'auto' | 'supports-image' | 'text-only'; pdfNavigationMode?: PdfNavigationMode; uiLanguage?: UiLanguage; webSearchEnabled?: boolean; layoutPreferences?: LayoutPreferences; documentSort?: DocumentSortKey; productGuideSeenVersion?: string; lastConversationId?: string }
+export type BackupSettings = { apiBaseUrl: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; customArtifactActions?: CustomArtifactAction[]; visionCapability?: 'auto' | 'supports-image' | 'text-only'; pdfNavigationMode?: PdfNavigationMode; uiLanguage?: UiLanguage; webSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number; layoutPreferences?: LayoutPreferences; documentSort?: DocumentSortKey; productGuideSeenVersion?: string; lastConversationId?: string }
 /** Persisted composer-draft user data (unsent text + images). Must survive a complete backup. */
 export type BackupDraft = { conversationId: string; text: string; imageIds: string[] }
 export type BackupAppearance = 'system' | 'light' | 'dark'

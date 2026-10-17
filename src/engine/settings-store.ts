@@ -8,11 +8,13 @@ import { DEFAULT_MODEL, resolveStoredModel } from '../api/model-defaults'
 
 export type { VisionCapability }
 export type { PdfNavigationMode }
-export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean }
-export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: DEFAULT_MODEL, customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN' }
+export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number }
+export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: DEFAULT_MODEL, customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN', chineseSpeechRate: 1, englishSpeechRate: 0.9, speechRepeatCount: 3 }
 
 /** A partial settings change. Every mutation goes through {@link patchSettings}. */
 export type SettingsPatch = Partial<Settings>
+export function normalizeSpeechRate(value: unknown, fallback: number): number { return typeof value === 'number' && Number.isFinite(value) && value >= 0.5 && value <= 2 ? Math.round(value * 100) / 100 : fallback }
+export function normalizeSpeechRepeat(value: unknown): number { return typeof value==='number' && Number.isInteger(value) && value>=1 && value<=10 ? value : 3 }
 
 let state: Settings = { ...DEFAULT_SETTINGS }
 const subs = new Set<() => void>()
@@ -54,6 +56,9 @@ export function normalizeSettings(input: Settings): Settings {
     pdfNavigationMode: normalizePdfNavigationMode(input.pdfNavigationMode),
     uiLanguage: normalizeUiLanguage(input.uiLanguage),
     webSearchEnabled: input.webSearchEnabled === true,
+    chineseSpeechRate: normalizeSpeechRate(input.chineseSpeechRate, 1),
+    englishSpeechRate: normalizeSpeechRate(input.englishSpeechRate, 0.9),
+    speechRepeatCount: normalizeSpeechRepeat(input.speechRepeatCount),
   }
 }
 
@@ -63,7 +68,9 @@ export async function initSettings(): Promise<void> {
   const resolvedVision: VisionCapability = (visionCapability === 'supports-image' || visionCapability === 'text-only') ? visionCapability : 'auto'
   const resolvedLanguage = applyUiLanguage(uiLanguage)
   const webSearchEnabled = await getSetting('webSearchEnabled') === 'true'
-  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled })
+  const [zhRate, enRate] = await Promise.all([getSetting('chineseSpeechRate'),getSetting('englishSpeechRate')])
+  const repeat = await getSetting('speechRepeatCount')
+  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)) })
   writeAppearanceHint(resolvedAppearance)
 }
 
@@ -92,6 +99,8 @@ async function commitPatch(patch: SettingsPatch): Promise<Settings> {
       customSystemPrompt: next.customSystemPrompt, customSystemPromptEnabled: String(next.customSystemPromptEnabled),
       appearance: next.appearance, visionCapability: next.visionCapability, pdfNavigationMode: next.pdfNavigationMode, uiLanguage: next.uiLanguage,
       webSearchEnabled: String(next.webSearchEnabled === true),
+      chineseSpeechRate: String(next.chineseSpeechRate), englishSpeechRate: String(next.englishSpeechRate),
+      speechRepeatCount: String(next.speechRepeatCount),
     })
   } catch (error) {
     // The transaction did not commit: the previously committed state stays published

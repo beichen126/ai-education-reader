@@ -1,6 +1,7 @@
 import { idbGet, idbGetAll, idbPut, idbUpdate, idbDeleteDocumentAndNotes } from '../storage/idb'
 import { persistBinary, readBinary, deleteBinary, binaryExists, type StoredBinary } from '../storage/binary-store'
-import type { LearningDocument, DocumentChapterSource, ChapterNode } from './document-types'
+import type { LearningDocument, DocumentChapterSource, ChapterNode, ChapterVersion } from './document-types'
+import { nextChapterVersions } from './chapter-versions'
 import type { BookmarkRangeEndMode } from '../pdf/bookmark-range'
 import { bookmarkRangeEndModeOf, hasChapterId, isBookmarkRangeEndMode, sanitizeBookmarkRangePreferences, type BookmarkRangePreferences } from './bookmark-range-preferences'
 import { computeContentHash, computeFastFingerprint } from './document-hash'
@@ -9,6 +10,7 @@ export type StoredDocumentRecord = {
   id: string; kind: 'pdf'; fileName: string; mimeType: 'application/pdf'; fileSize: number
   pageCount: number; chapters: ChapterNode[]; chapterSource: DocumentChapterSource; lastReadPage: number
   lastReadAt: number
+  chapterVersions?: ChapterVersion[]
   bookmarkRangePreferences?: BookmarkRangePreferences
   importSource?: { kind: 'pdf' | 'ppt' | 'pptx'; originalFileName: string }
   contentHash?: string; fastFingerprint?: string
@@ -42,6 +44,7 @@ function hydrate(row: any): Promise<LearningDocument> {
     mimeType: 'application/pdf' as const, fileSize: row.fileSize as number,
     pageCount: row.pageCount as number, chapters: (row.chapters ?? []) as ChapterNode[],
     chapterSource: (row.chapterSource ?? 'none') as DocumentChapterSource,
+    ...(row.chapterVersions ? { chapterVersions: row.chapterVersions } : {}),
     lastReadPage: row.lastReadPage as number,
     lastReadAt: lastReadAtOf(row),
     ...(sanitizeBookmarkRangePreferences((row.chapters ?? []) as ChapterNode[], row.bookmarkRangePreferences) ? { bookmarkRangePreferences: sanitizeBookmarkRangePreferences((row.chapters ?? []) as ChapterNode[], row.bookmarkRangePreferences) } : {}),
@@ -82,7 +85,7 @@ export async function createDocument(input: NewDocumentInput): Promise<LearningD
 
 function recordToDomain(record: StoredDocumentRecord): Omit<LearningDocument, 'sourceBlob'> {
   const bookmarkRangePreferences = sanitizeBookmarkRangePreferences(record.chapters, record.bookmarkRangePreferences)
-  return { id: record.id, kind: 'pdf', fileName: record.fileName, mimeType: record.mimeType, fileSize: record.fileSize, pageCount: record.pageCount, chapters: record.chapters, chapterSource: record.chapterSource, lastReadPage: record.lastReadPage, lastReadAt: lastReadAtOf(record), ...(bookmarkRangePreferences ? { bookmarkRangePreferences } : {}), ...(record.importSource ? { importSource: record.importSource } : {}), ...(record.contentHash ? { contentHash: record.contentHash } : {}), ...(record.fastFingerprint ? { fastFingerprint: record.fastFingerprint } : {}), createdAt: record.createdAt, updatedAt: record.updatedAt };
+  return { id: record.id, kind: 'pdf', fileName: record.fileName, mimeType: record.mimeType, fileSize: record.fileSize, pageCount: record.pageCount, chapters: record.chapters, chapterSource: record.chapterSource, lastReadPage: record.lastReadPage, lastReadAt: lastReadAtOf(record), ...(record.chapterVersions ? { chapterVersions: record.chapterVersions } : {}), ...(bookmarkRangePreferences ? { bookmarkRangePreferences } : {}), ...(record.importSource ? { importSource: record.importSource } : {}), ...(record.contentHash ? { contentHash: record.contentHash } : {}), ...(record.fastFingerprint ? { fastFingerprint: record.fastFingerprint } : {}), createdAt: record.createdAt, updatedAt: record.updatedAt };
 }
 
 export async function getDocument(id: string): Promise<LearningDocument | undefined> {
@@ -99,6 +102,7 @@ export async function getDocumentRecordMeta(id: string): Promise<DocumentRecordM
     id: row.id, kind: 'pdf', fileName: row.fileName, mimeType: row.mimeType,
     fileSize: row.fileSize, pageCount: row.pageCount, chapters: (row.chapters ?? []) as ChapterNode[],
     chapterSource: row.chapterSource ?? 'none', lastReadPage: row.lastReadPage ?? 0,
+    ...(row.chapterVersions ? { chapterVersions: row.chapterVersions } : {}),
     lastReadAt: lastReadAtOf(row),
     ...(sanitizeBookmarkRangePreferences((row.chapters ?? []) as ChapterNode[], row.bookmarkRangePreferences) ? { bookmarkRangePreferences: sanitizeBookmarkRangePreferences((row.chapters ?? []) as ChapterNode[], row.bookmarkRangePreferences) } : {}),
     ...(row.importSource ? { importSource: row.importSource } : {}),
@@ -161,6 +165,7 @@ export async function listDocumentRecords(): Promise<{ id: string; meta: Documen
       id: row.id, kind: 'pdf', fileName: row.fileName, mimeType: row.mimeType,
       fileSize: row.fileSize, pageCount: row.pageCount, chapters: (row.chapters ?? []) as ChapterNode[],
       chapterSource: row.chapterSource ?? 'none', lastReadPage: row.lastReadPage ?? 0,
+      ...(row.chapterVersions ? { chapterVersions: row.chapterVersions } : {}),
       lastReadAt: lastReadAtOf(row),
       ...(sanitizeBookmarkRangePreferences((row.chapters ?? []) as ChapterNode[], row.bookmarkRangePreferences) ? { bookmarkRangePreferences: sanitizeBookmarkRangePreferences((row.chapters ?? []) as ChapterNode[], row.bookmarkRangePreferences) } : {}),
       ...(row.importSource ? { importSource: row.importSource } : {}),
@@ -202,14 +207,16 @@ export function toDocumentSummary(doc: LearningDocument): DocumentSummary {
 
 export function toStoredRecord(doc: LearningDocument, source: StoredBinary): StoredDocumentRecord {
   const bookmarkRangePreferences = sanitizeBookmarkRangePreferences(doc.chapters, doc.bookmarkRangePreferences)
-  return { id: doc.id, kind: 'pdf', fileName: doc.fileName, mimeType: doc.mimeType, fileSize: doc.fileSize, pageCount: doc.pageCount, chapters: doc.chapters, chapterSource: doc.chapterSource, lastReadPage: doc.lastReadPage, lastReadAt: doc.lastReadAt, ...(bookmarkRangePreferences ? { bookmarkRangePreferences } : {}), ...(doc.importSource ? { importSource: doc.importSource } : {}), ...(doc.contentHash ? { contentHash: doc.contentHash } : {}), ...(doc.fastFingerprint ? { fastFingerprint: doc.fastFingerprint } : {}), createdAt: doc.createdAt, updatedAt: doc.updatedAt, source, recordVersion: 3 };
+  return { id: doc.id, kind: 'pdf', fileName: doc.fileName, mimeType: doc.mimeType, fileSize: doc.fileSize, pageCount: doc.pageCount, chapters: doc.chapters, chapterSource: doc.chapterSource, lastReadPage: doc.lastReadPage, lastReadAt: doc.lastReadAt, ...(doc.chapterVersions ? { chapterVersions: doc.chapterVersions } : {}), ...(bookmarkRangePreferences ? { bookmarkRangePreferences } : {}), ...(doc.importSource ? { importSource: doc.importSource } : {}), ...(doc.contentHash ? { contentHash: doc.contentHash } : {}), ...(doc.fastFingerprint ? { fastFingerprint: doc.fastFingerprint } : {}), createdAt: doc.createdAt, updatedAt: doc.updatedAt, source, recordVersion: 3 };
 }
 
 export async function updateDocumentChapters(id: string, chapters: ChapterNode[], chapterSource: DocumentChapterSource): Promise<void> {
   try {
     await idbUpdate('documents', id, (cur: any) => {
       const bookmarkRangePreferences = sanitizeBookmarkRangePreferences(chapters, cur.bookmarkRangePreferences)
-      const next = { ...cur, chapters, chapterSource, updatedAt: Date.now(), recordVersion: 3 }
+      const now = Date.now()
+      const chapterVersions = nextChapterVersions(cur, chapters, chapterSource, now)
+      const next = { ...cur, chapters, chapterSource, chapterVersions, updatedAt: now, recordVersion: 3 }
       if (bookmarkRangePreferences) next.bookmarkRangePreferences = bookmarkRangePreferences
       else delete next.bookmarkRangePreferences
       return next

@@ -9,9 +9,11 @@ import { setMessageRanges, removeMessageRanges, highlightSupported } from './hig
 import { shouldToggleAll, normalizeBounds, hasExactRectangle, hasWholeTable, hasMath } from './annotation-ops'
 import { containsNode, ownedMath } from './ownership'
 import type { SelectionMapping } from './selection-types'
+import type { Annotation } from './annotation-types'
 import { markdownSourceForRange } from '../markdown/source-copy'
 import css from './annotate.module.css'
 import { tx } from '../engine/locale'
+import { readAloud, stopReadAloud } from '../speech/read-aloud'
 
 type AnnotationEventOwner = {
   element: HTMLElement
@@ -77,7 +79,7 @@ function uninstallAnnotationEventsIfIdle(): void {
   document.removeEventListener('copy', delegatedCopy)
 }
 
-export function AnnotatedMarkdown({ content, messageId, conversationId, branchId }: { content: string; messageId: string; conversationId: string; branchId?: string }) {
+export function AnnotatedMarkdown({ content, messageId, conversationId, branchId, focusAnnotation }: { content: string; messageId: string; conversationId: string; branchId?: string; focusAnnotation?: Annotation }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const highlightOwnerId = messageId + ':' + useId()
   const [pending, setPending] = useState<SelectionMapping | null>(null)
@@ -86,6 +88,33 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   const parsedRoot = useMemo(() => parseMarkdown(content), [content])
   const { blocks, canonicalOf } = useMemo(() => buildBlockMapFromRoot(parsedRoot, messageId), [parsedRoot, messageId])
   const hasHl = highlightSupported()
+  useLayoutEffect(()=>{
+    if(!focusAnnotation) return
+    const frame=requestAnimationFrame(()=>{
+      const root=wrapRef.current?.querySelector<HTMLElement>('[data-message-id]')
+      if(!root) return
+      const target=focusAnnotation.target
+      let bounds: DOMRect | undefined
+      if(target.type==='text') {
+        const candidate=resolveToRange(root,messageId,target)
+        const range=candidate?.toString()===target.quote.exact ? candidate : resolveByExact(root,messageId,target.quote.exact)
+        bounds=range?.getBoundingClientRect()
+      }
+      else {
+        const selector=target.type==='math' ? '[data-math-id="'+CSS.escape(target.mathId)+'"]' : '[data-table-id="'+CSS.escape(target.tableId)+'"]'
+        bounds=root.querySelector(selector)?.getBoundingClientRect()
+      }
+      if(!bounds) return
+      for(let parent=root.parentElement;parent;parent=parent.parentElement) {
+        if(/auto|scroll/.test(getComputedStyle(parent).overflowY)) {
+          const viewport=parent.getBoundingClientRect()
+          parent.scrollTop+=(bounds.top+bounds.bottom-viewport.top-viewport.bottom)/2
+          break
+        }
+      }
+    })
+    return()=>cancelAnimationFrame(frame)
+  },[focusAnnotation,messageId,content])
   useLayoutEffect(() => {
     const root = wrapRef.current
     if (!pending || !root) { setToolbarPosition(null); return }
@@ -102,7 +131,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
       }
     }
     setToolbarPosition({
-      left: Math.max(0, Math.min(anchor.left - bounds.left, bounds.width - 112)),
+      left: Math.max(0, Math.min(anchor.left - bounds.left, bounds.width - (pending.kind === 'text' ? 216 : 112))),
       top: (anchor.bottom + 48 <= visibleBottom ? anchor.bottom + 6 : anchor.top - 42) - bounds.top,
     })
   }, [pending])
@@ -207,6 +236,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
     eventOwners.set(highlightOwnerId, { element, pointerDown: onPointerDown, selectionEnd: onSelChange, copy: onCopy })
     installAnnotationEvents()
     return () => {
+      stopReadAloud(highlightOwnerId)
       eventOwners.delete(highlightOwnerId)
       if (activeEventOwner === highlightOwnerId) activeEventOwner = null
       uninstallAnnotationEventsIfIdle()
@@ -236,7 +266,10 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
         <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{mathCovered ? tx('取消标记', 'Unmark') : tx('标记公式', 'Mark formula')}</button></div>
       )}
       {pending && pending.kind === 'text' && (
-        <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{fullyCovered ? tx('取消标记', 'Unmark') : tx('标记', 'Mark')}</button></div>
+        <div className={css.annotBar}>
+          <button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{fullyCovered ? tx('取消标记', 'Unmark') : tx('标记', 'Mark')}</button>
+          <button type="button" className={css.annotBtn} data-testid="selection-read-aloud" title={tx('自动识别语言；倍速及重复次数可在通用设置调整，优先使用 Edge 在线声音','Detects language automatically. Adjust speed and repetitions in General settings; prefers Edge online voices.')} onPointerDown={e=>{e.preventDefault();e.stopPropagation()}} onPointerUp={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} onClick={()=>{readAloud(pending.segments.map(segment=>segment.exact).join('\n').replaceAll('\uFFFF',' '),highlightOwnerId);setPending(null)}}>{tx('朗读','Read aloud')}</button>
+        </div>
       )}
       {pending && pending.kind === 'table-cross-cell' && (
         <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={markCrossCell}>{hasExactRectangle(annotations, pending.tableId, normalizeBounds(pending.startCell.row, pending.startCell.column, pending.endCell.row, pending.endCell.column)) ? tx('取消标记', 'Unmark') : tx('标记', 'Mark')}</button></div>

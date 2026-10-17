@@ -56,7 +56,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label={t('sidebar.newChat')} title={t('sidebar.newChat')} onClick={() => sessionsActions.newChat()}><IconNewChatOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-images" aria-label={tx('图片资料', 'Images')} title={tx('图片资料', 'Images')} onClick={() => galleryActions.open(currentConv?.id, 0)}><IconPhoto16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-files" aria-label={tx('本地文件', 'Local files')} title={tx('本地文件', 'Local files')} onClick={() => documentUiActions.openLibrary()}><IconFolderOpenOutline16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-cards" aria-label={tx('学习卡片', 'Study cards')} title={tx('学习卡片', 'Study cards')} onClick={() => learningUiActions.openLibrary('cards')}><IconListPenOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-cards" aria-label={tx('学习中心', 'Learning center')} title={tx('学习中心', 'Learning center')} onClick={() => learningUiActions.openLibrary('cards')}><IconListPenOutline16 /></button>
         <div className={css.railSpacer} />
         <button type="button" className={css.railBtn} data-testid="rail-fullscreen" aria-label={fsTitle} title={fsTitle} onClick={toggle}><IconFullscreenOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-settings" aria-label={tx('设置', 'Settings')} title={tx('设置', 'Settings')} onClick={uiActions.openSettings}><IconSettingsOutline16 /></button>
@@ -89,7 +89,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
       <div className={css.sidebarSection}>{tx('学习', 'Study')}</div>
       <div className={css.sidebarEntries}>
         <button type="button" className={css.entryBtn} data-testid="sidebar-entry-cards" onClick={() => learningUiActions.openLibrary('cards')}>
-          <IconListPenOutline16 /> <span>{tx('学习卡片', 'Study cards')}</span>
+          <IconListPenOutline16 /> <span>{tx('学习中心', 'Learning center')}</span>
         </button>
       </div>
       <div className={css.sidebarSection}>{tx('会话', 'Chats')}</div>

@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "2.6.5",
+  "version": "3.0.0",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -119,7 +119,7 @@
     "test:reader-context": "npx tsx scripts/test-reader-context.ts",
     "test:context-render": "npx tsx scripts/test-context-render.ts",
     "test:draft-bridge": "npx tsx scripts/test-draft-bridge.ts",
-    "test:chapter-builder": "npx tsx scripts/test-chapter-builder.ts",
+    "test:chapter-builder": "npx tsx scripts/test-chapter-builder.ts && npx tsx scripts/test-chapter-versions.ts && npx tsx scripts/test-read-aloud.ts",
     "test:attachment-display": "npx tsx scripts/test-attachment-display.ts",
     "test:backup-source": "npx tsx scripts/test-backup-source.ts",
     "test:large-context": "npx tsx scripts/test-large-context.ts",

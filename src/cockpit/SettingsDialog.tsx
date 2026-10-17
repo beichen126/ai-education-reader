@@ -40,6 +40,11 @@ function ShowHideLabel(props: { visible: boolean; onToggle: () => void; onClear:
 
 export function SettingsDialog() {
   const s = useSettings(x => x)
+  const [section, setSection] = useState('api')
+  const navigateSection = (next: string) => {
+    setSection(next)
+    document.getElementById('settings-section-' + next)?.scrollIntoView({block:'start',behavior:'auto'})
+  }
   const [base, setBase] = useState(s.apiBaseUrl || DEFAULT_SETTINGS.apiBaseUrl)
   const [key, setKey] = useState(s.apiKey)
   const [showKey, setShowKey] = useState(false)
@@ -186,6 +191,10 @@ export function SettingsDialog() {
   return (
     <Modal open onClose={uiActions.closeSettings} title={tx('设置', 'Settings')} closeLabel={tx('关闭', 'Close')} className={css.settingsDialog} contentClassName={css.settingsScroll}>
       <div className={css.settingsHint}>{APP_NAME} · v{__APP_VERSION__}</div>
+      <nav className={css.settingsNav} aria-label={tx('设置分类','Settings sections')}>
+        {(['api','general','security','help'] as const).map((key,i)=><button type="button" key={key} data-testid={'settings-nav-'+key} aria-current={section===key?'location':undefined} onClick={()=>navigateSection(key)}>{[tx('API 配置','API'),tx('通用','General'),tx('安全','Security'),tx('帮助','Help')][i]}</button>)}
+      </nav>
+      <section id="settings-section-api" className={css.settingsSection}>
       <div className={css.byokBlock} data-testid="settings-byok">
         <div className={css.byokTitle}>{tx('BYOK（自备 API Key）', 'BYOK (bring your own API key)')}</div>
         <div className={css.settingsHint}>{tx('本项目采用 BYOK：应用本身不提供模型额度。默认可使用 DeepSeek API，也可以填写兼容的 API Base URL 和模型。API Key 仅保存在当前浏览器本地。', 'This app uses BYOK and does not provide model credits. Use DeepSeek by default or enter a compatible API base URL and model. Your API key stays in this browser only.')}</div>
@@ -237,19 +246,20 @@ export function SettingsDialog() {
       )}
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
       <div className={css.settingsHint}>{tx('“检查 API 配置”仅调用 GET /models，核对服务、Key 与模型名；不会发送聊天内容、图片或文档，也不会改变会话的推理强度。', 'Check API configuration only calls GET /models to verify the service, key, and model name. It sends no chats, images, or documents and does not change chat reasoning settings.')}</div>
+      </section>
+      <section id="settings-section-general" className={css.settingsSection}>
       <div className={css.exportSection}>
-        <div className={css.exportTitle}>{tx('数据与导出', 'Data and migration')}</div>
-        <div className={css.exportRow}>
-          <Button variant="outline" disabled={busy} onClick={onExportBackup}>{tx('导出完整备份 ZIP', 'Export complete ZIP backup')}</Button>
-          <Button variant="outline" disabled={busy || !currentConv} onClick={onExportMd}>{tx('导出当前会话 Markdown', 'Export current chat as Markdown')}</Button>
-          <Button variant="outline" disabled={busy || !currentConv} onClick={onExportMarked}>{tx('仅导出标记内容', 'Export marked content only')}</Button>
-          <Button variant="outline" disabled={busy || !currentConv} onClick={onExportBundle}>{tx('导出 Markdown + 图片 ZIP', 'Export Markdown + images ZIP')}</Button>
-        </div>
-        <div className={css.exportRow}>
-          <label className={css.importBtn}><span>{tx('导入备份 ZIP / JSON', 'Import ZIP / JSON backup')}</span><input type="file" accept=".zip,.json,application/zip,application/json" hidden disabled={busy} onChange={e => { onImportFile(e.target.files?.[0]); e.target.value = '' }} /></label>
-        </div>
-        <div className={css.settingsHint}>{tx('完整备份包含会话、附件、PDF、笔记、分支、提示词、学习卡片与界面设置，但不含 API Key。可用于迁移到其他浏览器；仍兼容旧版 JSON 备份。', 'A complete backup includes chats, attachments, PDFs, notes, branches, prompts, study cards, and UI settings, but never your API key. Use it to migrate to another browser. Legacy JSON backups remain supported.')}</div>
-        {msg && <div className={css.testResult} data-ok="false">{msg}</div>}
+        <div className={css.exportTitle}>{tx('朗读倍速', 'Read aloud speed')}</div>
+        {(['chineseSpeechRate','englishSpeechRate'] as const).map((key,i)=><label className={css.speechRateRow} key={key}>
+          <span>{i===0?tx('中文','Chinese'):tx('英文','English')}</span>
+          <select data-testid={'settings-'+key} value={s[key] ?? (i===0?1:0.9)} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({[key]:Number(event.target.value)}).catch(()=>{})}}>
+            {[0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.25,1.3,1.4,1.5,1.6,1.7,1.75,1.8,1.9,2].map(rate=><option key={rate} value={rate}>{rate}×</option>)}
+          </select>
+        </label>)}
+        <div className={css.settingsHint}>{tx('自动识别句子语言，默认中文 1×、英文 0.9×；自动保存，下次朗读生效。Edge 优先使用在线自然声音，其他浏览器使用可用声音；在线朗读会发送所选文字给语音服务。','Sentence language is detected automatically. Defaults: Chinese 1×, English 0.9×. Saved automatically for the next reading. Prefers Edge online natural voices, otherwise available browser voices. Online speech sends the selected text to the voice provider.')}</div>
+        <label className={css.speechRateRow}><span>{tx('重复朗读次数','Reading repetitions')}</span><select data-testid="settings-speechRepeatCount" value={s.speechRepeatCount ?? 3} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({speechRepeatCount:Number(event.target.value)}).catch(()=>{})}}>{Array.from({length:10},(_,i)=>i+1).map(count=><option key={count} value={count}>{tx(count+' 次',count+' passes')}</option>)}</select></label>
+        <div className={css.settingsHint}>{tx('默认完整朗读所选内容 3 遍，可随时暂停或停止。','Reads the entire selection 3 times by default. Pause or stop at any time.')}</div>
+        {mutation.status==='error' && mutation.error && <div className={css.testResult} data-ok="false" data-testid="settings-general-error">{localizedErrorText(mutation.error,'Unable to save general settings. Please retry.')}</div>}
       </div>
       <div className={css.exportSection}>
         <div className={css.exportTitle}>{tx('外观', 'Appearance')}</div>
@@ -297,6 +307,22 @@ export function SettingsDialog() {
           ))}
         </div>
         <div className={css.settingsHint}>{tx('打开提示词管理后可按分类查看、编辑、复制或停用提示词；系统协议只在提示词管理的“系统协议”分类里查看。', 'Open prompt management to view, edit, duplicate, or disable prompts by category. System protocols appear only in its System protocols category.')}</div>
+      </div>
+      </section>
+      <section id="settings-section-security" className={css.settingsSection}>
+      <div className={css.exportSection}>
+        <div className={css.exportTitle}>{tx('数据与导出', 'Data and migration')}</div>
+        <div className={css.exportRow}>
+          <Button variant="outline" disabled={busy} onClick={onExportBackup}>{tx('导出完整备份 ZIP', 'Export complete ZIP backup')}</Button>
+          <Button variant="outline" disabled={busy || !currentConv} onClick={onExportMd}>{tx('导出当前会话 Markdown', 'Export current chat as Markdown')}</Button>
+          <Button variant="outline" disabled={busy || !currentConv} onClick={onExportMarked}>{tx('仅导出标记内容', 'Export marked content only')}</Button>
+          <Button variant="outline" disabled={busy || !currentConv} onClick={onExportBundle}>{tx('导出 Markdown + 图片 ZIP', 'Export Markdown + images ZIP')}</Button>
+        </div>
+        <div className={css.exportRow}>
+          <label className={css.importBtn}><span>{tx('导入备份 ZIP / JSON', 'Import ZIP / JSON backup')}</span><input type="file" accept=".zip,.json,application/zip,application/json" hidden disabled={busy} onChange={e => { onImportFile(e.target.files?.[0]); e.target.value = '' }} /></label>
+        </div>
+        <div className={css.settingsHint}>{tx('完整备份包含会话、附件、PDF、目录历史版本、笔记、分支、提示词、学习中心与界面设置，但不含 API Key。可用于迁移到其他浏览器；仍兼容旧版 JSON 备份。', 'A complete backup includes chats, attachments, PDFs, outline history, notes, branches, prompts, learning center data, and UI settings, but never your API key. Legacy JSON backups remain supported.')}</div>
+        {msg && <div className={css.testResult} data-ok="false">{msg}</div>}
       </div>
       <div className={css.storageSection} data-testid="data-safety-center">
         <div className={css.exportTitle}>{tx('本地数据安全中心', 'Local data safety center')}</div>
@@ -352,6 +378,15 @@ export function SettingsDialog() {
           <Button variant="outline" disabled={clearing} data-testid="settings-clear-data" onClick={() => void onClearData()}>{clearing ? tx('正在清除…', 'Clearing…') : tx('清除本地数据', 'Clear local data')}</Button>
         </div>
       </div>
+      </section>
+      <section id="settings-section-help" className={css.settingsSection}>
+        <div className={css.exportTitle}>{tx('帮助与说明','Help and documentation')}</div>
+        <div className={css.settingsActions}>
+          <Button variant="outline" onClick={()=>{uiActions.closeSettings();uiActions.openProductGuide()}}>{tx('使用指南','User guide')}</Button>
+          <a href="https://github.com/beichen126/ai-education-reader#readme" target="_blank" rel="noopener noreferrer">{tx('项目说明','Project documentation')}</a>
+          <a href="https://github.com/beichen126/ai-education-reader/issues" target="_blank" rel="noopener noreferrer">{tx('报告问题','Report an issue')}</a>
+        </div>
+      </section>
       {pendingImport && (
         <div className={css.importConfirmRoot} role="presentation" data-testid="import-overwrite-warning" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setPendingImport(null) }}>
           <div className={css.importConfirmDialog} role="alertdialog" aria-modal="true" aria-labelledby="import-confirm-title">

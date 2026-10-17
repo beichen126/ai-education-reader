@@ -13,33 +13,8 @@
 [隐私与备份](#数据隐私与备份) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v2.6.5-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v3.0.0-green?style=flat-square)
 
-v2.6.5：默认模型更新为支持图片的 `deepseek-flash`。目录抄录两批受控并行，按原始页序合并；完整精细化协议覆盖转录、层级和纠错，流式层级进度显示实际返回数，明显多级编号被压平会触发修复。手机校对以列表为主，提示和编辑器可收起，可临时查看 PDF，并在“正确”旁删除误识别条目、逐次撤销。完整协议见 [ai-toc-prompts.ts](src/documents/ai-toc-prompts.ts)。
-
-v2.6.5 defaults to image-capable `deepseek-flash`, transcribes two outline batches concurrently with ordered merging, and reports actual streamed hierarchy progress. Detailed protocols and explicit-numbering checks reduce flattened outlines. Phone review prioritizes the list, with collapsible notes/editor, PDF preview, entry deletion and undo.
-
-v2.6.4：目录抄录启用 JSON 输出约束与独立输出预算，检测长度截断后拆批，不再只报 JSON 语法错误；兼容旧 JSONL、多行对象及格式尾逗号。部署浏览器门禁分 6 组并行，共用一次构建，保留完整测试覆盖。
-
-v2.6.4 constrains outline transcription to JSON, detects output truncation and retries smaller batches, with legacy JSONL compatibility. Deployment reuses one build and runs the complete browser gate in six parallel shards.
-
-v2.6.3：顶部右侧新增全屏/退出全屏按钮，手机与桌面、空会话均可使用；跟随浏览器实际全屏状态，中英文提示兼容不支持或拒绝全屏的环境。
-
-v2.6.3 adds a top-right fullscreen toggle on phones and desktops, including empty chats, with synchronized browser state and localized unsupported/denied feedback.
-
-v2.6.2：手机端（≤760px）取消常驻左侧栏，改用顶部两道长短横线打开导航抽屉；收紧消息留白，桌面与平板侧栏不变。目录文字抄录关闭思考，结构整理使用 high 推理，会话仍为 max。图片按附近可见区域延迟读取、异步解码，原图读取限制为 2–4 路；手机连续 PDF 同时最多 2 页渲染，复用 PDF.js Worker，避免多画布争抢内存。
-
-On phones (≤760px), v2.6.2 replaces the persistent rail with a top-left two-line navigation button and wider reading space. TOC transcription disables thinking; structure analysis uses high reasoning; chat stays at max. Nearby-only preview reads, asynchronous image decoding and bounded PDF concurrency reduce cold-open contention without adding heavyweight workers.
-
-### v2.6.0 联网与会话布局 / Web research and chat layout
-
-- 添加资料菜单提供并列的「本地文件」（图片或单个 PDF）和「资料库」，下方可开启联网搜索；默认关闭，开关保存在本地并随备份迁移。
-- 开启后使用当前 API 地址和 Key 调用 DeepSeek Search 与 Fetch，再将有限长度的网页参考交给模型，回答保留来源链接。搜索和网页读取可能单独计费；网页内容是不可信参考，不作为系统指令。停止生成会取消联网请求。自定义代理需要支持 `/v1/tools/search`、`/v1/tools/fetch` 和浏览器 CORS；不会把代理 Key 转发到另一个域名。
-- 顶部集中显示可点击的模式、路线、文本上下文估算和当前路线累计图片数；输入框从单行自动增长，最高为可视高度的四分之一。侧栏默认 220px 窄单栏，已有拖动宽度记忆不变。
-- The material menu offers **Local files** (images or one PDF) and **Library**, plus an optional **Web search** switch. It is off by default and saved locally/in backups. Enabled requests use the configured provider URL and key for DeepSeek Search and Fetch, and save source links with the answer. Tool requests may be billed separately. Stop cancels research as well as generation. Custom proxies must support the tool endpoints and browser CORS. Chat reasoning effort is unchanged.
-- The header groups clickable mode/route controls, estimated text context and cumulative conversation-path images. The composer grows up to one quarter of the viewport. The default sidebar is a compact 220px; existing saved widths remain respected.
-
-API contract: [DeepSeek Search & Fetch documentation](https://api-docs.deepseek.com/guides/search/).
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
 ![BYOK](https://img.shields.io/badge/BYOK-self--hosted-green?style=flat-square)
@@ -53,6 +28,10 @@ API contract: [DeepSeek Search & Fetch documentation](https://api-docs.deepseek.
 AI Education Reader 是一个在浏览器里使用的学习工具：你把教材、论文、习题集或讲义放进来，直接向 AI 提问；需要确认答案时，可以回到原文的页码继续看，也可以把回答整理成笔记和题目。
 
 你可以先在本地打开资料、阅读 PDF、整理目录和做页面笔记；需要 AI 时，再配置自己的模型服务。
+
+选中回答中的文字，可以标记或朗读。朗读自动判断中英文，默认中文 1×、英文 0.9×，完整重复 3 遍；倍速和次数可在“设置 → 通用”调整。Edge 优先使用可用的在线自然声音，其他浏览器使用其可用语音。在线声音会把所选文字交给语音服务，不会发送整份 PDF。
+
+学习中心集中管理卡片、标记、笔记和题目。标记复习提供前后两句上下文；目录编辑支持批量删除、撤回和本地版本历史。详细更新记录见 [CHANGELOG](docs/CHANGELOG.md)。
 
 ## 30 秒理解本产品
 

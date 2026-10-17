@@ -65,6 +65,51 @@ export function setDraftItemsLevel(items: ChapterDraftItem[], selectedIds: Chapt
   return items.map(item => ids.has(item.id) ? { ...item, level: targetLevel } : { ...item })
 }
 
+/** Delete only explicitly selected rows. Retained children of deleted parents
+ * move up by the number of removed ancestors, preserving identity and order. */
+export function deleteSelectedDraftItems(items: ChapterDraftItem[], selectedIds: ChapterDraftSelection): ChapterDraftItem[] {
+  const ids = selectionSet(selectedIds)
+  const ancestors: Array<{ level: number; removed: boolean }> = []
+  const retained: ChapterDraftItem[] = []
+  let removedAncestors = 0
+  for (const item of items) {
+    while (ancestors.length && ancestors[ancestors.length - 1].level >= item.level) {
+      if (ancestors.pop()!.removed) removedAncestors--
+    }
+    const removed = ids.has(item.id)
+    if (!removed) retained.push({ ...item, level: Math.max(1, item.level - removedAncestors) })
+    ancestors.push({ level: item.level, removed })
+    if (removed) removedAncestors++
+  }
+  return retained
+}
+
+/** Undo one deletion without overwriting subsequent title/page/level edits or
+ * removing newly inserted rows. Restore deleted rows before their next survivor. */
+export function undoDraftDeletion(current: ChapterDraftItem[], before: ChapterDraftItem[], after: ChapterDraftItem[]): ChapterDraftItem[] {
+  const currentIds = new Set(current.map(item => item.id))
+  const afterById = new Map(after.map(item => [item.id, item]))
+  const beforeById = new Map(before.map(item => [item.id, item]))
+  const insertBefore = new Map<string | null, ChapterDraftItem[]>()
+  let anchor: string | null = null
+  for (let i = before.length - 1; i >= 0; i--) {
+    const item = before[i]
+    if (currentIds.has(item.id)) anchor = item.id
+    else if (!afterById.has(item.id)) {
+      const entries = insertBefore.get(anchor) ?? []
+      entries.push({ ...item }); insertBefore.set(anchor, entries)
+    }
+  }
+  const restored: ChapterDraftItem[] = []
+  for (const item of current) {
+    restored.push(...(insertBefore.get(item.id) ?? []).reverse())
+    const original = beforeById.get(item.id), changed = afterById.get(item.id)
+    restored.push(original && changed && item.level === changed.level ? { ...item, level: original.level } : { ...item })
+  }
+  restored.push(...(insertBefore.get(null) ?? []).reverse())
+  return restored
+}
+
 export type ChapterDraftLevelShiftResult =
   | { ok: true; items: ChapterDraftItem[] }
   | { ok: false; itemId: string; fromLevel: number; toLevel: number }

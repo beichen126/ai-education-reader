@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnnotatedMarkdown } from '../annotations/AnnotatedMarkdown'
+import { MarkedPassage } from './MarkedPassage'
 import { ArtifactLibrary } from '../artifacts/ArtifactLibrary'
-import { ArtifactEditor } from '../artifacts/ArtifactEditor'
-import { QuizViewer } from '../artifacts/QuizViewer'
+import { ArtifactViewerBody } from '../artifacts/ArtifactViewerBody'
 import { isArtifactSourceLive } from '../artifacts/artifact-service'
 import { getArtifact } from '../artifacts/artifact-store'
 import type { StudyArtifact } from '../artifacts/artifact-types'
@@ -62,6 +62,7 @@ function cardTitle(card: StudyCard): string {
 export function LearningCenter() {
   const state = useLearningUi(s => s)
   const [cards, setCards] = useState<StudyCard[]>([])
+  const [marksOnly, setMarksOnly] = useState(false)
   const [documentNames, setDocumentNames] = useState<Map<string, string>>(new Map())
   const [pageCounts, setPageCounts] = useState<Map<string, number>>(new Map())
   const [loading, setLoading] = useState(true)
@@ -128,7 +129,7 @@ export function LearningCenter() {
   }, [filter, preferencesReady, sort])
 
   const filterOptions = useMemo(() => buildStudyCardFilterOptions(cards, documentNames), [cards, documentNames])
-  const selected = useMemo(() => selectStudyCards(cards, { filter, query: debouncedQuery, sort, seed }), [cards, debouncedQuery, filter, seed, sort])
+  const selected = useMemo(() => selectStudyCards(marksOnly ? cards.filter(card=>card.annotations?.length) : cards, { filter, query: debouncedQuery, sort, seed }), [cards, marksOnly, debouncedQuery, filter, seed, sort])
   const orderedIds = useMemo(() => selected.map(card => card.id), [selected])
   // The frozen prev/next order always covers the WHOLE result set; only the rendered rows
   // are capped, so "下一张" can still walk past the mounted window.
@@ -147,7 +148,8 @@ export function LearningCenter() {
         <div className={css.header}>
           <h2 className={css.title}>{tx('学习中心', 'Learning center')}</h2>
           <div className={css.tabs} role="tablist" aria-label={tx('学习中心分类', 'Learning center sections')}>
-            <button type="button" role="tab" className={css.tab} data-testid="learning-tab-cards" aria-selected={state.view === 'library' ? state.tab === 'cards' : state.view === 'card'} onClick={() => learningUiActions.backToLibrary('cards')}>{tx('学习卡片', 'Study cards')}</button>
+            <button type="button" role="tab" className={css.tab} data-testid="learning-tab-cards" aria-selected={!marksOnly && (state.view === 'library' ? state.tab === 'cards' : state.view === 'card')} onClick={() => {setMarksOnly(false);learningUiActions.backToLibrary('cards')}}>{tx('学习卡片', 'Study cards')}</button>
+            <button type="button" role="tab" className={css.tab} data-testid="learning-tab-marks" aria-selected={marksOnly && (state.view === 'library' ? state.tab === 'cards' : state.view === 'card')} onClick={() => {setMarksOnly(true);learningUiActions.backToLibrary('cards')}}>{tx('标记','Marks')}</button>
             <button type="button" role="tab" className={css.tab} data-testid="learning-tab-artifacts" aria-selected={state.view === 'library' ? state.tab === 'artifacts' : state.view === 'artifact'} onClick={() => learningUiActions.backToLibrary('artifacts')}>{tx('学习成果', 'Study outputs')}</button>
           </div>
           <div className={css.spacer} />
@@ -160,6 +162,7 @@ export function LearningCenter() {
             key={state.cardId}
             cardId={state.cardId}
             context={state.context}
+            focusMarks={marksOnly}
             documentNames={documentNames}
             pageCounts={pageCounts}
             onBack={() => learningUiActions.backToLibrary('cards')}
@@ -267,7 +270,7 @@ function parseFilterValue(value: string): StudyCardFilterKey {
   return { kind: 'all' }
 }
 
-function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChanged }: { cardId: string; context: CardListContext; documentNames: Map<string, string>; pageCounts: Map<string, number>; onBack: () => void; onChanged: () => void }) {
+function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChanged, focusMarks = false }: { cardId: string; context: CardListContext; documentNames: Map<string, string>; pageCounts: Map<string, number>; onBack: () => void; onChanged: () => void; focusMarks?: boolean }) {
   const orderedIds = context.orderedIds
   const [card, setCard] = useState<StudyCard | null>(null)
   const [missing, setMissing] = useState(false)
@@ -433,7 +436,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
         {card.rating !== undefined && <button type="button" className={css.ratingClear} data-testid="card-rating-clear" disabled={busy} onClick={() => void commitRating(undefined)}>{tx('清除', 'Clear')}</button>}
       </div>
       <div className={css.detailBody} data-testid="card-detail-body">
-        <AnnotatedMarkdown content={card.bodyMarkdown} messageId={card.source.assistantMessageId} conversationId={card.source.conversationId} branchId={card.source.branchId} />
+        {focusMarks && card.annotations?.length ? <MarkedPassage card={card}/> : <AnnotatedMarkdown content={card.bodyMarkdown} messageId={card.source.assistantMessageId} conversationId={card.source.conversationId} branchId={card.source.branchId} />}
       </div>
       <div className={css.sourceList} data-testid="card-sources">
         <div className={css.sourceRow}>
@@ -501,9 +504,7 @@ function ArtifactDetail({ artifactId, onBack }: { artifactId: string; onBack: ()
   if (!artifact) return <div className={css.empty} data-testid="artifact-missing">{tx('这个学习成果已不存在。', 'This study output no longer exists.')}<button type="button" className={css.small} onClick={onBack}>{tx('返回列表', 'Back to list')}</button></div>
   return (
     <div className={css.artifactPane} data-testid="learning-artifact-detail">
-      {artifact.kind === 'quiz' && artifact.quiz && artifact.status === 'ready'
-        ? <QuizViewer quiz={artifact.quiz} />
-        : <ArtifactEditor artifact={artifact} onOpenArtifact={setArtifact} onClose={onBack} onChanged={() => void getArtifact(artifactId).then(setArtifact)} sourceDeleted={!live} />}
+      <ArtifactViewerBody artifact={artifact} onOpen={setArtifact} onClose={onBack} onChanged={() => void getArtifact(artifactId).then(setArtifact)} sourceDeleted={!live}/>
     </div>
   )
 }

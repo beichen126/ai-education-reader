@@ -1424,6 +1424,7 @@ export function DocumentReader() {
         <ChapterBuilder
           pageCount={doc.pageCount}
           initialChapters={doc.chapters}
+          versions={doc.chapterVersions}
           currentPage={page}
           draftSeed={nativeDraft ? nativeDraft.items : undefined}
           skippedUnresolved={nativeDraft ? nativeDraft.skipped : 0}

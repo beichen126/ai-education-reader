@@ -177,7 +177,7 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
     const controller = new ContinuousRenderController({
       readViewport1: page => { notePdfRendererCall('continuous', 'readViewport'); return readSessionPageViewport(ownedSession, page) },
       startRender: (page, scale) => { notePdfRendererCall('continuous', 'startRender'); return renderSessionPageSurface(ownedSession, page, scale) },
-    }, { pageCount, cacheCapacity: MAX_CANVAS_PAGES, maxConcurrentRenders: window.matchMedia('(max-width: 760px)').matches ? 2 : 4 }, {
+    }, { pageCount, cacheCapacity: MAX_CANVAS_PAGES, maxConcurrentRenders: 3 }, {
       onPageReady: (page, surface) => {
         setSurfaces(previous => { const next = new Map(previous); next.set(page, surface); return next })
         setPageErrors(previous => { const next = new Map(previous); next.delete(page); return next })
@@ -204,7 +204,7 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
     controllerRef.current = controller
     notePdfRendererAttach('continuous', 'attach')
     controller.setPageCount(pageCount)
-    controller.setTargetPages(layout.getVirtualWindow(stageRef.current?.scrollTop ?? 0).pages)
+    controller.setTargetPages(pickTargets(layout.getVirtualWindow(stageRef.current?.scrollTop ?? 0), currentPageRef.current, MAX_CANVAS_PAGES))
     return () => {
       notePdfRendererAttach('continuous', 'detach')
       if (controllerRef.current === controller) controllerRef.current = null

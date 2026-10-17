@@ -9,6 +9,7 @@ import { renderSessionThumbnail } from '../pdf/pdf-session'
 import type { PdfSession } from '../pdf/pdf-session'
 import css from './toc-page-picker.module.css'
 import { tx } from '../engine/locale'
+import { prioritizeThumbnails } from './thumbnail-priority'
 
 const INITIAL_BATCH = 30
 const BATCH_STEP = 30
@@ -45,6 +46,7 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   const enqueueRef = useRef<(n: number) => void>(() => {});
   const observerRef = useRef<IntersectionObserver | null>(null);
   const thumbRefs = useRef<Record<number, HTMLElement | null>>({})
+  const gridRef = useRef<HTMLDivElement | null>(null)
 
   const revoke = (url: string) => { try { URL.revokeObjectURL(url) } catch {} };
 
@@ -71,6 +73,13 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   pump.current = () => {
     if (inFlightRef.current >= MAX_THUMB_RENDER_CONCURRENCY) return
     const gen = genRef.current
+    const bounds = gridRef.current?.getBoundingClientRect()
+    if (bounds) {
+      const next = prioritizeThumbnails(queueRef.current,bounds,n=>thumbRefs.current[n]?.getBoundingClientRect())
+      const keep = new Set(next)
+      for(const page of queueRef.current) if(!keep.has(page)) pendingRef.current.delete(page)
+      queueRef.current = next
+    }
     const next = queueRef.current.shift();
     if (next == null) return
     pendingRef.current.add(next)
@@ -91,6 +100,7 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
       } catch { /* leave blank */ }
       finally { inFlightRef.current--; pendingRef.current.delete(next); pump.current() }
     })();
+    pump.current()
   };
 
   // Lazily enqueue a page once it enters the viewport (with a small preload margin).
@@ -100,7 +110,6 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
     if (pendingRef.current.has(n)) return
     queueRef.current.push(n);
     pendingRef.current.add(n);
-    pump.current();
   };
   enqueueRef.current = enqueue;
 
@@ -110,8 +119,16 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
         if (e.isIntersecting) { const n = Number((e.target as HTMLElement).dataset.page); if (n) enqueueRef.current(n) }
+        else {
+          const n = Number((e.target as HTMLElement).dataset.page)
+          if (queueRef.current.includes(n)) {
+            queueRef.current = queueRef.current.filter(page => page !== n)
+            pendingRef.current.delete(n)
+          }
+        }
       }
-    }, { rootMargin: '120px' });
+      pump.current()
+    }, { root: gridRef.current, rootMargin: '120px' });
     observerRef.current = io;
     // Observe all currently-rendered slots synchronously.
     for (let n = 1; n <= Math.min(loadedCount, pageCount); n++) { const el = thumbRefs.current[n]; if (el) io.observe(el) }
@@ -174,7 +191,7 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
           <div className={css.pickCount} data-testid="toc-picker-count">{tx('已选择 ' + sorted.length + ' 页', sorted.length + ' pages selected')} · PDF {selectedText || '—'}</div>
         </div>
         <div className={css.privacy} data-testid="toc-picker-privacy">{tx('仅你选择的目录页面图片会发送到当前配置的视觉模型；完整 PDF 不会因此上传。', 'Only the selected outline-page images are sent to the configured vision model; the full PDF is not uploaded.')}</div>
-        <div className={css.grid} data-testid="toc-picker-grid">
+        <div ref={gridRef} onScroll={() => pump.current()} className={css.grid} data-testid="toc-picker-grid">
           {Array.from({ length: Math.min(loadedCount, pageCount) }, (_, i) => i + 1).map(n => (
             <button key={n} type="button" ref={(el) => { thumbRefs.current[n] = el }} className={css.thumb + (selected.has(n) ? ' ' + css.selected : '')} data-testid={'toc-thumb-' + n} data-page={n} data-selected={selected.has(n) ? '1' : '0'}
               onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return } toggle(n) }}

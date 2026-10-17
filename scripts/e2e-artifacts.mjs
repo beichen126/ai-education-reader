@@ -2,6 +2,15 @@
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot, installMockModel, getLastRequestBody, getRouteHits, openSpecialBranchMenu } from './e2e-fixture.mjs'
 function getRouteHitsCompletions() { return getRouteHits().completions }
+
+async function openArtifactLibrary() {
+  await page.locator('[data-testid="conversation-learning-center"]').click()
+  await page.locator('[data-testid="learning-tab-artifacts"]').click()
+}
+async function closeArtifactView() {
+  await page.locator('button:has-text("关闭")').last().click()
+  if (await page.locator('[data-testid="learning-center-close"]').isVisible().catch(()=>false)) await page.locator('[data-testid="learning-center-close"]').click()
+}
 const results = [], errors = []
 const assert = (c, m) => results.push((c ? 'PASS  ' : 'FAIL  ') + m)
 
@@ -84,32 +93,32 @@ await page.reload({ waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
 await page.waitForTimeout(1200)
 // Reopen the library and open the note to verify the edit persisted.
-await page.locator('text=学习成果').click()
+await openArtifactLibrary()
 await page.locator('text=我的笔记标题').waitFor({ state: 'visible', timeout: 8000 })
 assert(true, 'edited Note title persisted after reload (shown in Artifact Library)')
 await page.locator('text=我的笔记标题').click()
 await page.waitForTimeout(700)
 // Close the note editor overlay so the conversation's A2 trigger is reachable again.
-await page.locator('button:has-text("关闭")').last().click()
+await closeArtifactView()
 await page.waitForTimeout(500)
 
 // ---- Agent F (F4): closing the editor IMMEDIATELY after typing flushes the pending edit ----
-await page.locator('text=学习成果').click()
+await openArtifactLibrary()
 await page.locator('text=我的笔记标题').waitFor({ state: 'visible', timeout: 8000 })
 await page.locator('text=我的笔记标题').click()
 await page.waitForTimeout(500)
 // type, then click 关闭 IMMEDIATELY (well inside the 450ms autosave debounce)
 await page.locator('textarea[class*="textarea"]').fill('最后编辑-立即关闭')
-await page.locator('button:has-text("关闭")').last().click()
+await closeArtifactView()
 await page.waitForTimeout(700)
 // reopen from the library and verify the flush-on-close persisted the last keystrokes
-await page.locator('text=学习成果').click()
+await openArtifactLibrary()
 await page.locator('text=我的笔记标题').waitFor({ state: 'visible', timeout: 8000 })
 await page.locator('text=我的笔记标题').click()
 await page.waitForTimeout(500)
 const bodyAfterFastClose = await page.locator('textarea[class*="textarea"]').inputValue()
 assert(bodyAfterFastClose.includes('最后编辑-立即关闭'), 'F4: closing editor immediately after typing persists the last edit (got ' + bodyAfterFastClose + ')')
-await page.locator('button:has-text("关闭")').last().click()
+await closeArtifactView()
 await page.waitForTimeout(400)
 
 // ---- Quiz from A2 (index 1 assistant): valid structured quiz ----
@@ -180,7 +189,7 @@ await page.locator('[role="dialog"] button:has-text("取消")').first().click()
 await page.waitForTimeout(400)
 
 // ---- Artifact Library: browse/filter/delete ----
-await page.locator('text=学习成果').click()
+await openArtifactLibrary()
 // Wait for the ACTUAL note card (not the always-present '笔记' label) — the artifact list loads
 // asynchronously, and on a slower CI runner counting too early returned 0 even though the note
 // was present (a later assertion confirmed it). Making the gate deterministic, not flaky.
@@ -199,9 +208,9 @@ await page.waitForTimeout(300)
 const rawOk = (await page.locator('pre').textContent().catch(() => '') || '').indexOf('坏题') >= 0
 assert(rawOk, 'A6: raw model output is viewable for the failed quiz')
 // Close the error view overlay (this returns to the conversation — opening an artifact closes the library).
-await page.locator('button:has-text("关闭")').last().click()
+await closeArtifactView()
 await page.waitForTimeout(400)
-await page.locator('text=学习成果').click()
+await openArtifactLibrary()
 await page.waitForTimeout(500)
 await page.locator('button:has-text("题目")').first().click()
 await page.waitForTimeout(500)

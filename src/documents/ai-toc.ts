@@ -207,6 +207,7 @@ export function mapTocSourcePages(rows: TocLocalRow[], pageBatch: number[]): Toc
 export type TocStructureDiagnosticCode =
   | 'EMPTY_OUTPUT'
   | 'MALFORMED_OUTPUT'
+  | 'OUTPUT_TRUNCATED'
   | 'LEVEL_COUNT_MISMATCH'
   | 'INVALID_LEVEL'
   | 'LEVEL_JUMP'
@@ -363,6 +364,7 @@ export function buildTocStructureRepairPrompt(rowsCount: number, diagnostics: To
       return 'Item ' + ((d.rowIndex ?? 0) + 1) + ' has an invalid hierarchy jump.'
     }
     if (d.code === 'EMPTY_OUTPUT') return 'The previous response contained no levels.'
+    if (d.code === 'OUTPUT_TRUNCATED') return 'The previous response hit its output limit and was truncated. Return the complete compact levels array without commentary.'
     if (d.code === 'MALFORMED_OUTPUT') return 'The previous response was not a valid compact JSON object.'
     if (d.code === 'API_ERROR') return 'The previous structure request failed.'
     if (d.code === 'SUSPICIOUS_FLAT') return 'Explicit multi-depth numbering was flattened. Re-examine Part/Chapter/Section and decimal prefixes; preserve supported L3/L4 depths without inventing depth.'

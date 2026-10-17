@@ -1,0 +1,5 @@
+.player { position: fixed; z-index: 2400; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); max-width: min(360px, calc(100vw - 24px)); padding: 10px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); box-shadow: 0 4px 18px #0004; }
+.label { font-size: 13px; overflow-wrap: anywhere; }
+.actions { display: flex; gap: 8px; margin: 6px 0; }
+.actions button { min-height: 36px; padding: 4px 12px; background: var(--dsw-alias-bg-layer-1); color: inherit; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; cursor: pointer; }
+.player small { display: block; color: var(--dsw-alias-label-secondary); font-size: 11px; }

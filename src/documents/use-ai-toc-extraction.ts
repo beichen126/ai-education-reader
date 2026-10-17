@@ -12,7 +12,7 @@ import { renderSessionThumbnail } from '../pdf/pdf-session'
 import type { PdfSession } from '../pdf/pdf-session'
 import { DeepSeekError, errorKindLabel, isVisionModel, sendTextChat, streamTextChat, type ErrorKind, type VisionCapability } from '../api/deepseek'
 import { PreviewReadQueue } from '../engine/preview-read-queue'
-import { mapTocBatches } from './toc-work-queue'
+import { pipelineTocBatches } from './toc-work-queue'
 import { resolveCurrentProtocol } from '../prompts/prompt-resolution'
 import { compileMachineProtocolMessages } from '../prompts/protocol-request'
 import type { StableId } from '../engine/types'
@@ -53,7 +53,7 @@ export type AiTocFailureDiagnostics = {
 export type AiTocProgress =
   | { phase: 'rendering'; completed: number; total: number; currentPage?: number }
   | { phase: 'transcribing'; windowIndex: number; windowCount: number; completedBatches?: number; renderedPages?: number; totalPages?: number }
-  | { phase: 'structuring'; repair?: boolean; completed: number; total: number }
+  | { phase: 'structuring'; repair?: boolean; diagnostics?: TocStructureDiagnostic[]; completed: number; total: number }
   | { phase: 'mapping' }
   | { phase: 'done' }
 
@@ -242,9 +242,8 @@ export async function extractAiToc(opts: {
   }
   if (selectedPages.length === 0) return timedAiTocResult({ ok: false, error: '请至少选择一页目录。' }, timing, totalStartMs)
 
-  // At most two independent 4-page transcription windows. Global structure sees
-  // every row in source order, not network completion order. Render queue is
-  // shared across both windows, so rendering still uses at most three tasks.
+  // Prepare continuously with three shared render slots, independently of the
+  // five network slots. Merge by PDF order, never response completion order.
   const windowSize = selectedPages.length <= SMALL_TOC_MAX ? selectedPages.length : LARGE_TOC_WINDOW
   const windows: number[][] = []
   for (let i = 0; i < selectedPages.length; i += windowSize) windows.push(selectedPages.slice(i, i + windowSize));
@@ -254,16 +253,16 @@ export async function extractAiToc(opts: {
   const renderQueue = new PreviewReadQueue(AI_TOC_RENDER_CONCURRENCY)
   onProgress?.({ phase: 'rendering', completed: 0, total: selectedPages.length })
   try {
-    const transcriptions = await mapTocBatches(windows, 2, async (batch, w, signal) => {
+    const transcriptions = await pipelineTocBatches(windows, 3, 5, async (batch, w, signal) => {
       if (signal.aborted) throw new DeepSeekError('aborted', 'request aborted')
 
       const pageDataUrls: Record<number, string> = {}
       const renderingStartMs = aiTocNowMs()
-      let renderCursor = 0
       let renderFailure: number | null = null
-      const renderWorker = async () => {
-        while (renderCursor < batch.length && renderFailure == null && !signal?.aborted) {
-          const n = batch[renderCursor++]
+      // Enqueue the entire batch together. FIFO render slots prepare page 4
+      // before later batches, instead of leaving each batch's last page at the
+      // tail of a round-robin queue and delaying its first network request.
+      await Promise.all(batch.map(async n => {
           if (!signal.aborted) onProgress?.({ phase: 'transcribing', windowIndex: w, windowCount: windows.length, completedBatches, renderedPages: renderCompleted, totalPages: selectedPages.length })
           try {
             const rendered = await renderQueue.run(async () => { if (signal.aborted) throw new DeepSeekError('aborted', 'request aborted'); return renderSessionThumbnail(session, n, AI_TOC_RENDER_EDGE) })
@@ -278,13 +277,12 @@ export async function extractAiToc(opts: {
             renderCompleted++
             if (!signal.aborted) onProgress?.({ phase: 'transcribing', windowIndex: w, windowCount: windows.length, completedBatches, renderedPages: renderCompleted, totalPages: selectedPages.length })
           } catch { renderFailure = n }
-        }
-      }
-      await Promise.all(Array.from({ length: Math.min(AI_TOC_RENDER_CONCURRENCY, batch.length) }, () => renderWorker()))
+      }))
       timing.renderingMs += elapsedAiTocMs(renderingStartMs)
       if (signal.aborted) throw new DeepSeekError('aborted', 'request aborted')
       if (renderFailure != null) throw new TocBatchFailure(batch, new Error('render'), renderFailure)
-
+      return pageDataUrls
+    }, async (pageDataUrls, batch, w, signal) => {
       const transcriptionStartMs = aiTocNowMs()
       let transcriptionTimingRecorded = false
       const finishTranscription = () => {
@@ -330,7 +328,8 @@ export async function extractAiToc(opts: {
   let lastStructureDiagnostics: TocStructureDiagnostic[] = []
   for (let attempt = 0; attempt < 2; attempt++) {
     if (signal?.aborted) return abortedAiTocResult('structuring', timing, totalStartMs)
-    onProgress?.({ phase: 'structuring', repair: attempt === 1, completed: 0, total: allRows.length })
+    const repairDiagnostics = attempt === 1 ? lastStructureDiagnostics : undefined
+    onProgress?.({ phase: 'structuring', repair: attempt === 1, diagnostics: repairDiagnostics, completed: 0, total: allRows.length })
     const structureStartMs = aiTocNowMs()
     let structureTimingRecorded = false
     const finishStructureAttempt = () => {
@@ -353,9 +352,9 @@ export async function extractAiToc(opts: {
           if (signal?.aborted) return
           streamed += delta
           const completed = countStreamedTocLevels(streamed, allRows.length)
-          if (completed !== reported) { reported = completed; onProgress?.({ phase: 'structuring', repair, completed, total: allRows.length }) }
+          if (completed !== reported) { reported = completed; onProgress?.({ phase: 'structuring', repair, diagnostics: repairDiagnostics, completed, total: allRows.length }) }
         } });
-        if (res.finishReason === 'length') { lastStructureDiagnostics = [{ code: 'MALFORMED_OUTPUT', message: '目录层级输出被截断' }]; finishStructureAttempt(); continue }
+        if (res.finishReason === 'length') { lastStructureDiagnostics = [{ code: 'OUTPUT_TRUNCATED', message: '目录层级输出被截断' }]; finishStructureAttempt(); continue }
         structureRaw = res.content;
       }
       const sp = parseTocStructure(structureRaw || '');

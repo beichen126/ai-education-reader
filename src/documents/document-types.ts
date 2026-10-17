@@ -24,6 +24,13 @@ export type ChapterNode = {
 
 export type DocumentChapterSource = 'none' | 'native' | 'ai-toc' | 'manual' | 'mixed'
 
+export type ChapterVersion = {
+  id: string
+  createdAt: number
+  chapters: ChapterNode[]
+  chapterSource: DocumentChapterSource
+}
+
 export type LearningDocument = {
   id: string
   kind: 'pdf'
@@ -35,6 +42,8 @@ export type LearningDocument = {
   sourceBlob: Blob
   chapters: ChapterNode[]
   chapterSource: DocumentChapterSource
+  /** Local outline snapshots; old documents legitimately omit this field. */
+  chapterVersions?: ChapterVersion[]
   /** Per-stable-chapter PDF range end semantics. Missing entries default to exclusive. */
   bookmarkRangePreferences?: BookmarkRangePreferences
   /** Last page the user actually read. 0 = never read (metadata only, no binary read). */
