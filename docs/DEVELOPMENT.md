@@ -72,7 +72,7 @@ npm run test:e2e-bookmark-range
 
 发布门禁使用 `npm run test:release` 管理 preview 生命周期；不要通过删除 assertion 或把行为改成内部状态断言来“修复” E2E。
 
-GitHub Pages 的 quality 与 build 并行运行，browser-e2e 下载同一次构建的 `browser-dist`，通过 `RELEASE_SHARD_INDEX`（1–3）/`RELEASE_SHARD_TOTAL=3` 三分片运行完整 critical 列表。全部分片与 quality 成功后才发布，失败不放行。本地默认不分片；不要固定复制测试名单或重新构建另一份 dist 进行验收。PR 的独立 CI 不负责发布，main push 的重复检查已合并进 Pages 流程。
+GitHub Pages 的 quality 与 build 并行运行，browser-e2e 下载同一次构建的 `browser-dist`，通过 `RELEASE_SHARD_INDEX`（1–6）/`RELEASE_SHARD_TOTAL=6` 六分片运行完整 critical 列表。全部分片与 quality 成功后才发布，失败不放行。本地默认不分片；不要固定复制测试名单或重新构建另一份 dist 进行验收。PR 的独立 CI 不负责发布，main push 的重复检查已合并进 Pages 流程。
 
 ## 学习卡片（StudyCard）
 

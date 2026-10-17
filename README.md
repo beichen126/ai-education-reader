@@ -15,9 +15,9 @@
 
 ![status](https://img.shields.io/badge/status-v2.6.4-green?style=flat-square)
 
-v2.6.4：目录抄录启用 JSON 输出约束与独立输出预算，检测长度截断后拆批，不再只报 JSON 语法错误；兼容旧 JSONL、多行对象及格式尾逗号。部署浏览器门禁分 3 组并行，共用一次构建，保留完整测试覆盖。
+v2.6.4：目录抄录启用 JSON 输出约束与独立输出预算，检测长度截断后拆批，不再只报 JSON 语法错误；兼容旧 JSONL、多行对象及格式尾逗号。部署浏览器门禁分 6 组并行，共用一次构建，保留完整测试覆盖。
 
-v2.6.4 constrains outline transcription to JSON, detects output truncation and retries smaller batches, with legacy JSONL compatibility. Deployment reuses one build and runs the complete browser gate in three parallel shards.
+v2.6.4 constrains outline transcription to JSON, detects output truncation and retries smaller batches, with legacy JSONL compatibility. Deployment reuses one build and runs the complete browser gate in six parallel shards.
 
 v2.6.3：顶部右侧新增全屏/退出全屏按钮，手机与桌面、空会话均可使用；跟随浏览器实际全屏状态，中英文提示兼容不支持或拒绝全屏的环境。
 

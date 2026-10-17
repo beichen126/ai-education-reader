@@ -29,6 +29,7 @@ assert(await toc.getAttribute('id') === 'reader-toc-panel', 'TOC panel has the s
 assert(await tocToggle.getAttribute('aria-controls') === 'reader-toc-panel' && await tocToggle.getAttribute('aria-expanded') === 'true', 'desktop TOC toggle exposes expanded/controls state')
 await desktopBack.click()
 await toc.waitFor({ state: 'hidden', timeout: 5000 })
+await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'reader-toc-toggle', null, { timeout: 5000 })
 assert(await reader.count() === 1 && (await page.locator('[data-testid="reader-page-input"]').inputValue()) === pageBeforeToc && (await page.locator('[data-testid="reader-title"]').textContent()) === titleBeforeToc, 'desktop 返回阅读 closes only TOC and preserves Reader state')
 assert(await tocToggle.getAttribute('aria-expanded') === 'false' && await tocToggle.evaluate((el) => el === document.activeElement), 'desktop 返回阅读 restores focus to reader-toc-toggle')
 await tocToggle.click()
@@ -43,6 +44,9 @@ const tocBack = page.locator('[data-testid="reader-toc-back"]')
 assert(await tocBack.count() === 1 && await tocBack.isVisible().catch(() => false), 'TOC drawer exposes a visible 返回阅读 action')
 assert(await tocBack.getAttribute('aria-label').catch(() => null) === '返回 PDF 阅读', '返回阅读 has an accessible name')
 assert(await tocToggle.getAttribute('aria-expanded') === 'true' && await tocToggle.getAttribute('aria-controls') === 'reader-toc-panel', 'mobile TOC toggle exposes expanded/controls state')
+// Visibility is committed before the scheduled animation-frame focus transfer.
+// Wait for the observable focus contract rather than racing that frame in CI.
+await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'reader-toc-back', null, { timeout: 5000 })
 assert(await tocBack.evaluate((el) => el === document.activeElement), 'mobile TOC opening moves focus to 返回阅读')
 await page.keyboard.press('Shift+Tab')
 assert(await toc.evaluate((el) => el.contains(document.activeElement)), 'mobile TOC focus stays inside the overlay on reverse Tab')
@@ -56,6 +60,7 @@ if (await tocBack.count()) {
   await toc.waitFor({ state: 'visible', timeout: 5000 })
   await page.keyboard.press('Escape')
   await toc.waitFor({ state: 'hidden', timeout: 5000 })
+  await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'reader-toc-toggle', null, { timeout: 5000 })
   assert(await reader.count() === 1 && await tocToggle.evaluate((el) => el === document.activeElement), 'mobile Escape closes TOC first and keeps Reader open')
 }
 
