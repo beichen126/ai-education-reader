@@ -1,7 +1,7 @@
 // v1.3.3 Stage C: bookmark range selector -> persistence -> actual PDF pages.
 import { launchBrowser } from './e2e-browser.mjs'
 import { openAppDb } from './e2e-idb.mjs'
-import { dismissProductGuide } from './e2e-navigation.mjs'
+import { dismissProductGuide, openDocumentLibrary } from './e2e-navigation.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://localhost:5299/ai-education-reader/'
 const PDF = 'test/fixtures/many-pages.pdf'
@@ -16,9 +16,7 @@ page.on('pageerror', error => errors.push('pageerror: ' + error.message))
 page.on('dialog', dialog => { void dialog.accept() })
 
 const openLibrary = async () => {
-  if (await page.locator('[data-testid="document-library"]').count()) return
-  await page.locator('[data-testid="sidebar-entry-files"], [data-testid="rail-files"]').first().click()
-  await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
+  await openDocumentLibrary(page)
 }
 
 const readDocuments = () => openAppDb(page, { store: 'documents' })

@@ -1,5 +1,6 @@
 import { launchBrowser } from './e2e-browser.mjs'
 import { openAppDb } from './e2e-idb.mjs'
+import { openDocumentLibrary } from './e2e-navigation.mjs'
 
 const BASE = process.env.E2E_BASE || 'http://127.0.0.1:5299/ai-education-reader/'
 const PDF = 'test/fixtures/many-pages.pdf'
@@ -19,8 +20,7 @@ const openLibrary = async () => {
     await guide.locator('[data-testid="product-guide-close"]').click()
     await guide.waitFor({ state: 'detached', timeout: 10000 })
   }
-  await page.locator('[data-testid="sidebar-entry-files"], [data-testid="rail-files"]').first().click()
-  await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
+  await openDocumentLibrary(page)
 }
 
 await page.goto(BASE, { waitUntil: 'networkidle' })

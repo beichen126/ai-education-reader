@@ -91,7 +91,10 @@ await page.setViewportSize({ width: 390, height: 844 })
 await page.waitForTimeout(500)
 const helpEntry = page.locator('[data-testid="help-product-guide"]')
 if (await helpEntry.isVisible().catch(() => false)) await helpEntry.click({ timeout: 10000 })
-else await page.locator('[data-testid="rail-help"]').click({ timeout: 10000 })
+else {
+  await page.locator('[data-testid="mobile-menu-toggle"]').click()
+  await page.locator('[data-testid="mobile-history-drawer"] [data-testid="help-product-guide"]').click({ timeout: 10000 })
+}
 await guide.waitFor({ state: 'visible', timeout: 10000 })
 const mobileBox = await guide.boundingBox()
 assert(mobileBox && mobileBox.width >= 389 && mobileBox.height >= 843, 'mobile guide uses the full viewport')
