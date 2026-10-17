@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "2.6.4",
+  "version": "2.6.5",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -162,7 +162,7 @@
     "test:pdf-outline-writer": "npx tsx scripts/test-pdf-outline-writer.ts",
     "test:document-context": "npx tsx scripts/test-document-context.ts",
     "test:conversation-bundle": "npx tsx scripts/test-conversation-bundle.ts",
-    "test:toc-review": "npx tsx scripts/test-toc-review.ts",
+    "test:toc-review": "npx tsx scripts/test-toc-review.ts && npx tsx scripts/test-ai-toc-pipeline.ts",
     "test:toc-page-mapping": "npx tsx scripts/test-toc-page-mapping.ts",
     "test:custom-actions": "npx tsx scripts/test-custom-actions.ts",
     "test:e2e-native-toc": "node scripts/e2e-native-toc.mjs",

@@ -72,6 +72,8 @@ npm run test:e2e-bookmark-range
 
 发布门禁使用 `npm run test:release` 管理 preview 生命周期；不要通过删除 assertion 或把行为改成内部状态断言来“修复” E2E。
 
+AI 目录完整内置协议集中在 `src/documents/ai-toc-prompts.ts`；纠错提示由 `ai-toc.ts` 根据稳定诊断生成，英文协议展示直接引用真实常量，避免副本漂移。转录为最多两批并行、每批最多四页，共享最多三路页面渲染；模型输出按来源顺序合并，再全局分析层级。层级 SSE 进度只计已结束的整数 token，数据统一校验后才形成草稿；不要按时间推进百分比。当前仍有一次拆批和一次纠错的请求上限，尚无持久化断点续识别。
+
 GitHub Pages 的 quality 与 build 并行运行，browser-e2e 下载同一次构建的 `browser-dist`，通过 `RELEASE_SHARD_INDEX`（1–6）/`RELEASE_SHARD_TOTAL=6` 六分片运行完整 critical 列表。全部分片与 quality 成功后才发布，失败不放行。本地默认不分片；不要固定复制测试名单或重新构建另一份 dist 进行验收。PR 的独立 CI 不负责发布，main push 的重复检查已合并进 Pages 流程。
 
 ## 学习卡片（StudyCard）

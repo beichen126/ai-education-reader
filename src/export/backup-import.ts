@@ -1,4 +1,5 @@
 import { idbReplaceAll, idbGetAll } from '../storage/idb'
+import { resolveStoredModel } from '../api/model-defaults'
 import type { Annotation } from '../annotations/annotation-types'
 import { ANNOTATION_VERSION } from '../annotations/annotation-types'
 import type { Attachment } from '../engine/types'
@@ -571,7 +572,7 @@ export async function restoreBackup(backup: Backup, binaries?: {
     // C. Build replacement metadata records pointing at the NEW binary refs.
     const settings = [
       { key: 'apiBaseUrl', value: backup.settings?.apiBaseUrl || 'https://api.deepseek.com' },
-      { key: 'model', value: backup.settings?.model || 'deepseek-chat' },
+      { key: 'model', value: resolveStoredModel(backup.settings?.model, backup.settings?.apiBaseUrl) },
       { key: 'customSystemPrompt', value: backup.settings?.customSystemPrompt || '' },
       { key: 'customSystemPromptEnabled', value: backup.settings?.customSystemPromptEnabled ? 'true' : 'false' },
       { key: 'apiKey', value: '' },

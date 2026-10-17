@@ -250,7 +250,7 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
     res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify({ model, messages, stream: true, ...deepSeekRequestOptions(baseUrl, model) }),
+      body: JSON.stringify({ model, messages, stream: true, ...(args.jsonObject ? { response_format: { type: 'json_object' } } : {}), ...(args.maxTokens ? { max_tokens: args.maxTokens } : {}), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'disabled' ? { thinking: { type: 'disabled' } } : { ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'enabled' ? { thinking: { type: 'enabled' } } : {}) }) }),
       signal,
     })
   } catch (e) {
@@ -267,6 +267,14 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
     else if (res.status >= 500) kind = 'server'
     else if (res.status >= 400) kind = 'bad-request'
     throw new DeepSeekError(kind, detail || ('http ' + res.status), res.status)
+  }
+  if (res.headers.get('content-type')?.includes('application/json')) {
+    let payload: any
+    try { payload = await res.json() } catch { throw new DeepSeekError('bad-json', 'response is not JSON') }
+    const choice = payload?.choices?.[0], content = choice?.message?.content
+    if (typeof content !== 'string' || !hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content')
+    onDelta(content)
+    return { content, finishReason: choice.finish_reason }
   }
   if (!res.body) throw new DeepSeekError('bad-json', 'no response body')
   const reader = res.body.getReader()
@@ -298,6 +306,9 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
     if (signal && signal.aborted) throw new DeepSeekError('aborted', 'stream aborted')
     if (e instanceof DeepSeekError) throw e
     throw new DeepSeekError('network-or-cors', 'stream failed')
+  } finally {
+    try { await reader.cancel() } catch { /* already closed or aborted */ }
+    reader.releaseLock()
   }
   if (!hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content in stream')
   return { content, finishReason }
@@ -312,7 +323,7 @@ export type VisionCapability = 'auto' | 'supports-image' | 'text-only'
 export function isVisionModel(model: string, capability?: VisionCapability): boolean {
   if (capability === 'supports-image') return true
   if (capability === 'text-only') return false
-  return /vision/i.test(model)
+  return /vision/i.test(model) || /^deepseek-flash$/i.test(model.trim())
 }
 export async function buildApiMessages(msgs: import('../engine/types').Message[], toDataUrl: (id: string) => Promise<string>): Promise<ApiChatMessage[]> {
   const out: ApiChatMessage[] = []

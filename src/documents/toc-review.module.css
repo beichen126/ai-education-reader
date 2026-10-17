@@ -8,6 +8,18 @@
 .btnPrimary { min-height: 32px; padding: 5px 12px; border: none; border-radius: 8px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font-size: 13px; cursor: pointer; }
 .btnPrimary:disabled { opacity: 0.5; cursor: not-allowed; }
 .err { flex: none; padding: 8px 16px; font-size: 12px; color: var(--dsw-alias-state-error-primary); }
+.deletedNotice { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 16px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.deletedNotice span { min-width: 0; overflow-wrap: anywhere; }
+.deletedNotice button { flex: none; }
+.mini.deleteEntry { color: var(--dsw-alias-state-error-primary); }
+.mobileAdjustClose, .mobilePreview { display: none; }
+.adjustHeading { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.adjustFields { display: flex; flex-direction: column; gap: 8px; }
+.reviewNotices { flex: none; min-height: 0; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.reviewNotices > summary { padding: 8px 16px; font-size: 12px; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+.noticeContent { max-height: 30dvh; overflow-y: auto; }
+.previewBar { position: fixed; bottom: max(12px, env(safe-area-inset-bottom)); left: 8px; right: 8px; pointer-events: auto; padding: 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-alias-bg-layer-1); display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.adjust { border: 0; margin: 0; }
 .warn { flex: none; padding: 8px 16px; font-size: 12px; color: var(--dsw-alias-state-warning-primary, #b7791f); }
 .mappingHelp { flex: none; margin: 8px 16px; padding: 10px 12px; border: 1px solid var(--dsw-alias-state-warning-primary, #b7791f); border-radius: 8px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12px; line-height: 1.5; color: var(--dsw-alias-label-primary); background: color-mix(in srgb, var(--dsw-alias-state-warning-primary, #b7791f) 9%, transparent); }
 .mappingHelp span { flex: 1; min-width: 220px; }
@@ -41,5 +53,28 @@
 .confirmBox { width: min(360px, 100%); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.24); padding: 16px; display: flex; flex-direction: column; gap: 12px; font-size: 13px; }
 .confirmBtns { display: flex; justify-content: flex-end; gap: 8px; }
 @media (max-width: 800px) { .panel { width: min(680px, calc(100vw - 24px)); } }
-@media (max-width: 680px) { .reviewBody { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; } .adjust { border-left: none; border-top: 1px solid var(--dsw-alias-border-l2); } }
+@media (max-width: 680px) {
+  .panel { height: 100dvh; width: 100vw; }
+  .header { padding: 8px; gap: 6px; }
+  .headerBtns { width: 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  .headerBtns .btn, .headerBtns .btnPrimary { min-height: 40px; padding: 5px 3px; font-size: 12px; }
+  .reviewBody { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .reviewNotices > summary { padding: 8px; }
+  .noticeContent { max-height: 24dvh; }
+  .adjust { display: none; border-left: none; border-top: 1px solid var(--dsw-alias-border-l2); max-height: 45dvh; padding: 8px; }
+  .adjust.adjustOpen { display: flex; }
+  .adjustCurrent { display: none; }
+  .adjustFields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .adjustFields .field:first-child { grid-column: 1 / -1; }
+  .input { min-height: 38px; font-size: 16px; width: 0; }
+  .mobileAdjustClose, .mobilePreview { display: inline-block; }
+  .mini { min-height: 36px; }
+  .item { padding: 8px; }
+  .itemBtns { gap: 8px; }
+  .mappingHelp, .issueHelp { margin: 6px 8px; padding: 8px; }
+  .nav { padding: 8px; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .nav .btn { min-height: 40px; }
+  .deletedNotice { padding: 6px 8px; }
+  .deletedNotice span { max-height: 3em; overflow: auto; }
+}
 @media (max-width: 640px) { .panel { width: 100vw; max-height: 100dvh; } }

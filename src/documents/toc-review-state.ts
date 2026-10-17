@@ -4,6 +4,35 @@
 export type ReviewStateValue = 'unchecked' | 'verified' | 'issue'
 export type ReviewState = Record<number, ReviewStateValue>
 
+export type RemovedReviewEntry<T> = { index: number; row: T; state: ReviewStateValue; levelRaw?: string }
+
+/** Index-based UI metadata must follow its row when an entry is removed/restored. */
+export function removeReviewEntry<T>(rows: T[], state: ReviewState, levelRaw: Record<number, string>, index: number) {
+  if (!Number.isInteger(index) || index < 0 || index >= rows.length) throw new RangeError('Invalid outline review index')
+  const removed: RemovedReviewEntry<T> = { index, row: rows[index], state: state[index] ?? 'unchecked', levelRaw: levelRaw[index] }
+  const nextRows = rows.filter((_, i) => i !== index)
+  const nextState: ReviewState = {}, nextRaw: Record<number, string> = {}
+  nextRows.forEach((_, i) => {
+    const from = i < index ? i : i + 1
+    nextState[i] = state[from] ?? 'unchecked'
+    if (levelRaw[from] !== undefined) nextRaw[i] = levelRaw[from]
+  })
+  return { rows: nextRows, state: nextState, levelRaw: nextRaw, removed }
+}
+
+export function restoreReviewEntry<T>(rows: T[], state: ReviewState, levelRaw: Record<number, string>, removed: RemovedReviewEntry<T>) {
+  const index = Math.max(0, Math.min(rows.length, removed.index))
+  const nextRows = [...rows.slice(0, index), removed.row, ...rows.slice(index)]
+  const nextState: ReviewState = {}, nextRaw: Record<number, string> = {}
+  nextRows.forEach((_, i) => {
+    const from = i < index ? i : i - 1
+    nextState[i] = i === index ? removed.state : state[from] ?? 'unchecked'
+    const raw = i === index ? removed.levelRaw : levelRaw[from]
+    if (raw !== undefined) nextRaw[i] = raw
+  })
+  return { rows: nextRows, state: nextState, levelRaw: nextRaw, index }
+}
+
 export function emptyReviewState(count: number): ReviewState {
   const s: ReviewState = {}
   for (let i = 0; i < count; i++) s[i] = 'unchecked'

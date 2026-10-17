@@ -204,7 +204,7 @@ export function SettingsDialog() {
           <ShowHideLabel visible={showKey} onToggle={() => setShowKey(v => !v)} onClear={onClearKey} />
         </span>
       </div>
-      <div className={css.field}><label>Model</label><Input className={css.fieldInput} value={model} onChange={e => setModel(e.target.value)} placeholder="deepseek-v4-flash-vision-exp" /></div>
+      <div className={css.field}><label>Model</label><Input className={css.fieldInput} value={model} onChange={e => setModel(e.target.value)} placeholder="deepseek-flash" /></div>
       <div className={css.field}>
         <label>{tx('模型图片能力（Vision）', 'Model image capability (Vision)')}</label>
         <div className={css.appearanceRow} data-testid="settings-vision">

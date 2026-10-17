@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { validateChapterDraft, buildChapterTreeFromDraft, type ChapterDraftItem } from './chapter-builder'
 import { applyGlobalOffset, setManualPageOverride, validateMappedTocReview, canUseNumericOffset, canonicalNumericPageNumber, type MappedTocItem } from './toc-mapping'
-import { emptyReviewState, markRowUnchecked, markChangedRowsUnchecked, verifiedCount as countVerified, resolveSaveStage, type ReviewState, type ReviewStateValue } from './toc-review-state'
+import { emptyReviewState, markRowUnchecked, markChangedRowsUnchecked, verifiedCount as countVerified, resolveSaveStage, removeReviewEntry, restoreReviewEntry, type RemovedReviewEntry, type ReviewState, type ReviewStateValue } from './toc-review-state'
 import type { ChapterNode, DocumentChapterSource } from './document-types'
 import css from './toc-review.module.css'
 import { tx } from '../engine/locale'
@@ -39,9 +39,50 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   const issueAckRef = useRef(false)
   const pageInputRef = useRef<HTMLInputElement | null>(null)
   const [levelRaw, setLevelRaw] = useState<Record<number, string>>({})
+  const [deleted, setDeleted] = useState<RemovedReviewEntry<MappedTocItem>[]>([])
+  const [editExpanded, setEditExpanded] = useState(false)
+  const [previewMode, setPreviewMode] = useState(false)
+  const [issuesExpanded, setIssuesExpanded] = useState(() => !window.matchMedia('(max-width: 680px)').matches)
+  const focusFrameRef = useRef<number | null>(null)
+  useEffect(() => () => { if (focusFrameRef.current !== null) window.cancelAnimationFrame(focusFrameRef.current) }, [])
+  const focusAfterChange = (index: number, empty: boolean) => {
+    if (focusFrameRef.current !== null) window.cancelAnimationFrame(focusFrameRef.current)
+    focusFrameRef.current = window.requestAnimationFrame(() => {
+      focusFrameRef.current = null
+      document.querySelector<HTMLButtonElement>(empty ? '[data-testid="toc-review-undo-delete"]' : '[data-testid="toc-review-delete-' + index + '"]')?.focus()
+    })
+  }
+  const resetSaveAttempt = () => {
+    setSaveError(null); setConfirmUnchecked(false); setConfirmIssue(false)
+    uncheckedAckRef.current = false; issueAckRef.current = false
+  }
+  const deleteRow = (index: number) => {
+    if (saving) return
+    const next = removeReviewEntry(rows, state, levelRaw, index)
+    setRows(next.rows); setState(next.state); setLevelRaw(next.levelRaw)
+    setDeleted(history => [...history, next.removed])
+    const active = Math.max(0, Math.min(next.rows.length - 1, idx > index ? idx - 1 : idx))
+    setIdx(active); resetSaveAttempt()
+    if (next.rows.length === 0) setEditExpanded(false)
+    if (idx === index) {
+      const target = next.rows[active]?.startPage ?? next.rows[active]?.tocPage
+      if (Number.isInteger(target) && target! >= 1 && target! <= pageCount) onJump(target!)
+    }
+    focusAfterChange(Math.min(index, next.rows.length - 1), next.rows.length === 0)
+  }
+  const undoDelete = () => {
+    const removed = deleted.at(-1)
+    if (!removed || saving) return
+    const next = restoreReviewEntry(rows, state, levelRaw, removed)
+    setRows(next.rows); setState(next.state); setLevelRaw(next.levelRaw); setIdx(next.index)
+    setDeleted(history => history.slice(0, -1)); resetSaveAttempt()
+    const target = removed.row.startPage ?? removed.row.tocPage
+    if (Number.isInteger(target) && target! >= 1 && target! <= pageCount) onJump(target!)
+    focusAfterChange(next.index, false)
+  }
 
   // Rebuild rows when a new mapped draft arrives.
-  useEffect(() => { setRows(items); setState(() => { const s: ReviewState = {}; items.forEach((_, i) => s[i] = 'unchecked'); return s }); setIdx(0); setLevelRaw({}) }, [items])
+  useEffect(() => { setRows(items); setState(() => { const s: ReviewState = {}; items.forEach((_, i) => s[i] = 'unchecked'); return s }); setIdx(0); setLevelRaw({}); setDeleted([]) }, [items])
 
   // Finding 9.4D.2-0.6.24: on first open, auto-select the first resolved item and jump the
   // Reader to its physical page so the user immediately sees "left: chapter | right: PDF".
@@ -114,6 +155,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
     const target = row?.startPage ?? row?.tocPage
     if (Number.isInteger(target) && (target as number) >= 1 && (target as number) <= pageCount) onJump(target as number)
     setIdx(i)
+    setEditExpanded(true)
   }
 
   const beginCalibration = () => {
@@ -243,25 +285,29 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
 
   // Escape closes the review (never the Reader). The Reader's keydown is guarded while open.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); if (confirmUnchecked) setConfirmUnchecked(false); else if (confirmIssue) setConfirmIssue(false); else onClose() } }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); if (saving) return; if (previewMode) setPreviewMode(false); else if (confirmUnchecked) setConfirmUnchecked(false); else if (confirmIssue) setConfirmIssue(false); else onClose() } }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [confirmUnchecked, confirmIssue, onClose])
+  }, [confirmUnchecked, confirmIssue, onClose, previewMode, saving])
 
   return (
     <div className={css.overlay} data-testid="toc-review">
-      <div className={css.panel}>
+      {previewMode && <div className={css.previewBar} data-testid="toc-review-preview-bar"><span>{tx('正在核对 PDF，目录草稿已保留', 'Checking the PDF; your outline draft is preserved')}</span><button type="button" className={css.btnPrimary} data-testid="toc-review-return" onClick={() => setPreviewMode(false)}>{tx('返回检查目录', 'Back to outline')}</button></div>}
+      <div className={css.panel} style={previewMode ? { display: 'none' } : undefined}>
         <div className={css.header}>
           <span className={css.title}>{tx('检查目录', 'Review outline')}</span>
           <span className={css.sub} data-testid="toc-review-progress">{tx('已检查 ', 'Reviewed ')}{verifiedCount} / {rows.length}</span>
           <div className={css.headerBtns}>
-            <button type="button" className={css.btn} data-testid="toc-review-edit-all" onClick={() => onEditAll(rows)}>{tx('编辑全部目录', 'Edit full outline')}</button>
-            <button type="button" className={css.btn} data-testid="toc-review-close" onClick={onClose}>{tx('取消', 'Cancel')}</button>
-            <button type="button" className={css.btnPrimary} data-testid="toc-review-save" disabled={saving || invalid} onClick={requestSave}>{saving ? tx('保存中…', 'Saving…') : tx('保存目录', 'Save outline')}</button>
+            <button type="button" className={css.btn} data-testid="toc-review-edit-all" disabled={saving || rows.length === 0} onClick={() => onEditAll(rows)}>{tx('编辑全部', 'Edit all')}</button>
+            <button type="button" className={`${css.btn} ${css.mobilePreview}`} data-testid="toc-review-preview" disabled={rows.length === 0 || saving} onClick={() => { jump(idx); setPreviewMode(true) }}>{tx('查看PDF', 'View PDF')}</button>
+            <button type="button" className={css.btn} data-testid="toc-review-close" disabled={saving} onClick={onClose}>{tx('取消', 'Cancel')}</button>
+            <button type="button" className={css.btnPrimary} data-testid="toc-review-save" disabled={saving || invalid || rows.length === 0} onClick={requestSave}>{saving ? tx('保存中…', 'Saving…') : tx('保存目录', 'Save outline')}</button>
           </div>
         </div>
-        {notice && <div className={css.warn} data-testid="toc-review-notice">{notice}</div>}
+        {deleted.length > 0 && <div className={css.deletedNotice} role="status" data-testid="toc-review-delete-status"><span>{tx('已删除「' + deleted.at(-1)!.row.title + '」，仅影响当前草稿。', 'Deleted “' + deleted.at(-1)!.row.title + '” from this draft only.')}</span><button type="button" className={css.mini} data-testid="toc-review-undo-delete" disabled={saving} onClick={undoDelete}>{tx('撤销删除', 'Undo delete')}</button></div>}
         {saveError && <div className={css.err} data-testid="toc-review-error">{saveError}</div>}
+        {(notice || unresolvedCount > 0 || nonMappingInvalidCount > 0) && <details className={css.reviewNotices} data-testid="toc-review-issues" open={issuesExpanded} onToggle={event => setIssuesExpanded(event.currentTarget.open)}><summary>{tx('识别提示与问题', 'Detection notes and issues')} · {invalidCount}</summary><div className={css.noticeContent}>
+        {notice && <div className={css.warn} data-testid="toc-review-notice">{notice}</div>}
         {nonMappingInvalidCount > 0 && (
           <div className={css.issueHelp} data-testid="toc-review-invalid">
             <span>{tx('还有 ' + nonMappingInvalidCount + ' 项内容需要修正后才能保存。', nonMappingInvalidCount + ' content items must be corrected before saving.')}</span>
@@ -279,25 +325,30 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
             <button type="button" className={css.mini} data-testid="toc-review-locate-unresolved" onClick={beginIssueReview}>{tx('定位第一个问题页', 'Go to first issue page')}</button>
           </div>
         )}
+        </div></details>}
         <div className={css.reviewBody}>
           <div className={css.list} data-testid="toc-review-list">
             {rows.map((it, i) => (
-              <div key={i} className={css.item + (i === idx ? ' ' + css.active : '')} data-testid={'toc-review-item-' + i} data-sp={it.startPage ?? ''} data-state={state[i] || 'unchecked'} onClick={() => jump(i)}>
+              <div key={i} tabIndex={0} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); jump(i) } }} className={css.item + (i === idx ? ' ' + css.active : '')} data-testid={'toc-review-item-' + i} data-sp={it.startPage ?? ''} data-state={state[i] || 'unchecked'} onClick={() => jump(i)}>
                 <div className={css.itemTitle}><span className={css.itemMark}>{state[i] === 'verified' ? '✓' : state[i] === 'issue' ? '!' : '·'}</span><span className={css.itemText}>{it.title}</span></div>
                 <div className={css.itemMeta}>L{it.level} · {it.pageLabel}{it.startPage != null ? ' → PDF ' + it.startPage : tx(' · 页码待确认', ' · page needs confirmation')}</div>
                 <div className={css.itemBtns}>
-                  <button type="button" className={css.mini} data-testid={'toc-review-ok-' + i} disabled={isBlocking(i)} onClick={(e) => { e.stopPropagation(); verifyButton(i) }}>✓ {tx('正确', 'Correct')}</button>
+                  <button type="button" className={css.mini} data-testid={'toc-review-ok-' + i} disabled={saving || isBlocking(i)} onClick={(e) => { e.stopPropagation(); verifyButton(i) }}>✓ {tx('正确', 'Correct')}</button>
+                  <button type="button" className={css.mini} data-testid={'toc-review-edit-' + i} disabled={saving} onClick={event => { event.stopPropagation(); jump(i) }}>{tx('调整', 'Edit')}</button>
+                  <button type="button" className={`${css.mini} ${css.deleteEntry}`} data-testid={'toc-review-delete-' + i} disabled={saving} aria-label={tx('删除目录项：', 'Delete outline entry: ') + it.title} title={tx('只删除此条，不删除下级条目；保存前可撤销', 'Delete this entry only, not its children; undo is available before saving')} onClick={e => { e.stopPropagation(); deleteRow(i) }}>{tx('删除', 'Delete')}</button>
                 </div>
               </div>
             ))}
             {rows.length === 0 && <div className={css.empty} data-testid="toc-review-empty">{tx('没有识别到条目。', 'No entries were detected.')}</div>}
           </div>
-          <div className={css.adjust} data-testid="toc-review-adjust">
-            <div className={css.adjustTitle}>{tx('快速调整当前项', 'Adjust current item')}</div>
+          <fieldset className={`${css.adjust} ${editExpanded ? css.adjustOpen : ''}`} data-testid="toc-review-adjust" disabled={saving || rows.length === 0}>
+            <div className={css.adjustHeading}><span className={css.adjustTitle}>{tx('快速调整当前项', 'Adjust current item')}</span><button type="button" className={`${css.mini} ${css.mobileAdjustClose}`} data-testid="toc-review-collapse-edit" onClick={() => setEditExpanded(false)}>{tx('收起编辑', 'Hide editor')}</button></div>
             <div className={css.adjustCurrent} data-testid="toc-review-current-title">{rows[idx]?.title || '—'}</div>
+            <div className={css.adjustFields}>
             <label className={css.field}>{tx('标题', 'Title')} <input className={css.input} data-testid="toc-review-title" value={rows[idx]?.title || ''} onChange={e => editRow(idx, { title: e.target.value })} /></label>
             <label className={css.field}>{tx('层级', 'Level')} <input className={css.input} data-testid="toc-review-level" value={levelRaw[idx] ?? String(rows[idx]?.level ?? '')} inputMode="numeric" onChange={e => onLevelInput(idx, e.target.value)} /></label>
             <label className={css.field}>{tx('PDF页', 'PDF page')} <input ref={pageInputRef} className={css.input} data-testid="toc-review-page" value={rows[idx]?.startPage ?? ''} placeholder={tx('待确认', 'Unconfirmed')} onChange={e => onPageInput(idx, e.target.value)} /></label>
+            </div>
             {canOffset && (
               <div className={css.offset}>
                 <div className={css.adjustTitle}>{tx('页码映射', 'Page mapping')}</div>
@@ -314,11 +365,11 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
                 </details>
               </div>
             )}
-          </div>
+          </fieldset>
         </div>
         <div className={css.nav}>
-          <button type="button" className={css.btn} data-testid="toc-review-prev" onClick={() => idx > 0 && jump(idx - 1)}>{tx('上一项', 'Previous item')}</button>
-          <button type="button" className={css.btn} data-testid="toc-review-next" onClick={continueReview}>{tx('继续检查', 'Continue review')}</button>
+          <button type="button" className={css.btn} data-testid="toc-review-prev" disabled={saving || rows.length === 0 || idx === 0} onClick={() => idx > 0 && jump(idx - 1)}>{tx('上一项', 'Previous item')}</button>
+          <button type="button" className={css.btn} data-testid="toc-review-next" disabled={saving || rows.length === 0} onClick={continueReview}>{tx('继续检查', 'Continue review')}</button>
         </div>
         {confirmUnchecked && (
           <div className={css.confirmWrap} data-testid="toc-review-unchecked-confirm">

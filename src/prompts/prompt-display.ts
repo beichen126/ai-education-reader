@@ -1,6 +1,7 @@
 import { getUiLanguage } from '../engine/locale'
 import type { PromptDefinition } from './prompt-types'
 import { BUILTIN_PROMPT_IDS } from './prompt-registry'
+import { TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT } from '../documents/ai-toc-prompts'
 
 type EnglishPromptCopy = {
   name: string
@@ -60,24 +61,13 @@ const ENGLISH_BUILTINS: Record<string, EnglishPromptCopy> = {
   [BUILTIN_PROMPT_IDS.protocolAiTocTranscription]: {
     name: 'AI outline · transcription',
     description: 'Faithfully transcribe visual outline pages into structured JSON.',
-    content: [
-      'You are a visual transcription assistant for PDF table-of-contents pages. Faithfully copy only printed outline rows.',
-      'Never infer the final hierarchy, nest rows, add chapters, summarize, translate, normalize, or rewrite titles.',
-      'Preserve every language and character exactly as printed, including Simplified or Traditional Chinese, capitalization, numbering, and punctuation.',
-      'Output one valid JSON object {"rows":[{"title":"Chapter 1","pageLabel":"1","sourceImageIndex":1}]} with all printed rows in a flat array and no Markdown fence.',
-      'Every row must contain title, pageLabel, and sourceImageIndex. If no destination-page label is printed or readable, use pageLabel:""; never omit it. visualIndent and numbering are optional.',
-      'sourceImageIndex starts at 1 for the current request. Copy rows in reading order, omit nothing, invent nothing, and return no explanation.',
-    ].join('\n'),
+    content: TOC_TRANSCRIPTION_SYSTEM_PROMPT,
     validatorDescription: 'Validates every transcribed row; also accepts legacy JSONL.',
   },
   [BUILTIN_PROMPT_IDS.protocolAiTocStructure]: {
     name: 'AI outline · structure analysis',
     description: 'Infer a continuous absolute hierarchy from transcribed outline rows.',
-    content: [
-      'You analyze the hierarchy of transcribed PDF outline rows. The input is plain text in reading order with indentation and numbering.',
-      'Return one compact JSON object: {"levels":[1,2,3]}. levels must contain exactly one positive integer per input row in the same order.',
-      'Do not return or modify titles, page labels, page numbers, ids, numbering, indentation, or any other field. Do not return JSONL or an explanation.',
-    ].join('\n'),
+    content: TOC_STRUCTURE_PROMPT,
     validatorDescription: 'Strictly validates the level count, positive integers, and hierarchy jumps.',
   },
   [BUILTIN_PROMPT_IDS.protocolQuizOutput]: {

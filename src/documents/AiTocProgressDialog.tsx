@@ -16,9 +16,9 @@ export function AiTocProgressDialog({ progress, selectedCount, error, onClose, o
   const stepLabel = (() => {
     if (!progress) return tx('正在启动目录识别…', 'Starting outline detection…')
     switch (progress.phase) {
-      case 'rendering': return tx('正在准备目录页面 ', 'Preparing outline pages ') + (progress.completed + 1) + ' / ' + progress.total
-      case 'transcribing': return tx('正在识别目录文字 · 第 ', 'Reading outline text · batch ') + (progress.windowIndex + 1) + ' / ' + progress.windowCount
-      case 'structuring': return progress.repair ? tx('正在校正目录层级结构', 'Correcting outline hierarchy') : tx('正在分析整本目录层级', 'Analyzing the full outline hierarchy')
+      case 'rendering': return tx('已准备目录页面 ', 'Outline pages prepared: ') + progress.completed + ' / ' + progress.total
+      case 'transcribing': return progress.completedBatches != null ? tx('并行识别目录文字 · 已完成 ', 'Reading batches in parallel: ') + progress.completedBatches + ' / ' + progress.windowCount + tx(' 批', ' complete') : tx('正在识别目录文字 · 第 ', 'Reading outline text · batch ') + (progress.windowIndex + 1) + ' / ' + progress.windowCount
+      case 'structuring': return (progress.repair ? tx('正在校正 · 已分析 ', 'Correcting hierarchy: ') : tx('已分析 ', 'Hierarchy entries analyzed: ')) + progress.completed + ' / ' + progress.total + tx(' 个目录层级', '')
       case 'mapping': return tx('正在建立 PDF 页码映射', 'Mapping PDF page numbers')
       case 'done': return tx('目录识别完成，正在打开检查目录…', 'Detection complete. Opening review…')
       default: return tx('正在识别目录…', 'Detecting outline…')
@@ -51,6 +51,8 @@ export function AiTocProgressDialog({ progress, selectedCount, error, onClose, o
         ) : (
           <div className={css.body}>
             <div className={css.stepLabel} role="status" aria-live="polite" data-testid="ai-toc-progress-step">{stepLabel}</div>
+            {progress?.phase === 'structuring' && <div><progress className={css.progressBar} data-testid="ai-toc-hierarchy-progress" max={Math.max(1, progress.total)} value={progress.completed} aria-label={tx('目录层级分析进度', 'Outline hierarchy progress')} /><div className={css.hint}>{tx('按模型实际返回的层级数更新，完成后统一校验；思考期间数字暂不增长。', 'Counts actual returned levels, validated when complete. The count pauses while the model is thinking.')}</div></div>}
+            {progress?.phase === 'transcribing' && progress.totalPages != null && <div className={css.hint}>{tx('已准备 ', 'Prepared ')}{progress.renderedPages} / {progress.totalPages}{tx(' 页，最多同时识别两批。', ' pages; up to two batches at once.')}</div>}
             <div className={css.steps}>
               {steps.map((s, i) => (
                 <div key={s.key} className={css.step + (i < activeIdx ? ' ' + css.done : '') + (i === activeIdx ? ' ' + css.active : '')} data-testid={'ai-toc-progress-step-' + s.key} data-state={i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'todo'}>

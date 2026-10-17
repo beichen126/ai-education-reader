@@ -4,11 +4,12 @@ import { DEFAULT_APPEARANCE, writeAppearanceHint, type AppearanceMode } from '..
 import { type VisionCapability } from '../api/deepseek'
 import { DEFAULT_PDF_NAVIGATION_MODE, normalizePdfNavigationMode, type PdfNavigationMode } from './pdf-navigation-settings'
 import { applyUiLanguage, normalizeUiLanguage, type UiLanguage } from './locale'
+import { DEFAULT_MODEL, resolveStoredModel } from '../api/model-defaults'
 
 export type { VisionCapability }
 export type { PdfNavigationMode }
 export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean }
-export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: 'deepseek-v4-flash-vision-exp', customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN' }
+export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: DEFAULT_MODEL, customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN' }
 
 /** A partial settings change. Every mutation goes through {@link patchSettings}. */
 export type SettingsPatch = Partial<Settings>
@@ -45,7 +46,7 @@ export function normalizeSettings(input: Settings): Settings {
   return {
     apiBaseUrl: typeof input.apiBaseUrl === 'string' ? input.apiBaseUrl : DEFAULT_SETTINGS.apiBaseUrl,
     apiKey: typeof input.apiKey === 'string' ? input.apiKey : '',
-    model: typeof input.model === 'string' ? input.model : DEFAULT_SETTINGS.model,
+    model: resolveStoredModel(input.model, input.apiBaseUrl),
     customSystemPrompt: typeof input.customSystemPrompt === 'string' ? input.customSystemPrompt : '',
     customSystemPromptEnabled: input.customSystemPromptEnabled === true,
     appearance,
@@ -62,7 +63,7 @@ export async function initSettings(): Promise<void> {
   const resolvedVision: VisionCapability = (visionCapability === 'supports-image' || visionCapability === 'text-only') ? visionCapability : 'auto'
   const resolvedLanguage = applyUiLanguage(uiLanguage)
   const webSearchEnabled = await getSetting('webSearchEnabled') === 'true'
-  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: model || DEFAULT_SETTINGS.model, customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled })
+  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled })
   writeAppearanceHint(resolvedAppearance)
 }
 

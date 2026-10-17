@@ -888,6 +888,7 @@ export function DocumentReader() {
       setAiTocItems(res.items)
       setAiTocWarning(res.warning ? localizedErrorText(res.warning, 'Text was detected, but the hierarchy needs review before saving.') : null)
       setAiTocMsg(null); setAiTocError(null)
+      if (window.matchMedia('(max-width: 1023px)').matches) { setTocOpen(false); setTocPanelClosed(true) }
       setTocReviewOpen(true)
     } catch {
       if (gen === aiTocGenRef.current) setAiTocError(tx('目录识别失败，请重试。', 'Outline detection failed. Try again.'))

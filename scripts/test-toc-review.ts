@@ -1,5 +1,5 @@
 // Stage 9.4D.1: review-state semantics (finding 8) — pure helpers used by TocReview.
-import { emptyReviewState, markRowUnchecked, markChangedRowsUnchecked, verifiedCount, issueCount, uncheckedCount, resolveSaveStage } from '../src/documents/toc-review-state.ts'
+import { emptyReviewState, markRowUnchecked, markChangedRowsUnchecked, verifiedCount, issueCount, uncheckedCount, resolveSaveStage, removeReviewEntry, restoreReviewEntry } from '../src/documents/toc-review-state.ts'
 
 let pass = 0, fail = 0
 function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' + m) } else { fail++; console.log('  FAIL: ' + m) } }
@@ -67,5 +67,20 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
   assert(inv.kind === 'invalid' && (inv as any).invalidCount === 2, '0.3 invalid blocks (highest priority)');
 }
 
+{
+  const rows = ['A', 'B', 'C'], state = { 0: 'verified', 1: 'issue', 2: 'unchecked' } as const
+  const next = removeReviewEntry(rows, state, { 1: '', 2: '3' }, 1)
+  assert(next.rows.join(',') === 'A,C' && next.state[0] === 'verified' && next.state[1] === 'unchecked', 'delete reindexes review state without attaching it to a different row')
+  assert(next.levelRaw[1] === '3' && verifiedCount(next.state) === 1, 'deleted invalid raw level no longer blocks a different row')
+  const restored = restoreReviewEntry(['A edited', 'C'], next.state, { ...next.levelRaw, 1: '4' }, next.removed)
+  assert(restored.rows.join(',') === 'A edited,B,C', 'undo restores only the removed row and keeps subsequent edits')
+  assert(restored.levelRaw[1] === '' && restored.levelRaw[2] === '4' && restored.state[1] === 'issue', 'undo restores raw invalid input and original verification status')
+  for (const index of [0, 2]) {
+    const removed = removeReviewEntry(rows, state, {}, index)
+    assert(restoreReviewEntry(removed.rows, removed.state, removed.levelRaw, removed.removed).rows.join(',') === rows.join(','), 'first/last deletion is reversible: ' + index)
+  }
+  const empty = removeReviewEntry(['only'], { 0: 'verified' }, {}, 0)
+  assert(empty.rows.length === 0 && verifiedCount(empty.state) === 0 && Object.keys(empty.levelRaw).length === 0, 'deleting the last row clears all row-indexed metadata')
+}
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)

@@ -30,6 +30,8 @@ const CORE_E2E = [
   'e2e-pdf-page-conversations',
   'e2e-ai-toc',
   'e2e-ai-toc-json-output',
+  'e2e-ai-toc-parallel',
+  'e2e-toc-review-mobile',
   'e2e-ai-toc-navigation',
   'e2e-mobile-history',
   'e2e-code-annotation',

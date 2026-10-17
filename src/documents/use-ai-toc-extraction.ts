@@ -10,7 +10,9 @@
 // model can only report which image a row came from.
 import { renderSessionThumbnail } from '../pdf/pdf-session'
 import type { PdfSession } from '../pdf/pdf-session'
-import { DeepSeekError, errorKindLabel, isVisionModel, sendTextChat, type ErrorKind, type VisionCapability } from '../api/deepseek'
+import { DeepSeekError, errorKindLabel, isVisionModel, sendTextChat, streamTextChat, type ErrorKind, type VisionCapability } from '../api/deepseek'
+import { PreviewReadQueue } from '../engine/preview-read-queue'
+import { mapTocBatches } from './toc-work-queue'
 import { resolveCurrentProtocol } from '../prompts/prompt-resolution'
 import { compileMachineProtocolMessages } from '../prompts/protocol-request'
 import type { StableId } from '../engine/types'
@@ -20,7 +22,7 @@ import {
   mapTocSourcePages, reindexRows, dedupeWindowBoundary,
   TOC_TRANSCRIPTION_SYSTEM_PROMPT, TOC_STRUCTURE_PROMPT, buildTocStructureRepairPrompt, buildTocTranscriptionRepairPrompt,
   buildTocStructureInput,
-  inferFallbackTocLevels, tocTranscriptionDiagnosticEnglish, validateTocPageLabelCoverage,
+  inferFallbackTocLevels, tocTranscriptionDiagnosticEnglish, validateTocPageLabelCoverage, countStreamedTocLevels,
   type TocTranscriptionRow, type TocLocalRow, type TocTranscriptionLine,
   type TocStructureDiagnostic,
 } from './ai-toc'
@@ -50,8 +52,8 @@ export type AiTocFailureDiagnostics = {
 // stage boundaries (never guessed from a timeout). The UI renders this verbatim.
 export type AiTocProgress =
   | { phase: 'rendering'; completed: number; total: number; currentPage?: number }
-  | { phase: 'transcribing'; windowIndex: number; windowCount: number }
-  | { phase: 'structuring'; repair?: boolean }
+  | { phase: 'transcribing'; windowIndex: number; windowCount: number; completedBatches?: number; renderedPages?: number; totalPages?: number }
+  | { phase: 'structuring'; repair?: boolean; completed: number; total: number }
   | { phase: 'mapping' }
   | { phase: 'done' }
 
@@ -96,6 +98,10 @@ class TocTranscriptionValidationError extends Error {
   }
 }
 
+class TocBatchFailure extends Error {
+  constructor(readonly pages: number[], readonly sourceError: unknown, readonly renderPage?: number) { super('Outline batch failed') }
+}
+
 function transcriptionFailureMessage(error: unknown): string {
   if (error instanceof DeepSeekError) return errorKindLabel(error.kind)
   if (error instanceof TocTranscriptionValidationError) {
@@ -119,7 +125,7 @@ function transportRetryPrompt(kind: ErrorKind): string {
     'no-content': 'the model returned no usable content',
     aborted: 'the request was cancelled',
   }
-  return 'The previous attempt failed because ' + reasons[kind] + '. Retry the same images and follow the JSONL schema exactly. Every row must include title, pageLabel, and sourceImageIndex. Use pageLabel:"" when no printed destination-page label is visible.'
+  return 'The previous attempt failed because ' + reasons[kind] + '. Retry the same images with one complete JSON object {"rows":[...]}. Include title, pageLabel, sourceImageIndex, visualIndent and numbering per row. Preserve all printed entries and reading order. Use pageLabel:"" only for an unreadable or absent individual destination label. Honor this schema even if the API rejects format parameters. No fence, ellipses or explanation.'
 }
 
 function transcriptionRetryPrompt(error: unknown): string {
@@ -236,76 +242,81 @@ export async function extractAiToc(opts: {
   }
   if (selectedPages.length === 0) return timedAiTocResult({ ok: false, error: '请至少选择一页目录。' }, timing, totalStartMs)
 
-  // Window strategy: small TOC (<=4 pages) sent ONCE so the model sees full
-  // cross-page continuity; larger TOC uses sequential windows of 4 pages. Each
-  // window is rendered, transcribed, and released before the next one. This
-  // avoids retaining a base64 copy of every selected page and starts the model
-  // request as soon as the first window is ready.
+  // At most two independent 4-page transcription windows. Global structure sees
+  // every row in source order, not network completion order. Render queue is
+  // shared across both windows, so rendering still uses at most three tasks.
   const windowSize = selectedPages.length <= SMALL_TOC_MAX ? selectedPages.length : LARGE_TOC_WINDOW
   const windows: number[][] = []
   for (let i = 0; i < selectedPages.length; i += windowSize) windows.push(selectedPages.slice(i, i + windowSize));
   let renderCompleted = 0
   let allRows: TocTranscriptionRow[] = []
-  let tail: TocTranscriptionRow[] = []
-  for (let w = 0; w < windows.length; w++) {
-    const batch = windows[w];
-    if (signal?.aborted) return abortedAiTocResult('rendering', timing, totalStartMs)
+  let completedBatches = 0
+  const renderQueue = new PreviewReadQueue(AI_TOC_RENDER_CONCURRENCY)
+  onProgress?.({ phase: 'rendering', completed: 0, total: selectedPages.length })
+  try {
+    const transcriptions = await mapTocBatches(windows, 2, async (batch, w, signal) => {
+      if (signal.aborted) throw new DeepSeekError('aborted', 'request aborted')
 
-    const pageDataUrls: Record<number, string> = {}
-    const renderingStartMs = aiTocNowMs()
-    let renderCursor = 0
-    let renderFailure: number | null = null
-    const renderWorker = async () => {
-      while (renderCursor < batch.length && renderFailure == null && !signal?.aborted) {
-        const n = batch[renderCursor++]
-        onProgress?.({ phase: 'rendering', completed: renderCompleted, total: selectedPages.length, currentPage: n })
-        try {
-          const rendered = await renderSessionThumbnail(session, n, AI_TOC_RENDER_EDGE)
-          const url = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(String(reader.result))
-            reader.onerror = () => reject(new Error('render'))
-            reader.readAsDataURL(rendered.blob)
-          })
-          if (signal?.aborted) return
-          pageDataUrls[n] = url
-          renderCompleted++
-          onProgress?.({ phase: 'rendering', completed: renderCompleted, total: selectedPages.length, currentPage: n })
-        } catch { renderFailure = n }
+      const pageDataUrls: Record<number, string> = {}
+      const renderingStartMs = aiTocNowMs()
+      let renderCursor = 0
+      let renderFailure: number | null = null
+      const renderWorker = async () => {
+        while (renderCursor < batch.length && renderFailure == null && !signal?.aborted) {
+          const n = batch[renderCursor++]
+          if (!signal.aborted) onProgress?.({ phase: 'transcribing', windowIndex: w, windowCount: windows.length, completedBatches, renderedPages: renderCompleted, totalPages: selectedPages.length })
+          try {
+            const rendered = await renderQueue.run(async () => { if (signal.aborted) throw new DeepSeekError('aborted', 'request aborted'); return renderSessionThumbnail(session, n, AI_TOC_RENDER_EDGE) })
+            const url = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(String(reader.result))
+              reader.onerror = () => reject(new Error('render'))
+              reader.readAsDataURL(rendered.blob)
+            })
+            if (signal?.aborted) return
+            pageDataUrls[n] = url
+            renderCompleted++
+            if (!signal.aborted) onProgress?.({ phase: 'transcribing', windowIndex: w, windowCount: windows.length, completedBatches, renderedPages: renderCompleted, totalPages: selectedPages.length })
+          } catch { renderFailure = n }
+        }
       }
-    }
-    await Promise.all(Array.from({ length: Math.min(AI_TOC_RENDER_CONCURRENCY, batch.length) }, () => renderWorker()))
-    timing.renderingMs += elapsedAiTocMs(renderingStartMs)
-    if (signal?.aborted) return abortedAiTocResult('rendering', timing, totalStartMs)
-    if (renderFailure != null) return timedAiTocResult({ ok: false, error: '第 ' + renderFailure + ' 页渲染失败，无法用于目录识别。' }, timing, totalStartMs)
+      await Promise.all(Array.from({ length: Math.min(AI_TOC_RENDER_CONCURRENCY, batch.length) }, () => renderWorker()))
+      timing.renderingMs += elapsedAiTocMs(renderingStartMs)
+      if (signal.aborted) throw new DeepSeekError('aborted', 'request aborted')
+      if (renderFailure != null) throw new TocBatchFailure(batch, new Error('render'), renderFailure)
 
-    const transcriptionStartMs = aiTocNowMs()
-    let transcriptionTimingRecorded = false
-    const finishTranscription = () => {
-      if (!transcriptionTimingRecorded) {
-        timing.transcriptionMs.push(elapsedAiTocMs(transcriptionStartMs))
-        transcriptionTimingRecorded = true
+      const transcriptionStartMs = aiTocNowMs()
+      let transcriptionTimingRecorded = false
+      const finishTranscription = () => {
+        if (!transcriptionTimingRecorded) {
+          timing.transcriptionMs.push(elapsedAiTocMs(transcriptionStartMs))
+          transcriptionTimingRecorded = true
+        }
       }
-    }
-    onProgress?.({ phase: 'transcribing', windowIndex: w, windowCount: windows.length })
-    let transcription: TocTranscriptionRow[]
-    try {
-      transcription = await transcribeMappedBatchResilient({ batch, pageDataUrls, apiKey, baseUrl, model, tail, protocol: transcriptionProtocol, isMock, mock, signal })
-    } catch (error) {
-      if (signal?.aborted || (error instanceof DeepSeekError && error.kind === 'aborted')) {
+      onProgress?.({ phase: 'transcribing', windowIndex: w, windowCount: windows.length, completedBatches, renderedPages: renderCompleted, totalPages: selectedPages.length })
+      let transcription: TocTranscriptionRow[]
+      try {
+        transcription = await transcribeMappedBatchResilient({ batch, pageDataUrls, apiKey, baseUrl, model, tail: [], protocol: transcriptionProtocol, isMock, mock, signal })
+      } catch (error) {
+        if (signal?.aborted || (error instanceof DeepSeekError && error.kind === 'aborted')) {
+          finishTranscription()
+          throw error
+        }
         finishTranscription()
-        return abortedAiTocResult('transcribing', timing, totalStartMs)
+        throw new TocBatchFailure(batch, error)
       }
       finishTranscription()
-      return timedAiTocResult({ ok: false, error: tx('目录页 PDF ' + batch.join(', ') + '：', 'Outline PDF page(s) ' + batch.join(', ') + ': ') + transcriptionFailureMessage(error) }, timing, totalStartMs)
-    }
-    finishTranscription()
-    // Boundary-only dedupe: drop the head rows of this window that EXACTLY duplicate the tail
-    // of the accumulated rows (a previous-window continuity hint re-output) — NEVER dedupes
-    // two identical rows within the same window, and NEVER fuzzy-merges.
-    const deduped = dedupeWindowBoundary(allRows, transcription);
-    allRows = allRows.concat(deduped);
-    tail = transcription.slice(-PREV_TAIL_SIZE);
+      completedBatches++
+      if (!signal.aborted) onProgress?.({ phase: 'transcribing', windowIndex: w, windowCount: windows.length, completedBatches, renderedPages: renderCompleted, totalPages: selectedPages.length })
+      return transcription
+    }, signal)
+    for (const rows of transcriptions) allRows = allRows.concat(dedupeWindowBoundary(allRows, rows))
+  } catch (error) {
+    if (signal?.aborted) return abortedAiTocResult('transcribing', timing, totalStartMs)
+    if (error instanceof TocBatchFailure && error.renderPage != null) return timedAiTocResult({ ok: false, error: tx('第 ' + error.renderPage + ' 页渲染失败，无法用于目录识别。', 'PDF page ' + error.renderPage + ' could not be rendered for outline detection.') }, timing, totalStartMs)
+    const failure = error instanceof TocBatchFailure ? error.sourceError : error
+    const pages = error instanceof TocBatchFailure ? error.pages : selectedPages
+    return timedAiTocResult({ ok: false, error: tx('目录页 PDF ' + pages.join(', ') + '：', 'Outline PDF page(s) ' + pages.join(', ') + ': ') + transcriptionFailureMessage(failure) }, timing, totalStartMs)
   }
   // Re-index to a stable contiguous r0001… (dedupe exact boundary copies first).
   allRows = reindexRows(allRows);
@@ -319,7 +330,7 @@ export async function extractAiToc(opts: {
   let lastStructureDiagnostics: TocStructureDiagnostic[] = []
   for (let attempt = 0; attempt < 2; attempt++) {
     if (signal?.aborted) return abortedAiTocResult('structuring', timing, totalStartMs)
-    onProgress?.({ phase: 'structuring', repair: attempt === 1 })
+    onProgress?.({ phase: 'structuring', repair: attempt === 1, completed: 0, total: allRows.length })
     const structureStartMs = aiTocNowMs()
     let structureTimingRecorded = false
     const finishStructureAttempt = () => {
@@ -337,7 +348,14 @@ export async function extractAiToc(opts: {
       else {
         const userContent = repair ? structureInput + '\n\n' + repairPrompt : structureInput
         const messages = await compileMachineProtocolMessages({ domain: 'ai-toc-structure', protocol: structureProtocol, content: userContent })
-        const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal, thinking: 'enabled', reasoningEffort: 'high' });
+        let streamed = '', reported = 0
+        const res = await streamTextChat({ apiKey, baseUrl, model, messages, signal, thinking: 'enabled', reasoningEffort: 'high', onDelta: delta => {
+          if (signal?.aborted) return
+          streamed += delta
+          const completed = countStreamedTocLevels(streamed, allRows.length)
+          if (completed !== reported) { reported = completed; onProgress?.({ phase: 'structuring', repair, completed, total: allRows.length }) }
+        } });
+        if (res.finishReason === 'length') { lastStructureDiagnostics = [{ code: 'MALFORMED_OUTPUT', message: '目录层级输出被截断' }]; finishStructureAttempt(); continue }
         structureRaw = res.content;
       }
       const sp = parseTocStructure(structureRaw || '');
@@ -353,6 +371,7 @@ export async function extractAiToc(opts: {
         continue
       }
       const leveled = allRows.map((r, i) => ({ title: r.title, level: sv.levels[i], pageLabel: r.pageLabel, tocPage: r.tocPage }));
+      onProgress?.({ phase: 'structuring', repair, completed: allRows.length, total: allRows.length })
       finishStructureAttempt()
       onProgress?.({ phase: 'mapping' })
       const mappingStartMs = aiTocNowMs()
@@ -411,7 +430,7 @@ async function transcribeBatch(opts: {
   const contentLines: string[] = []
   if (tail.length > 0) contentLines.push(buildTailContext(tail))
   if (repairPrompt) contentLines.push(repairPrompt)
-  contentLines.push('Transport formatting requirement: wrap all flat transcription rows in ONE valid JSON object {"rows":[{"title":"Chapter 1","pageLabel":"1","sourceImageIndex":1}]}. This replaces legacy JSONL serialization only; preserve every printed row and the transcription schema. No Markdown or explanation. Escape quotes and backslashes in JSON strings. Finish the entire rows array and object.')
+  contentLines.push('Transport formatting requirement: wrap every flat transcription row in ONE valid JSON object {"rows":[{"title":"Chapter 1","pageLabel":"1","sourceImageIndex":1,"visualIndent":0,"numbering":"Chapter 1"}]}. This replaces legacy JSONL serialization only. Preserve every printed row, its image-local indent rank and exact numbering prefix; all five keys are required, including empty numbering for an unnumbered title. No Markdown or explanation. Escape quotes and backslashes in JSON strings. Close the entire rows array and object.')
   const images: { id: StableId; dataUrl: string }[] = []
   for (let k = 0; k < batch.length; k++) {
     const physicalPage = batch[k];

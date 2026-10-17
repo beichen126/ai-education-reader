@@ -1,4 +1,5 @@
 import { listConversations, getAnnotationsByConversation, getAttachmentRow, getSetting } from '../storage/storage'
+import { resolveStoredModel } from '../api/model-defaults'
 import { idbGetAll } from '../storage/idb'
 import { listDocumentRecords, readDocumentSourceBlob } from '../documents/document-service'
 import { listDocumentNotes } from '../documents/document-note-service'
@@ -118,7 +119,7 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
   ])
   const settings = {
     apiBaseUrl: (typeof apiBaseUrl === 'string' ? apiBaseUrl : 'https://api.deepseek.com'),
-    model: (typeof model === 'string' ? model : 'deepseek-chat'),
+    model: resolveStoredModel(model, apiBaseUrl),
     customSystemPrompt: (typeof customSystemPrompt === 'string' ? customSystemPrompt : ''),
     customSystemPromptEnabled: customSystemPromptEnabled === 'true',
     webSearchEnabled: await getSetting('webSearchEnabled') === 'true',

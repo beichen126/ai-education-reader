@@ -13,7 +13,11 @@
 [隐私与备份](#数据隐私与备份) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v2.6.4-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v2.6.5-green?style=flat-square)
+
+v2.6.5：默认模型更新为支持图片的 `deepseek-flash`。目录抄录两批受控并行，按原始页序合并；完整精细化协议覆盖转录、层级和纠错，流式层级进度显示实际返回数，明显多级编号被压平会触发修复。手机校对以列表为主，提示和编辑器可收起，可临时查看 PDF，并在“正确”旁删除误识别条目、逐次撤销。完整协议见 [ai-toc-prompts.ts](src/documents/ai-toc-prompts.ts)。
+
+v2.6.5 defaults to image-capable `deepseek-flash`, transcribes two outline batches concurrently with ordered merging, and reports actual streamed hierarchy progress. Detailed protocols and explicit-numbering checks reduce flattened outlines. Phone review prioritizes the list, with collapsible notes/editor, PDF preview, entry deletion and undo.
 
 v2.6.4：目录抄录启用 JSON 输出约束与独立输出预算，检测长度截断后拆批，不再只报 JSON 语法错误；兼容旧 JSONL、多行对象及格式尾逗号。部署浏览器门禁分 6 组并行，共用一次构建，保留完整测试覆盖。
 
