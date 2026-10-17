@@ -26,6 +26,7 @@ import type { PdfSelection } from '../pdf/pdf-types'
 import { buildAttachmentDisplayItems, type AttachmentDisplayItem } from '../attachments/attachment-display'
 import { PdfContextCard } from './PdfContextCard'
 import { BranchBar } from '../branches/BranchBar'
+import { FullscreenButton } from './FullscreenButton'
 import { MessageActionMenu, type CardSaveState } from '../branches/MessageActionMenu'
 import { createStudyCardFromAssistantMessage, getStudyCard } from '../study-cards/study-card-service'
 import type { StudyCardRating } from '../study-cards/study-card-types'
@@ -290,6 +291,7 @@ export function Conversation() {
       {visibleSendError && !busy && <div className={css.errorBanner} role="alert" aria-live="assertive">{localizedErrorText(visibleSendError, 'Unable to send the message. Try again.')}</div>}
       {session && promptPath && (<BranchBar
         leadingControl={mobileNavigation}
+        trailingControl={<FullscreenButton />}
         conversationId={session.id}
         branches={branchChat.branches}
         activeBranchId={branchChat.activeBranchId}
@@ -301,7 +303,7 @@ export function Conversation() {
         onChanged={() => void branchChat.refresh()}
         onModeChanged={async () => { await sessionsActions.reload(session.id); await branchChat.refresh() }}
       />)}
-      {(!session || !promptPath) && <div className={css.mobileHeader}>{mobileNavigation}</div>}
+      {(!session || !promptPath) && <div className={css.emptyHeader}>{mobileNavigation}<FullscreenButton /></div>}
       {/* Composer sits inside the scroll body, position:sticky bottom:0 (as in DSH), so the
           mobile browser's native focus scroll lifts it above the on-screen keyboard. */}
       <div className={css.messagesShell}>

@@ -11,13 +11,7 @@ import { IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, IconC
 import { learningUiActions } from '../study-cards/learning-ui-store'
 import { IconPhoto16 } from './composer-icons'
 import css from './cockpit.module.css'
-
-function useFullscreen() {
-  const [fs, setFs] = useState(false)
-  useEffect(() => { const on = () => setFs(!!document.fullscreenElement); document.addEventListener('fullscreenchange', on); return () => document.removeEventListener('fullscreenchange', on) }, [])
-  const toggle = () => { const el = document.documentElement as any; if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}) } else if (el && el.requestFullscreen) { const p = el.requestFullscreen({ navigationUI: 'hide' }); if (p && p.catch) p.catch(() => { el.requestFullscreen().catch(() => {}) }) } }
-  return { fs, toggle }
-}
+import { useFullscreen } from '../engine/use-fullscreen'
 
 function localizedSessionTitle(session: ChatSession): string {
   return localizedConversationTitle(displayTitle(session))

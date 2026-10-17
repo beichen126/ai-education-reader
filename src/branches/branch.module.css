@@ -12,6 +12,8 @@
 }
 
 .contextRow { display: flex; align-items: center; gap: 0.5rem; min-height: 28px; min-width: 0; }
+.bar.withAction { position: relative; padding-right: 54px; min-height: 48px; box-sizing: border-box; }
+.headerAction { position: absolute; right: 6px; top: 4px; }
 .contextLabel { flex: none; font-weight: 600; color: var(--dsw-alias-label-primary); white-space: nowrap; }
 .routeRow { order: 1; }
 .summary { order: 2; margin-left: auto; min-width: 0; max-width: 100%; }

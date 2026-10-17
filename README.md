@@ -13,7 +13,11 @@
 [隐私与备份](#数据隐私与备份) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v2.6.2-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v2.6.3-green?style=flat-square)
+
+v2.6.3：顶部右侧新增全屏/退出全屏按钮，手机与桌面、空会话均可使用；跟随浏览器实际全屏状态，中英文提示兼容不支持或拒绝全屏的环境。
+
+v2.6.3 adds a top-right fullscreen toggle on phones and desktops, including empty chats, with synchronized browser state and localized unsupported/denied feedback.
 
 v2.6.2：手机端（≤760px）取消常驻左侧栏，改用顶部两道长短横线打开导航抽屉；收紧消息留白，桌面与平板侧栏不变。目录文字抄录关闭思考，结构整理使用 high 推理，会话仍为 max。图片按附近可见区域延迟读取、异步解码，原图读取限制为 2–4 路；手机连续 PDF 同时最多 2 页渲染，复用 PDF.js Worker，避免多画布争抢内存。
 
