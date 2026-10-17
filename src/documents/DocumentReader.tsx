@@ -503,7 +503,16 @@ export function DocumentReader() {
 
   useEffect(() => {
     if (!notesOpen || noteLoading) return
-    const focusTimer = window.setTimeout(() => noteInputRef.current?.focus(), 0)
+    const focusTimer = window.setTimeout(() => {
+      const input = noteInputRef.current
+      const active = document.activeElement
+      // An asynchronous note read must not steal focus from a page number the
+      // user has started editing (or another Reader control). Only transfer from
+      // the note toggle, an existing note editor, or the document's idle body.
+      const panel = input?.closest('[data-testid="reader-notes"]')
+      if (active && active !== document.body && active !== noteToggleRef.current && !panel?.contains(active)) return
+      input?.focus({ preventScroll: true })
+    }, 0)
     return () => window.clearTimeout(focusTimer)
   }, [notesOpen, noteLoading, currentNoteKey])
 

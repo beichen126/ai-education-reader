@@ -96,6 +96,12 @@ await page.locator('[data-testid="reader-page-input"]').press('Enter')
 // actually changed. The accessible label is tied to the committed page state.
 await page.locator('[data-testid="reader-page-img"][aria-label="PDF 第 2 页"]').waitFor({ state: 'visible', timeout: 30000 })
 await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes-toggle"]')?.dataset.noteState === 'open', null, { timeout: 10000 })
+await page.locator('[data-testid="reader-page-input"]').focus()
+await page.waitForFunction(() => document.querySelector('[data-testid="reader-notes"] textarea')?.disabled === false, null, { timeout: 10000 })
+// Cross the scheduled focus task as well as the data-read completion. The page
+// input must stay editable even if the note finishes loading in the meantime.
+await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0))))
+assert(await page.locator('[data-testid="reader-page-input"]').evaluate(el => el === document.activeElement), 'page change: async note loading never steals focus from page input')
 await page.locator('[data-testid="reader-page-input"]').fill('1')
 await page.locator('[data-testid="reader-page-input"]').press('Enter')
 await page.locator('[data-testid="reader-page-img"][aria-label="PDF 第 1 页"]').waitFor({ state: 'visible', timeout: 30000 })
