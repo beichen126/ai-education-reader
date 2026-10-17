@@ -59,8 +59,8 @@ export type AiTocProgress =
 
 // ---- previous-tail continuity context (Stage 9.4C.1) ----
 const PREV_TAIL_SIZE = 4
-const LARGE_TOC_WINDOW = 8
-const SMALL_TOC_MAX = 8
+const LARGE_TOC_WINDOW = 4
+const SMALL_TOC_MAX = 4
 const AI_TOC_RENDER_EDGE = 1400
 const AI_TOC_RENDER_CONCURRENCY = 3
 
@@ -152,6 +152,7 @@ type TranscribeMappedBatchOptions = {
   /** Bound adaptive recovery to one split so a bad provider response cannot fan
    * out into dozens of slow, paid requests for a large selected range. */
   splitDepth?: number
+  jsonOutput?: boolean
 }
 
 /** Two schema-aware attempts, followed by an adaptive split for failures that a
@@ -159,10 +160,11 @@ type TranscribeMappedBatchOptions = {
  * remain bounded to two attempts and are never multiplied by recursive splitting. */
 async function transcribeMappedBatchResilient(opts: TranscribeMappedBatchOptions): Promise<TocTranscriptionRow[]> {
   let lastError: unknown = new TocTranscriptionValidationError(['未识别到目录条目'])
+  let jsonOutput = opts.jsonOutput !== false
   for (let attempt = 0; attempt < 2; attempt++) {
     if (opts.signal?.aborted) throw new DeepSeekError('aborted', 'request aborted')
     try {
-      const rows = await transcribeBatch({ ...opts, repairPrompt: attempt === 1 ? transcriptionRetryPrompt(lastError) : '' })
+      const rows = await transcribeBatch({ ...opts, jsonOutput, repairPrompt: attempt === 1 ? transcriptionRetryPrompt(lastError) : '' })
       const mapped = mapTocSourcePages(rows, opts.batch)
       if (!mapped.ok) throw new TocTranscriptionValidationError((mapped as { diagnostics: string[] }).diagnostics)
       const coverage = validateTocPageLabelCoverage(mapped.rows)
@@ -170,7 +172,11 @@ async function transcribeMappedBatchResilient(opts: TranscribeMappedBatchOptions
       return mapped.rows
     } catch (error) {
       lastError = error
+      if (error instanceof DeepSeekError && error.kind === 'bad-request') jsonOutput = false
       if (isNonRetryableTransportFailure(error)) break
+      // Repeating an identical over-budget payload will truncate again. Split
+      // immediately instead of paying for another equally long failed output.
+      if (error instanceof TocTranscriptionValidationError && error.diagnostics.includes('目录输出被截断（达到模型输出长度限制）') && opts.batch.length > 1) break
     }
   }
 
@@ -179,9 +185,9 @@ async function transcribeMappedBatchResilient(opts: TranscribeMappedBatchOptions
     const midpoint = Math.ceil(opts.batch.length / 2)
     const leftBatch = opts.batch.slice(0, midpoint)
     const rightBatch = opts.batch.slice(midpoint)
-    const left = await transcribeMappedBatchResilient({ ...opts, batch: leftBatch, splitDepth: splitDepth + 1 })
+    const left = await transcribeMappedBatchResilient({ ...opts, jsonOutput, batch: leftBatch, splitDepth: splitDepth + 1 })
     const nextTail = opts.tail.concat(left).slice(-PREV_TAIL_SIZE)
-    const right = await transcribeMappedBatchResilient({ ...opts, batch: rightBatch, tail: nextTail, splitDepth: splitDepth + 1 })
+    const right = await transcribeMappedBatchResilient({ ...opts, jsonOutput, batch: rightBatch, tail: nextTail, splitDepth: splitDepth + 1 })
     return left.concat(dedupeWindowBoundary(left, right))
   }
 
@@ -230,8 +236,8 @@ export async function extractAiToc(opts: {
   }
   if (selectedPages.length === 0) return timedAiTocResult({ ok: false, error: '请至少选择一页目录。' }, timing, totalStartMs)
 
-  // Window strategy: small TOC (<=8 pages) sent ONCE so the model sees full
-  // cross-page continuity; larger TOC uses sequential windows of 8 pages. Each
+  // Window strategy: small TOC (<=4 pages) sent ONCE so the model sees full
+  // cross-page continuity; larger TOC uses sequential windows of 4 pages. Each
   // window is rendered, transcribed, and released before the next one. This
   // avoids retaining a base64 copy of every selected page and starts the model
   // request as soon as the first window is ready.
@@ -291,7 +297,7 @@ export async function extractAiToc(opts: {
         return abortedAiTocResult('transcribing', timing, totalStartMs)
       }
       finishTranscription()
-      return timedAiTocResult({ ok: false, error: transcriptionFailureMessage(error) }, timing, totalStartMs)
+      return timedAiTocResult({ ok: false, error: tx('目录页 PDF ' + batch.join(', ') + '：', 'Outline PDF page(s) ' + batch.join(', ') + ': ') + transcriptionFailureMessage(error) }, timing, totalStartMs)
     }
     finishTranscription()
     // Boundary-only dedupe: drop the head rows of this window that EXACTLY duplicate the tail
@@ -388,6 +394,7 @@ async function transcribeBatch(opts: {
   tail: TocTranscriptionRow[];
   protocol: ProtocolPromptSnapshot;
   repairPrompt: string;
+  jsonOutput: boolean;
   isMock: boolean;
   mock: ((request: AiTocMockRequest) => string | undefined) | undefined;
   signal?: AbortSignal;
@@ -404,6 +411,7 @@ async function transcribeBatch(opts: {
   const contentLines: string[] = []
   if (tail.length > 0) contentLines.push(buildTailContext(tail))
   if (repairPrompt) contentLines.push(repairPrompt)
+  contentLines.push('Transport formatting requirement: wrap all flat transcription rows in ONE valid JSON object {"rows":[{"title":"Chapter 1","pageLabel":"1","sourceImageIndex":1}]}. This replaces legacy JSONL serialization only; preserve every printed row and the transcription schema. No Markdown or explanation. Escape quotes and backslashes in JSON strings. Finish the entire rows array and object.')
   const images: { id: StableId; dataUrl: string }[] = []
   for (let k = 0; k < batch.length; k++) {
     const physicalPage = batch[k];
@@ -411,7 +419,8 @@ async function transcribeBatch(opts: {
     images.push({ id: 'ai-toc-page-' + physicalPage + '-' + k, dataUrl: pageDataUrls[physicalPage] })
   }
   const messages = await compileMachineProtocolMessages({ domain: 'ai-toc-transcription', protocol, content: contentLines.join('\n'), images })
-  const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal, thinking: 'disabled' });
+  const res = await sendTextChat({ apiKey, baseUrl, model, messages, signal, thinking: 'disabled', ...(opts.jsonOutput ? { jsonObject: true, maxTokens: 8192 } : {}) });
+  if (res.finishReason === 'length') throw new TocTranscriptionValidationError(['目录输出被截断（达到模型输出长度限制）'])
   const pr = parseTocJsonl(res.content, batch.length === 1 ? { defaultSourceImageIndex: 1 } : {});
   if (!pr.ok) throw new TocTranscriptionValidationError((pr as { diagnostics: string[] }).diagnostics)
   return pr.rows.map((r: TocTranscriptionLine, i: number) => ({ ...r, id: 'r' + String(i + 1).padStart(4, '0'), rowOrder: i }));

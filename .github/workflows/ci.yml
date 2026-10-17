@@ -1,11 +1,9 @@
 name: CI quality gate
 
-# Pre-merge / main-push quality gate. Runs the non-browser checks BEFORE the Pages
-# deployment workflow (which stays the publish step). Does NOT deploy.
+# Pull requests keep a standalone quality gate. Main pushes run these same checks
+# in deploy-pages.yml; do not duplicate the entire pipeline on every release.
 on:
   pull_request:
-    branches: [ main ]
-  push:
     branches: [ main ]
 
 permissions:

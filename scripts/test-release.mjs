@@ -7,7 +7,7 @@
 // earlier agents introduced). Set RELEASE_PORT / RELEASE_HOST to move the server.
 import { spawn, spawnSync } from 'node:child_process'
 import path from 'node:path'
-import { canBindPort, missingE2EScripts, resolveE2EList, resolveNodeInvocation, resolveNpmInvocation } from './release-runner-utils.mjs'
+import { canBindPort, missingE2EScripts, resolveE2EList, resolveNodeInvocation, resolveNpmInvocation, shardE2EList } from './release-runner-utils.mjs'
 
 const PORT = Number(process.env.RELEASE_PORT || 5320)
 const HOST = process.env.RELEASE_HOST || '127.0.0.1'
@@ -29,6 +29,7 @@ const CORE_E2E = [
   'e2e-document-notes',
   'e2e-pdf-page-conversations',
   'e2e-ai-toc',
+  'e2e-ai-toc-json-output',
   'e2e-ai-toc-navigation',
   'e2e-mobile-history',
   'e2e-code-annotation',
@@ -76,7 +77,7 @@ const OPTIONAL_E2E = [
   'e2e-toc-thumbnails',
   'e2e-toc-review-layout',
 ]
-const E2E = resolveE2EList({ releaseE2E: process.env.RELEASE_E2E, extraE2E: EXTRA_E2E, core: CORE_E2E, optional: OPTIONAL_E2E })
+const E2E = shardE2EList(resolveE2EList({ releaseE2E: process.env.RELEASE_E2E, extraE2E: EXTRA_E2E, core: CORE_E2E, optional: OPTIONAL_E2E }), process.env.RELEASE_SHARD_INDEX, process.env.RELEASE_SHARD_TOTAL)
 
 function run(cmd, args, opts = {}) {
   const invocation = cmd === 'npm'

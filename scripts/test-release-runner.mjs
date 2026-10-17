@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
-import { canBindPort, missingE2EScripts, resolveE2EList, resolveNpmInvocation } from './release-runner-utils.mjs'
+import { canBindPort, missingE2EScripts, resolveE2EList, resolveNpmInvocation, shardE2EList } from './release-runner-utils.mjs'
 
 let pass = 0
 let fail = 0
@@ -35,6 +35,16 @@ assert(resolveNpmInvocation({ platform: 'linux' }).command === 'npm', 'POSIX res
 
 const core = ['a', 'b', 'a']
 const optional = ['c', 'b']
+const shardInput = ['a', 'b', 'c', 'd', 'e', 'f', 'g']
+const shards = [1, 2, 3].map(index => shardE2EList(shardInput, index, 3))
+assert(shards.flat().length === shardInput.length && new Set(shards.flat()).size === shardInput.length, 'three shards cover every suite exactly once')
+assert(shards[0].join(',') === 'a,d,g' && shards[2].join(',') === 'c,f', 'shard assignment is deterministic')
+assert(shardE2EList(shardInput) === shardInput, 'local default retains the complete gate')
+for (const [index, total] of [[0, 3], [4, 3], [1, 0], [1, 8], [undefined, 3], [1, undefined]]) {
+  let rejected = false
+  try { shardE2EList(shardInput, index, total) } catch { rejected = true }
+  assert(rejected, 'invalid shard fails closed: ' + index + '/' + total)
+}
 assert(resolveE2EList({ extraE2E: true, core, optional }).join(',') === 'a,b,c', 'EXTRA E2E list is stable and unique')
 assert(resolveE2EList({ releaseE2E: 'b,a,b', extraE2E: false, core, optional }).join(',') === 'b,a', 'explicit RELEASE_E2E list is stable and unique')
 assert(missingE2EScripts(['known'], 'scripts', value => value.endsWith('known.mjs')).length === 0, 'known E2E script name is accepted')

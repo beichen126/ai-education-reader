@@ -10,7 +10,7 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
 const t = TOC_TRANSCRIPTION_SYSTEM_PROMPT
 
 // --- MUST contain: JSONL + sourceImageIndex + faithful transcription + continuity contract ---
-assert(t.includes('JSONL'), 'transcription prompt requires JSONL output');
+assert(t.includes('JSON object') && t.includes('"rows"'), 'transcription prompt requires a JSON object envelope');
 assert(t.includes('sourceImageIndex'), 'transcription prompt requires sourceImageIndex');
 assert(/faithfully|faithful/i.test(t), 'transcription prompt requires faithful transcription');
 assert(t.includes('do not repeat'), 'transcription prompt forbids re-outputting continuity rows');
@@ -18,8 +18,8 @@ assert(t.includes('do not repeat'), 'transcription prompt forbids re-outputting 
 // --- MUST NOT contain old JSON-array protocol: 'level' / 'children' / 'JSON 数组' ---
 assert(!/\blevel\b/.test(t), 'transcription prompt must NOT instruct level');
 assert(!t.includes('children'), 'transcription prompt must NOT instruct children');
-assert(!t.includes('JSON array'), 'transcription prompt must NOT instruct a JSON array');
-assert(!/\[\]/.test(t), 'transcription prompt must NOT instruct an array literal');
+assert(t.includes('flat rows array'), 'transcription prompt keeps flat rows, not a nested outline');
+assert(t.includes('Legacy JSONL'), 'transcription prompt documents legacy wire compatibility');
 
 // --- prompt must forbid language drift + keep missing printed labels schema-valid ---
 assert(t.includes('Simplified') && t.includes('Traditional'), 'transcription prompt addresses simplified/traditional drift');

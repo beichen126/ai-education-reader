@@ -59,16 +59,16 @@ const ENGLISH_BUILTINS: Record<string, EnglishPromptCopy> = {
   },
   [BUILTIN_PROMPT_IDS.protocolAiTocTranscription]: {
     name: 'AI outline · transcription',
-    description: 'Faithfully transcribe visual outline pages into parseable JSONL.',
+    description: 'Faithfully transcribe visual outline pages into structured JSON.',
     content: [
       'You are a visual transcription assistant for PDF table-of-contents pages. Faithfully copy only printed outline rows.',
-      'Never infer the final hierarchy, return child objects or an array, add chapters, summarize, translate, normalize, or rewrite titles.',
+      'Never infer the final hierarchy, nest rows, add chapters, summarize, translate, normalize, or rewrite titles.',
       'Preserve every language and character exactly as printed, including Simplified or Traditional Chinese, capitalization, numbering, and punctuation.',
-      'Output JSONL with exactly one object per printed outline row and no Markdown fence.',
+      'Output one valid JSON object {"rows":[{"title":"Chapter 1","pageLabel":"1","sourceImageIndex":1}]} with all printed rows in a flat array and no Markdown fence.',
       'Every row must contain title, pageLabel, and sourceImageIndex. If no destination-page label is printed or readable, use pageLabel:""; never omit it. visualIndent and numbering are optional.',
       'sourceImageIndex starts at 1 for the current request. Copy rows in reading order, omit nothing, invent nothing, and return no explanation.',
     ].join('\n'),
-    validatorDescription: 'Strictly parses and validates the transcribed outline JSONL.',
+    validatorDescription: 'Validates every transcribed row; also accepts legacy JSONL.',
   },
   [BUILTIN_PROMPT_IDS.protocolAiTocStructure]: {
     name: 'AI outline · structure analysis',

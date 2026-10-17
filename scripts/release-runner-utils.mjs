@@ -6,6 +6,14 @@ export function uniqueStable(values) {
   return [...new Set(values)]
 }
 
+/** One-based deterministic shards. Invalid/empty shards fail closed, never skip the gate. */
+export function shardE2EList(names, index, total) {
+  if (index == null && total == null) return names
+  const shard = Number(index), count = Number(total)
+  if (!Number.isInteger(shard) || !Number.isInteger(count) || count < 1 || shard < 1 || shard > count || count > names.length) throw new Error('Invalid RELEASE_SHARD_INDEX / RELEASE_SHARD_TOTAL')
+  return names.filter((_, position) => position % count === shard - 1)
+}
+
 export function resolveE2EList({ releaseE2E, extraE2E, core, optional }) {
   const explicit = typeof releaseE2E === 'string' && releaseE2E.trim().length > 0
   const selected = explicit

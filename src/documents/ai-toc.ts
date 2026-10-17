@@ -14,6 +14,7 @@
 //   - AI is never the persistence authority: this module only produces a draft
 //     that a human reviews before saving.
 import { newStableId } from '../engine/types'
+import { normalizeTocJsonText, parseTocObjectSequence } from './toc-json'
 
 /** One flat, faithful (verbatim) transcription row as OUTPUT by the vision model.
  *  NO final level. sourceImageIndex is 1-based within the current image request;
@@ -55,6 +56,7 @@ export type TocJsonlParseResult =
 export function tocTranscriptionDiagnosticEnglish(diagnostic: string): string {
   if (diagnostic === '空响应') return 'The response was empty.'
   if (diagnostic === '未识别到目录条目') return 'No outline rows were detected.'
+  if (diagnostic === '目录输出被截断（达到模型输出长度限制）') return 'The outline output was truncated at the model output-token limit. Retry fewer outline pages at a time.'
   let match = /^第 (\d+) 行不是合法 JSON$/.exec(diagnostic)
   if (match) return 'Row ' + match[1] + ' was not valid JSON.'
   match = /^第 (\d+) 行不是对象$/.exec(diagnostic)
@@ -75,7 +77,7 @@ export function tocTranscriptionDiagnosticEnglish(diagnostic: string): string {
 export function buildTocTranscriptionRepairPrompt(diagnostics: string[]): string {
   const details = [...new Set(diagnostics)].slice(0, 8).map(item => '- ' + tocTranscriptionDiagnosticEnglish(item)).join('\n')
   return 'The previous response failed local validation:\n' + (details || '- The response did not match the required outline JSONL schema.') + '\n' +
-    'Correct every listed issue and transcribe the same images again. Return JSONL only. Every row must include title, pageLabel, and sourceImageIndex. Read the destination page number printed at the end of each outline row and put it in pageLabel. Use pageLabel:"" only for an individual row that truly has no printed or readable destination page number; do not leave every pageLabel empty when page numbers are visible; never omit the key. Return no explanation.'
+    'Correct every listed issue and transcribe the same images again. Return one valid JSON object {"rows":[...]}. Every row must include title, pageLabel, and sourceImageIndex. Read the destination page number printed at the end of each outline row and put it in pageLabel. Use pageLabel:"" only for an individual row that truly has no printed or readable destination page number; do not leave every pageLabel empty when page numbers are visible; never omit the key. Return no explanation.'
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null
@@ -100,7 +102,7 @@ function normalizePageLabel(v: unknown): string | null {
  * No "scraping" from prose. Never partially persists.
  */
 export function parseTocJsonl(text: string, options: { defaultSourceImageIndex?: number } = {}): TocJsonlParseResult {
-  let body = String(text ?? '').trim()
+  let body = normalizeTocJsonText(text)
   const fence = /^```(?:jsonl?|javascript)?\s*([\s\S]*?)\s*```$/i.exec(body)
   if (fence) body = fence[1].trim()
   if (body === '') return { ok: false, line: 0, diagnostics: ['空响应'] }
@@ -112,7 +114,7 @@ export function parseTocJsonl(text: string, options: { defaultSourceImageIndex?:
       const wrapped = whole.rows ?? whole.items ?? whole.entries
       candidates = Array.isArray(wrapped) ? wrapped : [whole]
     }
-  } catch { /* genuine JSONL is parsed line by line below */ }
+  } catch { candidates = parseTocObjectSequence(body) }
   const lines = candidates ? candidates.map((value) => JSON.stringify(value)) : body.split(/\r?\n/)
   const rows: TocTranscriptionLine[] = []
   const diagnostics: string[] = []
@@ -227,7 +229,7 @@ export type TocStructureParseResult =
 /** STRICT parse of the compact GLOBAL structure pass output ({levels:[...]}).
  *  Row identity is local input order, so the model never copies ids. */
 export function parseTocStructure(text: string): TocStructureParseResult {
-  let body = String(text ?? '').trim()
+  let body = normalizeTocJsonText(text)
   const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(body)
   if (fence) body = fence[1].trim()
   if (body === '') return { ok: false, line: 0, diagnostics: [{ code: 'EMPTY_OUTPUT', message: '结构分析无输出' }] }
@@ -415,11 +417,11 @@ export { newStableId }
 // production prompt contract without pulling the PDF renderer / Vite ?url assets.
 export const TOC_TRANSCRIPTION_SYSTEM_PROMPT =
   'You are a visual transcription assistant for PDF table-of-contents pages. Faithfully copy only printed outline rows.\n' +
-  'Never infer the final hierarchy, return child objects or an array, add chapters, summarize, translate, normalize, or rewrite titles.\n' +
+  'Never infer the final hierarchy, nest rows, add chapters, summarize, translate, normalize, or rewrite titles.\n' +
   'Preserve every language and character exactly as printed, including Simplified or Traditional Chinese, capitalization, numbering, and punctuation.\n' +
-  'Output JSONL: exactly one JSON object per printed outline row. Do not use a Markdown fence.\n' +
+  'Output exactly one valid JSON object with a flat rows array: {"rows":[...]}. Do not use a Markdown fence. Legacy JSONL is accepted by the reader, but do not use it for this request.\n' +
   'Every row MUST contain title, pageLabel, and sourceImageIndex. title is the complete printed title. pageLabel is only the printed destination-page label, without decorative leader dots or slashes. If no destination-page label is printed or it is unreadable, set pageLabel to the empty string ""; never omit the key. sourceImageIndex is the 1-based index of the current request image. visualIndent and numbering are optional.\n' +
-  'Example: {"title":"Chapter 1 Introduction","pageLabel":"1","sourceImageIndex":1,"visualIndent":0,"numbering":"Chapter 1"}\n' +
+  'Example: {"rows":[{"title":"Chapter 1 Introduction","pageLabel":"1","sourceImageIndex":1,"visualIndent":0,"numbering":"Chapter 1"}]}\n' +
   'Copy rows in reading order. Omit nothing, invent nothing, and return no explanation. If the user message includes previous-batch tail rows for continuity, transcribe only new rows visible in the current images and do not repeat the tail rows.'
 
 export const TOC_STRUCTURE_PROMPT =

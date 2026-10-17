@@ -4,8 +4,8 @@ import { tx } from '../engine/locale'
 
 export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 export type ApiChatMessage = { role: 'user' | 'assistant' | 'system'; content: string | ChatContentPart[] }
-export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal; reasoningEffort?: DeepSeekReasoningEffort; thinking?: 'enabled' | 'disabled' }
-export type SendTextChatResult = { content: string }
+export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal; reasoningEffort?: DeepSeekReasoningEffort; thinking?: 'enabled' | 'disabled'; jsonObject?: boolean; maxTokens?: number }
+export type SendTextChatResult = { content: string; finishReason?: string }
 
 /** DeepSeek vision API limit: max images in ONE chat request (API limit, not product). */
 export const MAX_VISION_IMAGES_PER_REQUEST = 600
@@ -66,7 +66,7 @@ export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChat
     res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify({ model, messages, stream: false, ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'disabled' ? { thinking: { type: 'disabled' } } : { ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'enabled' ? { thinking: { type: 'enabled' } } : {}) }) }),
+      body: JSON.stringify({ model, messages, stream: false, ...(args.jsonObject ? { response_format: { type: 'json_object' } } : {}), ...(args.maxTokens ? { max_tokens: args.maxTokens } : {}), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'disabled' ? { thinking: { type: 'disabled' } } : { ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'enabled' ? { thinking: { type: 'enabled' } } : {}) }) }),
       signal,
     })
   } catch {
@@ -89,7 +89,8 @@ export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChat
   try { json = await res.json() } catch { throw new DeepSeekError('bad-json', 'response is not JSON') }
   const content = json && json.choices && json.choices[0] && json.choices[0].message ? json.choices[0].message.content : undefined
   if (typeof content !== 'string' || !hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content in response')
-  return { content }
+  const finishReason = json?.choices?.[0]?.finish_reason
+  return { content, ...(typeof finishReason === 'string' ? { finishReason } : {}) }
 }
 
 /** Connection test: GET {baseUrl}/models (OpenAI-compatible). Sends NO chat history,

@@ -49,6 +49,17 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
 }
 // --- compatible page-label omissions/aliases stay reviewable instead of failing the batch ---
 {
+  const pretty = parseTocJsonl('{\n"title":"A",\n"pageLabel":"1",\n"sourceImageIndex":1\n}\n{\n"title":"B",\n"pageLabel":"2",\n"sourceImageIndex":2\n}')
+  assert(pretty.ok && pretty.rows.length === 2, 'pretty-printed multiline JSONL is complete, not treated as broken individual lines')
+  const wrapped = parseTocJsonl('Here is the outline:\n```json\n{"rows":[{"title":"A, } [ \\\"quoted\\\"","pageLabel":"1","sourceImageIndex":1,},]}\n```\nDone.')
+  assert(wrapped.ok && wrapped.rows[0].title === 'A, } [ "quoted"', 'single fenced payload and trailing commas normalize without altering quoted title text')
+  const truncated = parseTocJsonl('{"title":"A","pageLabel":"1","sourceImageIndex":1}\n{"title":"B"')
+  assert(!truncated.ok, 'truncated final row never silently accepts valid earlier rows')
+  assert(!parseTocJsonl('```json\n{"title":"A","pageLabel":"1","sourceImageIndex":1}\n```\n```json\n{"title":"B"}\n```').ok, 'multiple fenced payloads never discard the second block')
+  assert(parseTocStructure('Levels:\n```json\n{"levels":[1,2,],}\n```').ok, 'structure output accepts formatting-only repairs too')
+  assert(tocTranscriptionDiagnosticEnglish('目录输出被截断（达到模型输出长度限制）').includes('truncated'), 'truncation retry explains the actual output limit')
+}
+{
   const missing = parseTocJsonl('{"title":"Preface","sourceImageIndex":1}')
   assert(missing.ok && missing.rows[0].pageLabel === '', 'missing pageLabel becomes an unresolved review row')
   const empty = parseTocJsonl('{"title":"Introduction","pageLabel":"","sourceImageIndex":1}')

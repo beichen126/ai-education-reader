@@ -76,11 +76,11 @@ export const PROTOCOL_METADATA_ADAPTERS: readonly ProtocolAdapter[] = [
   {
     id: BUILTIN_PROMPT_IDS.protocolAiTocTranscription,
     name: 'AI 目录 · 文字转录',
-    description: '将目录页视觉内容忠实转录为可解析的 JSONL。',
+    description: '将目录页视觉内容忠实转录为结构化 JSON，兼容旧 JSONL。',
     domain: 'ai-toc-transcription',
     getSystemPrompt: () => TOC_TRANSCRIPTION_SYSTEM_PROMPT,
-    outputContract: 'JSONL rows validated by parseTocJsonl()',
-    validator: { name: 'parseTocJsonl', description: '严格解析并校验目录文字转录 JSONL。' },
+    outputContract: 'JSON {rows:[...]} (legacy JSONL accepted), validated by parseTocJsonl()',
+    validator: { name: 'parseTocJsonl', description: '逐条校验目录转录 JSON，同时兼容旧 JSONL。' },
   },
   {
     id: BUILTIN_PROMPT_IDS.protocolAiTocStructure,

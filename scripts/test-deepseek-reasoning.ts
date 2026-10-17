@@ -30,6 +30,12 @@ await sendTextChat({ apiKey: 'test', baseUrl: 'https://api.deepseek.com', model:
 assert((body?.thinking as any)?.type === 'enabled' && body?.reasoning_effort === 'high', 'structure analysis can explicitly enable high reasoning')
 await sendTextChat({ apiKey: 'test', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', messages: [] })
 assert(body?.reasoning_effort === 'max' && !('thinking' in body!), 'task overrides do not change subsequent chat defaults')
+assert(!('response_format' in body!) && !('max_tokens' in body!), 'chat does not inherit JSON-only formatting or TOC token limits')
+await sendTextChat({ apiKey: 'test', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', messages: [], thinking: 'disabled', jsonObject: true, maxTokens: 8192 })
+assert((body?.response_format as any)?.type === 'json_object' && body?.max_tokens === 8192, 'TOC can opt into constrained JSON and a bounded output budget')
+globalThis.fetch = (async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"rows":[' }, finish_reason: 'length' }] }))) as typeof fetch
+const truncated = await sendTextChat({ apiKey: 'test', baseUrl: 'https://api.deepseek.com', model: 'deepseek-v4-pro', messages: [] })
+assert(truncated.finishReason === 'length', 'API preserves truncation signal instead of disguising it as a JSON syntax error')
 globalThis.fetch = originalFetch
 
 console.log('RESULT pass=' + pass + ' fail=' + fail)

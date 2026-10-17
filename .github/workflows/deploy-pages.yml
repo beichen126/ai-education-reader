@@ -15,8 +15,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,14 +37,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
       - name: Install dependencies
         run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Test
-        run: npm run test:all
       - name: Build
         run: npm run build
+      - name: Share exact build with browser gates
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-dist
+          path: dist
+          retention-days: 1
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact
@@ -45,6 +61,11 @@ jobs:
   browser-e2e:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,15 +78,20 @@ jobs:
         run: npm ci
       - name: Install Chromium for Playwright
         run: npx playwright-core install --with-deps chromium
-      - name: Build
-        run: npm run build
+      - name: Download the exact release build
+        uses: actions/download-artifact@v4
+        with:
+          name: browser-dist
+          path: dist
       - name: Critical browser E2E (gate deploy)
         env:
           RELEASE_SKIP_UNIT: '1'
           PLAYWRIGHT_CHANNEL: 'chromium'
+          RELEASE_SHARD_INDEX: ${{ matrix.shard }}
+          RELEASE_SHARD_TOTAL: '3'
         run: npm run test:release
   deploy:
-    needs: [build, browser-e2e]
+    needs: [quality, build, browser-e2e]
     runs-on: ubuntu-latest
     environment:
       name: github-pages

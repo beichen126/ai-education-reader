@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "2.6.3",
+  "version": "2.6.4",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -18,6 +18,7 @@
     "test:web-research": "npx tsx scripts/test-web-research.ts",
     "test:e2e-v260": "node scripts/e2e-v260.mjs",
     "test:e2e-mobile-space": "node scripts/e2e-mobile-space.mjs",
+    "test:e2e-ai-toc-json-output": "node scripts/e2e-ai-toc-json-output.mjs",
     "test:preview-read-queue": "npx tsx scripts/test-preview-read-queue.ts",
     "test:e2e-v240": "node scripts/e2e-v240.mjs",
     "sync:product-guide": "node scripts/sync-product-guide.mjs",
