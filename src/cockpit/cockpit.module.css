@@ -267,6 +267,16 @@
 .settingsNav button { flex: 1; min-width: 0; min-height: 38px; padding: 6px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; }
 .settingsNav button[aria-selected="true"] { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); }
 .settingsSection[hidden] { display: none !important; }
+.helpIntro h3 { margin: 16px 0 8px; font-size: 16px; }
+.helpIntro p, .helpContent p, .helpContent li { color: var(--dsw-alias-label-secondary); line-height: 1.65; font-size: 14px; overflow-wrap: anywhere; }
+.helpContent article { padding: 14px 0; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.helpContent h4 { margin: 0 0 8px; font-size: 14px; }
+.helpContent p { margin: 8px 0 0; }
+.helpContent ol { margin: 0; padding-left: 22px; }
+.helpContent li + li { margin-top: 8px; }
+.helpLinks { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-top: 18px; }
+.helpLinks a, .helpLinks a:visited { display: inline-flex; align-items: center; min-height: 40px; padding: 8px 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; color: var(--dsw-alias-label-primary); text-decoration: none; }
+.helpLinks a:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .speechRateRow { display: flex; align-items: center; gap: 16px; margin: 8px 0; }
 .speechRateRow select { min-height: 36px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); border-radius: 8px; padding: 4px 12px; font-size: 16px; }
 @media (max-width: 640px) { .settingsDialog { width: 100% !important; } }

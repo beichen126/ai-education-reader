@@ -4,6 +4,60 @@
 
 type SourceRange = { start: number; end: number }
 
+// One document listener for all mounted renderers, including user messages and cards.
+// Keep source strings out of DOM attributes and release them when their renderer leaves.
+const sources = new Map<Element, string>()
+
+function copyMarkdownSelection(event: ClipboardEvent): void {
+  if (event.defaultPrevented || !event.clipboardData) return
+  if (event.target instanceof Element && event.target.closest('input, textarea, [contenteditable="true"]')) return
+  const selection = window.getSelection()
+  if (!selection || selection.isCollapsed || selection.rangeCount !== 1) return
+  const range = selection.getRangeAt(0)
+  const roots = Array.from(sources.keys()).filter(root => root.isConnected && intersects(range, root))
+    .sort((a, b) => a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)
+  // A conversation-wide selection may end on message/list containers rather than
+  // text leaves. Only allow that wider boundary inside the same explicit copy scope.
+  const scopeOf = (node: Node) => (node instanceof Element ? node : node.parentElement)?.closest('[data-markdown-copy-scope]')
+  const scope = scopeOf(range.startContainer)
+  const withinScope = scope && scope === scopeOf(range.endContainer) && roots.every(root => scope.contains(root))
+  const insideRoots = roots.some(root => containsBoundary(root, range.startContainer)) && roots.some(root => containsBoundary(root, range.endContainer))
+  if (!insideRoots && !withinScope) return
+  const parts: string[] = []
+  for (const root of roots) {
+    const local = document.createRange()
+    local.selectNodeContents(root)
+    const full = local.cloneRange()
+    if (containsBoundary(root, range.startContainer)) local.setStart(range.startContainer, range.startOffset)
+    if (containsBoundary(root, range.endContainer)) local.setEnd(range.endContainer, range.endOffset)
+    if (local.collapsed) continue
+    const source = sources.get(root)!
+    const mapped = markdownSourceForRange(root, source, local)
+    // A completely selected renderer must preserve even source-only Markdown.
+    const whole = local.compareBoundaryPoints(Range.START_TO_START, full) === 0
+      && local.compareBoundaryPoints(Range.END_TO_END, full) === 0
+    if (whole) parts.push(source)
+    else if (mapped !== null) parts.push(mapped)
+    else if (local.toString().trim()) return // Never silently drop an unmappable selected passage.
+  }
+  if (!parts.length) return
+  const source = parts.join('\n\n')
+  try {
+    event.clipboardData.setData('text/plain', source)
+    try { event.clipboardData.setData('text/markdown', source) } catch {}
+    event.preventDefault()
+  } catch { /* Preserve native copy when clipboard access is unavailable. */ }
+}
+
+export function registerMarkdownSource(root: Element, source: string): () => void {
+  if (!sources.size) document.addEventListener('copy', copyMarkdownSelection)
+  sources.set(root, source)
+  return () => {
+    sources.delete(root)
+    if (!sources.size) document.removeEventListener('copy', copyMarkdownSelection)
+  }
+}
+
 function sourceRangeOf(element: Element): SourceRange | null {
   const start = Number(element.getAttribute('data-source-start'))
   const end = Number(element.getAttribute('data-source-end'))

@@ -1,4 +1,5 @@
-import { createElement, useMemo } from 'react'
+import { createElement, useLayoutEffect, useMemo, useRef } from 'react'
+import { registerMarkdownSource } from './source-copy'
 import type { ReactNode } from 'react'
 import { renderToString as katexRenderString } from 'katex'
 import { parseMarkdown } from './parse'
@@ -127,8 +128,12 @@ function blockEl(node: any, ctx: RenderCtx, onTableAction?: (tableId: string) =>
 }
 
 export function MarkdownBlocks({ content, messageId, annotations, onTableAction, onMathAction, parsedRoot, exposeMessageId = true }: { content: string; messageId: string; annotations?: Annotation[]; onTableAction?: (tableId: string) => void; onMathAction?: (mathId: string, kind: 'inline' | 'block') => void; parsedRoot?: Root; exposeMessageId?: boolean }) {
+  const copyRoot = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (copyRoot.current) return registerMarkdownSource(copyRoot.current, content)
+  }, [content])
   const localRoot = useMemo<Root>(() => parsedRoot ?? parseMarkdown(content), [content, parsedRoot])
   const children = (localRoot.children || []) as any[]
   const ctx: RenderCtx = { messageId, source: content, annotations, onMathAction }
-  return <div className={css.markdown} data-message-id={exposeMessageId ? messageId : undefined}>{children.map((n, i) => <span key={i}>{blockEl(n, ctx, onTableAction)}</span>)}</div>
+  return <div ref={copyRoot} data-markdown-source-root="" className={css.markdown} data-message-id={exposeMessageId ? messageId : undefined}>{children.map((n, i) => <span key={i}>{blockEl(n, ctx, onTableAction)}</span>)}</div>
 }

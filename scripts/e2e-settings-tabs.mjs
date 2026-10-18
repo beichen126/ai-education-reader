@@ -29,6 +29,8 @@ try {
     const after=await nav.boundingBox()
     assert.equal(before.y,after.y,'tabs do not scroll with the panel content')
     await selectSettingsSection(page,'help')
+    assert.equal(await page.locator('[data-testid="settings-help-content"] article').count(),5,'help provides readable bilingual instructions, not just links')
+    assert.equal(await page.locator('[data-testid="settings-help-content"]').isVisible(),true)
     assert.equal(await scroller.evaluate(el=>el.scrollTop),0,'switching panels starts at the top')
     assert.equal(await page.locator('[data-testid="data-safety-center"]').isVisible(),false)
     await selectSettingsSection(page,'api')

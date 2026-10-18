@@ -392,8 +392,40 @@ export function SettingsDialog() {
       </div>
       </section>
       <section id="settings-section-help" role="tabpanel" aria-labelledby="settings-tab-help" hidden={section!=='help'} className={css.settingsSection}>
-        <div className={css.exportTitle}>{tx('帮助与说明','Help and documentation')}</div>
-        <div className={css.settingsActions}>
+        <div className={css.helpIntro}>
+          <h3>{tx('帮助与说明','Help and documentation')}</h3>
+          <p>{tx('从添加资料开始，把阅读、追问和复习串起来。以下操作都可以在当前浏览器中完成。','Start with your materials, then read, ask questions and review. All the steps below are available in this browser.')}</p>
+        </div>
+        <div className={css.helpContent} data-testid="settings-help-content">
+          <article>
+            <h4>{tx('快速开始','Quick start')}</h4>
+            <ol>
+              <li>{tx('在“API 配置”中填写服务地址、API Key 和模型，保存后可检查配置。应用不附带模型额度。','Enter your service URL, API key and model under API, save, then check the configuration. Model credits are not included.')}</li>
+              <li>{tx('新建对话，点击输入框旁的资料按钮：从“本地文件”打开图片或 PDF，或从“资料库”选择已有资料。','Create a chat. Use the materials button beside the composer to open images or a PDF from Local files, or select existing materials from Library.')}</li>
+              <li>{tx('选择需要的 PDF 页或章节，加入对话后提问；顶部可以切换会话模式和路线。','Choose PDF pages or chapters, add them to the chat and ask a question. Change the conversation mode or route in the header.')}</li>
+            </ol>
+          </article>
+          <article>
+            <h4>{tx('阅读 PDF 与识别目录','Reading PDFs and detecting outlines')}</h4>
+            <p>{tx('在阅读器的目录中可以编辑章节或使用 AI 识别。识别后先检查标题、层级和 PDF 页码；印刷页码不一定等于 PDF 页码。定位问题项、校正映射后再保存，目录历史版本会保存在本地。','Open the reader outline to edit chapters or detect them with AI. Review titles, levels and PDF page mappings before saving: printed page numbers can differ from PDF page numbers. Locate problem entries, correct mappings and save; outline history is kept locally.')}</p>
+            <p>{tx('目录识别失败时，先检查 API 是否支持图片、Key 和额度是否有效，再缩小目录页范围重试。具体错误信息比重复点击重试更有帮助。','If detection fails, check image support, API credentials and available credits, then retry with fewer outline pages. Read the specific error rather than repeatedly retrying unchanged input.')}</p>
+          </article>
+          <article>
+            <h4>{tx('复制、标记与学习中心','Copying, marks and the learning center')}</h4>
+            <p>{tx('“复制全文”复制该条消息的原始 Markdown / LaTeX；选中部分文字复制也会保留对应源文，支持跨消息选取。选中文字或公式可以标记，学习中心统一查看学习卡片和标记，并调整星级。','Copy full text copies that message’s original Markdown / LaTeX. Copying selected text preserves its corresponding source, including selections across messages. Mark selected text or formulas; use the learning center to review cards and marks and adjust star ratings.')}</p>
+          </article>
+          <article>
+            <h4>{tx('朗读与联网搜索','Read aloud and web search')}</h4>
+            <p>{tx('选中文字后点击“朗读”，可暂停或停止；在“通用”中设置中英文倍速和重复次数，默认重复三次。语音取决于设备和浏览器，在线语音可能把选中文字发给语音服务。','Select text and choose Read aloud; playback can be paused or stopped. Set Chinese/English rates and repeat count in General; the default is three passes. Voices depend on your device and browser; online voices may send selected text to the speech service.')}</p>
+            <p>{tx('资料菜单中的联网搜索默认关闭，可按需开启。它使用当前 API 服务的 Search / Fetch 能力，代理需支持相关接口和浏览器跨域访问，联网请求可能单独计费。','Web search in the materials menu is off by default. It uses the configured provider’s Search / Fetch tools; proxies need compatible endpoints and browser CORS support. Tool requests may incur separate charges.')}</p>
+          </article>
+          <article>
+            <h4>{tx('数据与常见故障','Data and troubleshooting')}</h4>
+            <p>{tx('会话、资料、卡片及设置保存在当前浏览器。换设备或清理浏览器前，请到“安全”导出完整备份；API Key 不包含在备份中。无痕窗口、不同浏览器或不同站点地址的数据不会自动共享。','Chats, materials, cards and settings are stored in this browser. Export a complete backup under Security before changing devices or clearing browser data. API keys are not included. Private windows, other browsers and other site origins do not automatically share data.')}</p>
+            <p>{tx('无法发送：检查 API 配置、网络和额度。图片或 PDF 无法打开：检查源文件是否完整，刷新后重试。存储不足：先备份，再检查“安全”中的空间使用情况；不要直接清空浏览器数据。','Cannot send? Check API configuration, connectivity and credits. Images or PDFs will not open? Check the source file and retry after reloading. Running out of storage? Back up first, then inspect usage under Security; do not immediately clear browser data.')}</p>
+          </article>
+        </div>
+        <div className={css.helpLinks}>
           <Button variant="outline" onClick={()=>{uiActions.closeSettings();uiActions.openProductGuide()}}>{tx('使用指南','User guide')}</Button>
           <a href="https://github.com/beichen126/ai-education-reader#readme" target="_blank" rel="noopener noreferrer">{tx('项目说明','Project documentation')}</a>
           <a href="https://github.com/beichen126/ai-education-reader/issues" target="_blank" rel="noopener noreferrer">{tx('报告问题','Report an issue')}</a>

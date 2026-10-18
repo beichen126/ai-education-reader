@@ -10,7 +10,6 @@ import { shouldToggleAll, normalizeBounds, hasExactRectangle, hasWholeTable, has
 import { containsNode, ownedMath } from './ownership'
 import type { SelectionMapping } from './selection-types'
 import type { Annotation } from './annotation-types'
-import { markdownSourceForRange } from '../markdown/source-copy'
 import css from './annotate.module.css'
 import { tx } from '../engine/locale'
 import { readAloud, stopReadAloud } from '../speech/read-aloud'
@@ -19,7 +18,6 @@ type AnnotationEventOwner = {
   element: HTMLElement
   pointerDown(event: Event): void
   selectionEnd(): void
-  copy(event: ClipboardEvent): void
 }
 
 const eventOwners = new Map<string, AnnotationEventOwner>()
@@ -56,7 +54,6 @@ const delegatedSelectionEnd = () => {
   if (found) { activeEventOwner = found[0]; found[1].selectionEnd(); return }
   if (activeEventOwner) eventOwners.get(activeEventOwner)?.selectionEnd()
 }
-const delegatedCopy = (event: ClipboardEvent) => { eventOwnerForSelection()?.[1].copy(event) }
 
 function installAnnotationEvents(): void {
   if (annotationEventsInstalled || typeof document === 'undefined') return
@@ -65,7 +62,6 @@ function installAnnotationEvents(): void {
   document.addEventListener('pointerdown', delegatedPointerDown)
   document.addEventListener('pointerup', delegatedSelectionEnd)
   document.addEventListener('touchend', delegatedSelectionEnd)
-  document.addEventListener('copy', delegatedCopy)
 }
 
 function uninstallAnnotationEventsIfIdle(): void {
@@ -76,7 +72,6 @@ function uninstallAnnotationEventsIfIdle(): void {
   document.removeEventListener('pointerdown', delegatedPointerDown)
   document.removeEventListener('pointerup', delegatedSelectionEnd)
   document.removeEventListener('touchend', delegatedSelectionEnd)
-  document.removeEventListener('copy', delegatedCopy)
 }
 
 export function AnnotatedMarkdown({ content, messageId, conversationId, branchId, focusAnnotation }: { content: string; messageId: string; conversationId: string; branchId?: string; focusAnnotation?: Annotation }) {
@@ -214,26 +209,9 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
         else { setPending(result) }
       } catch { setPending(null) }
     }
-    function onCopy(event: ClipboardEvent) {
-      const selection = window.getSelection()
-      if (!selection || selection.isCollapsed || selection.rangeCount === 0 || !event.clipboardData) return
-      const range = selection.getRangeAt(0)
-      if (!containsNode(wrapRef.current, range.startContainer) || !containsNode(wrapRef.current, range.endContainer)) return
-      const messageRoot = wrapRef.current?.querySelector<HTMLElement>('[data-message-id]')
-      if (!messageRoot) return
-      const source = markdownSourceForRange(messageRoot, content, range)
-      if (source === null) return
-      try {
-        event.clipboardData.setData('text/plain', source)
-        // Chromium and Firefox accept this richer flavor; older WebKit may not.
-        // Plain text already contains the source and remains the compatibility path.
-        try { event.clipboardData.setData('text/markdown', source) } catch {}
-        event.preventDefault()
-      } catch { /* keep the browser's normal rendered-text copy when clipboardData is read-only */ }
-    }
     const element = wrapRef.current
     if (!element) return
-    eventOwners.set(highlightOwnerId, { element, pointerDown: onPointerDown, selectionEnd: onSelChange, copy: onCopy })
+    eventOwners.set(highlightOwnerId, { element, pointerDown: onPointerDown, selectionEnd: onSelChange })
     installAnnotationEvents()
     return () => {
       stopReadAloud(highlightOwnerId)

@@ -295,7 +295,7 @@ export function Conversation() {
           mobile browser's native focus scroll lifts it above the on-screen keyboard. */}
       <div className={css.messagesShell}>
       <div className={css.messages} ref={listRef} onScroll={onScroll}>
-        <div className={css.messagesInner}>
+        <div className={css.messagesInner} data-markdown-copy-scope="">
           {!session || messages.length === 0 ? (
             <div className={css.emptyHero}>
               <div className={css.emptyTitle}>{t('brand.localBuild')}</div>
