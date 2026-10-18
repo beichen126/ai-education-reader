@@ -126,6 +126,7 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
     chineseSpeechRate: Number(await getSetting('chineseSpeechRate')) || 1,
     englishSpeechRate: Number(await getSetting('englishSpeechRate')) || 0.9,
     speechRepeatCount: Number(await getSetting('speechRepeatCount')) || 3,
+    rememberReadingPosition: await getSetting('rememberReadingPosition') === 'true',
     customArtifactActions: await listCustomActions(),
     visionCapability: (visionCapability === 'supports-image' || visionCapability === 'text-only') ? visionCapability : 'auto',
     pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode),

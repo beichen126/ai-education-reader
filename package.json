@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "3.0.2",
+  "version": "3.0.3",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -49,7 +49,7 @@
     "test:block": "npx tsx scripts/test-block-layer.ts",
     "test:table": "npx tsx scripts/test-table-ops.ts",
     "test:export": "npx tsx scripts/test-export.ts",
-    "test:math": "npx tsx scripts/test-math.ts",
+    "test:math": "npx tsx scripts/test-math.ts && npx tsx scripts/test-list-display-math.ts",
     "test:math-export": "npx tsx scripts/test-math-export.ts",
     "test:multimodal": "npx tsx scripts/test-multimodal.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -103,7 +103,7 @@
     "test:pdf-performance-telemetry": "npx tsx scripts/test-pdf-performance-telemetry.ts",
     "test:pdf-performance": "node scripts/benchmark-pdf-performance.mjs",
     "test:pdf-navigation-settings": "npx tsx scripts/test-pdf-navigation-settings.ts",
-    "test:settings-mutations": "npx tsx scripts/test-settings-mutations.ts",
+    "test:settings-mutations": "npx tsx scripts/test-settings-mutations.ts && npx tsx scripts/test-reading-position.ts",
     "test:continuous-layout": "npx tsx scripts/test-continuous-layout.ts",
     "test:study-card-model": "npx tsx scripts/test-study-card-model.ts",
     "test:study-card-storage": "npx tsx scripts/test-study-card-storage.ts",

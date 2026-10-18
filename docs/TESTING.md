@@ -1,6 +1,8 @@
 # Testing — AI Education Reader
 
-本文档说明 v3.0.2 的测试分层与如何运行。所有测试默认本地、离线（除标注的 paid smoke）。
+本文档说明 v3.0.3 的测试分层与如何运行。所有测试默认本地、离线（除标注的 paid smoke）。
+
+`e2e-reading-position` 验证默认关闭、10 秒检查点、退出保存、重新打开恢复、主线/分支隔离及关闭停止写入；`test-reading-position` 验证存储损坏、容量上限和清理代次。`e2e-list-display-math` 使用列表内多行公式与第 2/3 题的完整原文，验证显示公式、题号、复制源文和标记入口；`test-list-display-math` 覆盖不同续行缩进与不完整分隔符。
 
 `e2e-cross-turn-copy` 覆盖跨消息完整/部分选区、正反向选择、用户与模型消息混选、公式/表格/代码的 Markdown 与 LaTeX 源文保留，以及输入框复制不被拦截。设置页测试同时检查帮助页提供实际可阅读的说明。
 

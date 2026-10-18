@@ -1,4 +1,4 @@
-import { createElement, useLayoutEffect, useMemo, useRef } from 'react'
+import { createElement, Fragment, useLayoutEffect, useMemo, useRef } from 'react'
 import { registerMarkdownSource } from './source-copy'
 import type { ReactNode } from 'react'
 import { renderToString as katexRenderString } from 'katex'
@@ -61,9 +61,10 @@ function inline(node: any, cur: Cur, ctx: RenderCtx): ReactNode {
     }
     case 'inlineMath': {
       const st = cur.v; cur.v += 1
-      const mathId = mathIdOf(ctx.messageId, 'inline', startOf(node), endOf(node))
+      const kind = mathKindOf(node)
+      const mathId = mathIdOf(ctx.messageId, kind, startOf(node), endOf(node))
       const hl = isMathHl(ctx.annotations, mathId)
-      return <span data-canonical-start={st} data-canonical-end={cur.v} {...sourceAttrs(node, 'atomic')} data-math data-math-id={mathId} data-math-kind="inline" data-annotatable="false" className={(css.mathInline || '') + (hl ? ' ' + css.studyMathHighlighted : '')} dangerouslySetInnerHTML={{ __html: kathRender(node.value || '', false) }} onClick={(e) => { e.stopPropagation(); if (ctx.onMathAction) ctx.onMathAction(mathId, 'inline') }}></span>
+      return <span data-canonical-start={st} data-canonical-end={cur.v} {...sourceAttrs(node, 'atomic')} data-math data-math-id={mathId} data-math-kind={kind} data-annotatable="false" className={(kind === 'block' ? css.mathBlock : css.mathInline) + (hl ? ' ' + css.studyMathHighlighted : '')} dangerouslySetInnerHTML={{ __html: kathRender(node.value || '', kind === 'block') }} onClick={(e) => { e.stopPropagation(); if (ctx.onMathAction) ctx.onMathAction(mathId, kind) }}></span>
     }
     case 'inlineCode': {
       const st = cur.v; cur.v += (node.value || '').length
@@ -83,7 +84,7 @@ function innerBlock(node: any, cur: Cur, ctx: RenderCtx): ReactNode {
     return blockEl(node, ctx)
   }
   if (node.type === 'paragraph') return <p>{inlineList(node.children, cur, ctx)}</p>
-  if (node.type === 'list') { const rows = node.children || []; return node.ordered ? <ol>{rows.map((li: any, i: number) => <li key={i}>{innerList(li, cur, ctx)}</li>)}</ol> : <ul>{rows.map((li: any, i: number) => <li key={i}>{innerList(li, cur, ctx)}</li>)}</ul> }
+  if (node.type === 'list') { const rows = node.children || []; return node.ordered ? <ol start={node.start ?? 1}>{rows.map((li: any, i: number) => <li key={i}>{innerList(li, cur, ctx)}</li>)}</ol> : <ul>{rows.map((li: any, i: number) => <li key={i}>{innerList(li, cur, ctx)}</li>)}</ul> }
   if (node.type === 'listItem') return <li>{innerList(node, cur, ctx)}</li>
   if (node.type === 'blockquote') return <blockquote>{innerNodes(node.children || [], cur, ctx)}</blockquote>
   return inlineList(node.children, cur, ctx)
@@ -100,7 +101,7 @@ function blockEl(node: any, ctx: RenderCtx, onTableAction?: (tableId: string) =>
   const cur: Cur = { v: 0 }
   if (t === 'heading') { const level = node.depth; return createElement('h' + Math.min(6, Math.max(1, level)), { 'data-block-id': bid, 'data-block-type': 'heading', ...sourceAttrs(node, 'container') }, inlineList(node.children, cur, ctx)) }
   if (t === 'paragraph') return <p data-block-id={bid} data-block-type='paragraph' {...sourceAttrs(node, 'container')}>{inlineList(node.children, cur, ctx)}</p>
-  if (t === 'list') { const rows = node.children || []; return node.ordered ? <ol>{rows.map((li: any, i: number) => <span key={i}>{blockEl(li, ctx)}</span>)}</ol> : <ul>{rows.map((li: any, i: number) => <span key={i}>{blockEl(li, ctx)}</span>)}</ul> }
+  if (t === 'list') { const rows = node.children || []; return node.ordered ? <ol start={node.start ?? 1}>{rows.map((li: any, i: number) => <Fragment key={i}>{blockEl(li, ctx)}</Fragment>)}</ol> : <ul>{rows.map((li: any, i: number) => <Fragment key={i}>{blockEl(li, ctx)}</Fragment>)}</ul> }
   if (t === 'listItem') return <li data-block-id={bid} data-block-type='list-item' {...sourceAttrs(node, 'container')}>{innerNodes(node.children || [], cur, ctx)}</li>
   if (t === 'blockquote') return <blockquote data-block-id={bid} data-block-type='blockquote' {...sourceAttrs(node, 'container')}>{innerNodes(node.children || [], cur, ctx)}</blockquote>
   if (t === 'table') {

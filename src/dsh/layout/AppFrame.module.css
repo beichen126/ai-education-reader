@@ -27,6 +27,8 @@
 }
 
 .sidebarCol {
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
   background: var(--dsw-specific-sidebar-fill);
@@ -75,6 +77,9 @@
 }
 
 .centerCol {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -82,6 +87,8 @@
 }
 
 .detailsCol {
+  grid-column: 3;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
   border-left: 1px solid var(--dsw-alias-border-l2);

@@ -8,8 +8,8 @@ import { DEFAULT_MODEL, resolveStoredModel } from '../api/model-defaults'
 
 export type { VisionCapability }
 export type { PdfNavigationMode }
-export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number }
-export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: DEFAULT_MODEL, customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN', chineseSpeechRate: 1, englishSpeechRate: 0.9, speechRepeatCount: 3 }
+export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number; rememberReadingPosition?: boolean }
+export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: DEFAULT_MODEL, customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN', chineseSpeechRate: 1, englishSpeechRate: 0.9, speechRepeatCount: 3, rememberReadingPosition: false }
 
 /** A partial settings change. Every mutation goes through {@link patchSettings}. */
 export type SettingsPatch = Partial<Settings>
@@ -59,6 +59,7 @@ export function normalizeSettings(input: Settings): Settings {
     chineseSpeechRate: normalizeSpeechRate(input.chineseSpeechRate, 1),
     englishSpeechRate: normalizeSpeechRate(input.englishSpeechRate, 0.9),
     speechRepeatCount: normalizeSpeechRepeat(input.speechRepeatCount),
+    rememberReadingPosition: input.rememberReadingPosition === true,
   }
 }
 
@@ -70,7 +71,8 @@ export async function initSettings(): Promise<void> {
   const webSearchEnabled = await getSetting('webSearchEnabled') === 'true'
   const [zhRate, enRate] = await Promise.all([getSetting('chineseSpeechRate'),getSetting('englishSpeechRate')])
   const repeat = await getSetting('speechRepeatCount')
-  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)) })
+  const rememberReadingPosition = await getSetting('rememberReadingPosition') === 'true'
+  set({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)), rememberReadingPosition })
   writeAppearanceHint(resolvedAppearance)
 }
 
@@ -101,6 +103,7 @@ async function commitPatch(patch: SettingsPatch): Promise<Settings> {
       webSearchEnabled: String(next.webSearchEnabled === true),
       chineseSpeechRate: String(next.chineseSpeechRate), englishSpeechRate: String(next.englishSpeechRate),
       speechRepeatCount: String(next.speechRepeatCount),
+      rememberReadingPosition: String(next.rememberReadingPosition === true),
     })
   } catch (error) {
     // The transaction did not commit: the previously committed state stays published

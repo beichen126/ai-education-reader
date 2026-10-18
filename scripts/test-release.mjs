@@ -18,6 +18,8 @@ const SKIP_UNIT = process.env.RELEASE_SKIP_UNIT === '1'
 const EXTRA_E2E = process.env.RELEASE_EXTRA_E2E === '1'
 
 const CORE_E2E = [
+  'e2e-reading-position',
+  'e2e-list-display-math',
   'e2e-cross-turn-copy',
   'e2e-settings-tabs',
   'e2e-v300',

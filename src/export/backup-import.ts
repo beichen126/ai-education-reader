@@ -22,6 +22,7 @@ import { buildStudyCardPageRefs } from '../study-cards/study-card-store'
 import { STUDY_CARD_PREFERENCES_KEY } from '../study-cards/learning-ui-store'
 import { LAYOUT_PREFERENCES_KEY, normalizeLayoutPreferences } from '../engine/layout-store'
 import { isDocumentSortKey, saveSortPreference } from '../documents/document-sort'
+import { clearReadingPositions } from '../engine/reading-position'
 
 export class BackupError extends Error { constructor(message: string) { super(message); this.name = 'BackupError' } }
 
@@ -284,6 +285,7 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
     if (rate !== undefined && (!isNum(rate) || rate < 0.5 || rate > 2)) throw new BackupError('settings.' + key + ' must be between 0.5 and 2')
   }
   if (settings.speechRepeatCount !== undefined && (!isInt(settings.speechRepeatCount) || settings.speechRepeatCount<1 || settings.speechRepeatCount>10)) throw new BackupError('settings.speechRepeatCount must be an integer between 1 and 10')
+  if (settings.rememberReadingPosition !== undefined && typeof settings.rememberReadingPosition !== 'boolean') throw new BackupError('settings.rememberReadingPosition must be boolean')
   if ((settings as any).documentSort !== undefined && !isDocumentSortKey((settings as any).documentSort)) throw new BackupError('settings.documentSort 非法')
   if ((settings as any).productGuideSeenVersion !== undefined && !isStr((settings as any).productGuideSeenVersion)) throw new BackupError('settings.productGuideSeenVersion 非法')
   if ((settings as any).lastConversationId !== undefined && !isStr((settings as any).lastConversationId)) throw new BackupError('settings.lastConversationId 非法')
@@ -602,6 +604,7 @@ export async function restoreBackup(backup: Backup, binaries?: {
       { key: 'chineseSpeechRate', value: String(backup.settings?.chineseSpeechRate ?? 1) },
       { key: 'englishSpeechRate', value: String(backup.settings?.englishSpeechRate ?? 0.9) },
       { key: 'speechRepeatCount', value: String(backup.settings?.speechRepeatCount ?? 3) },
+      { key: 'rememberReadingPosition', value: backup.settings?.rememberReadingPosition === true ? 'true' : 'false' },
       { key: LAYOUT_PREFERENCES_KEY, value: normalizeLayoutPreferences((backup.settings as { layoutPreferences?: unknown } | undefined)?.layoutPreferences) },
       { key: 'productGuideSeenVersion', value: typeof (backup.settings as { productGuideSeenVersion?: unknown } | undefined)?.productGuideSeenVersion === 'string' ? (backup.settings as { productGuideSeenVersion: string }).productGuideSeenVersion : '' },
       { key: 'lastConversationId', value: typeof (backup.settings as { lastConversationId?: unknown } | undefined)?.lastConversationId === 'string' && backup.conversations.some(conversation => conversation.id === (backup.settings as { lastConversationId: string }).lastConversationId) ? (backup.settings as { lastConversationId: string }).lastConversationId : '' },
@@ -636,6 +639,7 @@ export async function restoreBackup(backup: Backup, binaries?: {
     }
     throw e;
   }
+  clearReadingPositions()
   // F. Post-success cleanup of old OPFS refs (best-effort; only orphans, never new data).
   for (const old of oldRefs) { if (old.storage === 'opfs') { try { await deleteBinary(old) } catch { /* orphan */ } } }
   if (isDocumentSortKey((backup.settings as { documentSort?: unknown } | undefined)?.documentSort)) saveSortPreference((backup.settings as { documentSort: any }).documentSort)

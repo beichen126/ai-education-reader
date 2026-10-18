@@ -261,6 +261,15 @@ export function SettingsDialog() {
       </section>
       <section id="settings-section-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={section!=='general'} className={css.settingsSection}>
       <div className={css.exportSection}>
+        <div className={css.exportTitle}>{tx('对话阅读位置','Conversation reading position')}</div>
+        <label className={css.speechRateRow}>
+          <input type="checkbox" data-testid="settings-remember-reading-position" checked={s.rememberReadingPosition===true} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({rememberReadingPosition:event.target.checked}).catch(()=>{})}} />
+          <span>{tx('记住上次阅读位置','Remember last reading position')}</span>
+        </label>
+        <div className={css.settingsHint}>{tx('默认关闭。开启后每 10 秒自动保存，切换对话或离开页面时也会保存；重新进入时恢复到上次阅读处。每个对话和分支分别记忆，仅保存在此浏览器，具体位置不随备份迁移。关闭后不再保存或恢复。','Off by default. When enabled, saves every 10 seconds and when switching chats or leaving the page, then resumes where you left off. Chats and branches are tracked separately in this browser; exact positions are not included in backups. Turning it off stops saving and restoring.')}</div>
+        {mutation.status==='error' && mutation.error && <div className={css.testResult} data-ok="false">{localizedErrorText(mutation.error,'Unable to save this setting. Please retry.')}</div>}
+      </div>
+      <div className={css.exportSection}>
         <div className={css.exportTitle}>{tx('朗读倍速', 'Read aloud speed')}</div>
         {(['chineseSpeechRate','englishSpeechRate'] as const).map((key,i)=><label className={css.speechRateRow} key={key}>
           <span>{i===0?tx('中文','Chinese'):tx('英文','English')}</span>

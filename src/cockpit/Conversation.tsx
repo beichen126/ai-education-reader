@@ -55,6 +55,7 @@ import type { PromptTransition } from '../prompts/prompt-types'
 import { promptDisplayName } from '../prompts/prompt-display'
 import css from './cockpit.module.css'
 import { layoutStore, useLayoutStore } from '../engine/layout-store'
+import { useReadingPosition } from './use-reading-position'
 
 const PdfPanel = lazy(() => import('../pdf/PdfPanel').then(module => ({ default: module.PdfPanel })))
 const DocumentContextPicker = lazy(() => import('../documents/DocumentContextPicker').then(module => ({ default: module.DocumentContextPicker })))
@@ -73,6 +74,8 @@ export function Conversation() {
   const atBottomRef = useRef(true)
   const branchChat = useBranchChat(session)
   const messages = branchChat.effectiveMessages
+  const rememberReadingPosition = useSettings(s => s.rememberReadingPosition === true)
+  useReadingPosition({rootRef:listRef,atBottomRef,enabled:rememberReadingPosition,conversationId:session?.id,branchId:branchChat.activeBranchId,ready:branchChat.ready,messageCount:messages.length,navigationPending:!!focusMessage})
   const turns = useMemo(() => buildConversationTurns(messages), [messages])
   const [activeTurnId, setActiveTurnId] = useState<string | undefined>(undefined)
   const onScroll = () => {
@@ -294,7 +297,7 @@ export function Conversation() {
       {/* Composer sits inside the scroll body, position:sticky bottom:0 (as in DSH), so the
           mobile browser's native focus scroll lifts it above the on-screen keyboard. */}
       <div className={css.messagesShell}>
-      <div className={css.messages} ref={listRef} onScroll={onScroll}>
+      <div className={css.messages} data-testid="conversation-scroll" ref={listRef} onScroll={onScroll}>
         <div className={css.messagesInner} data-markdown-copy-scope="">
           {!session || messages.length === 0 ? (
             <div className={css.emptyHero}>

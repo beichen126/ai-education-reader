@@ -3,6 +3,7 @@ import { normalizeConversationPdfContexts, type Attachment, type DraftDispositio
 import type { Annotation } from '../annotations/annotation-types'
 import type { StoredBinary } from './binary-store'
 import { MAX_STUDY_CARD_TITLE_LENGTH } from '../study-cards/study-card-types'
+import { clearReadingPositions } from '../engine/reading-position'
 
 // Persisted attachment row (Stage 9.4D). Blob bytes live in OPFS-first storage via
 // a StoredBinary reference (binary); legacy rows carry a Blob inline (blob).
@@ -16,6 +17,7 @@ import { clearOpfsAppRoot } from './binary-store'
 // the next clear re-attempts the OPFS cleanup even though nothing is left in IDB.
 export async function clearAllLocalData(): Promise<{ partialCleanup: boolean; failedPaths: string[] }> {
   await idbClearAll()
+  clearReadingPositions()
   try {
     const r = await clearOpfsAppRoot()
     return r.completed ? { partialCleanup: false, failedPaths: [] } : { partialCleanup: true, failedPaths: r.failedPaths }
@@ -95,7 +97,7 @@ export async function commitAcceptedUserMessage(conv: any, lastConversationId: s
  * failure can no longer leave a mixed configuration after reload (e.g. apiKey committed
  * but model not). Values commit first, then the caller publishes them as saved state.
  */
-export async function saveSettingsAtomic(values: { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string; pdfNavigationMode: string; uiLanguage: string; webSearchEnabled?: string; chineseSpeechRate?: string; englishSpeechRate?: string; speechRepeatCount?: string }): Promise<void> {
+export async function saveSettingsAtomic(values: { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string; pdfNavigationMode: string; uiLanguage: string; webSearchEnabled?: string; chineseSpeechRate?: string; englishSpeechRate?: string; speechRepeatCount?: string; rememberReadingPosition?: string }): Promise<void> {
   await idbRunTxn(['settings'], (txn) => {
     const os = txn.objectStore('settings')
     os.put({ key: 'apiBaseUrl', value: values.apiBaseUrl })
@@ -111,6 +113,7 @@ export async function saveSettingsAtomic(values: { apiBaseUrl: string; apiKey: s
     os.put({ key: 'chineseSpeechRate', value: values.chineseSpeechRate ?? '1' })
     os.put({ key: 'englishSpeechRate', value: values.englishSpeechRate ?? '0.9' })
     os.put({ key: 'speechRepeatCount', value: values.speechRepeatCount ?? '3' })
+    os.put({ key: 'rememberReadingPosition', value: values.rememberReadingPosition ?? 'false' })
   })
 }
 

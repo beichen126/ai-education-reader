@@ -17,6 +17,8 @@ const previousBackslash: Previous = function (code) {
 }
 
 const tokenizeBackslashMathText: Tokenizer = function (effects, ok, nok) {
+  let opening = codes.leftParenthesis as number
+  let closing = codes.rightParenthesis as number
   return start
 
   function start(code: number | null): State | undefined {
@@ -29,7 +31,9 @@ const tokenizeBackslashMathText: Tokenizer = function (effects, ok, nok) {
   }
 
   function open(code: number | null): State | undefined {
-    if (code !== codes.leftParenthesis) return nok(code)
+    if (code !== codes.leftParenthesis && code !== codes.leftSquareBracket) return nok(code)
+    opening = code
+    closing = code === codes.leftSquareBracket ? codes.rightSquareBracket : codes.rightParenthesis
     effects.consume(code)
     effects.exit('mathTextSequence')
     return between
@@ -93,7 +97,7 @@ const tokenizeBackslashMathText: Tokenizer = function (effects, ok, nok) {
     }
 
     function parenthesis(code: number | null): State | undefined {
-      if (code !== codes.rightParenthesis) return closeNok(code)
+      if (code !== closing) return closeNok(code)
       closeEffects.consume(code)
       closeEffects.exit('mathTextSequence')
       return closeOk
@@ -112,7 +116,7 @@ const tokenizeBackslashMathText: Tokenizer = function (effects, ok, nok) {
     }
 
     function parenthesis(code: number | null): State | undefined {
-      if (code !== codes.leftParenthesis) return openNok(code)
+      if (code !== opening) return openNok(code)
       openEffects.consume(code)
       openEffects.exit(types.chunkString)
       return openOk

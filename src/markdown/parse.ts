@@ -30,5 +30,14 @@ export function parseMarkdown(content: string): Root {
     }
     restore(root)
   }
+  // Lists frequently contain lazy continuation lines: flow math cannot consume
+  // those, so the text fallback recognizes the pair and still displays it as math.
+  const markDisplayFallback = (node: any) => {
+    if (node.type === 'inlineMath' && content.slice(node.position?.start?.offset, (node.position?.start?.offset ?? 0) + 2) === '\\[') {
+      node.data = { ...node.data, displayMath: true }
+    }
+    node.children?.forEach(markDisplayFallback)
+  }
+  markDisplayFallback(root)
   return root
 }
