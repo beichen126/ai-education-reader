@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // v2.2.0 Stage 3 browser gate: one clear information architecture.
 // Sidebar: 资料 / 会话 / footer, no first-level prompt entry, Help last and always reachable.
 // Prompts are reached from Settings -> 提示词管理 (four entries, no system-protocol entry),
@@ -59,7 +60,7 @@ assert(railNames.every(name => typeof name === 'string' && name.trim().length > 
 
 // ---- Settings owns prompt management ----
 await page.locator('[data-testid="rail-settings"]').click()
-await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
 const promptEntries = await testIdsOf('[data-testid^="settings-prompts-"]')
 assert(promptEntries.join('|') === 'settings-prompts-all|settings-prompts-conversation-mode|settings-prompts-artifact|settings-prompts-quick-follow-up', 'Settings exposes exactly four prompt entries in order (got ' + promptEntries.join('|') + ')')
 const entryLabels = await page.locator('[data-testid^="settings-prompts-"]').allTextContents()
@@ -83,7 +84,7 @@ for (const item of cases) {
   assert(await page.locator('[data-testid="prompt-category-' + item.category + '"]').getAttribute('aria-current') === 'page', item.control + ': manager opens on the ' + item.category + ' category')
   await page.keyboard.press('Escape')
   await manager.waitFor({ state: 'hidden', timeout: 10000 })
-  await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+  await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
   const focused = await page.evaluate(control => document.activeElement?.getAttribute('data-testid') === control, item.control)
   assert(focused === true, item.control + ': closing the manager returns to Settings with the origin focused')
 }

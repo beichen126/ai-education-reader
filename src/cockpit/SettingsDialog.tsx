@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useSettings, patchSettings, DEFAULT_SETTINGS, useSettingsMutation } from '../engine/settings-store'
 import { testConnection, type VisionCapability } from '../api/deepseek'
-import { uiActions } from '../engine/ui-store'
+import { uiActions, useUi } from '../engine/ui-store'
 import { useSessions } from '../engine/sessions-store'
 import { exportBackupZip, exportConversationMd, exportMarkedOnlyMd, exportConversationBundle, importBackupFile, BackupError } from '../export'
 import { type AppearanceMode } from '../theme/theme'
@@ -40,10 +40,13 @@ function ShowHideLabel(props: { visible: boolean; onToggle: () => void; onClear:
 
 export function SettingsDialog() {
   const s = useSettings(x => x)
-  const [section, setSection] = useState('api')
-  const navigateSection = (next: string) => {
+  const initialSection = useUi(state => state.settingsInitialSection)
+  type Section = 'api' | 'general' | 'security' | 'help'
+  const [section, setSection] = useState<Section>(initialSection ?? 'api')
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const navigateSection = (next: Section) => {
     setSection(next)
-    document.getElementById('settings-section-' + next)?.scrollIntoView({block:'start',behavior:'auto'})
+    if (scrollRef.current) scrollRef.current.scrollTop = 0
   }
   const [base, setBase] = useState(s.apiBaseUrl || DEFAULT_SETTINGS.apiBaseUrl)
   const [key, setKey] = useState(s.apiKey)
@@ -189,12 +192,21 @@ export function SettingsDialog() {
   const safety = storage ? deriveDataSafetyStatus(storage, lastBackup) : null
 
   return (
-    <Modal open onClose={uiActions.closeSettings} title={tx('设置', 'Settings')} closeLabel={tx('关闭', 'Close')} className={css.settingsDialog} contentClassName={css.settingsScroll}>
-      <div className={css.settingsHint}>{APP_NAME} · v{__APP_VERSION__}</div>
-      <nav className={css.settingsNav} aria-label={tx('设置分类','Settings sections')}>
-        {(['api','general','security','help'] as const).map((key,i)=><button type="button" key={key} data-testid={'settings-nav-'+key} aria-current={section===key?'location':undefined} onClick={()=>navigateSection(key)}>{[tx('API 配置','API'),tx('通用','General'),tx('安全','Security'),tx('帮助','Help')][i]}</button>)}
-      </nav>
-      <section id="settings-section-api" className={css.settingsSection}>
+    <Modal open headless onClose={uiActions.closeSettings} title={tx('设置', 'Settings')} className={css.settingsDialog}>
+      <div className={css.settingsFixedHeader}>
+        <div className={css.settingsTitleRow}><h2>{tx('设置','Settings')}</h2><button type="button" className={css.keyToggle} aria-label={tx('关闭','Close')} onClick={uiActions.closeSettings}>×</button></div>
+        <div className={css.settingsHint}>{APP_NAME} · v{__APP_VERSION__}</div>
+        <div className={css.settingsNav} role="tablist" aria-label={tx('设置分类','Settings sections')}>
+          {(['api','general','security','help'] as const).map((key,i)=><button type="button" role="tab" id={'settings-tab-'+key} aria-controls={'settings-section-'+key} key={key} data-testid={'settings-nav-'+key} aria-selected={section===key} tabIndex={section===key?0:-1} onClick={()=>navigateSection(key)} onKeyDown={event=>{
+            const keys: Section[]=['api','general','security','help']
+            const next=event.key==='Home'?0:event.key==='End'?3:event.key==='ArrowRight'?(i+1)%4:event.key==='ArrowLeft'?(i+3)%4:-1
+            if(next<0)return
+            event.preventDefault();navigateSection(keys[next]);document.getElementById('settings-tab-'+keys[next])?.focus()
+          }}>{[tx('API 配置','API'),tx('通用','General'),tx('安全','Security'),tx('帮助','Help')][i]}</button>)}
+        </div>
+      </div>
+      <div ref={scrollRef} className={css.settingsScroll} data-testid="settings-panel-scroll">
+      <section id="settings-section-api" role="tabpanel" aria-labelledby="settings-tab-api" hidden={section!=='api'} className={css.settingsSection}>
       <div className={css.byokBlock} data-testid="settings-byok">
         <div className={css.byokTitle}>{tx('BYOK（自备 API Key）', 'BYOK (bring your own API key)')}</div>
         <div className={css.settingsHint}>{tx('本项目采用 BYOK：应用本身不提供模型额度。默认可使用 DeepSeek API，也可以填写兼容的 API Base URL 和模型。API Key 仅保存在当前浏览器本地。', 'This app uses BYOK and does not provide model credits. Use DeepSeek by default or enter a compatible API base URL and model. Your API key stays in this browser only.')}</div>
@@ -247,7 +259,7 @@ export function SettingsDialog() {
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
       <div className={css.settingsHint}>{tx('“检查 API 配置”仅调用 GET /models，核对服务、Key 与模型名；不会发送聊天内容、图片或文档，也不会改变会话的推理强度。', 'Check API configuration only calls GET /models to verify the service, key, and model name. It sends no chats, images, or documents and does not change chat reasoning settings.')}</div>
       </section>
-      <section id="settings-section-general" className={css.settingsSection}>
+      <section id="settings-section-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={section!=='general'} className={css.settingsSection}>
       <div className={css.exportSection}>
         <div className={css.exportTitle}>{tx('朗读倍速', 'Read aloud speed')}</div>
         {(['chineseSpeechRate','englishSpeechRate'] as const).map((key,i)=><label className={css.speechRateRow} key={key}>
@@ -309,7 +321,7 @@ export function SettingsDialog() {
         <div className={css.settingsHint}>{tx('打开提示词管理后可按分类查看、编辑、复制或停用提示词；系统协议只在提示词管理的“系统协议”分类里查看。', 'Open prompt management to view, edit, duplicate, or disable prompts by category. System protocols appear only in its System protocols category.')}</div>
       </div>
       </section>
-      <section id="settings-section-security" className={css.settingsSection}>
+      <section id="settings-section-security" role="tabpanel" aria-labelledby="settings-tab-security" hidden={section!=='security'} className={css.settingsSection}>
       <div className={css.exportSection}>
         <div className={css.exportTitle}>{tx('数据与导出', 'Data and migration')}</div>
         <div className={css.exportRow}>
@@ -379,7 +391,7 @@ export function SettingsDialog() {
         </div>
       </div>
       </section>
-      <section id="settings-section-help" className={css.settingsSection}>
+      <section id="settings-section-help" role="tabpanel" aria-labelledby="settings-tab-help" hidden={section!=='help'} className={css.settingsSection}>
         <div className={css.exportTitle}>{tx('帮助与说明','Help and documentation')}</div>
         <div className={css.settingsActions}>
           <Button variant="outline" onClick={()=>{uiActions.closeSettings();uiActions.openProductGuide()}}>{tx('使用指南','User guide')}</Button>
@@ -387,6 +399,7 @@ export function SettingsDialog() {
           <a href="https://github.com/beichen126/ai-education-reader/issues" target="_blank" rel="noopener noreferrer">{tx('报告问题','Report an issue')}</a>
         </div>
       </section>
+      </div>
       {pendingImport && (
         <div className={css.importConfirmRoot} role="presentation" data-testid="import-overwrite-warning" onMouseDown={event => { if (event.target === event.currentTarget && !busy) setPendingImport(null) }}>
           <div className={css.importConfirmDialog} role="alertdialog" aria-modal="true" aria-labelledby="import-confirm-title">

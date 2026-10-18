@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // v2.2.0 Stage 1 browser gate: the PDF reading mode is committed when it is chosen.
 // The user path is exactly: choose -> close (Escape / X / mask) -> reopen -> reload -> Reader.
 // No generic "save" click is involved; that button belongs to the API form only.
@@ -35,7 +36,7 @@ await seedAndBoot(page, {
 
 const openSettings = async () => {
   await page.locator('[data-testid="sidebar-settings"]').click()
-  await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
+  await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
 }
 const closeWithEscape = async () => {
   await page.keyboard.press('Escape')
@@ -60,7 +61,7 @@ await openSettings()
 assert((await checked()).paged === 'true', 'fresh install starts on the paged mode')
 
 // ---- user path 1: choose continuous, close with Escape, no extra save click ----
-await page.locator('[data-testid="pdf-navigation-continuous"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="pdf-navigation-continuous"]').click()
 assert((await checked()).continuous === 'true', 'clicking the continuous option selects it immediately')
 await closeWithEscape()
 await openSettings()
@@ -73,20 +74,20 @@ await openSettings()
 assert((await checked()).continuous === 'true', 'reload keeps the continuous option selected')
 
 // ---- user path 2: choose paged, close with X ----
-await page.locator('[data-testid="pdf-navigation-paged"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="pdf-navigation-paged"]').click()
 await closeWithX()
 await openSettings()
 assert((await checked()).paged === 'true', 'X close persists the paged mode')
 
 // ---- user path 3: choose continuous, close by mask click ----
-await page.locator('[data-testid="pdf-navigation-continuous"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="pdf-navigation-continuous"]').click()
 await closeWithMask()
 await openSettings()
 assert((await checked()).continuous === 'true', 'mask close persists the continuous mode')
 
 // ---- rapid A -> B keeps the last intent ----
-await page.locator('[data-testid="pdf-navigation-paged"]').click()
-await page.locator('[data-testid="pdf-navigation-continuous"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="pdf-navigation-paged"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="pdf-navigation-continuous"]').click()
 await closeWithEscape()
 await openSettings()
 assert(await durableMode() === 'continuous', 'rapid paged->continuous leaves the last choice durable')
@@ -104,15 +105,15 @@ await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible
 await page.locator('[data-testid="library-close"]').click()
 await page.locator('[data-testid="document-library"]').waitFor({ state: 'hidden', timeout: 10000 })
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
 assert((await checked()).continuous === 'true', 'Settings still reports continuous after visiting the Reader')
 await page.keyboard.press('Escape')
 
 // ---- the API form must not carry the PDF mode, and PDF clicks must not save API drafts ----
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
-await page.locator('input[placeholder="sk-..."]').fill('sk-not-saved-draft')
-await page.locator('[data-testid="pdf-navigation-paged"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
+await selectSettingsSection(page, 'api'); await page.locator('input[placeholder="sk-..."]').fill('sk-not-saved-draft')
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="pdf-navigation-paged"]').click()
 await page.keyboard.press('Escape')
 assert(await durableKey('apiKey') !== 'sk-not-saved-draft', 'choosing a PDF mode does not persist an unsaved API Key draft')
 
@@ -131,13 +132,13 @@ await page.evaluate(() => {
 })
 const failingTarget = committedBefore === 'continuous' ? 'paged' : 'continuous'
 await page.locator('[data-testid="pdf-navigation-' + failingTarget + '"]').click()
-await page.locator('[data-testid="settings-pdf-navigation-error"]').waitFor({ state: 'visible', timeout: 10000 })
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-pdf-navigation-error"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(true, 'a failed commit shows a visible error with a retry')
 assert(await durableMode() === committedBefore, 'a failed commit leaves the durable value untouched')
 assert(await page.locator('[data-testid="pdf-navigation-' + committedBefore + '"]').getAttribute('aria-checked') === 'true', 'the radio rolls back to the committed value')
 assert(errors.length === 0, 'a failed settings commit raises no unhandled rejection')
 await page.evaluate(() => { window.__failSettingsWrites = false })
-await page.locator('[data-testid="settings-pdf-navigation-retry"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-pdf-navigation-retry"]').click()
 await page.locator('[data-testid="settings-pdf-navigation-error"]').waitFor({ state: 'hidden', timeout: 10000 })
 assert(await durableMode() === failingTarget, 'retry commits the intended value')
 assert(await page.locator('[data-testid="pdf-navigation-' + failingTarget + '"]').getAttribute('aria-checked') === 'true', 'the retried choice is selected')

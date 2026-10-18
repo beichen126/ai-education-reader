@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // Stage 12 browser gate: inspect built-in machine protocols, create/enable an
 // experimental override, round-trip it through V6 backup, then restore canonical.
 import { launchBrowser } from './e2e-browser.mjs'
@@ -23,8 +24,8 @@ await seedAndBoot(page, {
 
 const openManager = async () => {
   await page.locator('[data-testid="sidebar-settings"]').click()
-  await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
-  await page.locator('[data-testid="settings-prompts-all"]').click()
+  await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+  await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts-all"]').click()
 }
 
 await openAppDb(page, {
@@ -66,14 +67,14 @@ assert(activeBeforeBackup?.value?.activeProtocolOverrideByDomain?.['ai-toc-struc
 
 await closePromptManager(page)
 await page.getByRole('button', { name: /打开设置|设置/ }).first().click()
-await page.locator('text=数据与导出').waitFor({ state: 'visible', timeout: 8000 })
+await selectSettingsSection(page, 'security'); await page.locator('text=数据与导出').waitFor({ state: 'visible', timeout: 8000 })
 const dlPromise = page.waitForEvent('download', { timeout: 15000 })
-await page.locator('button:has-text("导出完整备份 ZIP")').click()
+await selectSettingsSection(page, 'security'); await page.locator('button:has-text("导出完整备份 ZIP")').click()
 const download = await dlPromise
 const backupPath = await download.path()
 assert(!!backupPath, 'enabled protocol override is exportable in the complete backup')
 
-await page.locator('[data-testid="settings-clear-data"]').click()
+await selectSettingsSection(page, 'security'); await page.locator('[data-testid="settings-clear-data"]').click()
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
 await dismissProductGuide(page)
 await page.getByRole('button', { name: /打开设置|设置/ }).first().click()

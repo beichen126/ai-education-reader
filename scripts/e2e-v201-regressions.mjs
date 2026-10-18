@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot, createBranchFromMessage } from './e2e-fixture.mjs'
 
@@ -76,8 +77,8 @@ if (shouldRun(scenario)) {
   assert(await page.locator('[data-testid="rail-prompts"]').count() === 0, 'V200-FCR-01 the collapsed rail no longer carries a prompt entry')
   assert(order[order.length - 1] === 'rail-help', 'V200-FCR-01 help is the last collapsed-rail action')
   await page.locator('[data-testid="rail-settings"]').click()
-  await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
-  await page.locator('[data-testid="settings-prompts-all"]').click()
+  await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+  await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts-all"]').click()
   assert(await page.locator('[data-testid="prompt-manager"]').isVisible(), 'V200-FCR-01 Settings opens Prompt Manager while the rail stays collapsed')
   assert(await page.locator('[data-testid="rail-history"]').isVisible(), 'V200-FCR-01 direct open keeps the rail collapsed')
   await page.keyboard.press('Escape')
@@ -117,8 +118,8 @@ scenario = 'V200-FCR-05'
 if (shouldRun(scenario)) {
   const { context, page } = await openScenario('v201-focus', [msg('focus-u1', 'user', '焦点测试')])
   await page.locator('[data-testid="sidebar-settings"]').click()
-  await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
-  await page.locator('[data-testid="settings-prompts-conversation-mode"]').click()
+  await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+  await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts-conversation-mode"]').click()
   const manager = page.locator('[data-testid="prompt-manager"]')
   await manager.waitFor({ state: 'visible', timeout: 10000 })
   assert(await manager.evaluate((element) => element.contains(document.activeElement)), 'V200-FCR-05 opening Prompt Manager moves focus into the dialog')

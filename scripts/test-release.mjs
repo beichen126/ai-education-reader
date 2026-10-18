@@ -18,6 +18,7 @@ const SKIP_UNIT = process.env.RELEASE_SKIP_UNIT === '1'
 const EXTRA_E2E = process.env.RELEASE_EXTRA_E2E === '1'
 
 const CORE_E2E = [
+  'e2e-settings-tabs',
   'e2e-v300',
   'e2e-toc-thumbnails',
   'e2e-mobile-space',

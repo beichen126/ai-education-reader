@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // Stage 2 browser gate: real continuous PDF scrolling with a virtualized, bounded DOM.
 // The stack keeps two spacers plus at most 11 mounted page sections (at most 7 canvases)
 // for 500 / 2000 / 10000 page documents; page turns are driven by the real wheel, and the
@@ -55,8 +56,8 @@ await dismissProductGuide(page)
 
 // ---- choose continuous through the real user path (no generic save click) ----
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
-await page.locator('[data-testid="pdf-navigation-continuous"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="pdf-navigation-continuous"]').click()
 await page.keyboard.press('Escape')
 
 const openFixture = async file => {

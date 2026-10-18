@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // Theme e2e (Stage 9.5, v1.0.0, block 0.6/0.7): ONE reactive source in the Settings store,
 // selected-mode indication (aria-pressed/data-selected), and system media-change semantics
 // after an explicit light/dark choice (an explicit choice must NOT be overridden by a later
@@ -14,7 +15,7 @@ await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'att
 
 const theme = () => page.evaluate(() => ({ h: document.documentElement.dataset.theme || null, body: document.body.hasAttribute('data-ds-dark-theme') }))
 const openSettings = async () => { await page.locator('[data-testid="sidebar-settings"]').first().click(); await page.waitForTimeout(500) }
-const appearReady = async () => await page.locator('[data-testid="settings-appearance"]').waitFor({ state: 'visible', timeout: 10000 }).then(()=>true).catch(()=>false)
+const appearReady = async () => await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-appearance"]').waitFor({ state: 'visible', timeout: 10000 }).then(()=>true).catch(()=>false)
 // The currently selected appearance button (aria-pressed=true / data-selected=true).
 const selectedAppearance = () => page.evaluate(() => {
   const btns = document.querySelectorAll('[data-testid="settings-appearance"] button');
@@ -36,7 +37,7 @@ t = await theme()
 assert(t.h === 'dark' && t.body === true, '2: system=dark -> effective dark (got ' + t.h + ')')
 
 // 3. choose explicit light; then system dark/light changes -> STAYS light.
-await page.locator('[data-testid="appearance-light"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="appearance-light"]').click()
 await page.waitForTimeout(300)
 t = await theme()
 assert(t.h === 'light', '3: explicit light -> effective light (got ' + t.h + ')')
@@ -47,7 +48,7 @@ t = await theme()
 assert(t.h === 'light', '3b: explicit light NOT overridden by system dark (got ' + t.h + ')')
 
 // 4. choose explicit dark; then system change -> STAYS dark.
-await page.locator('[data-testid="appearance-dark"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="appearance-dark"]').click()
 await page.waitForTimeout(300)
 t = await theme()
 assert(t.h === 'dark' && t.body === true, '4: explicit dark -> effective dark (got ' + t.h + ')')
@@ -65,7 +66,7 @@ assert(t.h === 'dark', '5: reload keeps persisted explicit dark (got ' + t.h + '
 
 // 6. switch back to system -> follows current media query again (light).
 await openSettings(); await appearReady()
-await page.locator('[data-testid="appearance-system"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="appearance-system"]').click()
 await page.waitForTimeout(300)
 t = await theme()
 assert(t.h === 'light', '6: switch back to system -> follows media (got ' + t.h + ')')

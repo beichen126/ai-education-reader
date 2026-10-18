@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // Complete backup browser round-trip: seed a full state, then export via the real settings UI,
 // clear app data, import the downloaded backup, reload, and verify restore.
 import { launchBrowser } from './e2e-browser.mjs'
@@ -72,9 +73,9 @@ console.log('SEED:', seeded)
 
 // Open settings, export. Capture the download.
 await page.getByRole('button', { name: /打开设置|设置/ }).first().click().catch(() => {})
-await page.locator('text=数据与导出').waitFor({ state: 'visible', timeout: 8000 })
+await selectSettingsSection(page, 'security'); await page.locator('text=数据与导出').waitFor({ state: 'visible', timeout: 8000 })
 const dlPromise = page.waitForEvent('download', { timeout: 15000 })
-await page.locator('button:has-text("导出完整备份 ZIP")').click()
+await selectSettingsSection(page, 'security'); await page.locator('button:has-text("导出完整备份 ZIP")').click()
 const download = await dlPromise
 const dlPath = await download.path()
 console.log('DOWNLOAD PATH:', dlPath)
@@ -88,7 +89,7 @@ assert(expMsg > 0, 'export success message shown')
 
 // ---- clear app data (real settings UI) -> the app reloads (onClearData does location.reload) ----
 page.on('dialog', d => d.accept())
-await page.locator('[data-testid="settings-clear-data"]').click()
+await selectSettingsSection(page, 'security'); await page.locator('[data-testid="settings-clear-data"]').click()
 // The confirm is auto-accepted; the page reloads. Wait for the composer to be back.
 await page.waitForFunction(() => document.readyState === 'complete')
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })

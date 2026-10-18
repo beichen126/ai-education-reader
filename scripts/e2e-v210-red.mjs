@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot } from './e2e-fixture.mjs'
 import { openAppDb } from './e2e-idb.mjs'
@@ -19,8 +20,8 @@ await seedAndBoot(page, {
 
 const promptEntry = page.locator('[data-testid="sidebar-settings"]')
 await promptEntry.click()
-await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
-await page.locator('[data-testid="settings-prompts-conversation-mode"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts-conversation-mode"]').click()
 const manager = page.locator('[data-testid="prompt-manager"]')
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-conversation-mode"]').click()

@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // Code / inline-code selection + reload persistence/render-restoration e2e.
 import { launchBrowser } from './e2e-browser.mjs'
 import { msg, seedAndBoot } from './e2e-fixture.mjs'
@@ -298,11 +299,11 @@ assert(await messageTime.getAttribute('datetime') === '2026-10-15T06:08:36.000Z'
 assert(await messageTime.evaluate(el => el.previousElementSibling?.dataset.testid === 'message-copy-source' && !!el.nextElementSibling?.querySelector('[data-testid="message-actions"]')), 'timestamp sits between full-source copy and the message menu')
 assert(await userMessage.locator('time').count() === 1, 'user messages also display their saved timestamp')
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.locator('[data-testid="language-en"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="language-en"]').click()
 await page.waitForFunction(() => document.documentElement.lang === 'en')
 await page.waitForFunction(() => Array.from(document.querySelectorAll('[data-message-id="code-assistant"] time')).some(el => el.textContent.trim() === '10/15 14:08:36'))
 assert((await messageTime.getAttribute('title')).startsWith('Message created: '), 'English mode changes timestamp and hover text immediately')
-await page.locator('[data-testid="language-zh-cn"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="language-zh-cn"]').click()
 await page.waitForFunction(() => document.documentElement.lang === 'zh-CN')
 await page.waitForFunction(() => Array.from(document.querySelectorAll('[data-message-id="code-assistant"] time')).some(el => el.textContent.trim() === '10月15日 14:08:36'))
 assert((await messageTime.getAttribute('title')).startsWith('消息创建时间：'), 'switching back restores Chinese timestamp and hover text')

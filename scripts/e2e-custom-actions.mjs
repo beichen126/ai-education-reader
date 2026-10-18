@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // Stage 10: legacy Custom Artifact Actions migrate into the Prompt catalog.
 // CRUD after migration must use Prompt Manager, not the legacy settings facade.
 import { launchBrowser } from './e2e-browser.mjs'
@@ -41,8 +42,8 @@ await page.reload({ waitUntil: 'networkidle' })
 await page.locator('[data-testid="composer-materials-input"]').waitFor({ state: 'attached', timeout: 20000 })
 
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
-await page.locator('[data-testid="settings-prompts-artifact"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts-artifact"]').click()
 const manager = page.locator('[data-testid="prompt-manager"]')
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-artifact"]').click()
@@ -63,8 +64,8 @@ assert(migratedRow?.kind === 'custom' && migratedRow?.content.includes('迁移�
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('[data-testid="composer-materials-input"]').waitFor({ state: 'attached', timeout: 20000 })
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
-await page.locator('[data-testid="settings-prompts-artifact"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts-artifact"]').click()
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-artifact"]').click()
 await page.locator('[data-testid="prompt-search"]').fill(migratedName)

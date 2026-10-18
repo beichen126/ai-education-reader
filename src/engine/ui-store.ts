@@ -15,6 +15,7 @@ export type OverlayReturnTarget =
 
 export type UiState = {
   settingsOpen: boolean
+  settingsInitialSection?: 'general'
   promptManagerOpen: boolean
   promptManagerCategory?: PromptKind
   promptManagerReturnTarget?: OverlayReturnTarget
@@ -25,7 +26,7 @@ const subs = new Set<() => void>()
 function notify() { subs.forEach(f => f()) }
 function useUi<T>(sel: (s: UiState) => T): T { return useSyncExternalStore(fn => { subs.add(fn); return () => { subs.delete(fn) } }, () => sel(s)) }
 export const uiActions = {
-  openSettings() { s = { ...s, settingsOpen: true, promptManagerOpen: false, productGuideOpen: false, promptManagerCategory: undefined, promptManagerReturnTarget: undefined }; notify() },
+  openSettings() { s = { ...s, settingsOpen: true, settingsInitialSection: undefined, promptManagerOpen: false, productGuideOpen: false, promptManagerCategory: undefined, promptManagerReturnTarget: undefined }; notify() },
   closeSettings() { s = { ...s, settingsOpen: false }; notify() },
   openPromptManager(category?: PromptKind, returnTarget?: OverlayReturnTarget) {
     s = { ...s, promptManagerOpen: true, settingsOpen: false, productGuideOpen: false, promptManagerCategory: category, promptManagerReturnTarget: returnTarget }
@@ -41,6 +42,7 @@ export const uiActions = {
       promptManagerCategory: undefined,
       promptManagerReturnTarget: undefined,
       settingsOpen: target?.kind === 'settings' ? true : s.settingsOpen,
+      settingsInitialSection: target?.kind === 'settings' ? 'general' : undefined,
     }
     notify()
   },

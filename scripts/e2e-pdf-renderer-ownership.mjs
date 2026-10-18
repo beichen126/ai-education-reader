@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // Stage 2 browser gate: exactly one renderer owns the viewport at any moment.
 // PDF telemetry is enabled explicitly for this run; the diagnostics counter is inert in
 // production. In continuous mode the paged backend must see ZERO viewport reads and ZERO
@@ -38,7 +39,7 @@ await dismissProductGuide(page)
 
 const setMode = async mode => {
   await page.locator('[data-testid="sidebar-settings"]').click()
-  await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
+  await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
   await page.locator('[data-testid="pdf-navigation-' + mode + '"]').click()
   await page.keyboard.press('Escape')
   await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'hidden', timeout: 10000 })

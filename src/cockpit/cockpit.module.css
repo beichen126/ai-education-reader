@@ -255,14 +255,18 @@
 .keyToggle, .keyClear { min-height: 30px; padding: 4px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 12px; cursor: pointer; }
 .keyToggle:hover, .keyClear:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .keyClear { color: var(--dsw-alias-state-error-primary); }
-.settingsScroll { max-height: calc(100vh - 96px); overflow-y: auto; }
+.settingsScroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 24px 20px; }
 .groupPageBtn { display: block; border: none; padding: 0; background: none; cursor: zoom-in; border-radius: 8px; overflow: hidden; }
 .groupPageBtn img { display: block; width: 56px; height: 56px; object-fit: cover; border-radius: 8px; }
-.settingsDialog { width: min(640px, 100%) !important; }
-.settingsNav { position: sticky; top: -1px; z-index: 3; display: flex; gap: 6px; padding: 8px 0; background: var(--dsw-alias-bg-layer-1); }
+.settingsDialog { width: min(640px, 100%) !important; height: min(760px, calc(100dvh - 48px)); max-height: calc(100vh - 48px); gap: 0 !important; padding-bottom: 0 !important; }
+.settingsFixedHeader { flex: none; padding: 16px 24px 0; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.settingsTitleRow { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.settingsTitleRow h2 { margin: 0; font-size: 16px; }
+.settingsTitleRow button { min-width: 32px; min-height: 32px; font-size: 22px; }
+.settingsNav { display: flex; gap: 6px; padding: 8px 0; }
 .settingsNav button { flex: 1; min-width: 0; min-height: 38px; padding: 6px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; }
-.settingsNav button[aria-current] { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); }
-.settingsSection { scroll-margin-top: 58px; }
+.settingsNav button[aria-selected="true"] { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); }
+.settingsSection[hidden] { display: none !important; }
 .speechRateRow { display: flex; align-items: center; gap: 16px; margin: 8px 0; }
 .speechRateRow select { min-height: 36px; border: 1px solid var(--dsw-alias-border-l2); background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); border-radius: 8px; padding: 4px 12px; font-size: 16px; }
 @media (max-width: 640px) { .settingsDialog { width: 100% !important; } }

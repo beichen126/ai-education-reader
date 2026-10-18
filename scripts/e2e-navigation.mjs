@@ -45,17 +45,23 @@ export const PROMPT_ENTRY_CONTROL = {
   'quick-follow-up': 'settings-prompts-quick-follow-up',
 }
 
-export async function openSettings(page) {
+export async function selectSettingsSection(page, section) {
+  const tab = page.locator('[data-testid="settings-nav-' + section + '"]')
+  if (await tab.getAttribute('aria-selected') !== 'true') await tab.click()
+}
+
+export async function openSettings(page, section = 'general') {
   await dismissProductGuide(page)
-  const dialog = page.locator('[role="dialog"][aria-label="设置"]')
-  if (await dialog.isVisible().catch(() => false)) return dialog
+  const dialog = page.locator('[role="dialog"][aria-label="设置"], [role="dialog"][aria-label="Settings"]')
+  if (await dialog.isVisible().catch(() => false)) { await selectSettingsSection(page, section); return dialog }
   const sidebarEntry = page.locator('[data-testid="sidebar-settings"]')
   if (await sidebarEntry.isVisible().catch(() => false)) await sidebarEntry.click()
   else if (await page.locator('[data-testid="mobile-menu-toggle"]').isVisible().catch(() => false)) {
     await page.locator('[data-testid="mobile-menu-toggle"]').click()
     await page.locator('[data-testid="mobile-history-drawer"] [data-testid="sidebar-settings"]').click()
   } else await page.locator('[data-testid="rail-settings"]').click()
-  await page.locator('[data-testid="settings-pdf-navigation"]').waitFor({ state: 'visible', timeout: 10000 })
+  await selectSettingsSection(page, section)
+  await page.locator('[role="tabpanel"]:visible').waitFor({ state: 'visible', timeout: 10000 })
   return dialog
 }
 

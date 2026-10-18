@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 import { chromium } from 'playwright-core'
 import { readFile } from 'node:fs/promises'
 import { strFromU8, unzipSync } from 'fflate'
@@ -25,20 +26,21 @@ await imageInput.setInputFiles({ name: 'portable.png', mimeType: 'image/png', bu
 await page.waitForTimeout(250)
 
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.locator('[data-testid="settings-language"]').waitFor({ state: 'visible' })
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-language"]').waitFor({ state: 'visible' })
 assert(await page.locator('[data-testid="api-setup-checklist"]').count() === 1, 'API configuration checklist is available')
 assert(await page.locator('[data-testid="data-safety-center"]').count() === 1, 'local data safety center is available')
-await page.locator('[data-testid="language-en"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="language-en"]').click()
 await page.waitForFunction(() => document.documentElement.lang === 'en')
 assert(await page.evaluate(() => document.documentElement.lang) === 'en', 'English mode sets html lang=en')
 assert(await page.getByText('Data and migration', { exact: true }).count() === 1, 'settings copy switches to English')
 
 const keyInput = page.locator('input[placeholder="sk-..."]')
+await selectSettingsSection(page, 'api')
 await keyInput.fill('v240-secret-must-not-export')
 await page.getByText('Save API settings', { exact: true }).click()
 await page.waitForTimeout(250)
 const downloadPromise = page.waitForEvent('download')
-await page.getByText('Export complete ZIP backup', { exact: true }).click()
+await selectSettingsSection(page, 'security'); await page.getByText('Export complete ZIP backup', { exact: true }).click()
 const download = await downloadPromise
 const downloadPath = await download.path()
 assert(download.suggestedFilename().endsWith('.zip'), 'complete backup downloads as ZIP')
@@ -107,7 +109,7 @@ const storedLegacyBranchTitle = await page.evaluate(() => new Promise((resolve, 
 assert(storedLegacyBranchTitle === '分支 1', 'localization leaves the legacy stored branch title unchanged')
 
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.locator('[data-testid="settings-prompts-all"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts-all"]').click()
 await page.locator('[data-testid="prompt-manager"]').waitFor({ state: 'visible' })
 const promptChrome = await page.locator('[data-testid="prompt-manager"]').innerText()
 assert(!/[\u3400-\u9fff]/.test(promptChrome), 'prompt manager English chrome and built-in names contain no Chinese')
@@ -132,7 +134,7 @@ assert(await page.evaluate(() => document.documentElement.lang) === 'en', 'Engli
 assert(await page.getByText('New chat', { exact: true }).count() >= 1, 'English UI persists across reload')
 
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.locator('[data-testid="settings-language"]').waitFor({ state: 'visible' })
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-language"]').waitFor({ state: 'visible' })
 const importReload = page.waitForNavigation({ waitUntil: 'networkidle', timeout: 30000 })
 await page.locator('input[type="file"][accept*=".zip"]').setInputFiles(downloadPath)
 await page.locator('[data-testid="import-overwrite-warning"]').waitFor({ state: 'visible' })

@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // Stage 1 browser gate: mobile navigation, route mode context, inspectors,
 // quick chips, keyboard CRUD, accessible names, focus restoration, and overflow.
 import { launchBrowser } from './e2e-browser.mjs'
@@ -114,8 +115,8 @@ for (const size of [
   await measureNoOverflow(page, size.width + 'px navigation')
 
   await nav.locator('[data-testid="sidebar-settings"]').click()
-  await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
-  await page.locator('[data-testid="settings-prompts-all"]').click()
+  await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+  await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts-all"]').click()
   const manager = page.locator('[data-testid="prompt-manager"]')
   await manager.waitFor({ state: 'visible', timeout: 10000 })
   assert(await manager.getAttribute('role') === 'dialog' && await manager.getAttribute('aria-label') === '提示词管理', size.width + 'px Prompt Manager has a named dialog')

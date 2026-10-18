@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // Theme computed-style e2e (v1.0.0, dark theme + study-highlight). Validates at the DESIGN-TOKEN
 // layer that dark surfaces/primary are NOT light-theme values (the bug: --dsw-alias-brand-primary
 // resolved near-white -> white primary button + white user bubble), that the study-highlight
@@ -13,7 +14,7 @@ await page.goto(BASE, { waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 25000 })
 
 const openSettings = async () => { await page.locator('[data-testid="sidebar-settings"]').first().click(); await page.waitForTimeout(500) }
-const appearReady = async () => await page.locator('[data-testid="settings-appearance"]').waitFor({ state: 'visible', timeout: 10000 }).then(()=>true).catch(()=>false)
+const appearReady = async () => await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-appearance"]').waitFor({ state: 'visible', timeout: 10000 }).then(()=>true).catch(()=>false)
 const closeSettings = async () => { await page.keyboard.press('Escape').catch(() => {}); await page.waitForTimeout(300) }
 
 // Read resolved design tokens on <body> (the alias layer keys off body[data-ds-dark-theme]).

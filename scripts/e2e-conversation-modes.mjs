@@ -1,3 +1,4 @@
+import { selectSettingsSection } from './e2e-navigation.mjs'
 // v2.1.0 browser gate: clean default catalog -> custom mode CRUD -> route switch
 // -> next message uses the selected immutable snapshot -> reload keeps the mode.
 import { launchBrowser } from './e2e-browser.mjs'
@@ -41,8 +42,8 @@ await seedAndBoot(page, {
 })
 
 await page.locator('[data-testid="sidebar-settings"]').click()
-await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
-await page.locator('[data-testid="settings-prompts-conversation-mode"]').click()
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts"]').waitFor({ state: 'visible', timeout: 10000 })
+await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-prompts-conversation-mode"]').click()
 const manager = page.locator('[data-testid="prompt-manager"]')
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-conversation-mode"]').click()
