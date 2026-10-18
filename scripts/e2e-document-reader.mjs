@@ -158,6 +158,7 @@ await page.getByRole('button', { name: '关闭' }).last().click()
 await page.waitForTimeout(200)
 await page.locator('[data-testid="sidebar-settings"]').click()
 await page.getByText('AI Education Reader · v' + APP_VERSION).waitFor({ state: 'visible', timeout: 10000 })
+await selectSettingsSection(page, 'general')
 assert(await page.locator('[data-testid="settings-pdf-navigation"]').isVisible(), 'H: settings exposes PDF navigation mode')
 await selectSettingsSection(page, 'general'); await page.locator('[data-testid="pdf-navigation-continuous"]').click()
 await page.waitForFunction(() => new Promise(resolve => {
