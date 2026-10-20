@@ -67,7 +67,9 @@ export function Conversation() {
   const status = useSessions(s => s.status)
   const sendError = useSessions(s => s.sendError)
   const sendErrorTarget = useSessions(s => s.sendErrorTarget)
-  const hasKey = useSettings(s => !!s.apiKey)
+  // Local subscription access never requires a browser API key; readiness is
+  // checked before accepting a message, not inferred from the DeepSeek key.
+  const hasKey = useSettings(s => s.chatProvider === 'openai-local' || !!s.apiKey)
   const navigationOpen = useLayoutStore(s => s.narrowExpanded)
   const mobileNavigation = <button type="button" className={css.mobileMenuToggle} data-testid="mobile-menu-toggle" aria-label={tx('展开导航', 'Open navigation')} aria-expanded={navigationOpen} aria-controls="mobile-navigation" onClick={() => layoutStore.actions.openNarrowSidebar()}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8h18M3 16h11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></button>
   const listRef = useRef<HTMLDivElement | null>(null)

@@ -3,6 +3,7 @@ import { type Conversation, type Message, type Attachment, type StableId, type D
 import { sanitizeTitle } from './session-title'
 import { getSetting, setSetting, getConversation, saveConversation, saveConversationRenameAndSyncCards, deleteConversation, listConversations, commitAcceptedUserMessage } from '../storage/storage'
 import { getSettingsSnapshot } from './settings-store'
+import { providerPreflight } from '../api/chat-provider'
 import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, isVisionModel, exceedsVisionImageCount } from '../api/deepseek'
 import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
 import { deleteConvAnnotations } from '../annotations/annotation-store'
@@ -168,7 +169,8 @@ export const sessionsActions = {
       const invalidInput = validateSendInput(content, imageIds, options.quickFollowUp)
       if (invalidInput) return { outcome: Promise.resolve(rejectSend(target, invalidInput, intent)) }
       const settings = getSettingsSnapshot()
-      if (!settings.apiKey) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'no-api-key', message: '未配置 API Key，请先在设置中填写。' }, intent)) }
+      const providerRejection = await providerPreflight(settings)
+      if (providerRejection) return { outcome: Promise.resolve(rejectSend(target, providerRejection, intent)) }
       const now = Date.now()
       const controller = new AbortController()
       const lease = generationRegistry.acquire(genRootKey(id), controller, 'sending')
@@ -315,7 +317,7 @@ class RootReplyThread implements ReplyThread {
 
 /** Fire-and-forget reply stream: runs AFTER the user message is accepted & persisted. */
 async function runReplyStream(id: string, settings: ReturnType<typeof getSettingsSnapshot>, acceptedSend: AcceptedSendContext, lease: GenerationLease): Promise<SendOutcome> {
-  if (!settings.apiKey) {
+  if (settings.chatProvider !== 'openai-local' && !settings.apiKey) {
     const failure: SendFailure = { kind: 'failed', code: 'no-api-key', message: errorKindLabel('no-api-key') }
     lease.release()
     setSessionsSendError({ ...failure, conversationId: id })

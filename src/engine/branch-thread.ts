@@ -1,5 +1,6 @@
 import { newStableId, type DraftDisposition, type Message, type QuickFollowUpMetadata, type StableId } from './types'
 import { getSettingsSnapshot } from './settings-store'
+import { providerPreflight } from '../api/chat-provider'
 import { runThreadReply, type ReplyThread } from './stream-reply'
 import { generationRegistry, genBranchKey } from './generation-registry'
 import { getConversation } from '../storage/storage'
@@ -113,7 +114,8 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
     const invalidInput = validateSendInput(content, imageIds, options.quickFollowUp)
     if (invalidInput) return pendingRejected(invalidInput)
     const settings = getSettingsSnapshot()
-    if (!settings.apiKey) return pendingRejected({ kind: 'rejected', code: 'no-api-key', message: '未配置 API Key，请先在设置中填写。' })
+    const providerRejection = await providerPreflight(settings)
+    if (providerRejection) return pendingRejected(providerRejection)
     const controller = new AbortController()
     const key = genBranchKey(conversationId, branchId)
     const lease = generationRegistry.acquire(key, controller, 'sending')

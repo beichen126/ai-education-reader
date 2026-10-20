@@ -1,12 +1,14 @@
 import { newStableId, type Message, type StableId } from './types'
 import type { Settings } from './settings-store'
-import { buildContextMessages, buildApiMessages, streamTextChat, countImageParts, isVisionModel, exceedsVisionImageCount, DeepSeekError, errorKindLabel } from '../api/deepseek'
+import { buildContextMessages, buildApiMessages, countImageParts, isVisionModel, exceedsVisionImageCount, DeepSeekError, errorKindLabel } from '../api/deepseek'
 import { toDataUrl, AttachmentError, attachmentErrorLabel, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
 import { generationRegistry, type GenerationLease } from './generation-registry'
 import { projectLogicalPromptContext } from '../prompts/prompt-compile-strategies'
 import type { AcceptedSendContext } from '../prompts/prompt-send'
 import type { SendFailure, SendOutcome } from './send-outcome'
 import { prepareWebResearch, WebResearchError } from '../api/deepseek-web'
+import { streamProviderChat } from '../api/chat-provider'
+import { getLocalStatus, LocalProviderError } from '../api/openai-local'
 
 /**
  * Thread-agnostic streaming reply engine. ONE generation pipeline is shared by the ROOT
@@ -59,7 +61,10 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
   try {
     const contextMessages = acceptedSendContext?.logical.messages ?? buildContextMessages(await thread.getContextMessages())
     const hasImages = contextMessages.some((x) => x.images.length > 0)
-    if (hasImages && !isVisionModel(settings.model, settings.visionCapability)) {
+    const supportsImages = settings.chatProvider === 'openai-local'
+      ? (await getLocalStatus(controller.signal)).imageModels?.includes(settings.openaiLocalModel || '') === true
+      : isVisionModel(settings.model, settings.visionCapability)
+    if (hasImages && !supportsImages) {
       const failure: SendFailure = { kind: 'failed', code: 'vision-unsupported', message: attachmentErrorLabel('vision-unsupported') }
       ownedLease.release(); thread.setError(failure); return failure
     }
@@ -100,14 +105,14 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     thread.setStreaming()
     if (onStreamStart) onStreamStart(controller, assistantId)
     let webFooter = ''
-    if (settings.webSearchEnabled) {
+    if (settings.webSearchEnabled && settings.chatProvider !== 'openai-local') {
       const question = [...contextMessages].reverse().find(message => message.role === 'user')?.content || ''
       const research = await prepareWebResearch({ baseUrl: settings.apiBaseUrl, apiKey: settings.apiKey, question, signal: controller.signal })
       if (!ownedLease.isCurrent()) throw new DeepSeekError('aborted', 'Aborted')
       reqMessages.push(research.message)
       webFooter = research.footer
     }
-    const r = await streamTextChat({ apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages, signal: controller.signal, onDelta })
+    const r = await streamProviderChat(settings, { apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages, signal: controller.signal, onDelta })
     received = r.content + webFooter
     update(received, true)
     if (!(await thread.exists())) throw new DeepSeekError('aborted', '目标已删除')
@@ -124,7 +129,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       await thread.drainWrites()
       ownedLease.release(); thread.setError(failure); return failure
     }
-    const err = e instanceof DeepSeekError ? e : new DeepSeekError('network-or-cors', String(e))
+    const err = e instanceof DeepSeekError ? e : new DeepSeekError(controller.signal.aborted ? 'aborted' : 'network-or-cors', 'Request failed')
     if (err.kind === 'aborted') {
       const message = errorKindLabel('aborted')
       if (placeholderCreated) thread.settleAssistant('aborted', message)
@@ -133,8 +138,8 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       ownedLease.release(); thread.setIdle()
       return { kind: 'aborted', ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
     }
-    const label = e instanceof WebResearchError ? e.message : errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : '')
-    const failure: SendFailure = { kind: 'failed', code: err.kind, message: label, ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
+    const label = e instanceof WebResearchError || e instanceof LocalProviderError ? e.message : errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : '')
+    const failure: SendFailure = { kind: 'failed', code: e instanceof LocalProviderError ? e.code : err.kind, message: label, ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
     if (placeholderCreated) thread.settleAssistant('failed', label)
     await thread.persistFinal()
     await thread.drainWrites()

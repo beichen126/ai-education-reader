@@ -267,6 +267,15 @@
 .settingsNav button { flex: 1; min-width: 0; min-height: 38px; padding: 6px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: var(--dsw-alias-label-primary); cursor: pointer; }
 .settingsNav button[aria-selected="true"] { background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); }
 .settingsSection[hidden] { display: none !important; }
+.localProvider { min-width: 0; margin: 16px 0; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; }
+.localProvider legend { font-weight: 600; font-size: 14px; }
+.localProvider p { font-size: 12px; line-height: 1.6; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
+.localProvider label { display: block; font-size: 13px; }
+.localProvider select, .localProvider input { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; padding: 8px; margin: 6px 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: inherit; }
+.localProvider button { padding: 7px 10px; margin: 4px 6px 4px 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
+.localProvider button:disabled { opacity: .5; cursor: default; }
+.localProvider [role="status"] { padding: 10px; border-radius: 8px; background: var(--dsw-alias-bg-layer-1); min-height: 20px; }
+.localSignInLink { display: inline-block; padding: 10px 14px; border-radius: 8px; color: var(--dsw-alias-label-primary); border: 1px solid var(--dsw-alias-border-l2); text-decoration: none; }
 .helpIntro h3 { margin: 16px 0 8px; font-size: 16px; }
 .helpIntro p, .helpContent p, .helpContent li { color: var(--dsw-alias-label-secondary); line-height: 1.65; font-size: 14px; overflow-wrap: anywhere; }
 .helpContent article { padding: 14px 0; border-bottom: 1px solid var(--dsw-alias-border-l2); }

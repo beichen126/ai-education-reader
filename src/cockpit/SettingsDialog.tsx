@@ -16,6 +16,7 @@ import { deriveDataSafetyStatus, getLastBackupRecord, recordBackupCompleted, typ
 import { inspectApiSetup } from '../api/api-setup'
 import { releaseAllPreviews } from '../engine/attachment-service'
 import css from './cockpit.module.css'
+import { LocalProviderSettings } from './LocalProviderSettings'
 
 export const APP_NAME = 'AI Education Reader'
 
@@ -207,6 +208,7 @@ export function SettingsDialog() {
       </div>
       <div ref={scrollRef} className={css.settingsScroll} data-testid="settings-panel-scroll">
       <section id="settings-section-api" role="tabpanel" aria-labelledby="settings-tab-api" hidden={section!=='api'} className={css.settingsSection}>
+      <LocalProviderSettings />
       <div className={css.byokBlock} data-testid="settings-byok">
         <div className={css.byokTitle}>{tx('BYOK（自备 API Key）', 'BYOK (bring your own API key)')}</div>
         <div className={css.settingsHint}>{tx('本项目采用 BYOK：应用本身不提供模型额度。默认可使用 DeepSeek API，也可以填写兼容的 API Base URL 和模型。API Key 仅保存在当前浏览器本地。', 'This app uses BYOK and does not provide model credits. Use DeepSeek by default or enter a compatible API base URL and model. Your API key stays in this browser only.')}</div>

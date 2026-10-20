@@ -23,6 +23,8 @@
 
 ---
 
+可选的 [OpenAI 本机服务](docs/LOCAL_OPENAI.md) 提供独立 ChatGPT 订阅登录与 Provider 入口，文字和图片调用已验证。官方 GitHub Pages 可配对连接同一电脑上的服务；需浏览器允许本地网络访问，OpenAI 凭证仍仅保存在本机。原有 DeepSeek 使用方式不变。
+
 ## 产品一句话介绍
 
 AI Education Reader 是一个在浏览器里使用的学习工具：你把教材、论文、习题集或讲义放进来，直接向 AI 提问；需要确认答案时，可以回到原文的页码继续看，也可以把回答整理成笔记和题目。

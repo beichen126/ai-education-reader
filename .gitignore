@@ -9,6 +9,8 @@ coverage/
 .env
 .env.*
 !.env.example
+# Reserved for future Reader-local credentials; never browser assets or backups.
+.reader-local/
 
 # upstream DSH read-only reference clone (NOT a build/dependency source). Re-clonable:
 #   git clone --depth 1 https://github.com/deepseek-ai/deepseek-harness.git vendor/dsh
