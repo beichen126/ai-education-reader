@@ -16,7 +16,7 @@ const pendingAdapter = {
   stream: async () => { throw new LocalError('authorization_not_verified', 503) },
 }
 
-export function createLocalService({ adapter = pendingAdapter, pairingCode = randomBytes(18).toString('base64url'), requestTimeoutMs = 180000, localTransport = null } = {}) {
+export function createLocalService({ adapter = pendingAdapter, pairingCode = randomBytes(18).toString('base64url'), requestTimeoutMs = 180000, localTransport = null, pairingStore = null } = {}) {
   let pairAvailable = true, pairFailures = 0
   const pairExpires = Date.now() + 10 * 60 * 1000
   const sessions = new Map(), controllers = new Set()
@@ -59,20 +59,24 @@ export function createLocalService({ adapter = pendingAdapter, pairingCode = ran
         if (!pairAvailable || Date.now() > pairExpires || pairFailures >= 5) throw new LocalError('pairing_expired', 403)
         if (!equal(body?.code, pairingCode)) { pairFailures++; throw new LocalError('pairing_rejected', 403) }
         pairAvailable = false
-        const token = randomBytes(32).toString('base64url')
-        sessions.set(token, { expiresAt: Date.now() + SESSION_MS, origin })
+        const remembered = origin === PAGES_ORIGIN && body.remember === true
+        if (remembered && !pairingStore) throw new LocalError('pairing_remember_unavailable', 503)
+        const token = remembered ? await pairingStore.issue(origin) : randomBytes(32).toString('base64url')
+        if (!remembered) sessions.set(token, { expiresAt: Date.now() + SESSION_MS, origin })
         // Cross-site cookies are unreliable and needlessly expose ambient authority.
         // This is a short-lived Reader pairing capability, NOT an OpenAI token.
-        if (origin === PAGES_ORIGIN) { json(res, 200, { paired: true, session: token }); return }
+        if (origin === PAGES_ORIGIN) { json(res, 200, { paired: true, session: token, remembered }); return }
         res.setHeader('Set-Cookie', `reader_local=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MS / 1000}`)
         json(res, 200, { paired: true }); return
       }
       for (const [key, session] of sessions) if (session.expiresAt < Date.now()) sessions.delete(key)
       const session = origin === PAGES_ORIGIN ? req.headers['x-reader-session'] : /(?:^|;\s*)reader_local=([A-Za-z0-9_-]+)(?:;|$)/.exec(req.headers.cookie || '')?.[1]
       const trustedProxy = localTransport && localTransport.expiresAt > Date.now() && origin === 'http://127.0.0.1:5173' && equal(req.headers['x-reader-local-transport'], localTransport.key)
-      if (!trustedProxy && (!session || sessions.get(session)?.origin !== origin)) throw new LocalError('pairing_required', 401)
+      const rememberedSession = origin === PAGES_ORIGIN && session && pairingStore ? await pairingStore.validate(session, origin) : false
+      if (!trustedProxy && !rememberedSession && (!session || sessions.get(session)?.origin !== origin)) throw new LocalError('pairing_required', 401)
       if (req.url === '/disconnect' && req.method === 'POST') {
         if (session) sessions.delete(session)
+        if (rememberedSession) await pairingStore.revoke(session)
         for (const controller of controllers) controller.abort()
         res.setHeader('Set-Cookie', 'reader_local=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
         json(res, 200, { paired: false }); return

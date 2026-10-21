@@ -1,12 +1,15 @@
 import { createLocalService } from './local-server.mjs'
 import { createChatGPTAdapter } from './chatgpt-auth.mjs'
 import { prepareLocalTransport } from './local-transport.mjs'
+import { createPairingStore } from './pairing-store.mjs'
+import { createCredentialVault } from './credential-vault.mjs'
 
 let adapter
 try { adapter = await createChatGPTAdapter() }
 catch { console.error('无法读取或保护 Reader 本机凭证。 / Unable to read or protect Reader credentials.'); process.exit(1) }
 const localTransport = await prepareLocalTransport()
-const service = createLocalService({ adapter, localTransport })
+const pairingStore = await createPairingStore(createCredentialVault(undefined, 'pairings'))
+const service = createLocalService({ adapter, localTransport, pairingStore })
 service.server.on('error', error => {
   console.error(error.code === 'EADDRINUSE' ? 'Reader 本机服务端口 8091 已被占用。 / Port 8091 is in use.' : 'Reader 本机服务无法启动。 / Unable to start local service.')
   process.exitCode = 1

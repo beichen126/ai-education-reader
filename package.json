@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "3.0.3",
+  "version": "3.0.4",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -12,11 +12,12 @@
     "dev:local": "vite --mode reader-local --host 127.0.0.1 --port 5173 --strictPort",
     "local:server": "node server/start.mjs",
     "local:server:proxy": "node --use-env-proxy server/start.mjs",
-    "test:local-server": "node --test scripts/test-local-server.mjs && tsx scripts/test-local-provider.ts",
+    "test:local-server": "node --test scripts/test-local-server.mjs scripts/test-pairing-store.mjs && tsx scripts/test-local-provider.ts",
     "test:chatgpt-auth": "node --test scripts/test-chatgpt-auth.mjs",
     "test:e2e-local-provider": "node scripts/e2e-local-provider.mjs",
     "test:e2e-local-login-feedback": "node scripts/e2e-local-login-feedback.mjs",
     "test:e2e-pages-local-provider": "node scripts/e2e-pages-local-provider.mjs",
+    "test:e2e-math-limits": "node scripts/e2e-math-limits.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "docs:screenshots": "node scripts/capture-readme-assets.mjs",

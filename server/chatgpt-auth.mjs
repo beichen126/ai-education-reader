@@ -33,7 +33,17 @@ export async function createChatGPTAdapter({ vault = createCredentialVault(), fe
   }
   async function tokenRequest(parameters) {
     const response = await request(AUTH + '/api/accounts/oauth/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: parameters.toString() })
-    if (!response.ok) { await response.body?.cancel(); throw new LocalError(response.status === 400 || response.status === 401 ? 'authorization_expired' : 'token_exchange_failed', 401) }
+    if (!response.ok) {
+      // Keep only known machine codes. Never echo OAuth bodies, codes or tokens.
+      let code
+      if (response.headers.get('content-type')?.includes('application/json')) {
+        const body = await response.json().catch(() => null)
+        const raw = typeof body?.error === 'string' ? body.error : body?.error?.code
+        if (['invalid_grant', 'invalid_refresh_token', 'token_expired', 'refresh_token_expired', 'refresh_token_invalidated', 'refresh_token_reused'].includes(raw)) code = 'authorization_expired'
+        if (raw === 'invalid_client') code = 'oauth_invalid_client'
+      } else await response.body?.cancel()
+      throw new LocalError(code || `token_endpoint_http_${response.status}`, 502)
+    }
     const tokens = await response.json()
     if (typeof tokens.access_token !== 'string' || !Number.isFinite(tokens.expires_in) || tokens.expires_in <= 0 || tokens.token_type?.toLowerCase() !== 'bearer') throw new LocalError('invalid_token_response', 502)
     return tokens
@@ -99,11 +109,15 @@ export async function createChatGPTAdapter({ vault = createCredentialVault(), fe
       res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
       const finish = (status, text) => { res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(`<html><body><p>${text}</p><p>Return to Reader / 请返回 Reader。</p></body></html>`) }
       try {
-        const port = callback.address()?.port
-        if (req.headers.host !== `127.0.0.1:${port}` || req.method !== 'GET') { finish(403, 'Invalid callback'); return }
-        const url = new URL(req.url, `http://127.0.0.1:${port}`)
+        // Keep the registered address stable even after close() starts draining
+        // keep-alive connections. server.address() can already be null then.
+        const registered = new URL(transaction.redirectUri)
+        if (req.headers.host !== registered.host) { finish(403, 'Callback host mismatch / 回调地址不匹配，请勿把 127.0.0.1 改成 localhost'); return }
+        if (req.method !== 'GET') { finish(405, 'Callback requires GET / 回调请求方式不正确，请从 Reader 发起新的登录'); return }
+        const url = new URL(req.url, registered.origin)
         if (url.pathname !== '/auth/callback') { finish(404, 'Not found'); return }
-        if (pending !== transaction || transaction.used || !safeEqual(url.searchParams.get('state'), transaction.state)) { finish(400, 'Invalid or expired authorization state'); return }
+        if (transaction.used) { finish(409, 'Callback already processed / 此回调已处理，请返回 Reader 查看结果，不要刷新回调页'); return }
+        if (pending !== transaction || !safeEqual(url.searchParams.get('state'), transaction.state)) { finish(400, 'Invalid or expired authorization state / 本次登录状态不匹配或已过期，请从 Reader 重新发起'); return }
         transaction.used = true
         if (url.searchParams.has('error')) throw new LocalError('authorization_denied', 403)
         const returnedClient = url.searchParams.get('client_id')
@@ -128,7 +142,9 @@ export async function createChatGPTAdapter({ vault = createCredentialVault(), fe
         finish(200, 'ChatGPT authorization received / ChatGPT 授权已接收')
       } catch (error) {
         lastError = error instanceof LocalError ? error.code : 'identity_validation_failed'
-        finish(400, 'Authorization failed. Check Reader status / 授权失败，请查看 Reader 状态')
+        // lastError is generated locally or selected from a fixed error vocabulary.
+        const safeCode = /^[a-z0-9_]{1,80}$/.test(lastError) ? lastError : 'authorization_failed'
+        finish(400, `Authorization failed: ${safeCode} / 授权失败，请返回 Reader 查看具体错误`)
       } finally {
         // Bad unsolicited callbacks must not cancel the real pending attempt.
         if (transaction.used && pending === transaction) { clearTimeout(transaction.timer); pending = null; callback.close() }

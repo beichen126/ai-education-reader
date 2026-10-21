@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { generateKeyPair, SignJWT, exportJWK, createLocalJWKSet } from 'jose'
 import { createHash } from 'node:crypto'
+import { request as httpRequest } from 'node:http'
 import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, dirname, resolve } from 'node:path'
@@ -18,13 +19,14 @@ function memoryVault() {
   let saved
   return { load: async () => saved ? structuredClone(saved) : { hostId: 'urn:uuid:test-host', profiles: [], activeId: null }, save: async state => { saved = structuredClone(state) }, snapshot: () => structuredClone(saved) }
 }
-async function setup(t, { scope = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct', wrongNonce = false } = {}) {
+async function setup(t, { scope = 'openid profile email offline_access resource.invoke chatgpt.tokens.use.direct', wrongNonce = false, tokenStatus = 200 } = {}) {
   const vault = memoryVault(), requests = []
   let authorize, refreshes = 0
   const clientId = 'oaiapp_test_reader'
   const adapter = await createChatGPTAdapter({ vault, verify: (token, audience, nonce) => verifyIdentity(token, audience, nonce, keyset), fetchImpl: async (url, init) => {
     requests.push({ url, init })
     if (url.endsWith('/api/accounts/oauth/token')) {
+      if (tokenStatus !== 200) return new Response('<html>PRIVATE_DIAGNOSTIC_DO_NOT_ECHO</html>', { status: tokenStatus, headers: { 'Content-Type': 'text/html' } })
       const body = new URLSearchParams(init.body)
       assert.equal(body.get('client_id'), clientId)
       if (body.get('grant_type') === 'refresh_token') refreshes++
@@ -86,6 +88,26 @@ test('missing actual subscription scope does not activate credentials', async t 
   assert.equal((await f.adapter.status()).errorCode, 'subscription_scope_missing')
   assert.equal(f.vault.snapshot().activeId, null)
   assert.equal((await f.start()).searchParams.get('client_id'), 'oaiapp_test_reader')
+})
+
+test('callback method/host rejection preserves pending login; actual token HTTP status is visible without body leakage', async t => {
+  const f = await setup(t, { tokenStatus: 403 }); const start = await f.start()
+  const callback = start.searchParams.get('redirect_uri')
+  const method = await fetch(callback, { method: 'POST' })
+  assert.equal(method.status, 405); assert.match(await method.text(), /requires GET/)
+  assert.equal((await f.adapter.status()).login, 'pending')
+  const host = await new Promise((resolve, reject) => {
+    const request = httpRequest(callback, { headers: { Host: 'localhost:' + new URL(callback).port } }, response => {
+      let text = ''; response.on('data', chunk => { text += chunk }); response.on('end', () => resolve({ status: response.statusCode, text }))
+    }); request.on('error', reject); request.end()
+  })
+  assert.equal(host.status, 403); assert.match(host.text, /host mismatch/)
+  assert.equal((await f.adapter.status()).login, 'pending')
+  const returned = await f.callback()
+  assert.equal(returned.status, 400)
+  const text = await returned.text()
+  assert.match(text, /token_endpoint_http_403/); assert.doesNotMatch(text, /PRIVATE_DIAGNOSTIC/)
+  assert.equal((await f.adapter.status()).errorCode, 'token_endpoint_http_403')
 })
 test('wrong signed nonce does not activate credentials', async t => {
   const f = await setup(t, { wrongNonce: true }); await f.start()

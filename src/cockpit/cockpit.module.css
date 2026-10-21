@@ -272,6 +272,7 @@
 .localProvider p { font-size: 12px; line-height: 1.6; color: var(--dsw-alias-label-secondary); overflow-wrap: anywhere; }
 .localProvider label { display: block; font-size: 13px; }
 .localProvider select, .localProvider input { box-sizing: border-box; width: 100%; max-width: 100%; min-width: 0; padding: 8px; margin: 6px 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); color: inherit; }
+.localProvider input[type="checkbox"] { width: 16px; height: 16px; padding: 0; margin: 8px 6px 8px 0; vertical-align: middle; }
 .localProvider button { padding: 7px 10px; margin: 4px 6px 4px 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: transparent; color: inherit; cursor: pointer; }
 .localProvider button:disabled { opacity: .5; cursor: default; }
 .localProvider [role="status"] { padding: 10px; border-radius: 8px; background: var(--dsw-alias-bg-layer-1); min-height: 20px; }

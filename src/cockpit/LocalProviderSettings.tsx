@@ -7,6 +7,7 @@ import css from './cockpit.module.css'
 export function LocalProviderSettings() {
   const settings = useSettings(s => s)
   const automaticConnection = usesLocalProxy()
+  const [rememberPairing, setRememberPairing] = useState(true)
   const [code, setCode] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<LocalStatus | null>(null)
   const [paired, setPaired] = useState(false)
@@ -68,7 +69,7 @@ export function LocalProviderSettings() {
       if (action === 'logout') { setWaiting(false); setLoginUrl(''); const result = await logoutChatGPT(); setMessage(result.revoked ? tx('已退出 ChatGPT 并清除本机凭证。', 'Signed out of ChatGPT and cleared local credentials.') : localErrorLabel('revocation_unconfirmed')); return }
       if (action === 'cancel') { await cancelChatGPTLogin(); setWaiting(false); setLoginUrl(''); setMessage(tx('已取消登录。', 'Sign-in cancelled.')); return }
       if (action === 'disconnect') { await disconnectLocalService(signal); setPaired(false); setStatus(null); setWaiting(false); setLoginUrl(''); setMessage(tx('本机配对已断开；这不等同于撤销 OpenAI 授权。', 'Local pairing disconnected; this does not revoke OpenAI authorization.')); return }
-      if (action === 'pair') { await pairLocalService(code.trim(), signal); setCode(''); setPaired(true) }
+      if (action === 'pair') { await pairLocalService(code.trim(), signal, rememberPairing); setCode(''); setPaired(true) }
       const next = await getLocalStatus(signal)
       if (!current.signal.aborted) { setPaired(true); setStatus(next); setMessage(next.ready ? tx('服务已就绪。', 'Service ready.') : next.errorCode ? localErrorLabel(next.errorCode) : automaticConnection ? tx('已自动连接本机服务。下一步：点击 Continue with ChatGPT。', 'Local service connected automatically. Next: click Continue with ChatGPT.') : tx('配对成功。下一步：点击 Continue with ChatGPT。', 'Paired. Next: click Continue with ChatGPT.')); if (next.login === 'pending') setWaiting(true) }
     } catch (error) { if (!current.signal.aborted) {
@@ -87,16 +88,17 @@ export function LocalProviderSettings() {
       <option value="openai-local" disabled={!isLocalReader()}>{tx('OpenAI（本机 ChatGPT 订阅）', 'OpenAI (local ChatGPT subscription)')}</option>
     </select>
     <p>{tx('在本电脑运行 npm run local:server。GitHub Pages 可通过下方配对连接；浏览器询问本地网络访问时请选择允许。也可运行 npm run dev:local 自动连接。目录识别和联网仍使用原有 DeepSeek 配置。', 'Run npm run local:server on this computer. Pair below from GitHub Pages and allow local network access when prompted, or run npm run dev:local for automatic connection. TOC and web research retain existing DeepSeek settings.')}</p>
-    {!automaticConnection && <p>{tx('网页连接仅保留在当前页面内存中，不保存 OpenAI Token。刷新页面后需重启本机服务获取新配对码；已保存的 ChatGPT 授权仍保留。', 'The web connection is held only in page memory; no OpenAI tokens are stored. After a page reload, restart the local service for a new pairing code. Saved ChatGPT authorization is retained.')}</p>}
+    {!automaticConnection && <p>{tx('勾选“记住这台电脑”后，刷新页面和重启服务会自动恢复配对；连续 30 天未使用才过期，使用期间自动续期。仅保存本机配对凭证，不保存 OpenAI Token。“断开并忘记配对”可撤销。', 'Remember this computer restores pairing after page reloads and service restarts. Pairing expires after 30 days of inactivity and renews during use. Only a Reader pairing credential is stored, never OpenAI tokens. Disconnect and forget revokes it.')}</p>}
     {!isLocalReader() ? <p>{tx('当前站点不在本机连接允许列表中；请使用官方 GitHub Pages 或受支持的本地地址。现有 API 功能不受影响。', 'This site is not allowed to connect locally. Use the official GitHub Pages or a supported local origin. Existing API features are unaffected.')}</p> : <>
       <p data-testid="local-connection-stage">{automaticConnection ? tx('① 自动连接本机服务 → ② 使用已保存的 ChatGPT 授权 → ③ 选择模型', '① Connect automatically → ② Use saved ChatGPT authorization → ③ Select model') : paired ? tx('① 本机已配对 → ② ChatGPT 登录授权 → ③ 选择模型', '① Local service paired → ② Authorize ChatGPT → ③ Select model') : tx('① 填写配对码并点“配对” → ② ChatGPT 登录授权 → ③ 选择模型', '① Enter code and click Pair → ② Authorize ChatGPT → ③ Select model')}</p>
       {!automaticConnection && <>
       <label>{tx('终端中的一次性本机配对码（不是 OpenAI Token）', 'One-use local pairing code from the terminal (not an OpenAI token)')}
         <input type="password" autoComplete="off" value={code} onChange={event => setCode(event.target.value)} /></label>
       <button type="button" disabled={busy || !code} onClick={() => void run('pair')}>{tx('配对', 'Pair')}</button>
+      <label><input type="checkbox" checked={rememberPairing} onChange={event => setRememberPairing(event.target.checked)} />{tx('记住这台电脑（仅限可信任的个人电脑）', 'Remember this computer (trusted personal computers only)')}</label>
       </>}
       <button type="button" disabled={busy} onClick={() => void run('check')}>{tx('检查本机状态', 'Check local status')}</button>
-      {!automaticConnection && <button type="button" disabled={busy} onClick={() => void run('disconnect')}>{tx('断开本机配对', 'Disconnect local pairing')}</button>}
+      {!automaticConnection && <button type="button" disabled={busy} onClick={() => void run('disconnect')}>{tx('断开并忘记配对', 'Disconnect and forget pairing')}</button>}
       <div>
         <button type="button" disabled={!paired || busy || waiting} onClick={() => void login()}>Continue with ChatGPT</button>
         <button type="button" disabled={!paired || busy || waiting} onClick={() => void login(true)}>{tx('添加其他 ChatGPT 账户', 'Add another ChatGPT account')}</button>

@@ -4,13 +4,26 @@ import { tx } from '../engine/locale'
 const ENDPOINT = import.meta.env?.MODE === 'reader-local' ? '/__reader_local' : 'http://127.0.0.1:8091'
 export const usesLocalProxy = () => import.meta.env?.MODE === 'reader-local'
 export const isPagesReader = () => typeof location !== 'undefined' && location.origin === 'https://beichen126.github.io'
-// Memory only: never store OpenAI credentials or pairing capabilities in backups/IDB.
+// Only the user's opt-in Reader capability is persisted. Never an OpenAI token.
+const PAIRING_KEY = 'aer-local-pairing-v1'
 let pagesSession = ''
+function savedPairing(): string {
+  try { const token = localStorage.getItem(PAIRING_KEY) || ''; return /^[A-Za-z0-9_-]{43}$/.test(token) ? token : '' } catch { return '' }
+}
+function clearPairing() { pagesSession = ''; try { localStorage.removeItem(PAIRING_KEY) } catch {} }
 export type LocalStatus = { ready: boolean; auth: string; models: string[]; images: boolean; imageModels?: string[]; login?: string; errorCode?: string; email?: string; scopes?: string[]; accounts?: { id: string; email: string; active: boolean }[]; modelLabels?: { slug: string; displayName: string }[] }
 export class LocalProviderError extends Error {
   constructor(readonly code: string) { super(localErrorLabel(code)); this.name = 'LocalProviderError' }
 }
 export function localErrorLabel(code: string): string {
+  if (code === 'pairing_remember_unavailable') return tx('请更新并重启本机服务，以支持记住配对。', 'Update and restart the local service to support remembered pairing.')
+  if (code === 'pairing_storage_unavailable') return tx('浏览器阻止了配对凭证保存，本次连接可临时使用，但刷新后需要重新配对。', 'The browser blocked pairing storage. This connection works temporarily, but a reload requires pairing again.')
+  if (code === 'pairing_device_limit') return tx('本机已记住的配对达到 16 个上限，请先在旧浏览器中断开配对。', 'This service already remembers 16 pairings. Disconnect an old browser first.')
+  if (code === 'oauth_invalid_client') return tx('OpenAI 拒绝当前应用注册（invalid_client）。不是配对码问题，请检查应用注册状态。', 'OpenAI rejected this application registration (invalid_client). This is not a pairing-code problem; check the client registration.')
+  if (/^token_endpoint_http_\d{3}$/.test(code)) {
+    const status = code.slice(-3)
+    return tx(`OpenAI 凭证接口返回 HTTP ${status}。`, `The OpenAI token endpoint returned HTTP ${status}. `) + (status === '403' ? tx('请求被拒绝，请检查返回策略及网络出口；重复登录未必能解决。现有凭证已保留。', 'The request was denied. Check policy and network egress; signing in repeatedly may not help. Existing credentials are retained.') : tx('这不是配对失败；请保留该错误码以便排查，现有凭证未清除。', 'This is not a pairing failure. Keep this error code for diagnosis; existing credentials have not been cleared.'))
+  }
   if (code === 'vision_unsupported') return tx('所选 ChatGPT 模型未声明支持图片，请切换支持图片的模型。', 'The selected ChatGPT model does not declare image support. Choose an image-capable model.')
   if (code === 'image_limit') return tx('本次请求超过 100 张图片，请减少已选页面或图片。', 'This request exceeds 100 images. Select fewer pages or images.')
   if (code === 'request_too_large') return tx('本次请求超过本机服务的 24 MiB 上限，请减少已选页面或图片。', 'This request exceeds the local service’s 24 MiB limit. Select fewer pages or images.')
@@ -46,6 +59,7 @@ export function isLocalReader(): boolean {
 async function localFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!isLocalReader()) throw new LocalProviderError('local_only')
   const hosted = isPagesReader()
+  if (hosted && !pagesSession) pagesSession = savedPairing()
   if (hosted && !pagesSession && path !== '/pair') throw new LocalProviderError('pairing_required')
   try {
     const headers = new Headers(init.headers)
@@ -53,7 +67,7 @@ async function localFetch(path: string, init: RequestInit = {}): Promise<Respons
     const response = await fetch(ENDPOINT + path, { ...init, headers, credentials: hosted ? 'omit' : 'include', signal: init.signal ?? AbortSignal.timeout(5000) })
     if (!response.ok) {
       const body = await response.json().catch(() => null)
-      if (hosted && body?.error?.code === 'pairing_required') pagesSession = ''
+      if (hosted && body?.error?.code === 'pairing_required') clearPairing()
       throw new LocalProviderError(typeof body?.error?.code === 'string' ? body.error.code : 'service_unavailable')
     }
     return response
@@ -71,14 +85,17 @@ export async function getLocalStatus(signal?: AbortSignal): Promise<LocalStatus>
   if (result.provider !== 'openai-local' || typeof result.ready !== 'boolean' || !Array.isArray(result.models)) throw new LocalProviderError('invalid_status')
   return result
 }
-export async function pairLocalService(code: string, signal?: AbortSignal): Promise<void> {
-  const result = await (await localFetch('/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }), signal })).json()
+export async function pairLocalService(code: string, signal?: AbortSignal, remember = false): Promise<void> {
+  const result = await (await localFetch('/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, remember }), signal })).json()
   if (isPagesReader()) {
     if (typeof result.session !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(result.session)) throw new LocalProviderError('invalid_status')
     pagesSession = result.session
+    if (remember && result.remembered !== true) throw new LocalProviderError('pairing_remember_unavailable')
+    try { if (remember) localStorage.setItem(PAIRING_KEY, result.session); else localStorage.removeItem(PAIRING_KEY) }
+    catch { if (remember) throw new LocalProviderError('pairing_storage_unavailable') }
   }
 }
-export async function disconnectLocalService(signal?: AbortSignal): Promise<void> { try { await localFetch('/disconnect', { method: 'POST', signal }) } finally { pagesSession = '' } }
+export async function disconnectLocalService(signal?: AbortSignal): Promise<void> { try { await localFetch('/disconnect', { method: 'POST', signal }) } finally { clearPairing() } }
 export async function beginChatGPTLogin(newAccount = false): Promise<string> {
   const result = await (await localFetch('/auth/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newAccount }) })).json()
   const url = new URL(result.authorizationUrl)

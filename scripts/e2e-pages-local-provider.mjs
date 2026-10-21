@@ -4,18 +4,22 @@ import { readFile } from 'node:fs/promises'
 import { build } from 'esbuild'
 import { launchBrowser } from './e2e-browser.mjs'
 import { createLocalService } from '../server/local-server.mjs'
+import { createPairingStore } from '../server/pairing-store.mjs'
 
 // HTTPS origin is fulfilled in an isolated test context. The browser still performs
 // real CORS/preflight/loopback requests; upstream inference is Mock, never billable.
 let upstreamCalls = 0
-const service = createLocalService({ pairingCode: 'test-pages-only', adapter: {
+let persisted = { hostId: 'urn:uuid:test-pages-pairing', profiles: [] }
+const vault = { load: async () => structuredClone(persisted), save: async value => { persisted = structuredClone(value) } }
+const adapter = {
   status: async () => ({ ready: true, auth: 'authorized', models: ['mock-model'], imageModels: ['mock-model'], images: true }),
   stream: async request => {
     upstreamCalls++
     assert.equal(request.input[0].content[1].type, 'input_image')
     return new Response('data: {"type":"response.output_text.delta","delta":"image OK"}\n\ndata: {"type":"response.completed"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
   },
-} })
+}
+let service = createLocalService({ pairingCode: 'test-pages-only', adapter, pairingStore: await createPairingStore(vault) })
 service.server.listen(0, '127.0.0.1'); await once(service.server, 'listening')
 const endpoint = `http://127.0.0.1:${service.server.address().port}`
 const browser = await launchBrowser()
@@ -46,5 +50,29 @@ try {
   await page.reload()
   assert.equal(await page.evaluate(async () => { try { await window.ReaderLocal.getLocalStatus() } catch (error) { return error.code } }), 'pairing_required')
   await context.close()
-  console.log('PASS: HTTPS Pages-origin browser pairing, real loopback CORS, image SSE completion, disconnect, memory-only connection, reload; upstream Mock')
+  async function restart() {
+    await service.stop()
+    service = createLocalService({ pairingCode: 'test-remember-only', adapter, pairingStore: await createPairingStore(vault) })
+    service.server.listen(Number(new URL(endpoint).port), '127.0.0.1'); await once(service.server, 'listening')
+  }
+  await restart()
+  const remembered = await browser.newContext()
+  await remembered.grantPermissions(['local-network-access'], { origin: 'https://beichen126.github.io' })
+  await remembered.route('https://beichen126.github.io/**', route => route.fulfill({ contentType: 'text/html', body: '<!doctype html><title>Remember pairing test</title><script>' + bundled.outputFiles[0].text + '</script>' }))
+  const rememberedPage = await remembered.newPage()
+  await rememberedPage.goto('https://beichen126.github.io/ai-education-reader/transport-test')
+  await rememberedPage.evaluate(() => window.ReaderLocal.pairLocalService('test-remember-only', undefined, true))
+  assert.equal(await rememberedPage.evaluate(() => localStorage.length), 1)
+  await rememberedPage.reload()
+  assert.equal(await rememberedPage.evaluate(async () => (await window.ReaderLocal.getLocalStatus()).ready), true)
+  await restart()
+  await rememberedPage.reload()
+  assert.equal(await rememberedPage.evaluate(async () => (await window.ReaderLocal.getLocalStatus()).ready), true)
+  await rememberedPage.evaluate(() => window.ReaderLocal.disconnectLocalService())
+  assert.equal(await rememberedPage.evaluate(() => localStorage.length), 0)
+  await restart()
+  await rememberedPage.reload()
+  assert.equal(await rememberedPage.evaluate(async () => { try { await window.ReaderLocal.getLocalStatus() } catch (error) { return error.code } }), 'pairing_required')
+  await remembered.close()
+  console.log('PASS: HTTPS Pages CORS, image SSE, temporary pairing; remembered pairing survives reload/service restart, forget revokes permanently; upstream Mock')
 } finally { await browser.close(); await service.stop() }

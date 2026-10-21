@@ -1,6 +1,7 @@
 # build / deps
 node_modules/
 dist/
+/output/
 .vite/
 coverage/
 .cache/
