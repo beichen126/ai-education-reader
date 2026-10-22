@@ -4,12 +4,14 @@
 // Stage 1 invariant: rendered pages are Blobs used ONLY for local preview.
 // They are never written to attachments / draft / messages / Gallery, and never
 // sent to the AI. Stage 2 will feed these Blobs into the existing attachment service.
-import * as pdfjsLib from 'pdfjs-dist'
+// The modern build assumes Iterator helpers, absent in older Android WebViews.
+// Use PDF.js's maintained compatibility build in both window and worker.
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 // Emit the ES-module worker as a static asset; pdfjs v6 constructs a module
 // worker (new Worker(url, { type: "module" })) and, being same-origin with the
 // app, uses this URL directly (no CDN wrapper, no fake worker, no 404 under the
 // /ai-education-reader/ base path).
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { createPdfDocumentInit } from './pdf-runtime'
 import { PDF_FILE_MIME, type LocalPdfDocument } from './pdf-types.ts'
 import { parsePdfOutline, type PdfOutlineResult } from './pdf-outline.ts'

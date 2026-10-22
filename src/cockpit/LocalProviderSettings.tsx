@@ -6,7 +6,10 @@ import css from './cockpit.module.css'
 
 export function LocalProviderSettings() {
   const settings = useSettings(s => s)
-  const automaticConnection = usesLocalProxy()
+  // Android App 内用原生桥实现同一份官方授权，没有本机服务与配对码，视同“自动连接”。
+  const androidBridge = typeof window !== 'undefined' && !!(window as unknown as { AndroidChatGpt?: unknown }).AndroidChatGpt
+  const androidApp = androidBridge || (typeof location !== 'undefined' && location.origin === 'https://appassets.androidplatform.net')
+  const automaticConnection = usesLocalProxy() || androidApp
   const [rememberPairing, setRememberPairing] = useState(true)
   const [code, setCode] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<LocalStatus | null>(null)
@@ -85,19 +88,21 @@ export function LocalProviderSettings() {
       void patchSettings({ chatProvider: event.target.value === 'openai-local' ? 'openai-local' : 'deepseek' }).catch(() => setMessage(tx('设置保存失败。', 'Unable to save settings.')))
     }}>
       <option value="deepseek">{tx('DeepSeek / 兼容 API（原有方式）', 'DeepSeek / compatible API (existing)')}</option>
-      <option value="openai-local" disabled={!isLocalReader()}>{tx('OpenAI（本机 ChatGPT 订阅）', 'OpenAI (local ChatGPT subscription)')}</option>
+      <option value="openai-local" disabled={!isLocalReader()}>{androidBridge ? tx('OpenAI（ChatGPT 订阅 · 手机内置）', 'OpenAI (ChatGPT plan · built into app)') : tx('OpenAI（本机 ChatGPT 订阅）', 'OpenAI (local ChatGPT subscription)')}</option>
     </select>
-    <p>{tx('在本电脑运行 npm run local:server。GitHub Pages 可通过下方配对连接；浏览器询问本地网络访问时请选择允许。也可运行 npm run dev:local 自动连接。目录识别和联网仍使用原有 DeepSeek 配置。', 'Run npm run local:server on this computer. Pair below from GitHub Pages and allow local network access when prompted, or run npm run dev:local for automatic connection. TOC and web research retain existing DeepSeek settings.')}</p>
+    {androidBridge
+      ? <p>{tx('当前为 Android App：使用原生官方 ChatGPT 登录，无需本机服务或配对码。目录识别和联网仍使用原有 DeepSeek 配置。', 'Android app: native official ChatGPT sign-in is used; no local service or pairing code is needed. TOC and web research retain the existing DeepSeek settings.')}</p>
+      : <p>{tx('在本电脑运行 npm run local:server。GitHub Pages 可通过下方配对连接；浏览器询问本地网络访问时请选择允许。也可运行 npm run dev:local 自动连接。目录识别和联网仍使用原有 DeepSeek 配置。', 'Run npm run local:server on this computer. Pair below from GitHub Pages and allow local network access when prompted, or run npm run dev:local for automatic connection. TOC and web research retain existing DeepSeek settings.')}</p>}
     {!automaticConnection && <p>{tx('勾选“记住这台电脑”后，刷新页面和重启服务会自动恢复配对；连续 30 天未使用才过期，使用期间自动续期。仅保存本机配对凭证，不保存 OpenAI Token。“断开并忘记配对”可撤销。', 'Remember this computer restores pairing after page reloads and service restarts. Pairing expires after 30 days of inactivity and renews during use. Only a Reader pairing credential is stored, never OpenAI tokens. Disconnect and forget revokes it.')}</p>}
     {!isLocalReader() ? <p>{tx('当前站点不在本机连接允许列表中；请使用官方 GitHub Pages 或受支持的本地地址。现有 API 功能不受影响。', 'This site is not allowed to connect locally. Use the official GitHub Pages or a supported local origin. Existing API features are unaffected.')}</p> : <>
-      <p data-testid="local-connection-stage">{automaticConnection ? tx('① 自动连接本机服务 → ② 使用已保存的 ChatGPT 授权 → ③ 选择模型', '① Connect automatically → ② Use saved ChatGPT authorization → ③ Select model') : paired ? tx('① 本机已配对 → ② ChatGPT 登录授权 → ③ 选择模型', '① Local service paired → ② Authorize ChatGPT → ③ Select model') : tx('① 填写配对码并点“配对” → ② ChatGPT 登录授权 → ③ 选择模型', '① Enter code and click Pair → ② Authorize ChatGPT → ③ Select model')}</p>
+      <p data-testid="local-connection-stage">{androidApp ? tx('点击 Continue with ChatGPT 登录，授权后选择模型即可使用；无需配对。', 'Continue with ChatGPT, then choose a model after authorization. No pairing is needed.') : automaticConnection ? tx('① 自动连接本机服务 → ② 使用已保存的 ChatGPT 授权 → ③ 选择模型', '① Connect automatically → ② Use saved ChatGPT authorization → ③ Select model') : paired ? tx('① 本机已配对 → ② ChatGPT 登录授权 → ③ 选择模型', '① Local service paired → ② Authorize ChatGPT → ③ Select model') : tx('① 填写配对码并点“配对” → ② ChatGPT 登录授权 → ③ 选择模型', '① Enter code and click Pair → ② Authorize ChatGPT → ③ Select model')}</p>
       {!automaticConnection && <>
       <label>{tx('终端中的一次性本机配对码（不是 OpenAI Token）', 'One-use local pairing code from the terminal (not an OpenAI token)')}
         <input type="password" autoComplete="off" value={code} onChange={event => setCode(event.target.value)} /></label>
       <button type="button" disabled={busy || !code} onClick={() => void run('pair')}>{tx('配对', 'Pair')}</button>
       <label><input type="checkbox" checked={rememberPairing} onChange={event => setRememberPairing(event.target.checked)} />{tx('记住这台电脑（仅限可信任的个人电脑）', 'Remember this computer (trusted personal computers only)')}</label>
       </>}
-      <button type="button" disabled={busy} onClick={() => void run('check')}>{tx('检查本机状态', 'Check local status')}</button>
+      <button type="button" disabled={busy} onClick={() => void run('check')}>{androidApp ? tx('检查手机登录状态', 'Check app sign-in status') : tx('检查本机状态', 'Check local status')}</button>
       {!automaticConnection && <button type="button" disabled={busy} onClick={() => void run('disconnect')}>{tx('断开并忘记配对', 'Disconnect and forget pairing')}</button>}
       <div>
         <button type="button" disabled={!paired || busy || waiting} onClick={() => void login()}>Continue with ChatGPT</button>

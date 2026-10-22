@@ -4,6 +4,12 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。正式发布的改动按版本记录，未发布改动再单独进入 `Unreleased`。
 
+## [3.0.6] - 2026-10-22
+
+- 安卓内置 ChatGPT 登录入口不再显示电脑配对控件；原生桥缺失时明确提示，不误连手机的 localhost 服务。桌面及 GitHub Pages 配对方式不变。
+- PDF 阅读与资料库使用 PDF.js 官方兼容构建及配套 Worker，修复旧版 Android WebView 的 `Iterator is not defined`。
+- 安卓添加资料菜单新增“拍照 / Take photo”，系统相机拍摄后进入现有图片草稿流程，取消不发送消息。需要安装配套新版 APK；GitHub Pages 不提供原生相机桥。
+
 ## [3.0.5] - 2026-10-22
 
 - 本机 Provider 在等待连接检查前立即显示准备状态并占用发送锁；重复提交只发起一次请求，双击发送不会误触停止。准备阶段取消不清空尚未提交的草稿。

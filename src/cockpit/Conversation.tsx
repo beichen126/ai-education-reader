@@ -580,6 +580,8 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
   const libGenRef = useRef(0)
   const libCancelledRef = useRef(false)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement | null>(null)
+  const androidCamera = typeof window !== 'undefined' && !!(window as Window & { AndroidChatGpt?: unknown }).AndroidChatGpt
   const pdfInputRef = useRef<HTMLInputElement | null>(null)
   const materialsInputRef = useRef<HTMLInputElement | null>(null)
   const attachBtnRef = useRef<HTMLButtonElement | null>(null)
@@ -741,11 +743,13 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
               <button type="button" className={css.menuItem} data-testid="composer-add-local" onClick={() => { setAttachMenuOpen(false); materialsInputRef.current?.click() }}><IconDocument16 /><span>{tx('本地文件', 'Local files')}<small>{tx('图片或单个 PDF', 'Images or one PDF')}</small></span></button>
               <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}><IconFolderOpenOutline16 /><span>{tx('资料库', 'Library')}<small>{tx('选择已保存的资料', 'Choose saved materials')}</small></span></button>
             </div>
+            {androidCamera && <button type="button" className={css.menuItem} data-testid="composer-camera" onClick={() => { setAttachMenuOpen(false); cameraInputRef.current?.click() }}><IconDocument16 /><span>{tx('拍照', 'Take photo')}<small>{tx('拍摄后加入草稿', 'Add captured photo to draft')}</small></span></button>}
             <label className={css.webSearchToggle}><input type="checkbox" checked={webSearchEnabled} disabled={busy || settingsPending} onChange={event => { void patchSettings({ webSearchEnabled: event.target.checked }).catch(() => setPhotoError(tx('无法保存联网设置，请重试。', 'Unable to save web search settings. Try again.'))) }} />{tx('联网搜索', 'Web search')}</label>
             <small className={css.webSearchHint}>{tx('使用当前 API 配置；搜索和网页读取单独计费。', 'Uses current API settings. Search and webpage reads are billed separately.')}</small>
           </div>
         )}
         <input ref={imageInputRef} data-testid="composer-images-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />
+        {androidCamera && <input ref={cameraInputRef} data-testid="composer-camera-input" type="file" accept=".jpg" capture="environment" hidden onChange={e => { if (e.target.files?.length) onFiles(e.target.files); e.target.value = '' }} />}
         <input ref={pdfInputRef} data-testid="composer-pdf-input" type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
         <input ref={materialsInputRef} data-testid="composer-materials-input" type="file" accept=".pdf,application/pdf,.jpg,.jpeg,.png,.gif,.webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onMaterialsSelected(e.target.files); e.target.value = '' }} />
         <textarea ref={textareaRef} rows={1} className={css.composerText} value={text} aria-label={tx('输入消息', 'Message')} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}

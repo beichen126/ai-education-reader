@@ -4,6 +4,42 @@ import { tx } from '../engine/locale'
 const ENDPOINT = import.meta.env?.MODE === 'reader-local' ? '/__reader_local' : 'http://127.0.0.1:8091'
 export const usesLocalProxy = () => import.meta.env?.MODE === 'reader-local'
 export const isPagesReader = () => typeof location !== 'undefined' && location.origin === 'https://beichen126.github.io'
+
+// ---------------------------------------------------------------------------
+// Android 原生桥（F:\Android\projects\ai-education-reader）：
+// App 内用 Kotlin 实现官方 SIWC 流程，替代桌面端的 127.0.0.1:8091 本机服务。
+// 桥存在时所有本机 Provider 调用都走它；桌面浏览器里保持原行为不变。
+// ---------------------------------------------------------------------------
+type AndroidNativeBridge = {
+  status(): string
+  refreshStatus?(): void
+  models?(): void
+  beginLogin(newAccount: boolean): string
+  openAuthorization(url: string): void
+  cancelLogin(): void
+  logout(): void
+  selectAccount(id: string): void
+  streamChat(requestId: string, model: string, messagesJson: string): void
+  cancelChat(requestId: string): void
+}
+type AndroidChatEvent = { type?: string; text?: string; content?: string; code?: string }
+type AndroidEventBridge = {
+  subscribeStatus(listener: (status: unknown) => void): () => void
+  subscribeChat(requestId: string, listener: (event: AndroidChatEvent) => void): () => void
+}
+function androidBridge(): { native: AndroidNativeBridge; events: AndroidEventBridge } | null {
+  const host = globalThis as unknown as {
+    AndroidChatGpt?: AndroidNativeBridge
+    __androidChatGpt?: AndroidEventBridge
+  }
+  return host.AndroidChatGpt && host.__androidChatGpt
+    ? { native: host.AndroidChatGpt, events: host.__androidChatGpt }
+    : null
+}
+function isAndroidApp(): boolean {
+  return typeof location !== 'undefined' && location.origin === 'https://appassets.androidplatform.net'
+}
+
 // Only the user's opt-in Reader capability is persisted. Never an OpenAI token.
 const PAIRING_KEY = 'aer-local-pairing-v1'
 let pagesSession = ''
@@ -13,11 +49,12 @@ function savedPairing(): string {
   try { const token = localStorage.getItem(PAIRING_KEY) || ''; return /^[A-Za-z0-9_-]{43}$/.test(token) ? token : '' } catch { return '' }
 }
 function clearPairing() { pagesSession = ''; cachedStatus = null; statusEpoch++; try { localStorage.removeItem(PAIRING_KEY) } catch {} }
-export type LocalStatus = { ready: boolean; auth: string; models: string[]; images: boolean; imageModels?: string[]; login?: string; errorCode?: string; email?: string; scopes?: string[]; accounts?: { id: string; email: string; active: boolean }[]; modelLabels?: { slug: string; displayName: string }[] }
+export type LocalStatus = { provider?: string; ready: boolean; auth: string; models: string[]; images: boolean; imageModels?: string[]; login?: string; errorCode?: string; email?: string; scopes?: string[]; accounts?: { id: string; email: string; active: boolean }[]; modelLabels?: { slug: string; displayName: string }[] }
 export class LocalProviderError extends Error {
   constructor(readonly code: string) { super(localErrorLabel(code)); this.name = 'LocalProviderError' }
 }
 export function localErrorLabel(code: string): string {
+  if (code === 'android_bridge_unavailable') return tx('Android 内置登录组件未加载，请更新 APK；手机端不需要电脑配对码。', 'The Android sign-in component did not load. Update the APK; no desktop pairing code is needed.')
   if (code === 'authorization_pending') return tx('ChatGPT 登录仍在进行，请完成或取消本次登录后再发送；这不表示已有授权丢失。', 'ChatGPT sign-in is still pending. Complete or cancel it before sending; this does not mean saved authorization was lost.')
   if (code === 'pairing_remember_unavailable') return tx('请更新并重启本机服务，以支持记住配对。', 'Update and restart the local service to support remembered pairing.')
   if (code === 'pairing_storage_unavailable') return tx('浏览器阻止了配对凭证保存，本次连接可临时使用，但刷新后需要重新配对。', 'The browser blocked pairing storage. This connection works temporarily, but a reload requires pairing again.')
@@ -57,9 +94,10 @@ export function localErrorLabel(code: string): string {
   return tx('本机接口返回错误：', 'Local API returned an error: ') + safeCode + tx('。请检查状态；不代表需要重新授权。', '. Check status; this does not necessarily require reauthorization.')
 }
 export function isLocalReader(): boolean {
-  return typeof location !== 'undefined' && (isPagesReader() || ['http://127.0.0.1:5173', 'http://127.0.0.1:4173'].includes(location.origin))
+  return typeof location !== 'undefined' && (isPagesReader() || isAndroidApp() || ['http://127.0.0.1:5173', 'http://127.0.0.1:4173'].includes(location.origin))
 }
 async function localFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  if (isAndroidApp()) throw new LocalProviderError('android_bridge_unavailable')
   if (!isLocalReader()) throw new LocalProviderError('local_only')
   const hosted = isPagesReader()
   if (path.startsWith('/auth/') || path === '/pair' || path === '/disconnect') { cachedStatus = null; statusEpoch++ }
@@ -86,6 +124,8 @@ async function localFetch(path: string, init: RequestInit = {}): Promise<Respons
 export async function getLocalStatus(signal?: AbortSignal, maxAgeMs = 0): Promise<LocalStatus> {
   if (signal?.aborted) throw signal.reason
   if (!isLocalReader()) throw new LocalProviderError('local_only')
+  const bridge = androidBridge()
+  if (bridge) return await androidGetStatus(bridge, signal)
   if (maxAgeMs > 0 && cachedStatus?.origin === location.origin && Date.now() - cachedStatus.at < Math.min(maxAgeMs, 15000)) return cachedStatus.value
   const timeout = AbortSignal.timeout(35000)
   const epoch = statusEpoch
@@ -96,7 +136,51 @@ export async function getLocalStatus(signal?: AbortSignal, maxAgeMs = 0): Promis
   if (epoch === statusEpoch) cachedStatus = result.ready && result.auth === 'authorized' && !result.errorCode && result.login !== 'pending' ? { origin: location.origin, value: result, at: Date.now() } : null
   return result
 }
+
+// ---- Android 桥实现（App 内没有 127.0.0.1 本机服务，也没有配对码）----
+function parseAndroidStatus(value: unknown): LocalStatus {
+  const candidate = value as LocalStatus
+  if (!candidate || typeof candidate !== 'object' || candidate.provider !== 'openai-local'
+    || typeof candidate.ready !== 'boolean' || !Array.isArray(candidate.models)) {
+    throw new LocalProviderError('invalid_status')
+  }
+  return candidate
+}
+
+async function androidGetStatus(
+  bridge: { native: AndroidNativeBridge; events: AndroidEventBridge },
+  signal?: AbortSignal,
+): Promise<LocalStatus> {
+  const initial = parseAndroidStatus(JSON.parse(bridge.native.status()))
+  if (initial.ready || initial.auth !== 'authorized' || initial.login === 'error') return initial
+  bridge.native.refreshStatus?.()
+  return await new Promise<LocalStatus>((resolve) => {
+    let settled = false
+    const onAbort = () => finish(initial)
+    const finish = (status: LocalStatus) => {
+      if (settled) return
+      settled = true
+      off()
+      clearTimeout(timer)
+      signal?.removeEventListener?.('abort', onAbort)
+      resolve(status)
+    }
+    const off = bridge.events.subscribeStatus((next) => {
+      try {
+        const status = parseAndroidStatus(next)
+        if (status.ready || status.login === 'error' || status.login === 'signed-out') finish(status)
+      } catch {
+        /* ignore malformed event */
+      }
+    })
+    const timer = setTimeout(() => finish(initial), 8000)
+    signal?.addEventListener?.('abort', onAbort, { once: true })
+  })
+}
+
 export async function pairLocalService(code: string, signal?: AbortSignal, remember = false): Promise<void> {
+  // Android App 内不存在配对码：原生桥已内建同一份授权，直接视为已连接。
+  if (androidBridge()) return
   const result = await (await localFetch('/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, remember }), signal })).json()
   if (isPagesReader()) {
     if (typeof result.session !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(result.session)) throw new LocalProviderError('invalid_status')
@@ -106,18 +190,51 @@ export async function pairLocalService(code: string, signal?: AbortSignal, remem
     catch { if (remember) throw new LocalProviderError('pairing_storage_unavailable') }
   }
 }
-export async function disconnectLocalService(signal?: AbortSignal): Promise<void> { try { await localFetch('/disconnect', { method: 'POST', signal }) } finally { clearPairing() } }
+export async function disconnectLocalService(signal?: AbortSignal): Promise<void> {
+  if (androidBridge()) { clearPairing(); return }
+  try { await localFetch('/disconnect', { method: 'POST', signal }) } finally { clearPairing() }
+}
 export async function beginChatGPTLogin(newAccount = false): Promise<string> {
+  const bridge = androidBridge()
+  if (bridge) {
+    let parsed: { authorizationUrl?: string; error?: string }
+    try {
+      parsed = JSON.parse(bridge.native.beginLogin(newAccount))
+    } catch {
+      throw new LocalProviderError('invalid_authorization_callback')
+    }
+    if (parsed.error) throw new LocalProviderError(parsed.error)
+    if (typeof parsed.authorizationUrl !== 'string') throw new LocalProviderError('invalid_authorization_callback')
+    const url = new URL(parsed.authorizationUrl)
+    if (url.origin !== 'https://auth.openai.com' || url.pathname !== '/api/accounts/authorize') {
+      throw new LocalProviderError('invalid_authorization_callback')
+    }
+    return url.href
+  }
   const result = await (await localFetch('/auth/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ newAccount }) })).json()
   const url = new URL(result.authorizationUrl)
   if (url.origin !== 'https://auth.openai.com' || url.pathname !== '/api/accounts/authorize') throw new LocalProviderError('invalid_authorization_callback')
   return url.href
 }
-export async function cancelChatGPTLogin(): Promise<void> { await localFetch('/auth/cancel', { method: 'POST' }) }
-export async function logoutChatGPT(): Promise<{ revoked: boolean }> { return (await localFetch('/auth/logout', { method: 'POST', signal: AbortSignal.timeout(65000) })).json() }
-export async function selectChatGPTAccount(id: string): Promise<void> { await localFetch('/auth/account', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) }) }
+export async function cancelChatGPTLogin(): Promise<void> {
+  const bridge = androidBridge()
+  if (bridge) { bridge.native.cancelLogin(); return }
+  await localFetch('/auth/cancel', { method: 'POST' })
+}
+export async function logoutChatGPT(): Promise<{ revoked: boolean }> {
+  const bridge = androidBridge()
+  if (bridge) { bridge.native.logout(); return { revoked: true } }
+  return (await localFetch('/auth/logout', { method: 'POST', signal: AbortSignal.timeout(65000) })).json()
+}
+export async function selectChatGPTAccount(id: string): Promise<void> {
+  const bridge = androidBridge()
+  if (bridge) { bridge.native.selectAccount(id); return }
+  await localFetch('/auth/account', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+}
 
 export async function streamLocalChat(args: { model: string; messages: ApiChatMessage[]; signal?: AbortSignal; onDelta: (delta: string) => void }): Promise<{ content: string }> {
+  const bridge = androidBridge()
+  if (bridge) return await androidStreamChat(bridge, args)
   const signal = args.signal ? AbortSignal.any([args.signal, AbortSignal.timeout(180000)]) : AbortSignal.timeout(180000)
   const response = await localFetch('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: args.model, messages: args.messages }), signal })
   if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) throw new LocalProviderError('stream_incomplete')
@@ -145,4 +262,53 @@ export async function streamLocalChat(args: { model: string; messages: ApiChatMe
     if (signal.aborted && !args.signal?.aborted) throw new LocalProviderError('request_cancelled')
     throw error
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock() }
+}
+
+/** Android 原生桥的流式对话：事件由 Kotlin 侧通过 onChatEvent 推回。 */
+async function androidStreamChat(
+  bridge: { native: AndroidNativeBridge; events: AndroidEventBridge },
+  args: { model: string; messages: ApiChatMessage[]; signal?: AbortSignal; onDelta: (delta: string) => void },
+): Promise<{ content: string }> {
+  const requestId = `android-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+  const signal = args.signal ? AbortSignal.any([args.signal, AbortSignal.timeout(180000)]) : AbortSignal.timeout(180000)
+  return await new Promise<{ content: string }>((resolve, reject) => {
+    let settled = false
+    let content = ''
+    const onAbort = () => {
+      bridge.native.cancelChat(requestId)
+      finish(() => reject(new LocalProviderError('request_cancelled')))
+    }
+    const cleanup = () => {
+      off()
+      clearTimeout(timer)
+      signal.removeEventListener?.('abort', onAbort)
+    }
+    const finish = (action: () => void) => {
+      if (settled) return
+      settled = true
+      cleanup()
+      action()
+    }
+    const off = bridge.events.subscribeChat(requestId, (event) => {
+      if (event.type === 'delta' && typeof event.text === 'string') {
+        content += event.text
+        args.onDelta(event.text)
+      } else if (event.type === 'completed') {
+        finish(() => resolve({ content: typeof event.content === 'string' ? event.content : content }))
+      } else if (event.type === 'error') {
+        cachedStatus = null
+        finish(() => reject(new LocalProviderError(typeof event.code === 'string' ? event.code : 'invalid_stream')))
+      }
+    })
+    const timer = setTimeout(() => {
+      bridge.native.cancelChat(requestId)
+      finish(() => reject(new LocalProviderError('request_cancelled')))
+    }, 180000)
+    signal.addEventListener?.('abort', onAbort, { once: true })
+    try {
+      bridge.native.streamChat(requestId, args.model, JSON.stringify(args.messages))
+    } catch {
+      finish(() => reject(new LocalProviderError('upstream_failed')))
+    }
+  })
 }
