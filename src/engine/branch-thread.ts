@@ -114,13 +114,14 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
     const invalidInput = validateSendInput(content, imageIds, options.quickFollowUp)
     if (invalidInput) return pendingRejected(invalidInput)
     const settings = getSettingsSnapshot()
-    const providerRejection = await providerPreflight(settings)
-    if (providerRejection) return pendingRejected(providerRejection)
     const controller = new AbortController()
     const key = genBranchKey(conversationId, branchId)
     const lease = generationRegistry.acquire(key, controller, 'sending')
     if (!lease) return pendingRejected({ kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' })
     try {
+      const providerRejection = await providerPreflight(settings, controller.signal)
+      if (!lease.isCurrent()) { lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
+      if (providerRejection) { lease.release(); return pendingRejected(providerRejection) }
       const now = Date.now()
       const msg = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
       const conversation = await getConversation(conversationId)

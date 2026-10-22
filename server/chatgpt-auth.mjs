@@ -22,7 +22,7 @@ export async function verifyIdentity(token, clientId, nonce, keys = jwks) {
 export async function createChatGPTAdapter({ vault = createCredentialVault(), fetchImpl = fetch, verify = verifyIdentity, authTimeoutMs = 300000 } = {}) {
   const state = await vault.load()
   await vault.save(state) // Persist host identity before the first authorization.
-  let pending = null, refreshPromise = null, catalog = null, lastError = null, stopped = false, loggingOut = false
+  let pending = null, refreshPromise = null, catalog = null, catalogRequest = null, lastError = null, stopped = false, loggingOut = false
   const active = () => state.profiles.find(profile => profile.clientId === state.activeId)
   async function request(url, init = {}, streaming = false) {
     const allowed = new URL(url)
@@ -73,7 +73,10 @@ export async function createChatGPTAdapter({ vault = createCredentialVault(), fe
   }
   async function models(force = false) {
     const profile = active()
-    if (!force && catalog?.clientId === profile?.clientId && catalog.expires > Date.now()) return catalog.entries
+    if (!force && catalog && catalog.clientId === profile?.clientId && catalog.expires > Date.now()) return catalog.entries
+    if (catalogRequest && catalogRequest.profile === profile) return catalogRequest.promise
+    const flight = { profile, promise: null }
+    flight.promise = (async () => {
     const token = await accessToken()
     const response = await request(API + '/models', { headers: { Authorization: `Bearer ${token}` } })
     if (!response.ok) { await response.body?.cancel(); throw new LocalError(response.status === 401 ? 'authorization_expired' : 'model_discovery_failed', 502) }
@@ -85,6 +88,9 @@ export async function createChatGPTAdapter({ vault = createCredentialVault(), fe
     if (active() !== profile) throw new LocalError('authorization_changed', 409)
     catalog = { clientId: profile.clientId, expires: Date.now() + 60000, entries }
     return entries
+    })().finally(() => { if (catalogRequest === flight) catalogRequest = null })
+    catalogRequest = flight
+    return flight.promise
   }
   async function status() {
     const profile = active()

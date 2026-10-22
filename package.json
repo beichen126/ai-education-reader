@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "3.0.4",
+  "version": "3.0.5",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -18,6 +18,8 @@
     "test:e2e-local-login-feedback": "node scripts/e2e-local-login-feedback.mjs",
     "test:e2e-pages-local-provider": "node scripts/e2e-pages-local-provider.mjs",
     "test:e2e-math-limits": "node scripts/e2e-math-limits.mjs",
+    "test:local-send-latency": "tsx scripts/test-local-send-latency.ts",
+    "test:e2e-local-send-latency": "node scripts/e2e-local-send-latency.mjs",
     "build": "vite build",
     "preview": "vite preview",
     "docs:screenshots": "node scripts/capture-readme-assets.mjs",

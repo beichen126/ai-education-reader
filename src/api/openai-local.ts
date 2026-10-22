@@ -7,15 +7,18 @@ export const isPagesReader = () => typeof location !== 'undefined' && location.o
 // Only the user's opt-in Reader capability is persisted. Never an OpenAI token.
 const PAIRING_KEY = 'aer-local-pairing-v1'
 let pagesSession = ''
+let cachedStatus: { origin: string; value: LocalStatus; at: number } | null = null
+let statusEpoch = 0
 function savedPairing(): string {
   try { const token = localStorage.getItem(PAIRING_KEY) || ''; return /^[A-Za-z0-9_-]{43}$/.test(token) ? token : '' } catch { return '' }
 }
-function clearPairing() { pagesSession = ''; try { localStorage.removeItem(PAIRING_KEY) } catch {} }
+function clearPairing() { pagesSession = ''; cachedStatus = null; statusEpoch++; try { localStorage.removeItem(PAIRING_KEY) } catch {} }
 export type LocalStatus = { ready: boolean; auth: string; models: string[]; images: boolean; imageModels?: string[]; login?: string; errorCode?: string; email?: string; scopes?: string[]; accounts?: { id: string; email: string; active: boolean }[]; modelLabels?: { slug: string; displayName: string }[] }
 export class LocalProviderError extends Error {
   constructor(readonly code: string) { super(localErrorLabel(code)); this.name = 'LocalProviderError' }
 }
 export function localErrorLabel(code: string): string {
+  if (code === 'authorization_pending') return tx('ChatGPT 登录仍在进行，请完成或取消本次登录后再发送；这不表示已有授权丢失。', 'ChatGPT sign-in is still pending. Complete or cancel it before sending; this does not mean saved authorization was lost.')
   if (code === 'pairing_remember_unavailable') return tx('请更新并重启本机服务，以支持记住配对。', 'Update and restart the local service to support remembered pairing.')
   if (code === 'pairing_storage_unavailable') return tx('浏览器阻止了配对凭证保存，本次连接可临时使用，但刷新后需要重新配对。', 'The browser blocked pairing storage. This connection works temporarily, but a reload requires pairing again.')
   if (code === 'pairing_device_limit') return tx('本机已记住的配对达到 16 个上限，请先在旧浏览器中断开配对。', 'This service already remembers 16 pairings. Disconnect an old browser first.')
@@ -59,6 +62,7 @@ export function isLocalReader(): boolean {
 async function localFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (!isLocalReader()) throw new LocalProviderError('local_only')
   const hosted = isPagesReader()
+  if (path.startsWith('/auth/') || path === '/pair' || path === '/disconnect') { cachedStatus = null; statusEpoch++ }
   if (hosted && !pagesSession) pagesSession = savedPairing()
   if (hosted && !pagesSession && path !== '/pair') throw new LocalProviderError('pairing_required')
   try {
@@ -66,23 +70,30 @@ async function localFetch(path: string, init: RequestInit = {}): Promise<Respons
     if (hosted && pagesSession) headers.set('X-Reader-Session', pagesSession)
     const response = await fetch(ENDPOINT + path, { ...init, headers, credentials: hosted ? 'omit' : 'include', signal: init.signal ?? AbortSignal.timeout(5000) })
     if (!response.ok) {
+      cachedStatus = null
       const body = await response.json().catch(() => null)
       if (hosted && body?.error?.code === 'pairing_required') clearPairing()
       throw new LocalProviderError(typeof body?.error?.code === 'string' ? body.error.code : 'service_unavailable')
     }
     return response
   } catch (error) {
+    cachedStatus = null
     if (error instanceof LocalProviderError) throw error
     if (init.signal?.aborted) throw error
     throw new LocalProviderError('service_unavailable')
   }
 }
-export async function getLocalStatus(signal?: AbortSignal): Promise<LocalStatus> {
+export async function getLocalStatus(signal?: AbortSignal, maxAgeMs = 0): Promise<LocalStatus> {
+  if (signal?.aborted) throw signal.reason
+  if (!isLocalReader()) throw new LocalProviderError('local_only')
+  if (maxAgeMs > 0 && cachedStatus?.origin === location.origin && Date.now() - cachedStatus.at < Math.min(maxAgeMs, 15000)) return cachedStatus.value
   const timeout = AbortSignal.timeout(35000)
+  const epoch = statusEpoch
   let result: any
   try { result = await (await localFetch('/status', { signal: signal ? AbortSignal.any([signal, timeout]) : timeout })).json() }
-  catch (error) { if (timeout.aborted && !signal?.aborted) throw new LocalProviderError('local_status_timeout'); throw error }
-  if (result.provider !== 'openai-local' || typeof result.ready !== 'boolean' || !Array.isArray(result.models)) throw new LocalProviderError('invalid_status')
+  catch (error) { cachedStatus = null; if (timeout.aborted && !signal?.aborted) throw new LocalProviderError('local_status_timeout'); throw error }
+  if (result.provider !== 'openai-local' || typeof result.ready !== 'boolean' || !Array.isArray(result.models)) { cachedStatus = null; throw new LocalProviderError('invalid_status') }
+  if (epoch === statusEpoch) cachedStatus = result.ready && result.auth === 'authorized' && !result.errorCode && result.login !== 'pending' ? { origin: location.origin, value: result, at: Date.now() } : null
   return result
 }
 export async function pairLocalService(code: string, signal?: AbortSignal, remember = false): Promise<void> {
@@ -125,7 +136,7 @@ export async function streamLocalChat(args: { model: string; messages: ApiChatMe
         const event = JSON.parse(data)
         if (event.type === 'delta' && typeof event.text === 'string') { content += event.text; args.onDelta(event.text) }
         else if (event.type === 'completed') return { content }
-        else if (event.type === 'error') throw new LocalProviderError(typeof event.code === 'string' ? event.code : 'invalid_stream')
+        else if (event.type === 'error') { cachedStatus = null; throw new LocalProviderError(typeof event.code === 'string' ? event.code : 'invalid_stream') }
       }
       if (buffer.length > 1024 * 1024) throw new LocalProviderError('invalid_stream')
       if (done) throw new LocalProviderError('stream_incomplete')

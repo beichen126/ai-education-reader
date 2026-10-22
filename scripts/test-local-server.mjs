@@ -104,6 +104,13 @@ test('pairing attempts are bounded; preflight does not allow credentials or arbi
   assert.equal((await f.request('/chat', { method: 'OPTIONS', headers: { 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Headers': 'authorization' } })).status, 403)
 })
 
+test('model discovery failures during chat are not misreported as missing authorization', async t => {
+  const f = await fixture(t, { status: async () => ({ ready: false, auth: 'authorized', models: [], errorCode: 'openai_network_unavailable' }) })
+  await f.pair()
+  const r = await f.request('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'mock-model', messages: [{ role: 'user', content: 'hello' }] }) })
+  assert.equal((await r.json()).error.code, 'openai_network_unavailable')
+})
+
 test('Responses projection preserves only supplied text/images and strips provider options', () => {
   const request = responsesRequest({ model: 'mock-model', max_output_tokens: 9999, apiKey: 'do-not-forward', messages: [
     { role: 'system', content: 'Teaching instructions' },

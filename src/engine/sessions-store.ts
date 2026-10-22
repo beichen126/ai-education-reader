@@ -169,8 +169,6 @@ export const sessionsActions = {
       const invalidInput = validateSendInput(content, imageIds, options.quickFollowUp)
       if (invalidInput) return { outcome: Promise.resolve(rejectSend(target, invalidInput, intent)) }
       const settings = getSettingsSnapshot()
-      const providerRejection = await providerPreflight(settings)
-      if (providerRejection) return { outcome: Promise.resolve(rejectSend(target, providerRejection, intent)) }
       const now = Date.now()
       const controller = new AbortController()
       const lease = generationRegistry.acquire(genRootKey(id), controller, 'sending')
@@ -179,6 +177,9 @@ export const sessionsActions = {
       let acceptedSend: AcceptedSendContext
       let afterUser: Conversation
       try {
+        const providerRejection = await providerPreflight(settings, controller.signal)
+        if (!lease.isCurrent()) { acceptingRef.current = null; lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
+        if (providerRejection) { acceptingRef.current = null; lease.release(); return { outcome: Promise.resolve(rejectSend(target, providerRejection, intent)) } }
         const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
         const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
         const candidate: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }

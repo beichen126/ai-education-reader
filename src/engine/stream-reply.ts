@@ -61,9 +61,9 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
   try {
     const contextMessages = acceptedSendContext?.logical.messages ?? buildContextMessages(await thread.getContextMessages())
     const hasImages = contextMessages.some((x) => x.images.length > 0)
-    const supportsImages = settings.chatProvider === 'openai-local'
-      ? (await getLocalStatus(controller.signal)).imageModels?.includes(settings.openaiLocalModel || '') === true
-      : isVisionModel(settings.model, settings.visionCapability)
+    const supportsImages = !hasImages || (settings.chatProvider === 'openai-local'
+      ? (await getLocalStatus(controller.signal, 15000)).imageModels?.includes(settings.openaiLocalModel || '') === true
+      : isVisionModel(settings.model, settings.visionCapability))
     if (hasImages && !supportsImages) {
       const failure: SendFailure = { kind: 'failed', code: 'vision-unsupported', message: attachmentErrorLabel('vision-unsupported') }
       ownedLease.release(); thread.setError(failure); return failure

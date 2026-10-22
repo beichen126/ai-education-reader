@@ -139,7 +139,7 @@ export function Conversation() {
   const busy = status === 'sending' || status === 'streaming'
   const promptManagerOpen = useUi(s => s.promptManagerOpen)
   const lastMsg0 = lastMsg
-  const activeStreamingId = busy && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
+  const activeStreamingId = status === 'streaming' && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
   const [menuMsgId, setMenuMsgId] = useState<string | null>(null)
   const [creating, setCreating] = useState<{ kind: CreateArtifactKind; messageId: string; customEntry?: boolean } | null>(null)
   const [creatingBusy, setCreatingBusy] = useState(false)
@@ -551,6 +551,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
   const draft = useDraft(key)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const webSearchEnabled = useSettings(s => s.webSearchEnabled === true)
+  const preparing = useSessions(s => s.status === 'sending')
   const settingsPending = useSettingsMutation().status === 'pending'
   useLayoutEffect(() => {
     const element = textareaRef.current
@@ -704,14 +705,14 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
     }
     if (isBranch && thread) {
       const outcome = await runBranchReply(thread.conversationId, thread.branchId!, text.trim(), picIds)
-      if (outcome.kind !== 'rejected') { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null); if (onBranchSent) onBranchSent() }
+      if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null); if (onBranchSent) onBranchSent() }
       return
     }
     if (!sessionId) return
     const outcome = await sessionsActions.sendUserMessage(sessionId, text.trim(), picIds)
     // Only clear the draft once the user message is ACCEPTED & persisted; the image ids
     // then belong to the message (ownership transfer), so we must NOT delete them here.
-    if (outcome.kind !== 'rejected') { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null) }
+    if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null) }
   }
   return (
     <div className={css.composer} data-testid="composer">
@@ -750,7 +751,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
         <textarea ref={textareaRef} rows={1} className={css.composerText} value={text} aria-label={tx('输入消息', 'Message')} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
           onChange={e => setDraftText(key, e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }} />
-        <button className={css.sendBtn} data-testid="composer-send-stop" onClick={busy ? sessionsActions.stopGenerating : send}>{busy ? tx('停止生成', 'Stop') : tx('发送', 'Send')}</button>
+        <button className={css.sendBtn} data-testid="composer-send-stop" aria-busy={busy} onClick={event => { if (event.detail > 1) return; if (busy) sessionsActions.stopGenerating(); else void send() }}>{preparing ? tx('准备中…', 'Preparing…') : busy ? tx('停止生成', 'Stop') : tx('发送', 'Send')}</button>
       </div>
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}
       <Suspense fallback={null}>
