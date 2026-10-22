@@ -24,7 +24,7 @@ export function responsesRequest(body) {
     return { role, content }
   })
   // Do not forward DeepSeek options or arbitrary caller-supplied Responses fields.
-  return { model: body.model, input, store: false, stream: true }
+  return { model: body.model, input, store: false, stream: true, tools: [{ type: 'web_search' }], tool_choice: 'auto' }
 }
 
 // SSE parsing tolerates CRLF, split UTF-8 and multiline data, with bounded frames.
@@ -55,7 +55,10 @@ export async function* readEvents(body) {
 }
 
 export async function relayResponses(body, emit) {
+  const sources = new Set()
   for await (const event of readEvents(body)) {
+    const links = webCitationLinks(event, sources)
+    if (links) await emit({ type: 'delta', text: links })
     if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') await emit({ type: 'delta', text: event.delta })
     else if (event.type === 'response.completed') { await emit({ type: 'completed' }); return }
     else if (event.type === 'response.failed' || event.type === 'response.incomplete' || event.type === 'error') {
@@ -66,4 +69,22 @@ export async function relayResponses(body, emit) {
     }
   }
   throw new LocalError('stream_incomplete', 502)
+}
+
+export function webCitationLinks(event, seen = new Set()) {
+  const annotations = [event.annotation]
+  for (const item of event.response?.output ?? []) {
+    for (const part of item.content ?? []) annotations.push(...(part.annotations ?? []))
+  }
+  let result = ''
+  for (const annotation of annotations) {
+    if (annotation?.type !== 'url_citation' || typeof annotation.url !== 'string' || seen.size >= 100) continue
+    try {
+      const url = new URL(annotation.url)
+      if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || seen.has(url.href)) continue
+      seen.add(url.href)
+      result += ` [${url.hostname.replace(/[\[\]\\]/g, '')}](<${url.href.replace(/>/g, '%3E').replace(/</g, '%3C')}>)`
+    } catch { /* Ignore malformed source metadata, not the answer. */ }
+  }
+  return result
 }

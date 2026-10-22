@@ -8,7 +8,9 @@ Reader 原有的 Vite + React + TypeScript 前端不变。DeepSeek 及兼容 API
 
 图片沿用 Reader 当前上下文与附件投影：只发送被原有上下文策略保留的图片及已选 PDF 页面，不上传整本 PDF。模型能力取自当前账户官方模型列表的 `input_modalities`，只有明确包含 `image` 的所选模型才允许图片请求；未知能力默认拒绝。DeepSeek 的视觉能力配置不影响本机 OpenAI。支持 PNG、JPEG、WebP 的内联图片，保留页面顺序，并继续执行请求大小和图片数量限制。
 
-只有用户明确选择 `OpenAI` 时，对话请求才走本机接口。默认及旧配置继续使用原有 DeepSeek/兼容 API。OpenAI 的模型名单独保存，不覆盖原模型、地址和 Key。目录识别与其他既有 AI 功能仍使用原来的配置；DeepSeek Search/Fetch 不转发给 OpenAI，选用本机 Provider 时需关闭联网搜索。
+只有用户明确选择 `OpenAI` 时，对话请求才走本机接口。默认及旧配置继续使用原有 DeepSeek/兼容 API。OpenAI 的模型名单独保存，不覆盖原模型、地址和 Key。目录识别与其他既有 AI 功能仍使用原来的配置；DeepSeek Search/Fetch 不转发给 OpenAI。v3.0.7 起 OpenAI 请求默认启用原生 `web_search`（`tool_choice:auto`），模型按需搜索，流式回答保留来源链接。允许搜索不代表每轮一定搜索，实际可用性受模型和账户策略限制；不回退到付费 Platform API。依据：[订阅接入限制](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)、[Web search](https://developers.openai.com/api/docs/guides/tools-web-search)。本次只通过 Mock 验证搜索参数和引用处理，未消耗真实账户额度验证联网工具。
+
+Android APK 通过原生官方登录桥独立接入，无需电脑配对码。v1.0.2（内置 Reader v3.0.7）允许在后台状态检查尚未完成时直接发起登录，且不依赖旧版 WebView 缺少的 `AbortSignal.any/timeout`。添加资料菜单提供拍照；系统相机返回的照片只加入草稿。APK 自带网页资源，更新 GitHub Pages 不会更新已安装 APK，需覆盖安装新版。
 
 ## 安装、启动和停止
 

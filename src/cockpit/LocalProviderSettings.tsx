@@ -15,6 +15,8 @@ export function LocalProviderSettings() {
   const [status, setStatus] = useState<LocalStatus | null>(null)
   const [paired, setPaired] = useState(false)
   const [loginUrl, setLoginUrl] = useState(''), [waiting, setWaiting] = useState(false)
+  const [loginBusy, setLoginBusy] = useState(false)
+  const loginInFlight = useRef(false)
   const controller = useRef<AbortController | null>(null)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; controller.current?.abort() } }, [])
@@ -48,7 +50,10 @@ export function LocalProviderSettings() {
     return () => { stop.abort(); clearTimeout(timer) }
   }, [waiting])
   const login = async (newAccount = false) => {
-    if (!paired) { setMessage(localErrorLabel('pairing_required')); return }
+    if (loginInFlight.current) return
+    if (!androidBridge && !paired) { setMessage(localErrorLabel('pairing_required')); return }
+    controller.current?.abort()
+    loginInFlight.current = true; setLoginBusy(true)
     setBusy(true); setMessage(tx('正在准备 OpenAI 授权链接…', 'Preparing the OpenAI authorization link…')); setLoginUrl('')
     try {
       const url = await beginChatGPTLogin(newAccount)
@@ -61,14 +66,16 @@ export function LocalProviderSettings() {
       if (error instanceof LocalProviderError && ['pairing_required', 'pairing_expired', 'pairing_rejected'].includes(error.code)) setPaired(false)
       setMessage(error instanceof Error ? error.message : tx('无法发起登录。', 'Unable to start sign-in.'))
     }
-    finally { if (mounted.current) setBusy(false) }
+    finally { loginInFlight.current = false; if (mounted.current) { setBusy(false); setLoginBusy(false) } }
   }
   const run = async (action: 'pair' | 'check' | 'disconnect' | 'logout' | 'cancel') => {
     controller.current?.abort()
     const current = new AbortController(); controller.current = current
     setBusy(true); setMessage(action === 'pair' ? tx('正在验证本机配对码…', 'Verifying the local pairing code…') : tx('正在检查本机服务…', 'Checking the local service…'))
     try {
-      const signal = AbortSignal.any([current.signal, AbortSignal.timeout(35000)])
+      // The native status bridge already has a bounded wait. Older Android
+      // WebViews do not implement AbortSignal.any/timeout.
+      const signal = androidApp ? current.signal : AbortSignal.any([current.signal, AbortSignal.timeout(35000)])
       if (action === 'logout') { setWaiting(false); setLoginUrl(''); const result = await logoutChatGPT(); setMessage(result.revoked ? tx('已退出 ChatGPT 并清除本机凭证。', 'Signed out of ChatGPT and cleared local credentials.') : localErrorLabel('revocation_unconfirmed')); return }
       if (action === 'cancel') { await cancelChatGPTLogin(); setWaiting(false); setLoginUrl(''); setMessage(tx('已取消登录。', 'Sign-in cancelled.')); return }
       if (action === 'disconnect') { await disconnectLocalService(signal); setPaired(false); setStatus(null); setWaiting(false); setLoginUrl(''); setMessage(tx('本机配对已断开；这不等同于撤销 OpenAI 授权。', 'Local pairing disconnected; this does not revoke OpenAI authorization.')); return }
@@ -105,8 +112,8 @@ export function LocalProviderSettings() {
       <button type="button" disabled={busy} onClick={() => void run('check')}>{androidApp ? tx('检查手机登录状态', 'Check app sign-in status') : tx('检查本机状态', 'Check local status')}</button>
       {!automaticConnection && <button type="button" disabled={busy} onClick={() => void run('disconnect')}>{tx('断开并忘记配对', 'Disconnect and forget pairing')}</button>}
       <div>
-        <button type="button" disabled={!paired || busy || waiting} onClick={() => void login()}>Continue with ChatGPT</button>
-        <button type="button" disabled={!paired || busy || waiting} onClick={() => void login(true)}>{tx('添加其他 ChatGPT 账户', 'Add another ChatGPT account')}</button>
+        <button type="button" disabled={(!androidBridge && (!paired || busy)) || loginBusy || waiting} onClick={() => void login()}>Continue with ChatGPT</button>
+        <button type="button" disabled={(!androidBridge && (!paired || busy)) || loginBusy || waiting} onClick={() => void login(true)}>{tx('添加其他 ChatGPT 账户', 'Add another ChatGPT account')}</button>
         {waiting && <button type="button" disabled={busy} onClick={() => void run('cancel')}>{tx('取消登录', 'Cancel sign-in')}</button>}
         {status?.auth === 'authorized' && <button type="button" disabled={busy} onClick={() => void run('logout')}>{tx('退出 ChatGPT', 'Sign out of ChatGPT')}</button>}
         {loginUrl && <p><a className={css.localSignInLink} href={loginUrl} target="_blank" rel="noopener noreferrer">{tx('前往 OpenAI 登录（若未自动打开，点这里）', 'Open OpenAI sign-in (click if not opened automatically)')}</a></p>}
@@ -120,6 +127,7 @@ export function LocalProviderSettings() {
       {status?.ready && <label>{tx('账户可用模型', 'Available account models')}<select value={settings.openaiLocalModel || ''} onChange={event => void patchSettings({ openaiLocalModel: event.target.value }).catch(() => setMessage(tx('设置保存失败。', 'Unable to save settings.')))}><option value="">{tx('选择模型', 'Select a model')}</option>{status.models.map(model => <option key={model} value={model}>{status.modelLabels?.find(entry => entry.slug === model)?.displayName || model}</option>)}</select></label>}
     </>}
     <p role="status">{message}</p>
+    <p>{tx('OpenAI 默认启用原生联网搜索，由模型按需使用，并显示来源链接。是否可用取决于模型和账户权限；不会自动切换到付费 API。', 'OpenAI web search is enabled by default for the model to use when needed, with source links. Availability depends on model and account policy; no paid API fallback.')}</p>
     <p>{tx('仅使用你授权的 ChatGPT 订阅。额度与其他应用共享，不读取 Codex 凭证，不回退到付费 API Key。支持图片的模型可读取本次上下文中的图片及已选 PDF 页面，不上传整本 PDF。', 'Uses only your authorized ChatGPT plan, with shared usage limits. No Codex credentials or paid API key fallback. Image-capable models receive images and selected PDF pages in the current context, not the entire PDF.')}</p>
   </fieldset>
 }

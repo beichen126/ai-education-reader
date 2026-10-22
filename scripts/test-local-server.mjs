@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { request as httpRequest } from 'node:http'
 import { createLocalService } from '../server/local-server.mjs'
-import { responsesRequest, relayResponses } from '../server/openai-contract.mjs'
+import { responsesRequest, relayResponses, webCitationLinks } from '../server/openai-contract.mjs'
 import { isTrustedLocalProxyRequest, prepareLocalTransport, readLocalTransport } from '../server/local-transport.mjs'
 
 const origin = 'http://127.0.0.1:5173'
@@ -117,13 +117,30 @@ test('Responses projection preserves only supplied text/images and strips provid
     { role: 'user', content: [{ type: 'text', text: 'Selected page' }, { type: 'image_url', image_url: { url: 'data:image/png;base64,YQ==' } }] },
     { role: 'assistant', content: 'Earlier answer' },
   ] })
-  assert.deepEqual(Object.keys(request), ['model', 'input', 'store', 'stream'])
+  assert.deepEqual(Object.keys(request), ['model', 'input', 'store', 'stream', 'tools', 'tool_choice'])
+  assert.deepEqual(request.tools, [{ type: 'web_search' }])
+  assert.equal(request.tool_choice, 'auto')
   assert.equal(request.input[0].role, 'developer')
   assert.equal(request.input[1].content[1].type, 'input_image')
   assert.equal(request.input[2].content[0].type, 'output_text')
   assert.equal(request.store, false); assert.equal(request.stream, true)
   assert.throws(() => responsesRequest({ model: 'mock-model', messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'http://127.0.0.1/private' } }] }] }), /unsupported_content/)
   assert.throws(() => responsesRequest({ model: 'mock-model', messages: [{ role: 'tool', content: 'x' }] }), /invalid_message/)
+})
+
+test('web search citations are clickable, deduplicated and reject unsafe URLs', async () => {
+  const annotation = { type: 'url_citation', url: 'https://example.com/article' }
+  const seen = new Set()
+  assert.match(webCitationLinks({ annotation }, seen), /\[example.com\]\(<https:\/\/example.com\/article>\)/)
+  assert.equal(webCitationLinks({ annotation }, seen), '')
+  assert.equal(webCitationLinks({ annotation: { ...annotation, url: 'javascript:alert(1)' } }, seen), '')
+  const events = []
+  await relayResponses(sse([
+    { type: 'response.output_text.delta', delta: 'Answer' },
+    { type: 'response.completed', response: { output: [{ content: [{ annotations: [annotation] }] }] } },
+  ]).body, event => events.push(event))
+  assert.ok(events.some(e => e.type === 'delta' && e.text.includes('https://example.com/article')))
+  assert.equal(events.at(-1).type, 'completed')
 })
 
 test('mock stream reaches completed; status never leaks adapter credentials', async t => {

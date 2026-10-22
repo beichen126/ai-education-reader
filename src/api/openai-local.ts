@@ -270,7 +270,10 @@ async function androidStreamChat(
   args: { model: string; messages: ApiChatMessage[]; signal?: AbortSignal; onDelta: (delta: string) => void },
 ): Promise<{ content: string }> {
   const requestId = `android-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
-  const signal = args.signal ? AbortSignal.any([args.signal, AbortSignal.timeout(180000)]) : AbortSignal.timeout(180000)
+  // A timer below owns the deadline; do not require recent AbortSignal helpers
+  // in Android WebView. Cancellation remains wired to the caller's signal.
+  const signal = args.signal ?? new AbortController().signal
+  if (signal.aborted) throw new LocalProviderError('request_cancelled')
   return await new Promise<{ content: string }>((resolve, reject) => {
     let settled = false
     let content = ''

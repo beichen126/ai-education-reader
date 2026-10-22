@@ -551,6 +551,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
   const draft = useDraft(key)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const webSearchEnabled = useSettings(s => s.webSearchEnabled === true)
+  const openaiWebSearch = useSettings(s => s.chatProvider === 'openai-local')
   const preparing = useSessions(s => s.status === 'sending')
   const settingsPending = useSettingsMutation().status === 'pending'
   useLayoutEffect(() => {
@@ -744,8 +745,13 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
               <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}><IconFolderOpenOutline16 /><span>{tx('资料库', 'Library')}<small>{tx('选择已保存的资料', 'Choose saved materials')}</small></span></button>
             </div>
             {androidCamera && <button type="button" className={css.menuItem} data-testid="composer-camera" onClick={() => { setAttachMenuOpen(false); cameraInputRef.current?.click() }}><IconDocument16 /><span>{tx('拍照', 'Take photo')}<small>{tx('拍摄后加入草稿', 'Add captured photo to draft')}</small></span></button>}
-            <label className={css.webSearchToggle}><input type="checkbox" checked={webSearchEnabled} disabled={busy || settingsPending} onChange={event => { void patchSettings({ webSearchEnabled: event.target.checked }).catch(() => setPhotoError(tx('无法保存联网设置，请重试。', 'Unable to save web search settings. Try again.'))) }} />{tx('联网搜索', 'Web search')}</label>
-            <small className={css.webSearchHint}>{tx('使用当前 API 配置；搜索和网页读取单独计费。', 'Uses current API settings. Search and webpage reads are billed separately.')}</small>
+            {openaiWebSearch ? <>
+              <label className={css.webSearchToggle}><input type="checkbox" checked disabled />{tx('OpenAI 联网搜索（默认启用）', 'OpenAI web search (enabled by default)')}</label>
+              <small className={css.webSearchHint}>{tx('使用 OpenAI 原生搜索，模型按需调用；取决于账户及模型权限。', 'Uses native OpenAI search when needed, subject to model and account policy.')}</small>
+            </> : <>
+              <label className={css.webSearchToggle}><input type="checkbox" checked={webSearchEnabled} disabled={busy || settingsPending} onChange={event => { void patchSettings({ webSearchEnabled: event.target.checked }).catch(() => setPhotoError(tx('无法保存联网设置，请重试。', 'Unable to save web search settings. Try again.'))) }} />{tx('联网搜索', 'Web search')}</label>
+              <small className={css.webSearchHint}>{tx('使用当前 API 配置；搜索和网页读取单独计费。', 'Uses current API settings. Search and webpage reads are billed separately.')}</small>
+            </>}
           </div>
         )}
         <input ref={imageInputRef} data-testid="composer-images-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />

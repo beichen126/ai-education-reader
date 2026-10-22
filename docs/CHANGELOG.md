@@ -4,6 +4,11 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。正式发布的改动按版本记录，未发布改动再单独进入 `Unreleased`。
 
+## [3.0.7] - 2026-10-22
+
+- Android 登录按钮不再依赖电脑配对状态或后台模型检查；原生检查与流式请求不要求旧版 WebView 缺失的 `AbortSignal.any/timeout`。独立防重复登录锁，保留取消登录。
+- OpenAI 订阅请求默认携带原生 `web_search`，由模型按需使用；电脑与 Android 流式结果保留可点击来源，拒绝不安全来源 URL。是否允许搜索由模型及账户策略决定，不切换到付费 API。
+
 ## [3.0.6] - 2026-10-22
 
 - 安卓内置 ChatGPT 登录入口不再显示电脑配对控件；原生桥缺失时明确提示，不误连手机的 localhost 服务。桌面及 GitHub Pages 配对方式不变。

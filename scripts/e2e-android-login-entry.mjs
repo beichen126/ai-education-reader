@@ -7,6 +7,8 @@ const browser = await launchBrowser()
 try {
   const context = await browser.newContext({ viewport: { width: 430, height: 900 } })
   await context.addInitScript(() => {
+    delete AbortSignal.any
+    delete AbortSignal.timeout
     window.AndroidChatGpt = {
       status: () => JSON.stringify({ provider: 'openai-local', ready: false, auth: 'authorization-not-verified', login: 'signed-out', models: [], images: false }),
       beginLogin: () => JSON.stringify({ authorizationUrl: 'https://auth.openai.com/api/accounts/authorize?reader_mock=1' }),
