@@ -20,9 +20,6 @@ function install() {
       if (targets.length && !history.state?.[marker]) history.pushState({ ...history.state, [marker]: true }, '')
     })
   })
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && readerBack()) { event.preventDefault(); event.stopImmediatePropagation() }
-  }, true)
   let start: { x: number; y: number; side: number } | undefined
   document.addEventListener('touchstart', event => {
     start = undefined

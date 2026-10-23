@@ -126,7 +126,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
       }
     }
     setToolbarPosition({
-      left: Math.max(0, Math.min(anchor.left - bounds.left, bounds.width - (pending.kind === 'text' ? 216 : 112))),
+      left: Math.max(0, Math.min(anchor.left - bounds.left, bounds.width - 216)),
       top: (anchor.bottom + 48 <= visibleBottom ? anchor.bottom + 6 : anchor.top - 42) - bounds.top,
     })
   }, [pending])
@@ -171,23 +171,20 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   }, [annotations, messageId, content, hasHl, highlightOwnerId])
 
   useEffect(() => {
-    let pressedMath: { id: string; kind: 'inline' | 'block' } | null = null
     function onPointerDown(e: Event) {
       setPending(null)
       // Ownership guard: only the instance whose wrapper contains the target may
       // register a math press. A formula in ANOTHER message must never put this
       // instance into pending-math.
-      pressedMath = ownedMath(wrapRef.current, e.target as any)
     }
     function onSelChange() {
       const sel = window.getSelection()
       // Math click: pointerup landed on a formula inside THIS message (guarded by
       // ownedMath in onPointerDown). Only the owning instance may enter pending-math.
-      if (pressedMath) { setPending({ kind: 'math', mathId: pressedMath.id, mathKind: pressedMath.kind }); pressedMath = null; return }
       // A formula click can produce a delayed collapsed selectionchange after
       // click. Keep its action open until an explicit dismissal or annotation.
       if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-        setPending(current => current?.kind === 'math' ? current : null)
+        setPending(null)
         return
       }
       const range = sel.getRangeAt(0)
@@ -222,7 +219,16 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   }, [messageId, content, canonicalOf, highlightOwnerId])
 
   const markCrossCell = () => { if (!pending || pending.kind !== 'table-cross-cell') return; const a = pending.startCell, b = pending.endCell; const bounds = normalizeBounds(a.row, a.column, b.row, b.column); void toggleTableCellsMessage(conversationId, messageId, pending.tableId, bounds, branchId); window.getSelection()?.removeAllRanges(); setPending(null) }
-  const onMathAction = (mathId: string, kind: 'inline' | 'block') => { activeEventOwner = highlightOwnerId; setPending({ kind: 'math', mathId, mathKind: kind }) }
+  const onMathAction = (mathId: string, kind: 'inline' | 'block') => {
+    // A click is not a selection. Only a real, non-collapsed native range
+    // may expose annotation controls; scrolling/hovering must never select math.
+    const selection = window.getSelection()
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return
+    const range = selection.getRangeAt(0)
+    const start = ownedMath(wrapRef.current, range.startContainer)
+    const end = ownedMath(wrapRef.current, range.endContainer)
+    if (start?.id === mathId && end?.id === mathId) setPending({ kind: 'math', mathId, mathKind: kind })
+  }
   function doToggle() {
     try {
     if (!pending) return
@@ -241,7 +247,9 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
     <div ref={wrapRef} className={css.wrap} style={{ '--annotation-left': `${toolbarPosition?.left ?? 0}px`, '--annotation-top': `${toolbarPosition?.top ?? 0}px`, '--annotation-visibility': toolbarPosition ? 'visible' : 'hidden' } as React.CSSProperties} data-highlight={hasHl} data-annotation-owner={highlightOwnerId}>
       <MarkdownBlocks content={content} messageId={messageId} annotations={annotations} onTableAction={onTableAction} onMathAction={onMathAction} parsedRoot={parsedRoot} />
       {pending && pending.kind === 'math' && (
-        <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{mathCovered ? tx('取消标记', 'Unmark') : tx('标记公式', 'Mark formula')}</button></div>
+        <div className={css.annotBar} onPointerDown={e => { e.preventDefault(); e.stopPropagation() }} onPointerUp={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
+          <button type="button" className={css.annotBtn} onClick={doToggle}>{mathCovered ? tx('取消标记', 'Unmark') : tx('标记公式', 'Mark formula')}</button>
+        </div>
       )}
       {pending && pending.kind === 'text' && (
         <div className={css.annotBar}>

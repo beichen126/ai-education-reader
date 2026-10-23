@@ -19,6 +19,7 @@ const EXTRA_E2E = process.env.RELEASE_EXTRA_E2E === '1'
 
 const CORE_E2E = [
   'e2e-back-navigation',
+  'e2e-math-actions',
   'e2e-android-login-entry',
   'e2e-webview-pdf-compat',
   'e2e-reading-position',

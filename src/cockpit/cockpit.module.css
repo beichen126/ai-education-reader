@@ -334,3 +334,7 @@
   .composerStatusRow { align-items: flex-end; flex-wrap: wrap; gap: 2px 10px; }
   .contextUsage { font-size: 11px; }
 }
+.thinkingHint { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.thinkingSpinner { width: 11px; height: 11px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: thinkingSpin 1s linear infinite; }
+@keyframes thinkingSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .thinkingSpinner { animation: none; } }

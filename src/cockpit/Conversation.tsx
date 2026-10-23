@@ -139,7 +139,7 @@ export function Conversation() {
   const busy = status === 'sending' || status === 'streaming'
   const promptManagerOpen = useUi(s => s.promptManagerOpen)
   const lastMsg0 = lastMsg
-  const activeStreamingId = status === 'streaming' && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
+  const activeStreamingId = busy && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
   const [menuMsgId, setMenuMsgId] = useState<string | null>(null)
   const [creating, setCreating] = useState<{ kind: CreateArtifactKind; messageId: string; customEntry?: boolean } | null>(null)
   const [creatingBusy, setCreatingBusy] = useState(false)
@@ -369,6 +369,7 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
   const canCopySource = !isStreaming && m.content.length > 0
   return (
     <div className={css.msg + ' ' + css.msgAssistant} data-message-id={m.id}>
+      {isStreaming && !m.content.trim() && <div className={css.thinkingHint} role="status" data-testid="assistant-thinking"><span className={css.thinkingSpinner} aria-hidden="true" />{tx('正在思考…', 'Thinking…')}</div>}
       {m.content ? (
         <StableAssistantContent content={m.content} messageId={m.id} conversationId={convId || ''} branchId={branchId} />
       ) : (

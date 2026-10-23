@@ -23,7 +23,7 @@ import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
 import { bookmarkRangePresentation } from '../pdf/bookmark-range'
 import { DocumentContextPicker } from './DocumentContextPicker'
 import { executeDocumentContext } from './document-context-service'
-import { useDocumentUi, documentUiActions } from './document-ui-store'
+import { useDocumentUi, documentUiActions, getDocumentUiState } from './document-ui-store'
 import { useBackTarget } from '../engine/back-navigation'
 import { clampReaderPage, parsePageInput } from './reader-utils'
 import { openPdfSession, closePdfSession, readSessionOutline, readSessionPageLabels, pdfErrorMessage, type PdfSession } from '../pdf/pdf-session'
@@ -65,8 +65,8 @@ const EMPTY_DOC_STATE = {
 export function DocumentReader() {
   const ui = useDocumentUi(x => x)
   useBackTarget(ui.view === 'reader', () => {
-    flushCurrentNote()
-    documentUiActions.backToLibrary()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    if (getDocumentUiState().view === 'closed') documentUiActions.backToLibrary()
   }, 10)
   const pdfNavigationMode = useSettings(s => s.pdfNavigationMode)
   const docId = ui.view === 'reader' ? ui.documentId : null

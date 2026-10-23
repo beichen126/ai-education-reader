@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict'
+import { launchBrowser } from './e2e-browser.mjs'
+import { msg, seedAndBoot } from './e2e-fixture.mjs'
+const browser = await launchBrowser()
+try {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+  await context.addInitScript(() => { Object.defineProperty(navigator, 'clipboard', { value: { writeText: async text => { window.__copiedFormula = text } } }) })
+  const page = await context.newPage()
+  const errors = []; page.on('pageerror', e => errors.push(e.message))
+  await seedAndBoot(page, { convs: [{ id: 'formula-actions', title: 'Formula test', createdAt: 1, updatedAt: 1, messages: [msg('formula-user', 'user', 'Question'), msg('formula-answer', 'assistant', '$$x^2+y^2=z^2$$')] }], settings: { lastConversationId: 'formula-actions', apiKey: 'mock-only', model: 'deepseek-flash' } })
+  const formula = page.locator('[data-math-kind="block"]').first()
+  await formula.locator('.katex-html').click()
+  const mark = page.getByRole('button', { name: '标记公式', exact: true })
+  assert.equal(await mark.count(), 0, 'click alone must not show annotation controls')
+  const selectFormula = async () => formula.locator('.katex-html').evaluate(el => {
+    const range = document.createRange(); range.selectNodeContents(el)
+    window.getSelection().removeAllRanges(); window.getSelection().addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+  })
+  await selectFormula()
+  await mark.waitFor({ state: 'visible' }); await page.waitForTimeout(1200)
+  assert.equal(await mark.isVisible(), true)
+  assert.equal(await page.evaluate(() => {
+    const data = new DataTransfer(); document.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true }))
+    return data.getData('text/plain')
+  }), '$$x^2+y^2=z^2$$')
+  await mark.click()
+  await selectFormula()
+  await page.getByRole('button', { name: '取消标记', exact: true }).waitFor()
+  assert.deepEqual(errors, [])
+  await page.route('https://api.deepseek.com/**', async route => {
+    await new Promise(resolve => setTimeout(resolve, 1800))
+    await route.fulfill({ contentType: 'text/event-stream', body: 'data: {"choices":[{"delta":{"content":"Thinking test complete"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n' })
+  })
+  await page.getByRole('textbox', { name: '输入消息', exact: true }).fill('test waiting hint')
+  await page.getByTestId('composer-send-stop').click()
+  await page.getByTestId('assistant-thinking').waitFor()
+  await page.getByText('Thinking test complete', { exact: true }).waitFor()
+  await page.getByTestId('assistant-thinking').waitFor({ state: 'hidden' })
+  console.log('PASS: click does not annotate; explicit formula selection enables source copy and study marking')
+} finally { await browser.close() }
