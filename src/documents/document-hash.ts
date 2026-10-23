@@ -7,6 +7,7 @@
 // startup — every hash is computed lazily on the import / duplicate-candidate path only.
 
 const HEAD_TAIL = 4096
+import { readBlobBuffer } from '../engine/read-blob-buffer'
 
 function isTextEncoderBufferSource(c: Uint8Array): ArrayBuffer {
   // Transfer the view so open Uint8Array subarrays still hash correctly.
@@ -44,17 +45,17 @@ export type DocumentHashes = { contentHash: string; fastFingerprint: string }
 export async function computeFastFingerprint(blob: Blob): Promise<string> {
   const size = blob.size
   if (size === 0) {
-    const head = new Uint8Array(await blob.slice(0, 0).arrayBuffer())
+    const head = new Uint8Array(await readBlobBuffer(blob.slice(0, 0)))
     return digestSHA256([head])
   }
-  const head = new Uint8Array(await blob.slice(0, Math.min(HEAD_TAIL, size)).arrayBuffer())
-  const tail = new Uint8Array(await blob.slice(Math.max(0, size - HEAD_TAIL), size).arrayBuffer())
+  const head = new Uint8Array(await readBlobBuffer(blob.slice(0, Math.min(HEAD_TAIL, size))))
+  const tail = new Uint8Array(await readBlobBuffer(blob.slice(Math.max(0, size - HEAD_TAIL))))
   return digestSHA256([head, tail])
 }
 
 /** Stage-3 full content digest (== exact duplicate assertion). */
 export async function computeContentHash(blob: Blob): Promise<string> {
-  const full = new Uint8Array(await blob.arrayBuffer())
+  const full = new Uint8Array(await readBlobBuffer(blob))
   return digestSHA256([full])
 }
 

@@ -96,9 +96,12 @@ export async function resolveImportConflict(input: { fileName: string; fileSize:
  *  and the FULL content hash is computed ONLY when there is a potential same-size candidate (a
  *  plain first import never re-reads the whole file just to hash it). */
 export async function analyzeImport(file: File, summaries?: DocumentSummary[]): Promise<ImportAnalysis> {
+  let importStep = 'runtime'
+  try {
   const { openPdfSession, readSessionOutline, closePdfSession } = await import('../pdf/pdf-session')
   let session: PdfSession | null = null
   try {
+    importStep = 'open'
     const opened = await openPdfSession(file)
     session = opened.session
     let chapters: ChapterNode[] = []
@@ -107,12 +110,16 @@ export async function analyzeImport(file: File, summaries?: DocumentSummary[]): 
       const o = await readSessionOutline(session)
       if (o.items.length > 0) { chapters = chapterNodesFromPdfOutline(o.items); chapterSource = 'native' }
     } catch { /* no outline -> none */ }
+    importStep = 'catalog'
     const all = summaries ?? (await listDocumentSummaries())
     const hashAvailable = isHashAvailable()
+    importStep = 'fingerprint'
     const fastFingerprint = hashAvailable ? await computeFastFingerprint(file) : undefined
     // Stage-3 full hash only when a potential (same-size) candidate exists — H3 lazy, H1 degrade.
     const hasSizeCandidate = all.some(s => s.fileSize === file.size)
+    importStep = 'hash'
     const contentHash = (hashAvailable && hasSizeCandidate) ? await computeContentHash(file) : undefined
+    importStep = 'conflicts'
     const conflict = await resolveImportConflict({ fileName: file.name, fileSize: file.size, contentHash, fastFingerprint }, all)
     return {
       fileName: file.name, pageCount: opened.doc.pageCount, chapters, chapterSource,
@@ -122,6 +129,11 @@ export async function analyzeImport(file: File, summaries?: DocumentSummary[]): 
     }
   } finally {
     if (session) { try { await closePdfSession(session) } catch { /* ignore */ } }
+  }
+  } catch (error) {
+    // Fixed stage only, never include filenames or file contents in diagnostics.
+    if (error instanceof Error) { try { Object.defineProperty(error, 'importStep', { value: importStep }) } catch {} }
+    throw error
   }
 }
 

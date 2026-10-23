@@ -6,6 +6,7 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 // Same worker wiring as pdf-service (static ES-module asset under the app base path).
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { createPdfDocumentInit } from './pdf-runtime'
+import { readBlobBuffer } from '../engine/read-blob-buffer'
 import { PDF_FILE_MIME, type LocalPdfDocument } from './pdf-types.ts'
 import { PdfError, pdfErrorMessage, renderPageForDocument, readOutlineForDocument, isPasswordError, readPageViewport1, startPageSurfaceRender, type RenderedPage, type PageSurfaceRender } from './pdf-service.ts'
 import type { PdfOutlineResult } from './pdf-outline.ts'
@@ -23,7 +24,7 @@ export type PdfSession = PdfSessionLike & {
 export async function openPdfSession(blob: Blob): Promise<{ session: PdfSession; doc: LocalPdfDocument }> {
   const looksLikePdf = blob.type === PDF_FILE_MIME
   if (!looksLikePdf) throw new PdfError('not-pdf', 'not a pdf')
-  const task = pdfjsLib.getDocument(createPdfDocumentInit(await blob.arrayBuffer()))
+  const task = pdfjsLib.getDocument(createPdfDocumentInit(await readBlobBuffer(blob)))
   let proxy: import('pdfjs-dist').PDFDocumentProxy
   try { proxy = await task.promise } catch (err) { try { await task.destroy() } catch { /* ignore */ } if (isPasswordError(err)) throw new PdfError('password', 'password protected'); throw new PdfError('parse-failed', 'parse failed') }
   if (proxy.numPages < 1) { try { await task.destroy() } catch { /* ignore */ } throw new PdfError('empty', 'empty') }

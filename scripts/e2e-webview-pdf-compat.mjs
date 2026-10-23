@@ -6,7 +6,7 @@ process.env.E2E_BASE ||= 'http://127.0.0.1:5173/ai-education-reader/'
 const browser = await launchBrowser()
 try {
   const context = await browser.newContext({ viewport: { width: 430, height: 900 } })
-  await context.addInitScript(() => { delete globalThis.Iterator })
+  await context.addInitScript(() => { delete globalThis.Iterator; delete Blob.prototype.arrayBuffer })
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', e => errors.push(e.message))

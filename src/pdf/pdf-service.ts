@@ -13,6 +13,7 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 // /ai-education-reader/ base path).
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { createPdfDocumentInit } from './pdf-runtime'
+import { readBlobBuffer } from '../engine/read-blob-buffer'
 import { PDF_FILE_MIME, type LocalPdfDocument } from './pdf-types.ts'
 import { parsePdfOutline, type PdfOutlineResult } from './pdf-outline.ts'
 
@@ -76,7 +77,7 @@ export async function openPdf(file: File): Promise<LocalPdfDocument> {
   const looksLikePdf = file.type === PDF_FILE_MIME || /.pdf$/i.test(file.name)
   if (!looksLikePdf) { if (activeOpenToken === openToken) activeOpenToken = null; throw new PdfError('not-pdf', 'not a pdf') }
   let data: ArrayBuffer
-  try { data = await file.arrayBuffer() } catch { if (activeOpenToken === openToken) activeOpenToken = null; throw new PdfError('read-failed', 'read failed') }
+  try { data = await readBlobBuffer(file) } catch { if (activeOpenToken === openToken) activeOpenToken = null; throw new PdfError('read-failed', 'read failed') }
   if (activeOpenToken !== openToken) throw new PdfError('read-failed', 'open superseded')
   const task = pdfjsLib.getDocument(createPdfDocumentInit(data))
   activeLoadingTask = task
