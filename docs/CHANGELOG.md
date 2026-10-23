@@ -4,6 +4,11 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。正式发布的改动按版本记录，未发布改动再单独进入 `Unreleased`。
 
+## [3.0.11] - 2026-10-23
+
+- 针对真机 WebView 114 的 `open/TypeError/withResolvers`，在主页面和独立 PDF Worker 中分别补齐 Promise.withResolvers；不覆盖浏览器原生实现。
+- 生产构建浏览器测试同时禁用主页面和 Worker 的该接口，验证 PDF 导入、目录及页面显示，防止只修主线程的假通过。
+
 ## [3.0.10] - 2026-10-23
 
 - PDF 解析及查重读取在 Blob.arrayBuffer 缺失或失败时回退到 FileReader，适配旧 WebView 和文件提供器。

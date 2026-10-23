@@ -11,5 +11,6 @@ export default defineConfig(({mode}) => ({
   } } } } : {}),
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   base: '/ai-education-reader/',
+  worker: { format: 'es' },
   build: { outDir: 'dist', emptyOutDir: true }
 }))

@@ -6,12 +6,13 @@
 // sent to the AI. Stage 2 will feed these Blobs into the existing attachment service.
 // The modern build assumes Iterator helpers, absent in older Android WebViews.
 // Use PDF.js's maintained compatibility build in both window and worker.
+import '../engine/promise-compat'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 // Emit the ES-module worker as a static asset; pdfjs v6 constructs a module
 // worker (new Worker(url, { type: "module" })) and, being same-origin with the
 // app, uses this URL directly (no CDN wrapper, no fake worker, no 404 under the
 // /ai-education-reader/ base path).
-import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+import pdfWorkerUrl from './pdf-worker-entry.ts?worker&url'
 import { createPdfDocumentInit } from './pdf-runtime'
 import { readBlobBuffer } from '../engine/read-blob-buffer'
 import { PDF_FILE_MIME, type LocalPdfDocument } from './pdf-types.ts'

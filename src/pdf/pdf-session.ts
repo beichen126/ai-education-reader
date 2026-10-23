@@ -2,9 +2,10 @@
 // pdf-service's single activeDoc/activeLoadingTask singleton (which the PdfPanel
 // owns): one Reader instance owns its own PdfSession, so opening/closing the
 // reader can never disturb a Composer PDF panel (and vice versa).
+import '../engine/promise-compat'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 // Same worker wiring as pdf-service (static ES-module asset under the app base path).
-import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+import pdfWorkerUrl from './pdf-worker-entry.ts?worker&url'
 import { createPdfDocumentInit } from './pdf-runtime'
 import { readBlobBuffer } from '../engine/read-blob-buffer'
 import { PDF_FILE_MIME, type LocalPdfDocument } from './pdf-types.ts'
