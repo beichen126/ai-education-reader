@@ -6,6 +6,7 @@
 // saving/error/close timing. A failed save NEVER fabricates success: the Builder
 // stays open, the draft is preserved, and an explicit error is shown.
 import { useEffect, useRef, useState } from 'react'
+import { useBackTarget } from '../engine/back-navigation'
 import type { ChapterNode, ChapterVersion, DocumentChapterSource } from './document-types'
 import {
   validateChapterDraft, buildManualChapterTree, buildChapterTreeFromDraft, flattenManualChapters,
@@ -55,6 +56,7 @@ function idsBetween(orderedIds: readonly string[], anchorId: string | null, targ
 }
 
 export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftSeed, hint, skippedUnresolved = 0, saveSource = 'manual', versions = [], onSave, onClose }: Props) {
+  useBackTarget(true, () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
   const [items, setItems] = useState<ChapterDraftItem[]>(() => {
     // A pre-computed draftSeed (native / ai-toc) wins; otherwise derive from the tree.
     return draftSeed ? cloneChapterDraft(draftSeed) : cloneChapterDraft(flattenManualChapters(initialChapters))

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { newStableId, type StableId } from '../engine/types'
 import type { ArtifactKind } from '../artifacts/artifact-types'
 import { uiActions, useUi } from '../engine/ui-store'
+import { useBackTarget } from '../engine/back-navigation'
 import { getPromptPreferences, setActiveProtocolOverride, setDefaultConversationModeId, setPromptSortPreference } from './prompt-preferences'
 import {
   copyPromptDefinition,
@@ -187,6 +188,7 @@ function restoreBackground(states: BackgroundState[]): void {
 }
 
 export function PromptManager() {
+  useBackTarget(true, () => document.querySelector<HTMLButtonElement>('[data-testid="prompt-manager-close"]')?.click())
   const requestedCategory = useUi(s => s.promptManagerCategory)
   const requestedReturnTarget = useUi(s => s.promptManagerReturnTarget)
   const [catalog, setCatalog] = useState<PromptDefinition[]>([])

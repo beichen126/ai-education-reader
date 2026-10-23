@@ -19,6 +19,7 @@ import {
 } from './study-card-service'
 import { documentUiActions } from '../documents/document-ui-store'
 import { learningUiActions, loadStudyCardPreferences, persistStudyCardPreferences, useLearningUi, type CardListContext } from './learning-ui-store'
+import { useBackTarget } from '../engine/back-navigation'
 import css from './study-card.module.css'
 import { localizedConversationTitle, localizedErrorText, localizedPdfName, localizedStudyCardTitle, tx } from '../engine/locale'
 
@@ -61,6 +62,11 @@ function cardTitle(card: StudyCard): string {
  */
 export function LearningCenter() {
   const state = useLearningUi(s => s)
+  useBackTarget(state.view !== 'closed', () => {
+    if (state.view === 'artifact') learningUiActions.closeArtifact()
+    else if (state.view === 'card') learningUiActions.backToLibrary()
+    else learningUiActions.close()
+  }, 10)
   const [cards, setCards] = useState<StudyCard[]>([])
   const [marksOnly, setMarksOnly] = useState(false)
   const [documentNames, setDocumentNames] = useState<Map<string, string>>(new Map())

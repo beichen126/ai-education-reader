@@ -3,6 +3,7 @@
 // apply a global page-offset, and then save to 'ai-toc'. AI is never the authority: save
 // only happens after the user explicitly confirms, and only when the draft is valid.
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useBackTarget } from '../engine/back-navigation'
 import { validateChapterDraft, buildChapterTreeFromDraft, type ChapterDraftItem } from './chapter-builder'
 import { applyGlobalOffset, setManualPageOverride, validateMappedTocReview, canUseNumericOffset, canonicalNumericPageNumber, type MappedTocItem } from './toc-mapping'
 import { emptyReviewState, markRowUnchecked, markChangedRowsUnchecked, verifiedCount as countVerified, resolveSaveStage, removeReviewEntry, restoreReviewEntry, type RemovedReviewEntry, type ReviewState, type ReviewStateValue } from './toc-review-state'
@@ -23,6 +24,7 @@ type Props = {
 }
 
 export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, onEditAll }: Props) {
+  useBackTarget(true, () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
   const [rows, setRows] = useState<MappedTocItem[]>(items)
   const [state, setState] = useState<ReviewState>(() => emptyReviewState(items.length))
   const [idx, setIdx] = useState(0)

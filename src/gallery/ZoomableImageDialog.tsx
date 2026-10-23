@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom'
 import { clampScale, clampPan, zoomAtPoint, resetTransform, DOUBLE_CLICK_SCALE } from './zoom'
 import css from './zoomable-image.module.css'
 import { tx as localeText } from '../engine/locale'
+import { useBackTarget } from '../engine/back-navigation'
 
 export interface ZoomableImageDialogProps {
   src?: string
@@ -26,6 +27,7 @@ type Nd = { x: number; y: number }
 
 export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
   const { src, alt = '', resetKey, index, count, onPrev, onNext, onBackToList, onClose, labels } = props
+  useBackTarget(true, onBackToList || onClose)
   const stageRef = useRef<HTMLDivElement | null>(null)
   // Two separate refs: openerRef remembers the element that opened the viewer
   // (thumbnail / draft image / PDF page); closeRef targets the close button.

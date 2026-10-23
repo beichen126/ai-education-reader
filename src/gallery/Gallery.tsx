@@ -6,9 +6,11 @@ import { ZoomableImageDialog } from './ZoomableImageDialog'
 import { clampIndex } from './zoom'
 import css from './gallery.module.css'
 import { tx } from '../engine/locale'
+import { useBackTarget } from '../engine/back-navigation'
 
 export function Gallery() {
   const g = useGallery(x => x)
+  useBackTarget(g.open, galleryActions.close, 10)
   const conv = useSessions(s => s.byId[s.current || ''])
   const convId = conv ? conv.id : undefined
   const imageIds = useMemo(() => { if (!conv) return []; const out: string[] = []; for (const m of conv.messages) if (m.role === 'user') for (const img of m.images) out.push(img); return out }, [conv])

@@ -11,6 +11,8 @@ import { deleteDocument, renameDocument, listDocumentSummaries, getDocumentConte
 import { analyzeImport, createDocumentFromImport, sanitizeFileName, nextAvailableName, type ImportAnalysis } from './document-import-service'
 import { sortDocuments, loadSortPreference, saveSortPreference, DOCUMENT_SORT_KEYS, DOCUMENT_SORT_LABELS, type DocumentSortKey } from './document-sort'
 import { documentUiActions, useDocumentUi } from './document-ui-store'
+import { useBackTarget } from '../engine/back-navigation'
+import { documentImportError } from './document-import-error'
 import { pdfErrorMessage } from '../pdf/pdf-session'
 import { PdfError } from '../pdf/pdf-service'
 import { getSessionsCurrent } from '../engine/sessions-store'
@@ -36,6 +38,7 @@ function relTimeLabel(at: number): string {
 
 export function DocumentLibrary() {
   const ui = useDocumentUi(x => x)
+  useBackTarget(ui.view === 'library', documentUiActions.close, 10)
   const [summaries, setSummaries] = useState<DocumentSummary[]>([])
   const [error, setError] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
@@ -107,7 +110,7 @@ export function DocumentLibrary() {
       await refresh()
       documentUiActions.openReader(id)
     } catch (e) {
-      setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : tx('无法导入该 PDF。', 'Unable to import this PDF.'))
+      setError(documentImportError(e, 'save'))
     } finally { setImporting(false) }
   }, [refresh])
 
@@ -122,7 +125,7 @@ export function DocumentLibrary() {
         setPendingImport({ analysis, file: f })
       }
     } catch (e) {
-      setError(e instanceof PdfError ? pdfErrorMessage(e.kind) : tx('无法导入该 PDF。', 'Unable to import this PDF.'))
+      setError(documentImportError(e, 'analyze'))
     } finally { setImporting(false) }
   }
 

@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { IconCloseOutline16 } from './icons/index.tsx'
 import css from './Modal.module.css'
+import { useBackTarget } from '../../engine/back-navigation'
 
 interface ModalBaseProps {
   open: boolean
@@ -39,6 +40,7 @@ export function Modal({
   open, onClose, title, closeLabel, description, children, footer, className, contentClassName, headless = false,
 }: ModalProps) {
   const previousFocusRef = useRef<HTMLElement | null>(null)
+  useBackTarget(open, onClose)
   useEffect(() => {
     if (!open) return
     previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
