@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { initSettings, patchSettings, getSettingsSnapshot } from '../src/engine/settings-store.ts'
 import { closeDb } from '../src/storage/idb.ts'
 import { providerPreflight, streamProviderChat } from '../src/api/chat-provider.ts'
-import { streamLocalChat, LocalProviderError, localErrorLabel, pairLocalService, disconnectLocalService } from '../src/api/openai-local.ts'
+import { streamLocalChat, LocalProviderError, localErrorLabel, pairLocalService, disconnectLocalService, getLocalStatus } from '../src/api/openai-local.ts'
 
 const originalFetch = globalThis.fetch
 Object.defineProperty(globalThis, 'location', { configurable: true, value: { origin: 'http://127.0.0.1:5173' } })
@@ -56,5 +56,25 @@ try {
   assert.equal((await streamProviderChat(getSettingsSnapshot(), args)).content, 'original')
   assert.equal(calls[0].url, 'https://api.deepseek.com/chat/completions')
   assert.equal(JSON.parse(String(calls[0].init.body)).reasoning_effort, 'max')
+  // Native cached errors must be recoverable; subscribe before asking native to refresh.
+  const host = globalThis as any
+  const initial = { provider: 'openai-local', ready: false, auth: 'authorized', login: 'error', errorCode: 'openai_network_unavailable', models: [] }
+  const ready = { ...initial, ready: true, login: 'authorized', errorCode: null, models: ['mock-model'] }
+  let listener: ((status: unknown) => void) | undefined
+  let refreshes = 0
+  host.AndroidChatGpt = { status: () => JSON.stringify(initial), refreshStatus: () => { refreshes++; listener?.(ready) } }
+  host.__androidChatGpt = { subscribeStatus: (next: (value: unknown) => void) => { listener = next; return () => { listener = undefined } } }
+  try {
+    assert.equal((await getLocalStatus()).ready, true)
+    assert.equal(refreshes, 1); assert.equal(listener, undefined)
+    host.AndroidChatGpt.refreshStatus = () => {}
+    const controller = new AbortController()
+    const waiting = getLocalStatus(controller.signal)
+    controller.abort()
+    await assert.rejects(waiting, (error: unknown) => error instanceof LocalProviderError && error.code === 'request_cancelled')
+    assert.equal(listener, undefined)
+    host.__androidChatGpt.subscribeStatus = (next: (value: unknown) => void) => { next(ready); return () => { listener = undefined } }
+    assert.equal((await getLocalStatus()).ready, true)
+  } finally { delete host.AndroidChatGpt; delete host.__androidChatGpt }
   console.log('PASS: provider persistence, isolation, Pages memory-only pairing, untrusted-origin rejection, no key forwarding, completion requirement, unchanged DeepSeek max reasoning')
 } finally { globalThis.fetch = originalFetch; closeDb() }

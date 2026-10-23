@@ -54,6 +54,9 @@ export class LocalProviderError extends Error {
   constructor(readonly code: string) { super(localErrorLabel(code)); this.name = 'LocalProviderError' }
 }
 export function localErrorLabel(code: string): string {
+  if (code === 'unsupported_country_region_territory') return tx('OpenAI 拒绝当前请求的地区或网络出口。授权凭据已保留；反复登录不能解除地区策略限制。', 'OpenAI rejected the request region or network egress. Saved credentials are retained; signing in again cannot remove a region-policy restriction.')
+  if (code === 'oauth_policy_denied') return tx('OpenAI 的授权策略拒绝了请求。凭据已保留，请核实账户和应用权限，不要重复授权。', 'OpenAI policy denied the request. Credentials are retained; check account and app permissions instead of repeatedly signing in.')
+  if (code === 'credential_read_failed' || code === 'credential_write_failed') return tx('无法读取或安全保存 ChatGPT 凭据。原凭据文件不会被自动清空；请检查本机安全存储。', 'Unable to read or safely save ChatGPT credentials. The original vault is not automatically cleared; check secure local storage.')
   if (code === 'android_bridge_unavailable') return tx('Android 内置登录组件未加载，请更新 APK；手机端不需要电脑配对码。', 'The Android sign-in component did not load. Update the APK; no desktop pairing code is needed.')
   if (code === 'authorization_pending') return tx('ChatGPT 登录仍在进行，请完成或取消本次登录后再发送；这不表示已有授权丢失。', 'ChatGPT sign-in is still pending. Complete or cancel it before sending; this does not mean saved authorization was lost.')
   if (code === 'pairing_remember_unavailable') return tx('请更新并重启本机服务，以支持记住配对。', 'Update and restart the local service to support remembered pairing.')
@@ -152,11 +155,17 @@ async function androidGetStatus(
   signal?: AbortSignal,
 ): Promise<LocalStatus> {
   const initial = parseAndroidStatus(JSON.parse(bridge.native.status()))
-  if (initial.ready || initial.auth !== 'authorized' || initial.login === 'error') return initial
-  bridge.native.refreshStatus?.()
-  return await new Promise<LocalStatus>((resolve) => {
+  if (initial.ready || initial.auth !== 'authorized' || initial.login === 'pending') return initial
+  return await new Promise<LocalStatus>((resolve, reject) => {
     let settled = false
-    const onAbort = () => finish(initial)
+    let off = () => {}
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const onAbort = () => {
+      if (settled) return
+      settled = true; off(); clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      reject(new LocalProviderError('request_cancelled'))
+    }
     const finish = (status: LocalStatus) => {
       if (settled) return
       settled = true
@@ -165,7 +174,7 @@ async function androidGetStatus(
       signal?.removeEventListener?.('abort', onAbort)
       resolve(status)
     }
-    const off = bridge.events.subscribeStatus((next) => {
+    const unsubscribe = bridge.events.subscribeStatus((next) => {
       try {
         const status = parseAndroidStatus(next)
         if (status.ready || status.login === 'error' || status.login === 'signed-out') finish(status)
@@ -173,8 +182,13 @@ async function androidGetStatus(
         /* ignore malformed event */
       }
     })
-    const timer = setTimeout(() => finish(initial), 8000)
+    off = unsubscribe
+    if (settled) { off(); return }
+    timer = setTimeout(() => finish(initial), 8000)
     signal?.addEventListener?.('abort', onAbort, { once: true })
+    if (signal?.aborted) { onAbort(); return }
+    // Subscribe before requesting refresh so an immediate native event is not lost.
+    try { bridge.native.refreshStatus?.() } catch { finish(initial) }
   })
 }
 

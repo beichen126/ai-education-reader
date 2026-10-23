@@ -153,3 +153,66 @@ test('vault roundtrip protects credentials on Windows and preserves the app host
     assert.ok(!contents.includes(Buffer.from('fake-token-for-storage-test')))
   }
 })
+
+async function renewableFixture(t, refresh, { expiresAt = 1, vault: suppliedVault } = {}) {
+  const vault = suppliedVault || memoryVault()
+  if (!suppliedVault) await vault.save({ hostId: 'urn:uuid:renewal-test', activeId: 'oaiapp_saved', profiles: [{ clientId: 'oaiapp_saved', subject: 'saved-user', scopes: ['resource.invoke', 'chatgpt.tokens.use.direct'], accessToken: 'old-access', refreshToken: 'old-refresh', expiresAt }] })
+  let calls = 0, modelCalls = 0
+  const adapter = await createChatGPTAdapter({ vault, fetchImpl: async (url, init) => {
+    if (url.endsWith('/oauth/token')) { calls++; return refresh(init) }
+    assert.ok(url.endsWith('/models'))
+    modelCalls++
+    if (expiresAt > 1 && init.headers.Authorization === 'Bearer old-access') return new Response(null, { status: 401 })
+    return Response.json({ models: [{ slug: 'test-model', visibility: 'list' }] })
+  } })
+  t.after(() => adapter.stop())
+  return { adapter, vault, calls: () => calls, modelCalls: () => modelCalls }
+}
+const renewedTokens = extra => Response.json({ access_token: 'renewed-access', refresh_token: 'rotated-refresh', token_type: 'Bearer', expires_in: 3600, ...extra })
+
+test('temporary and region errors preserve persisted authorization and bound refresh retries', async t => {
+  for (const code of ['temporarily_unavailable', 'unsupported_country_region_territory']) {
+    const f = await renewableFixture(t, () => Response.json({ error: { code, message: 'PRIVATE_BODY' } }, { status: 403 }))
+    const status = await f.adapter.status()
+    assert.equal(status.auth, 'authorized'); assert.equal(status.ready, false)
+    assert.equal(status.errorCode, code === 'temporarily_unavailable' ? 'token_endpoint_http_403' : code)
+    assert.equal(f.vault.snapshot().profiles[0].refreshToken, 'old-refresh')
+    await f.adapter.status(); await f.adapter.status()
+    assert.equal(f.calls(), 1)
+    assert.doesNotMatch(JSON.stringify(status), /PRIVATE_BODY|old-refresh|old-access/)
+  }
+})
+test('explicit scope removal still persists rotated refresh token; omitted scope inherits grant across restart', async t => {
+  const denied = await renewableFixture(t, () => renewedTokens({ scope: '' }))
+  assert.equal((await denied.adapter.status()).errorCode, 'subscription_scope_missing')
+  assert.equal(denied.vault.snapshot().profiles[0].refreshToken, 'rotated-refresh')
+  assert.deepEqual(denied.vault.snapshot().profiles[0].scopes, [])
+  const valid = await renewableFixture(t, () => renewedTokens())
+  assert.equal((await valid.adapter.status()).ready, true)
+  const restarted = await renewableFixture(t, () => { throw new Error('must not refresh again') }, { vault: valid.vault })
+  assert.equal((await restarted.adapter.status()).ready, true)
+  assert.equal(restarted.calls(), 0)
+})
+test('confirmed invalid_grant clears invalid tokens but preserves registration', async t => {
+  const f = await renewableFixture(t, () => Response.json({ error: 'invalid_grant' }, { status: 400 }))
+  assert.equal((await f.adapter.status()).errorCode, 'authorization_expired')
+  const profile = f.vault.snapshot().profiles[0]
+  assert.equal(profile.accessToken, ''); assert.equal(profile.refreshToken, null)
+  assert.equal(profile.clientId, 'oaiapp_saved')
+})
+test('rejected access token renews once without a new OAuth login', async t => {
+  const f = await renewableFixture(t, () => renewedTokens(), { expiresAt: Date.now() + 3600000 })
+  assert.equal((await f.adapter.status()).ready, true)
+  assert.equal(f.calls(), 1); assert.equal(f.modelCalls(), 2)
+})
+test('failed persistence retries saving the new rotating token before making another refresh request', async t => {
+  const base = memoryVault()
+  await base.save({ hostId: 'urn:uuid:write-test', activeId: 'oaiapp_saved', profiles: [{ clientId: 'oaiapp_saved', subject: 'saved-user', scopes: ['resource.invoke', 'chatgpt.tokens.use.direct'], accessToken: 'old-access', refreshToken: 'old-refresh', expiresAt: 1 }] })
+  let fail = false
+  const vault = { ...base, save: async state => { if (fail) { fail = false; throw new Error('disk unavailable') }; await base.save(state) } }
+  const f = await renewableFixture(t, () => { fail = true; return renewedTokens() }, { vault })
+  assert.equal((await f.adapter.status()).errorCode, 'credential_write_failed')
+  assert.equal(base.snapshot().profiles[0].refreshToken, 'old-refresh')
+  assert.equal((await f.adapter.status()).ready, true)
+  assert.equal(base.snapshot().profiles[0].refreshToken, 'rotated-refresh'); assert.equal(f.calls(), 1)
+})

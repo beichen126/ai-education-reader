@@ -23,6 +23,12 @@ export async function createChatGPTAdapter({ vault = createCredentialVault(), fe
   const state = await vault.load()
   await vault.save(state) // Persist host identity before the first authorization.
   let pending = null, refreshPromise = null, catalog = null, catalogRequest = null, lastError = null, stopped = false, loggingOut = false
+  let refreshFailure = null
+  let needsVaultSave = false
+  async function saveRenewedState() {
+    try { await vault.save(state); needsVaultSave = false }
+    catch { throw new LocalError('credential_write_failed', 503) }
+  }
   const active = () => state.profiles.find(profile => profile.clientId === state.activeId)
   async function request(url, init = {}, streaming = false) {
     const allowed = new URL(url)
@@ -41,6 +47,8 @@ export async function createChatGPTAdapter({ vault = createCredentialVault(), fe
         const raw = typeof body?.error === 'string' ? body.error : body?.error?.code
         if (['invalid_grant', 'invalid_refresh_token', 'token_expired', 'refresh_token_expired', 'refresh_token_invalidated', 'refresh_token_reused'].includes(raw)) code = 'authorization_expired'
         if (raw === 'invalid_client') code = 'oauth_invalid_client'
+        if (raw === 'unsupported_country_region_territory') code = raw
+        if (['access_denied', 'unauthorized_client'].includes(raw)) code = 'oauth_policy_denied'
       } else await response.body?.cancel()
       throw new LocalError(code || `token_endpoint_http_${response.status}`, 502)
     }
@@ -50,26 +58,43 @@ export async function createChatGPTAdapter({ vault = createCredentialVault(), fe
   }
   const scopesOf = value => typeof value === 'string' ? value.split(/\s+/).filter(Boolean) : []
   function checkScopes(scopes) { if (!requiredScopes.every(scope => scopes.includes(scope))) throw new LocalError('subscription_scope_missing', 403) }
-  async function accessToken() {
+  async function accessToken(rejectedToken) {
     if (stopped || loggingOut) throw new LocalError('service_stopping', 503)
+    if (needsVaultSave) await saveRenewedState()
     let profile = active()
     if (!profile?.accessToken) throw new LocalError('authorization_not_verified', 401)
     checkScopes(profile.scopes)
-    if (profile.expiresAt > Date.now() + 60000) return profile.accessToken
+    if (profile.expiresAt > Date.now() + 60000 && profile.accessToken !== rejectedToken) return profile.accessToken
     if (!profile.refreshToken) throw new LocalError('authorization_expired', 401)
+    if (refreshFailure?.profile === profile && Date.now() < refreshFailure.until) throw refreshFailure.error
     if (!refreshPromise) {
       refreshPromise = (async () => {
         const current = profile
-        const tokens = await tokenRequest(new URLSearchParams({ grant_type: 'refresh_token', client_id: current.clientId, refresh_token: current.refreshToken, resource: API }))
+        let tokens
+        try { tokens = await tokenRequest(new URLSearchParams({ grant_type: 'refresh_token', client_id: current.clientId, refresh_token: current.refreshToken, resource: API })) }
+        catch (error) {
+          if (active() === current && !stopped) {
+            if (error.code === 'authorization_expired') {
+              Object.assign(current, { accessToken: '', refreshToken: null, idToken: null })
+              needsVaultSave = true
+              await saveRenewedState()
+            } else refreshFailure = { profile: current, error, until: Date.now() + (['unsupported_country_region_territory', 'oauth_policy_denied', 'oauth_invalid_client'].includes(error.code) ? 60000 : 5000) }
+          }
+          throw error
+        }
         const scopes = tokens.scope === undefined ? current.scopes : scopesOf(tokens.scope)
-        checkScopes(scopes)
         if (active() !== current || stopped) throw new LocalError('authorization_changed', 409)
         Object.assign(current, { accessToken: tokens.access_token, refreshToken: typeof tokens.refresh_token === 'string' ? tokens.refresh_token : current.refreshToken, expiresAt: Date.now() + tokens.expires_in * 1000, scopes })
-        await vault.save(state)
+        needsVaultSave = true
+        await saveRenewedState()
+        checkScopes(scopes)
+        refreshFailure = null
         return current.accessToken
       })().finally(() => { refreshPromise = null })
     }
-    return refreshPromise
+    const token = await refreshPromise
+    if (active() !== profile || stopped || loggingOut) throw new LocalError('authorization_changed', 409)
+    return token
   }
   async function models(force = false) {
     const profile = active()
@@ -77,8 +102,13 @@ export async function createChatGPTAdapter({ vault = createCredentialVault(), fe
     if (catalogRequest && catalogRequest.profile === profile) return catalogRequest.promise
     const flight = { profile, promise: null }
     flight.promise = (async () => {
-    const token = await accessToken()
-    const response = await request(API + '/models', { headers: { Authorization: `Bearer ${token}` } })
+    let token = await accessToken()
+    let response = await request(API + '/models', { headers: { Authorization: `Bearer ${token}` } })
+    if (response.status === 401) {
+      await response.body?.cancel()
+      token = await accessToken(token)
+      response = await request(API + '/models', { headers: { Authorization: `Bearer ${token}` } })
+    }
     if (!response.ok) { await response.body?.cancel(); throw new LocalError(response.status === 401 ? 'authorization_expired' : 'model_discovery_failed', 502) }
     const body = await response.json()
     if (!Array.isArray(body.models)) throw new LocalError('invalid_model_catalog', 502)
