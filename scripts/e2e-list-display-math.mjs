@@ -53,7 +53,12 @@ try {
     assert.ok(copied.startsWith('\\[')&&copied.endsWith('\\]')&&copied.includes('K=\\int'))
   }
   const formula=page.locator('[data-message-id="math-assistant"] [data-math-kind="block"]').first()
-  await formula.scrollIntoViewIfNeeded();await formula.locator('.katex-html').click()
+  await formula.scrollIntoViewIfNeeded()
+  await formula.locator('.katex-html').evaluate(el => {
+    const range=document.createRange();range.selectNodeContents(el)
+    const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range)
+    document.dispatchEvent(new Event('selectionchange'))
+  })
   await page.getByRole('button',{name:'标记公式',exact:true}).waitFor({state:'visible'})
   console.log('PASS list display math: screenshot formulas render in user/assistant messages, source copy and block-formula marking remain available')
   await context.close()
