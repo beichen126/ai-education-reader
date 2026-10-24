@@ -75,6 +75,21 @@ test('loopback service: exact origins, pairing, unavailable auth and no paid fal
   assert.equal((await f.request('/status')).status, 401)
 })
 
+test('pairing console is local-navigation-only, non-embeddable and hides consumed codes', async t => {
+  const f = await fixture(t)
+  const response = await fetch(f.url + '/')
+  assert.equal(response.status, 200)
+  assert.match(await response.text(), new RegExp(f.service.pairingCode))
+  assert.equal(response.headers.get('access-control-allow-origin'), null)
+  assert.equal(response.headers.get('x-frame-options'), 'DENY')
+  assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/)
+  assert.equal((await fetch(f.url + '/', { headers: { 'Sec-Fetch-Site': 'cross-site' } })).status, 403)
+  assert.equal((await fetch(f.url + '/', { headers: { Origin: 'https://evil.test' } })).status, 403)
+  assert.equal((await fetch(f.url + '/', { headers: { Origin: 'https://beichen126.github.io' } })).status, 401)
+  await f.pair()
+  assert.doesNotMatch(await (await fetch(f.url + '/')).text(), new RegExp(f.service.pairingCode))
+})
+
 test('Pages pairing is cookie-free, origin-bound, revocable, and requires its capability', async t => {
   const f = await fixture(t)
   const headers = { Origin: 'https://beichen126.github.io', 'Content-Type': 'application/json' }

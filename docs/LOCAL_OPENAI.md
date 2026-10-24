@@ -4,7 +4,9 @@
 
 在项目目录运行 `powershell -ExecutionPolicy Bypass -File scripts/start-local-service.ps1 -UseSystemProxy`。使用已开启的 Windows 回环 HTTP 系统代理，只传入新进程环境，不保存节点或代理配置。服务独立于启动终端运行；异常退出按 1、2、4 秒递增至最多 60 秒退避重启，正常退出和端口占用不循环重启。关闭电脑、注销用户或主动终止守护进程仍会停止服务；不自动设置开机启动。
 
-停止使用 `powershell -ExecutionPolicy Bypass -File scripts/stop-local-service.ps1`，仅停止此项目的守护进程及其已核对路径的子进程。手动前台运行可用 `npm run local:server:stable:proxy`（需先设置本机代理环境变量），配对码只显示在终端，不写入文件。后台方式适合已有“记住这台电脑”配对的用户；首次配对仍用前台终端取得一次性代码。重启不会删除已保存的授权和长期配对；未选择记住的临时配对会随服务重启失效。
+启动器通过 Windows WMI 创建独立运行进程，脱离调用终端或工具会话的进程树；不安装开机任务。停止使用 `powershell -ExecutionPolicy Bypass -File scripts/stop-local-service.ps1`，仅停止此项目的守护进程及其已核对路径的子进程。手动前台运行可用 `npm run local:server:stable:proxy`（需先设置本机代理环境变量）。
+
+后台运行时，在本机浏览器地址栏直接输入 `http://127.0.0.1:8091/` 查看当前一次性配对码，不写入文件。该本机页面禁止跨站读取、嵌入和跨站导航，不展示 OAuth 凭据；代码消费后不再显示。重启不会删除已保存的授权和长期配对；未选择记住的临时配对会随服务重启失效。
 
 ## 授权恢复（v3.0.8）
 

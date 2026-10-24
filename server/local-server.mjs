@@ -40,6 +40,14 @@ export function createLocalService({ adapter = pendingAdapter, pairingCode = ran
     try {
       if (req.headers.host !== expectedHost) throw new LocalError('invalid_host', 403)
       const origin = req.headers.origin
+      // Operator-only loopback landing page. No CORS, scripts, embedding or
+      // cross-site navigation; never expose pairing codes on API responses.
+      if (req.url === '/' && req.method === 'GET' && !origin && (!req.headers['sec-fetch-site'] || ['none', 'same-origin'].includes(req.headers['sec-fetch-site']))) {
+        const available = pairAvailable && Date.now() <= pairExpires && pairFailures < 5
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'", 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'no-referrer', 'Cross-Origin-Resource-Policy': 'same-origin' })
+        res.end('<!doctype html><html lang="zh-CN"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reader 本机配对</title><h1>Reader 本机服务已运行</h1>' + (available ? '<p>一次性配对码（不是 OpenAI Token）：</p><pre id="pairing-code">' + pairingCode + '</pre><p>复制到 Reader 设置，点击“配对”，并勾选“记住此电脑”。代码仅限当前启动，10 分钟内有效。</p>' : '<p>配对码已使用或过期。已记住的设备可直接连接；新设备请重启服务获取新码。</p>') + '<p>本页不显示 ChatGPT 凭据。配对和 ChatGPT 登录是两步。</p></html>')
+        return
+      }
       // Exact origins only, including the maintained Pages origin (never *.github.io).
       if (!ORIGINS.has(origin)) throw new LocalError('origin_denied', 403)
       res.setHeader('Access-Control-Allow-Origin', origin)
