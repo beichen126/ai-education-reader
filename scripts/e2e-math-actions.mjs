@@ -51,9 +51,9 @@ try {
   await page.getByText('Thinking test complete', { exact: true }).waitFor()
   await page.getByTestId('assistant-thinking').waitFor({ state: 'hidden' })
   await page.getByTestId('official-token-usage').waitFor()
-  assert.match(await page.getByTestId('official-token-usage').innerText(), /123.*45/)
+  assert.match(await page.getByTestId('official-token-usage').innerText(), /0\.12k.*0\.05k/)
   await page.reload({ waitUntil: 'networkidle' })
   await page.getByTestId('official-token-usage').waitFor()
-  assert.match(await page.getByTestId('cumulative-token-usage').innerText(), /168/)
+  assert.match(await page.getByTestId('official-token-usage').innerText(), /0\.12k.*0\.05k/)
   console.log('PASS: click does not annotate; explicit formula selection enables source copy and study marking')
 } finally { await browser.close() }

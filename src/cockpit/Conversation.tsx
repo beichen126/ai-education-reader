@@ -3,6 +3,7 @@ import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, us
 import type { CSSProperties } from 'react'
 import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/sessions-store'
 import { patchSettings, useSettings, useSettingsMutation } from '../engine/settings-store'
+import { formatTokenCount } from '../engine/token-usage'
 import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
@@ -539,13 +540,10 @@ function ContextSummary({ messages }: { messages: readonly TMessage[] }) {
   const imageCount = new Set(messages.filter(m => m.role === 'user').flatMap(m => m.images)).size
   const latestReply = [...messages].reverse().find(m => m.role === 'assistant')
   const usage = latestReply?.status ? undefined : latestReply?.tokenUsage
-  const measured = messages.filter(m => m.role === 'assistant' && !m.status && m.tokenUsage)
-  const cumulative = measured.reduce((sum, m) => sum + m.tokenUsage!.totalTokens, 0)
   return <div className={css.contextUsage} data-testid="composer-context-usage" aria-live="polite">
-    {usage && <span data-testid="official-token-usage">{tx('上次请求（接口返回）· 输入 ', 'Last request (API) · input ')}{usage.inputTokens.toLocaleString()}{tx(' / 输出 ', ' / output ')}{usage.outputTokens.toLocaleString()} tokens · </span>}
-    {measured.length > 0 && <span data-testid="cumulative-token-usage">{tx('路线累计用量 ', 'Path cumulative usage ')}{cumulative.toLocaleString()} tokens{tx('（已统计 ' + measured.length + ' 次）· ', ' (' + measured.length + ' measured requests) · ')}</span>}
-    {!usage && <span>{tx('上次请求暂无官方用量 · ', 'Last request usage unavailable · ')}</span>}
-    {tx('累计 ' + imageCount + ' 张图', imageCount + ' images total')}
+    {usage && <span data-testid="official-token-usage">{tx('输入 ', 'In ')}{formatTokenCount(usage.inputTokens)} · {tx('输出 ', 'Out ')}{formatTokenCount(usage.outputTokens)} · </span>}
+    {!usage && <span>{tx('Token 未返回 · ', 'No token usage · ')}</span>}
+    {tx('图 ' + imageCount, imageCount + ' images')}
   </div>
 }
 

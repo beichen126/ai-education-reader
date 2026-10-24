@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
-import { parseTokenUsage } from '../src/engine/token-usage'
+import { parseTokenUsage, formatTokenCount } from '../src/engine/token-usage'
 import { streamTextChat } from '../src/api/deepseek'
 import { relayResponses } from '../server/openai-contract.mjs'
 
 const expected = { inputTokens: 120, outputTokens: 30, totalTokens: 150 }
+assert.equal(formatTokenCount(74650), '74.65k')
+assert.equal(formatTokenCount(2114), '2.11k')
+assert.equal(formatTokenCount(0), '0.00k')
+assert.equal(formatTokenCount(999), '1.00k')
+assert.equal(formatTokenCount(45), '0.05k')
 assert.deepEqual(parseTokenUsage({ prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 }), expected)
 for (const bad of [null, {}, { input_tokens: -1, output_tokens: 2, total_tokens: 1 }, { input_tokens: '120', output_tokens: 30, total_tokens: 150 }]) assert.equal(parseTokenUsage(bad), undefined)
 const savedFetch = globalThis.fetch
