@@ -23,6 +23,12 @@
 .itemSummary { font-size: 12px; color: var(--dsw-alias-label-secondary); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .itemMeta { font-size: 11px; color: var(--dsw-alias-label-tertiary); display: flex; flex-wrap: wrap; gap: 8px; }
 .ratingBadge { color: var(--dsw-alias-state-warning-primary, #b7791f); font-weight: 600; }
+.listRow { display: flex; align-items: flex-start; min-width: 0; }
+.listRow > .item { flex: 1; min-width: 0; }
+.listRating { flex: 0 0 auto; margin: 12px 8px; max-width: 120px; font-size: 12px; }
+.listRating summary { cursor: pointer; padding: 8px; }
+.listRating label { display: grid; gap: 4px; }
+.listRating select { max-width: 100%; min-height: 36px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
 .empty { padding: 24px 16px; color: var(--dsw-alias-label-tertiary); font-size: 13px; }
 .detail { flex: 1; min-width: 0; min-height: 0; overflow: hidden; border-left: 1px solid var(--dsw-alias-border-l2); display: flex; flex-direction: column; }
 .detailHead { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--dsw-alias-border-l1); flex-wrap: wrap; }

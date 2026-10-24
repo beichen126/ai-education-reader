@@ -4,6 +4,7 @@ const targets: { close: () => void; priority: number }[] = []
 const marker = '__readerOverlay'
 let installed = false
 let lastPop = 0
+let retiringHistoryEntry = false
 export function readerBack(): boolean {
   const target = targets.at(-1)
   if (!target) return false
@@ -16,6 +17,13 @@ function install() {
   ;(window as unknown as { __readerBack: typeof readerBack }).__readerBack = readerBack
   window.addEventListener('popstate', () => {
     lastPop = performance.now()
+    // Closing several nested surfaces in one render may run several cleanups.
+    // Consume their single synthetic entry once, never navigate back twice.
+    if (retiringHistoryEntry) {
+      retiringHistoryEntry = false
+      if (targets.length && !history.state?.[marker]) history.pushState({ ...history.state, [marker]: true }, '')
+      return
+    }
     if (readerBack()) queueMicrotask(() => {
       if (targets.length && !history.state?.[marker]) history.pushState({ ...history.state, [marker]: true }, '')
     })
@@ -54,7 +62,12 @@ export function useBackTarget(active: boolean, close: () => void, priority = 50)
     return () => {
       const index = targets.indexOf(target)
       if (index >= 0) targets.splice(index, 1)
-      queueMicrotask(() => { if (!targets.length && history.state?.[marker]) history.back() })
+      queueMicrotask(() => {
+        if (!targets.length && history.state?.[marker] && !retiringHistoryEntry) {
+          retiringHistoryEntry = true
+          history.back()
+        }
+      })
     }
   }, [active, priority])
 }

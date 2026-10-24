@@ -13,6 +13,8 @@ import type { Annotation } from './annotation-types'
 import css from './annotate.module.css'
 import { tx } from '../engine/locale'
 import { readAloud, stopReadAloud } from '../speech/read-aloud'
+import { selectMarkdownBlock } from '../markdown/select-block'
+import { markdownSourceForRange } from '../markdown/source-copy'
 
 type AnnotationEventOwner = {
   element: HTMLElement
@@ -85,6 +87,9 @@ function uninstallAnnotationEventsIfIdle(): void {
 
 export function AnnotatedMarkdown({ content, messageId, conversationId, branchId, focusAnnotation }: { content: string; messageId: string; conversationId: string; branchId?: string; focusAnnotation?: Annotation }) {
   const wrapRef = useRef<HTMLDivElement>(null)
+  const lastTap = useRef<{time: number; x: number; y: number; target: EventTarget | null} | null>(null)
+  const touchStart = useRef<{x: number; y: number} | null>(null)
+  const [copyStatus, setCopyStatus] = useState('')
   const highlightOwnerId = messageId + ':' + useId()
   const [pending, setPending] = useState<SelectionMapping | null>(null)
   const [toolbarPosition, setToolbarPosition] = useState<{ left: number; top: number } | null>(null)
@@ -124,7 +129,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
     if (!pending || !root) { setToolbarPosition(null); return }
     const selection = window.getSelection()
     const anchor = pending.kind === 'math'
-      ? Array.from(root.querySelectorAll<HTMLElement>('[data-math-id]')).find(el => el.dataset.mathId === pending.mathId)?.getBoundingClientRect()
+      ? (()=>{const math=Array.from(root.querySelectorAll<HTMLElement>('[data-math-id]')).find(el=>el.dataset.mathId===pending.mathId);return (math?.querySelector('.katex-html')??math)?.getBoundingClientRect()})()
       : selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null
     if (!anchor || !anchor.width || !anchor.height) { setToolbarPosition(null); return }
     const bounds = root.getBoundingClientRect()
@@ -252,25 +257,56 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   const fullyCovered = pending && pending.kind === 'text' ? shouldToggleAll(pending.segments.map((s) => ({ anchor: s.cell ? { scope: 'table-cell', tableId: s.cell.tableId, row: s.cell.row, column: s.cell.column } : { scope: 'block', blockId: s.blockId }, start: s.start, end: s.end })), annotations) === 'remove' : mathCovered
 
   const onTableAction = useCallback((tableId: string) => { void toggleWholeTableMessage(conversationId, messageId, tableId, branchId) }, [conversationId, messageId, branchId])
+  const copySelection = async () => {
+    const selection = window.getSelection(), root = wrapRef.current?.querySelector<HTMLElement>('[data-markdown-source-root]')
+    if (!root || !selection?.rangeCount || selection.isCollapsed) return
+    const range = selection.getRangeAt(0)
+    const text = markdownSourceForRange(root, content, range) ?? selection.toString()
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text)
+      else if (!document.execCommand('copy')) throw new Error('copy_failed')
+      setCopyStatus(tx('已复制', 'Copied'))
+    } catch {
+      // Some Android WebViews expose Clipboard but reject writeText. Preserve
+      // the native range and let the existing source-aware copy handler run.
+      try { if (!document.execCommand('copy')) throw new Error();setCopyStatus(tx('已复制','Copied')) }
+      catch {setCopyStatus(tx('请用系统复制', 'Use system copy'))}
+    }
+  }
   // Updating the selection toolbar must not rebuild KaTeX's nested DOM while
   // the browser owns a native Range anchored in those nodes.
   const markdown = useMemo(() => <MarkdownBlocks content={content} messageId={messageId} annotations={annotations} onTableAction={onTableAction} onMathAction={onMathAction} parsedRoot={parsedRoot} />, [content, messageId, annotations, onTableAction, onMathAction, parsedRoot])
   return (
-    <div ref={wrapRef} className={css.wrap} style={{ '--annotation-left': `${toolbarPosition?.left ?? 0}px`, '--annotation-top': `${toolbarPosition?.top ?? 0}px`, '--annotation-visibility': toolbarPosition ? 'visible' : 'hidden' } as React.CSSProperties} data-highlight={hasHl} data-annotation-owner={highlightOwnerId}>
+    <div ref={wrapRef} className={css.wrap} onDoubleClick={event => {
+      if (selectMarkdownBlock(event.currentTarget, event.target)) { event.preventDefault(); event.stopPropagation(); setCopyStatus('') }
+    }} onPointerDownCapture={event => {
+      if (event.pointerType === 'touch') touchStart.current = {x:event.clientX,y:event.clientY}
+      setCopyStatus('')
+    }} onPointerUp={event => {
+      if (event.pointerType !== 'touch') return
+      const start = touchStart.current; touchStart.current = null
+      if (!start || Math.hypot(event.clientX-start.x,event.clientY-start.y)>12) { lastTap.current=null; return }
+      const tap=lastTap.current, time=performance.now()
+      if (tap && time-tap.time<350 && tap.target===event.target && Math.hypot(event.clientX-tap.x,event.clientY-tap.y)<24) {
+        if (selectMarkdownBlock(event.currentTarget,event.target)) { event.preventDefault(); lastTap.current=null }
+      } else lastTap.current={time,x:event.clientX,y:event.clientY,target:event.target}
+    }} style={{ '--annotation-left': `${toolbarPosition?.left ?? 0}px`, '--annotation-top': `${toolbarPosition?.top ?? 0}px`, '--annotation-visibility': toolbarPosition ? 'visible' : 'hidden' } as React.CSSProperties} data-highlight={hasHl} data-annotation-owner={highlightOwnerId}>
       {markdown}
       {pending && pending.kind === 'math' && (
         <div className={css.annotBar} onPointerDown={e => { e.preventDefault(); e.stopPropagation() }} onPointerUp={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
           <button type="button" className={css.annotBtn} onClick={doToggle}>{mathCovered ? tx('取消标记', 'Unmark') : tx('标记公式', 'Mark formula')}</button>
+          <button type="button" className={css.annotBtn} data-testid="selection-copy" onClick={()=>void copySelection()}>{copyStatus || tx('复制', 'Copy')}</button>
         </div>
       )}
       {pending && pending.kind === 'text' && (
-        <div className={css.annotBar}>
+        <div className={css.annotBar} onPointerDown={event=>{event.preventDefault();event.stopPropagation()}} onPointerUp={event=>event.stopPropagation()} onTouchEnd={event=>event.stopPropagation()}>
+          <button type="button" className={css.annotBtn} data-testid="selection-copy" onClick={()=>void copySelection()}>{copyStatus || tx('复制', 'Copy')}</button>
           <button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{fullyCovered ? tx('取消标记', 'Unmark') : tx('标记', 'Mark')}</button>
           <button type="button" className={css.annotBtn} data-testid="selection-read-aloud" title={tx('自动识别语言；倍速及重复次数可在通用设置调整，优先使用 Edge 在线声音','Detects language automatically. Adjust speed and repetitions in General settings; prefers Edge online voices.')} onPointerDown={e=>{e.preventDefault();e.stopPropagation()}} onPointerUp={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} onClick={()=>{readAloud(pending.segments.map(segment=>segment.exact).join('\n').replaceAll('\uFFFF',' '),highlightOwnerId);setPending(null)}}>{tx('朗读','Read aloud')}</button>
         </div>
       )}
       {pending && pending.kind === 'table-cross-cell' && (
-        <div className={css.annotBar}><button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={markCrossCell}>{hasExactRectangle(annotations, pending.tableId, normalizeBounds(pending.startCell.row, pending.startCell.column, pending.endCell.row, pending.endCell.column)) ? tx('取消标记', 'Unmark') : tx('标记', 'Mark')}</button></div>
+        <div className={css.annotBar} onPointerDown={event=>{event.preventDefault();event.stopPropagation()}} onPointerUp={event=>event.stopPropagation()} onTouchEnd={event=>event.stopPropagation()}><button className={css.annotBtn} onClick={markCrossCell}>{hasExactRectangle(annotations, pending.tableId, normalizeBounds(pending.startCell.row, pending.startCell.column, pending.endCell.row, pending.endCell.column)) ? tx('取消标记', 'Unmark') : tx('标记', 'Mark')}</button><button type="button" className={css.annotBtn} data-testid="selection-copy" onClick={()=>void copySelection()}>{copyStatus || tx('复制','Copy')}</button></div>
       )}
     </div>
   )

@@ -218,7 +218,7 @@ export function LearningCenter() {
               )}
               <ul className={css.list} data-testid="card-list">
                 {visibleCards.map(card => (
-                  <li key={card.id}>
+                  <li key={card.id} className={css.listRow}>
                     <button type="button" className={css.item} data-testid="card-item" data-card-id={card.id} aria-current={false} onClick={() => openCard(card.id)}>
                       <span className={css.itemTitle} data-testid="card-item-title">{cardTitle(card)}</span>
                       <span className={css.itemSummary}>{studyCardPlainText(card.bodyMarkdown).slice(0, 240)}</span>
@@ -231,6 +231,7 @@ export function LearningCenter() {
                         {card.lastOpenedAt !== undefined && <span>{tx('最近打开 ', 'Last opened ')}{timestampLabel(card.lastOpenedAt)}</span>}
                       </span>
                     </button>
+                    <ListRating card={card} onChanged={()=>void reload()} />
                   </li>
                 ))}
               </ul>
@@ -286,7 +287,6 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
   const [error, setError] = useState<string | null>(null)
   const [sourceStatus, setSourceStatus] = useState<StudyCardSourceStatus | null>(null)
   const [clampNote, setClampNote] = useState<string | null>(null)
-  const [hoverRating, setHoverRating] = useState<StudyCardRating | null>(null)
   const openedRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -351,21 +351,6 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
     } finally { setBusy(false); setRenaming(false) }
   }
 
-  const commitRating = async (rating: StudyCardRating | undefined) => {
-    if (!card || busy || card.rating === rating) return
-    setBusy(true)
-    try {
-      const updated = await updateStudyCardRating(card.id, rating, card.updatedAt)
-      if (updated) { setCard(updated); setError(null); onChanged() }
-      else setError(tx('卡片已在其它标签页中被修改，请重新打开后再评分。', 'This card was changed in another tab. Reopen it before rating.'))
-    } catch (e) {
-      setError(localizedErrorText(e, 'Unable to save rating'))
-    } finally {
-      setBusy(false)
-      setHoverRating(null)
-    }
-  }
-
   const remove = async () => {
     if (!card || !globalThis.confirm(tx('删除这张学习卡片？（不会删除原会话、PDF 或学习成果）', 'Delete this study card? Its source chat, PDF, and study output will not be deleted.'))) return
     setBusy(true)
@@ -414,33 +399,6 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
         <button type="button" className={css.small} data-testid="card-rename" disabled={busy} onClick={() => setRenaming(true)}>{tx('重命名', 'Rename')}</button>
         <button type="button" className={css.small + ' ' + css.danger} data-testid="card-delete" disabled={busy} onClick={() => void remove()}>{tx('删除', 'Delete')}</button>
       </div>
-      <div className={css.ratingRow} data-testid="card-rating">
-        <span className={css.ratingLabel}>{tx('给这张卡片评分', 'Rate this card')}</span>
-        <span className={css.ratingStars} role="group" aria-label={tx('学习卡片评分', 'Study card rating')} onMouseLeave={() => setHoverRating(null)}>
-          {([1, 2, 3, 4, 5] as StudyCardRating[]).map(value => {
-            const active = value <= (hoverRating ?? card.rating ?? 0)
-            return (
-              <button
-                key={value}
-                type="button"
-                className={css.ratingButton}
-                data-testid={'card-rating-' + value}
-                data-active={active ? 'true' : 'false'}
-                aria-label={tx('设置为 ' + value + ' 分', 'Set rating to ' + value)}
-                aria-pressed={card.rating === value}
-                title={tx(value + ' 分', value + ' stars')}
-                disabled={busy}
-                onMouseEnter={() => setHoverRating(value)}
-                onFocus={() => setHoverRating(value)}
-                onBlur={() => setHoverRating(null)}
-                onClick={() => void commitRating(value)}
-              >★</button>
-            )
-          })}
-        </span>
-        <span className={css.ratingValue} data-testid="card-rating-value" aria-live="polite">{card.rating === undefined ? tx('未评分', 'Not rated') : card.rating + ' / 5'}</span>
-        {card.rating !== undefined && <button type="button" className={css.ratingClear} data-testid="card-rating-clear" disabled={busy} onClick={() => void commitRating(undefined)}>{tx('清除', 'Clear')}</button>}
-      </div>
       <div className={css.detailBody} data-testid="card-detail-body">
         {focusMarks && card.annotations?.length ? <MarkedPassage card={card}/> : <AnnotatedMarkdown content={card.bodyMarkdown} messageId={card.source.assistantMessageId} conversationId={card.source.conversationId} branchId={card.source.branchId} />}
       </div>
@@ -480,7 +438,7 @@ function CardDetail({ cardId, context, documentNames, pageCounts, onBack, onChan
           )
         })}
         {clampNote && <div className={css.hint} data-testid="card-source-clamp-note">{clampNote}</div>}
-        {card.documentRefs.length === 0 && <div className={css.sourceRow} data-testid="card-source-none">{tx('这张卡片没有 PDF 来源。', 'This card has no PDF source.')}</div>}
+        {card.documentRefs.length === 0 && <div className={css.sourceRow} data-testid="card-source-none">{tx('来源：会话', 'Source: conversation')}</div>}
         <div className={css.sourceRow}><span>{tx('创建 ', 'Created ')}{timestampLabel(card.createdAt)}</span>{card.lastOpenedAt !== undefined && <span>· {tx('最近打开 ', 'Last opened ')}{timestampLabel(card.lastOpenedAt)}</span>}</div>
       </div>
       {error && <div className={css.error} data-testid="card-error" role="alert">{error}</div>}
@@ -513,4 +471,28 @@ function ArtifactDetail({ artifactId, onBack }: { artifactId: string; onBack: ()
       <ArtifactViewerBody artifact={artifact} onOpen={setArtifact} onClose={onBack} onChanged={() => void getArtifact(artifactId).then(setArtifact)} sourceDeleted={!live}/>
     </div>
   )
+}
+
+function ListRating({card,onChanged}:{card:StudyCard;onChanged:()=>void}) {
+  const [busy,setBusy]=useState(false)
+  const [error,setError]=useState('')
+  return <details className={css.listRating} data-testid="card-list-rating">
+    <summary>{tx('评分','Rate')}</summary>
+    <label>{tx('重要程度','Importance')}
+      <select aria-label={tx('学习卡片评分','Study card rating')} disabled={busy} value={card.rating??''} onChange={async event=>{
+        const value=event.target.value
+        setBusy(true);setError('')
+        try {
+          const current=await getStudyCard(card.id)
+          if(!current || !await updateStudyCardRating(card.id,value?Number(value) as StudyCardRating:undefined,current.updatedAt)) throw new Error()
+          onChanged()
+        } catch {setError(tx('保存失败，请重试','Save failed. Retry.'))}
+        finally {setBusy(false)}
+      }}>
+        <option value="">{tx('不评分','Not rated')}</option>
+        {[1,2,3,4,5].map(value=><option key={value} value={value}>{value} / 5</option>)}
+      </select>
+    </label>
+    {error&&<small role="alert">{error}</small>}
+  </details>
 }

@@ -208,6 +208,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
   }
   // Click on empty stage area closes; a pan suppresses it; clicks on the image don't close.
   const onStageClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
     if (lastMovedRef.current > 4) return
     if ((e.target as HTMLElement) !== stageRef.current) return
     onClose()

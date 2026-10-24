@@ -28,9 +28,11 @@ export function preferredVoice(voices: readonly SpeechSynthesisVoice[], lang: st
   return [...candidates].sort((a,b) => score(b)-score(a))[0]
 }
 
-type State = {status:'idle'|'speaking'|'paused'|'error'; owner?:string; voice?:string; lang?:string; rate?:number; repeat?:number; repeats?:number; error?:'unsupported'|'failed'}
+type State = {status:'idle'|'loading'|'speaking'|'paused'|'error'; owner?:string; voice?:string; lang?:string; rate?:number; repeat?:number; repeats?:number; error?:'unsupported'|'failed'|'voice-unavailable'|'not-allowed'}
 let state: State = {status:'idle'}, generation = 0
 let currentUtterance: SpeechSynthesisUtterance | null = null
+let cancelVoiceWait: (()=>void) | null = null
+let startTimer: ReturnType<typeof setTimeout> | undefined
 const listeners = new Set<() => void>()
 function publish(next: State) { state = next; listeners.forEach(fn=>fn()) }
 export const speechSnapshot = () => state
@@ -38,10 +40,11 @@ export function useReadAloud() { return useSyncExternalStore(fn=>{listeners.add(
 export function stopReadAloud(owner?: string) {
   if (owner && state.owner !== owner) return
   generation++; currentUtterance = null
+  cancelVoiceWait?.(); cancelVoiceWait=null; clearTimeout(startTimer)
   try { const synth=window.speechSynthesis; synth?.cancel(); if(synth?.paused)synth.resume() } catch {}
   publish({status:'idle'})
 }
-export function pauseReadAloud() { if(state.status==='speaking') { window.speechSynthesis.pause();publish({...state,status:'paused'}) } }
+export function pauseReadAloud() { if(state.status==='speaking') { clearTimeout(startTimer);window.speechSynthesis.pause();publish({...state,status:'paused'}) } }
 export function resumeReadAloud() { if(state.status==='paused') { window.speechSynthesis.resume();publish({...state,status:'speaking'}) } }
 
 export function readAloud(text: string, owner: string) {
@@ -64,11 +67,29 @@ export function readAloud(text: string, owner: string) {
       const voice = preferredVoice(window.speechSynthesis.getVoices(),chunk.lang)
       if (voice) utterance.voice = voice
       utterance.lang = chunk.lang; utterance.rate = chunk.rate
-      utterance.onend = () => { if (currentUtterance === utterance) next() }
-      utterance.onerror = () => { if(token===generation && currentUtterance===utterance) {currentUtterance=null;publish({status:'error',owner,error:'failed'})} }
+      utterance.onstart = () => {if(token===generation && currentUtterance===utterance)clearTimeout(startTimer)}
+      utterance.onend = () => { if(token===generation && currentUtterance === utterance) {clearTimeout(startTimer);next()} }
+      utterance.onerror = event => { if(token===generation && currentUtterance===utterance) {clearTimeout(startTimer);currentUtterance=null;publish({status:'error',owner,error:['language-unavailable','voice-unavailable','synthesis-unavailable'].includes(event.error)?'voice-unavailable':event.error==='not-allowed'?'not-allowed':'failed'})} }
       publish({status:'speaking',owner,voice:voice?.name,lang:chunk.lang,rate:chunk.rate,repeat,repeats})
+      clearTimeout(startTimer)
+      startTimer=setTimeout(()=>{
+        if(token!==generation || currentUtterance!==utterance || state.status!=='speaking')return
+        currentUtterance=null;window.speechSynthesis.cancel();publish({status:'error',owner,error:'voice-unavailable'})
+      },15000)
+      ;(startTimer as unknown as {unref?:()=>void}).unref?.()
       window.speechSynthesis.speak(utterance)
     } catch { if(token===generation) publish({status:'error',owner,error:'failed'}) }
   }
-  next()
+  const synth=window.speechSynthesis
+  // System voices can arrive asynchronously in Chrome, Firefox and Android.
+  if (!synth.getVoices().length && typeof synth.addEventListener==='function') {
+    publish({status:'loading',owner})
+    let timer:ReturnType<typeof setTimeout>
+    const cleanup=()=>{clearTimeout(timer);synth.removeEventListener('voiceschanged',ready);cancelVoiceWait=null}
+    const ready=()=>{if(!synth.getVoices().length)return;cleanup();if(token===generation)next()}
+    synth.addEventListener('voiceschanged',ready)
+    timer=setTimeout(()=>{cleanup();if(token===generation)next()},2000)
+    cancelVoiceWait=cleanup
+    ready()
+  } else next()
 }

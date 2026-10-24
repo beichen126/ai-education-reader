@@ -45,3 +45,21 @@ assert.deepEqual(markContext(text,start,start+7),{before:'One. Two. ',exact:'Tar
 const chinese='零。前一。前二。标记。后一。后二。不要。'
 assert.equal(markContext(chinese,chinese.indexOf('标记'),chinese.indexOf('标记')+3).after,'后一。后二。')
 console.log('PASS read aloud: bilingual rates, three whole-selection repetitions, preferred online voices, pause/resume/stop, stale callbacks, local preferences/backup and two-sentence mark context')
+// Delayed voice discovery on non-Edge engines, cancellation and actionable errors.
+let available:SpeechSynthesisVoice[]=[]
+let changed:(()=>void)|undefined
+const synth=(globalThis as any).window.speechSynthesis
+synth.getVoices=()=>available
+synth.addEventListener=(_name:string,fn:()=>void)=>{changed=fn}
+synth.removeEventListener=()=>{changed=undefined}
+readAloud('Delayed voices.','delayed')
+assert.equal(speechSnapshot().status,'loading')
+available=voices;changed?.()
+assert.equal(speechSnapshot().status,'speaking')
+spoken.at(-1).onerror({error:'language-unavailable'})
+assert.equal(speechSnapshot().error,'voice-unavailable')
+available=[];readAloud('Cancelled.','waiting');stopReadAloud()
+assert.equal(changed,undefined);assert.equal(speechSnapshot().status,'idle')
+available=voices;readAloud('Blocked.','blocked');spoken.at(-1).onerror({error:'not-allowed'})
+assert.equal(speechSnapshot().error,'not-allowed');stopReadAloud()
+console.log('PASS delayed system voices, cancellation and language/playback error feedback')
