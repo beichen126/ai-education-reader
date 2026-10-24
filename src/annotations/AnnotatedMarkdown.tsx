@@ -129,7 +129,14 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
     if (!pending || !root) { setToolbarPosition(null); return }
     const selection = window.getSelection()
     const anchor = pending.kind === 'math'
-      ? (()=>{const math=Array.from(root.querySelectorAll<HTMLElement>('[data-math-id]')).find(el=>el.dataset.mathId===pending.mathId);return (math?.querySelector('.katex-html')??math)?.getBoundingClientRect()})()
+      ? (()=>{
+        const math=Array.from(root.querySelectorAll<HTMLElement>('[data-math-id]')).find(el=>el.dataset.mathId===pending.mathId)
+        if(!math)return null
+        const bounds=math.getBoundingClientRect(), visual=(math.querySelector('.katex-html')??math).getBoundingClientRect()
+        // Align horizontally to the glyphs, while leaving the formula's full
+        // line box clear vertically (KaTeX baseline metrics can differ).
+        return {left:visual.left,width:visual.width,top:bounds.top,bottom:bounds.bottom,height:bounds.height}
+      })()
       : selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null
     if (!anchor || !anchor.width || !anchor.height) { setToolbarPosition(null); return }
     const bounds = root.getBoundingClientRect()
