@@ -12,7 +12,7 @@ const pairingStore = await createPairingStore(createCredentialVault(undefined, '
 const service = createLocalService({ adapter, localTransport, pairingStore })
 service.server.on('error', error => {
   console.error(error.code === 'EADDRINUSE' ? 'Reader 本机服务端口 8091 已被占用。 / Port 8091 is in use.' : 'Reader 本机服务无法启动。 / Unable to start local service.')
-  process.exitCode = 1
+  process.exitCode = error.code === 'EADDRINUSE' ? 78 : 1
 })
 service.server.listen(8091, '127.0.0.1', () => {
   console.log('Reader local service: http://127.0.0.1:8091')
