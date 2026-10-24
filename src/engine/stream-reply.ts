@@ -21,7 +21,7 @@ export interface ReplyThread {
   readonly genKey: string
   getContextMessages(): Message[] | Promise<Message[]>
   createAssistantPlaceholder(assistantId: StableId, now: number): void
-  updateAssistantContent(content: string): void
+  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage): void
   persistCheckpoint(content: string): void
   persistFinal(): Promise<void>
   drainWrites(): Promise<void>
@@ -115,6 +115,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     const r = await streamProviderChat(settings, { apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages, signal: controller.signal, onDelta })
     received = r.content + webFooter
     update(received, true)
+    if (r.usage) thread.updateAssistantContent(received, r.usage)
     if (!(await thread.exists())) throw new DeepSeekError('aborted', '目标已删除')
     await thread.persistFinal()
     await thread.drainWrites()

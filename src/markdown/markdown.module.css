@@ -25,5 +25,7 @@
 .mathBlock { margin: 12px auto; display: block; width: fit-content; overflow-x: auto; overflow-y: hidden; max-width: 100%; user-select: text; -webkit-user-select: text; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
 .mathBlock :global(.katex-display) { margin: 0; }
 .mathInline { color: var(--dsw-alias-label-primary); }
+.markdown :global(.katex-mathml) { user-select: none; -webkit-user-select: none; }
+.markdown :global(.katex-html) { user-select: text; -webkit-user-select: text; }
 .studyMathHighlighted { background: var(--dsw-specific-study-highlight, #d9d9d9); }
 .studyMathHighlighted .katex, .studyMathHighlighted.katex { background-color: var(--dsw-specific-study-highlight, #d9d9d9); }

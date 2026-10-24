@@ -1,6 +1,7 @@
 // DeepSeek API adapter. Only boundary that performs fetch from the app.
 import { hasMeaningfulAssistantContent } from '../engine/types'
 import { tx } from '../engine/locale'
+import { parseTokenUsage, type TokenUsage } from '../engine/token-usage'
 
 export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
 export type ApiChatMessage = { role: 'user' | 'assistant' | 'system'; content: string | ChatContentPart[] }
@@ -229,16 +230,16 @@ export class SSEParser {
 }
 
 export interface StreamTextChatArgs extends SendTextChatArgs { signal?: AbortSignal; onDelta: (delta: string) => void }
-export interface StreamTextChatResult { content: string; finishReason?: string }
+export interface StreamTextChatResult { content: string; finishReason?: string; usage?: TokenUsage }
 
 /** Extract the content delta from one SSE event payload (DeepSeek / OpenAI shape). */
-function deltaOf(data: string): { delta: string; finishReason?: string } {
+function deltaOf(data: string): { delta: string; finishReason?: string; usage?: TokenUsage } {
   let evt: any
   try { evt = JSON.parse(data) } catch { throw new DeepSeekError('bad-json', 'stream chunk is not valid JSON') }
   const ch = evt && evt.choices && evt.choices[0] ? evt.choices[0] : undefined
   const d = ch && ch.delta && typeof ch.delta.content === 'string' ? ch.delta.content : ''
   const fr = ch && ch.finish_reason ? ch.finish_reason : undefined
-  return { delta: d, finishReason: fr }
+  return { delta: d, finishReason: fr, usage: parseTokenUsage(evt?.usage) }
 }
 
 export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTextChatResult> {
@@ -274,7 +275,7 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
     const choice = payload?.choices?.[0], content = choice?.message?.content
     if (typeof content !== 'string' || !hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content')
     onDelta(content)
-    return { content, finishReason: choice.finish_reason }
+    return { content, finishReason: choice.finish_reason, usage: parseTokenUsage(payload?.usage) }
   }
   if (!res.body) throw new DeepSeekError('bad-json', 'no response body')
   const reader = res.body.getReader()
@@ -282,6 +283,7 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
   const parser = new SSEParser()
   let content = ''
   let finishReason: string | undefined
+  let usage: TokenUsage | undefined
   let done = false
   try {
     for (;;) {
@@ -291,6 +293,7 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
       for (const data of parser.feed(text)) {
         if (data === '[DONE]') { done = true; break }
         const d = deltaOf(data)
+        if (d.usage) usage = d.usage
         if (d.delta) { content += d.delta; onDelta(d.delta) }
         if (d.finishReason) finishReason = d.finishReason
       }
@@ -299,6 +302,7 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
     for (const data of parser.finish()) {
       if (data === '[DONE]') { done = true; continue }
       const d = deltaOf(data)
+      if (d.usage) usage = d.usage
       if (d.delta) { content += d.delta; onDelta(d.delta) }
       if (d.finishReason) finishReason = d.finishReason
     }
@@ -311,7 +315,7 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
     reader.releaseLock()
   }
   if (!hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content in stream')
-  return { content, finishReason }
+  return { content, finishReason, usage }
 }
 // ---- multimodal helpers (used by the store's message conversion; UI never builds this) ----
 export type VisionCapability = 'auto' | 'supports-image' | 'text-only'

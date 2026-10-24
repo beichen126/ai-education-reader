@@ -76,6 +76,7 @@ export type PdfContext = {
 export type Attachment = { id: StableId; name: string; mimeType: string; size: number; createdAt: number; updatedAt: number; source?: PdfAttachmentSource }
 /** Message holds only stable attachment id references, never objectURL/base64. */
 export type Message = {
+  tokenUsage?: import('./token-usage').TokenUsage
   id: StableId
   role: MessageRole
   content: string

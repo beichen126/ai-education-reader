@@ -46,12 +46,12 @@ export class BranchReplyThread implements ReplyThread {
     const placeholder: Message = { id: assistantId, role: 'assistant', content: '', images: [], createdAt: now, updatedAt: now }
     this.mutate((b) => ({ ...b, updatedAt: now, messages: [...b.messages, placeholder] }))
   }
-  updateAssistantContent(content: string): void {
+  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage): void {
     this.mutate((b) => {
       const last = b.messages[b.messages.length - 1]
       if (!last || last.id !== this.assistantId) return b
-      if (last.content === content) return b
-      return { ...b, updatedAt: Date.now(), messages: [...b.messages.slice(0, -1), { ...last, content, updatedAt: Date.now() }] }
+      if (last.content === content && !usage) return b
+      return { ...b, updatedAt: Date.now(), messages: [...b.messages.slice(0, -1), { ...last, content, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }] }
     })
   }
   persistCheckpoint(content: string): void {

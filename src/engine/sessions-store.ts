@@ -281,12 +281,12 @@ class RootReplyThread implements ReplyThread {
     const placeholder: Message = { id: assistantId, role: 'assistant', content: '', images: [], createdAt: now, updatedAt: now }
     upsertState({ ...cur, updatedAt: now, messages: [...cur.messages, placeholder] }, { status: 'streaming', sendError: undefined })
   }
-  updateAssistantContent(content: string): void {
+  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage): void {
     const cur = state.byId[this.id]; if (!cur) return
     const last = cur.messages[cur.messages.length - 1]
     if (!last || last.id !== this.assistantId) return
-    if (last.content === content) return
-    const updatedMsg: Message = { ...last, content, updatedAt: Date.now() }
+    if (last.content === content && !usage) return
+    const updatedMsg: Message = { ...last, content, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }
     upsertState({ ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] }, { status: 'streaming', sendError: undefined })
   }
   persistCheckpoint(content: string): void {

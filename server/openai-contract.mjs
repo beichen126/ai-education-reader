@@ -60,7 +60,12 @@ export async function relayResponses(body, emit) {
     const links = webCitationLinks(event, sources)
     if (links) await emit({ type: 'delta', text: links })
     if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') await emit({ type: 'delta', text: event.delta })
-    else if (event.type === 'response.completed') { await emit({ type: 'completed' }); return }
+    else if (event.type === 'response.completed') {
+      const u = event.response?.usage
+      const usage = u && [u.input_tokens, u.output_tokens, u.total_tokens].every(n => Number.isSafeInteger(n) && n >= 0)
+        ? { inputTokens: u.input_tokens, outputTokens: u.output_tokens, totalTokens: u.total_tokens } : undefined
+      await emit({ type: 'completed', ...(usage ? { usage } : {}) }); return
+    }
     else if (event.type === 'response.failed' || event.type === 'response.incomplete' || event.type === 'error') {
       // Never forward untrusted upstream error messages (may contain request data).
       const raw = event.response?.error?.code ?? event.code

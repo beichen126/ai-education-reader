@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MarkdownBlocks } from '../markdown/MarkdownBlocks'
 import { parseMarkdown } from '../markdown/parse'
 import { mapSelection } from './selection-mapper'
@@ -23,6 +23,7 @@ type AnnotationEventOwner = {
 const eventOwners = new Map<string, AnnotationEventOwner>()
 let activeEventOwner: string | null = null
 let annotationEventsInstalled = false
+let draggingSelection = false
 
 function eventOwnerForNode(node: Node | null): [string, AnnotationEventOwner] | null {
   const element = node instanceof Element ? node : node?.parentElement
@@ -43,13 +44,16 @@ function eventOwnerForSelection(): [string, AnnotationEventOwner] | null {
 }
 
 const delegatedPointerDown = (event: Event) => {
+  draggingSelection = true
   const previous = activeEventOwner ? eventOwners.get(activeEventOwner) : undefined
   if (previous && !containsNode(previous.element, event.target as Node | null)) previous.pointerDown(event)
   const found = eventOwnerForNode(event.target as Node | null)
   activeEventOwner = found?.[0] ?? null
   found?.[1].pointerDown(event)
 }
-const delegatedSelectionEnd = () => {
+const delegatedSelectionEnd = (event?: Event) => {
+  if (event?.type === 'pointerup' || event?.type === 'pointercancel' || event?.type === 'touchend' || event?.type === 'blur') draggingSelection = false
+  if (draggingSelection) return
   const found = eventOwnerForSelection()
   if (found) { activeEventOwner = found[0]; found[1].selectionEnd(); return }
   if (activeEventOwner) eventOwners.get(activeEventOwner)?.selectionEnd()
@@ -61,6 +65,8 @@ function installAnnotationEvents(): void {
   document.addEventListener('selectionchange', delegatedSelectionEnd)
   document.addEventListener('pointerdown', delegatedPointerDown)
   document.addEventListener('pointerup', delegatedSelectionEnd)
+  document.addEventListener('pointercancel', delegatedSelectionEnd)
+  window.addEventListener('blur', delegatedSelectionEnd)
   document.addEventListener('touchend', delegatedSelectionEnd)
 }
 
@@ -68,9 +74,12 @@ function uninstallAnnotationEventsIfIdle(): void {
   if (!annotationEventsInstalled || eventOwners.size > 0 || typeof document === 'undefined') return
   annotationEventsInstalled = false
   activeEventOwner = null
+  draggingSelection = false
   document.removeEventListener('selectionchange', delegatedSelectionEnd)
   document.removeEventListener('pointerdown', delegatedPointerDown)
   document.removeEventListener('pointerup', delegatedSelectionEnd)
+  document.removeEventListener('pointercancel', delegatedSelectionEnd)
+  window.removeEventListener('blur', delegatedSelectionEnd)
   document.removeEventListener('touchend', delegatedSelectionEnd)
 }
 
@@ -219,7 +228,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   }, [messageId, content, canonicalOf, highlightOwnerId])
 
   const markCrossCell = () => { if (!pending || pending.kind !== 'table-cross-cell') return; const a = pending.startCell, b = pending.endCell; const bounds = normalizeBounds(a.row, a.column, b.row, b.column); void toggleTableCellsMessage(conversationId, messageId, pending.tableId, bounds, branchId); window.getSelection()?.removeAllRanges(); setPending(null) }
-  const onMathAction = (mathId: string, kind: 'inline' | 'block') => {
+  const onMathAction = useCallback((mathId: string, kind: 'inline' | 'block') => {
     // A click is not a selection. Only a real, non-collapsed native range
     // may expose annotation controls; scrolling/hovering must never select math.
     const selection = window.getSelection()
@@ -228,7 +237,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
     const start = ownedMath(wrapRef.current, range.startContainer)
     const end = ownedMath(wrapRef.current, range.endContainer)
     if (start?.id === mathId && end?.id === mathId) setPending({ kind: 'math', mathId, mathKind: kind })
-  }
+  }, [])
   function doToggle() {
     try {
     if (!pending) return
@@ -242,10 +251,13 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   const mathCovered = pending && pending.kind === 'math' ? hasMath(annotations, pending.mathId) : false
   const fullyCovered = pending && pending.kind === 'text' ? shouldToggleAll(pending.segments.map((s) => ({ anchor: s.cell ? { scope: 'table-cell', tableId: s.cell.tableId, row: s.cell.row, column: s.cell.column } : { scope: 'block', blockId: s.blockId }, start: s.start, end: s.end })), annotations) === 'remove' : mathCovered
 
-  const onTableAction = (tableId: string) => { void toggleWholeTableMessage(conversationId, messageId, tableId, branchId) }
+  const onTableAction = useCallback((tableId: string) => { void toggleWholeTableMessage(conversationId, messageId, tableId, branchId) }, [conversationId, messageId, branchId])
+  // Updating the selection toolbar must not rebuild KaTeX's nested DOM while
+  // the browser owns a native Range anchored in those nodes.
+  const markdown = useMemo(() => <MarkdownBlocks content={content} messageId={messageId} annotations={annotations} onTableAction={onTableAction} onMathAction={onMathAction} parsedRoot={parsedRoot} />, [content, messageId, annotations, onTableAction, onMathAction, parsedRoot])
   return (
     <div ref={wrapRef} className={css.wrap} style={{ '--annotation-left': `${toolbarPosition?.left ?? 0}px`, '--annotation-top': `${toolbarPosition?.top ?? 0}px`, '--annotation-visibility': toolbarPosition ? 'visible' : 'hidden' } as React.CSSProperties} data-highlight={hasHl} data-annotation-owner={highlightOwnerId}>
-      <MarkdownBlocks content={content} messageId={messageId} annotations={annotations} onTableAction={onTableAction} onMathAction={onMathAction} parsedRoot={parsedRoot} />
+      {markdown}
       {pending && pending.kind === 'math' && (
         <div className={css.annotBar} onPointerDown={e => { e.preventDefault(); e.stopPropagation() }} onPointerUp={e => e.stopPropagation()} onTouchEnd={e => e.stopPropagation()}>
           <button type="button" className={css.annotBtn} onClick={doToggle}>{mathCovered ? tx('取消标记', 'Unmark') : tx('标记公式', 'Mark formula')}</button>

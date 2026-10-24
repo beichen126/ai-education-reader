@@ -4,6 +4,12 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。正式发布的改动按版本记录，未发布改动再单独进入 `Unreleased`。
 
+## [3.0.12] - 2026-10-24
+
+- 拖选期间不刷新标记工具栏；选区工具栏更新复用公式 DOM，避免干扰原生选区。KaTeX 隐藏的无障碍 MathML 不参与鼠标拖选，保留可见公式选择及原始 LaTeX 复制。
+
+- 右上角移除文本 Token 估算。接收 DeepSeek / OpenAI 完成响应的官方输入、输出、总用量，随回复持久化，展示上次请求与当前路线已统计请求的累计用量；无数据不补算。累计用量包含反复发送的历史，不能当作当前上下文占用或剩余额度。
+
 ## [3.0.11] - 2026-10-23
 
 - 针对真机 WebView 114 的 `open/TypeError/withResolvers`，在主页面和独立 PDF Worker 中分别补齐 Promise.withResolvers；不覆盖浏览器原生实现。

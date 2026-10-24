@@ -1,5 +1,6 @@
 import type { ApiChatMessage } from './deepseek'
 import { tx } from '../engine/locale'
+import { parseTokenUsage, type TokenUsage } from '../engine/token-usage'
 
 const ENDPOINT = import.meta.env?.MODE === 'reader-local' ? '/__reader_local' : 'http://127.0.0.1:8091'
 export const usesLocalProxy = () => import.meta.env?.MODE === 'reader-local'
@@ -22,7 +23,7 @@ type AndroidNativeBridge = {
   streamChat(requestId: string, model: string, messagesJson: string): void
   cancelChat(requestId: string): void
 }
-type AndroidChatEvent = { type?: string; text?: string; content?: string; code?: string }
+type AndroidChatEvent = { type?: string; text?: string; content?: string; code?: string; usage?: unknown }
 type AndroidEventBridge = {
   subscribeStatus(listener: (status: unknown) => void): () => void
   subscribeChat(requestId: string, listener: (event: AndroidChatEvent) => void): () => void
@@ -246,7 +247,7 @@ export async function selectChatGPTAccount(id: string): Promise<void> {
   await localFetch('/auth/account', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
 }
 
-export async function streamLocalChat(args: { model: string; messages: ApiChatMessage[]; signal?: AbortSignal; onDelta: (delta: string) => void }): Promise<{ content: string }> {
+export async function streamLocalChat(args: { model: string; messages: ApiChatMessage[]; signal?: AbortSignal; onDelta: (delta: string) => void }): Promise<{ content: string; usage?: TokenUsage }> {
   const bridge = androidBridge()
   if (bridge) return await androidStreamChat(bridge, args)
   const signal = args.signal ? AbortSignal.any([args.signal, AbortSignal.timeout(180000)]) : AbortSignal.timeout(180000)
@@ -266,7 +267,7 @@ export async function streamLocalChat(args: { model: string; messages: ApiChatMe
         if (!data) continue
         const event = JSON.parse(data)
         if (event.type === 'delta' && typeof event.text === 'string') { content += event.text; args.onDelta(event.text) }
-        else if (event.type === 'completed') return { content }
+        else if (event.type === 'completed') return { content, usage: parseTokenUsage(event.usage) }
         else if (event.type === 'error') { cachedStatus = null; throw new LocalProviderError(typeof event.code === 'string' ? event.code : 'invalid_stream') }
       }
       if (buffer.length > 1024 * 1024) throw new LocalProviderError('invalid_stream')
@@ -282,13 +283,13 @@ export async function streamLocalChat(args: { model: string; messages: ApiChatMe
 async function androidStreamChat(
   bridge: { native: AndroidNativeBridge; events: AndroidEventBridge },
   args: { model: string; messages: ApiChatMessage[]; signal?: AbortSignal; onDelta: (delta: string) => void },
-): Promise<{ content: string }> {
+): Promise<{ content: string; usage?: TokenUsage }> {
   const requestId = `android-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
   // A timer below owns the deadline; do not require recent AbortSignal helpers
   // in Android WebView. Cancellation remains wired to the caller's signal.
   const signal = args.signal ?? new AbortController().signal
   if (signal.aborted) throw new LocalProviderError('request_cancelled')
-  return await new Promise<{ content: string }>((resolve, reject) => {
+  return await new Promise<{ content: string; usage?: TokenUsage }>((resolve, reject) => {
     let settled = false
     let content = ''
     const onAbort = () => {
@@ -311,7 +312,7 @@ async function androidStreamChat(
         content += event.text
         args.onDelta(event.text)
       } else if (event.type === 'completed') {
-        finish(() => resolve({ content: typeof event.content === 'string' ? event.content : content }))
+        finish(() => resolve({ content: typeof event.content === 'string' ? event.content : content, usage: parseTokenUsage(event.usage) }))
       } else if (event.type === 'error') {
         cachedStatus = null
         finish(() => reject(new LocalProviderError(typeof event.code === 'string' ? event.code : 'invalid_stream')))

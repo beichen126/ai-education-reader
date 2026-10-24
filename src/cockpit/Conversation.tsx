@@ -46,7 +46,6 @@ import { sendTextChat } from '../api/deepseek'
 import { listPromptCatalog } from '../prompts/prompt-service'
 import { sortEnabledQuickFollowUps } from '../prompts/quick-follow-up'
 import { quickFollowUpAnchor } from './quick-follow-up-anchor'
-import { estimateContextUsage, estimateTextTokens, formatEstimatedTokens } from '../engine/context-usage'
 import { buildConversationTurns, type ConversationTurn } from './conversation-turns'
 import type { CreateArtifactKind, StudyArtifact } from '../artifacts/artifact-types'
 import type { ArtifactPromptBundleSnapshot, QuickFollowUpPrompt } from '../prompts/prompt-types'
@@ -290,7 +289,7 @@ export function Conversation() {
         effectiveMessageCount={promptPath.messageIds.length}
         effectiveTransitions={promptPath.transitions}
         busy={busy}
-        contextSummary={<ContextSummary messages={messages} promptTexts={promptPath.transitions.map(transition => transition.snapshot.content)} draftKey={branchChat.activeBranchId ? branchThreadKey(branchChat.activeBranchId) : session.id} />}
+        contextSummary={<ContextSummary messages={messages} />}
         onSwitch={async (id) => { await branchChat.switchBranch(id); setMenuMsgId(null) }}
         onChanged={() => void branchChat.refresh()}
         onModeChanged={async () => { await sessionsActions.reload(session.id); await branchChat.refresh() }}
@@ -536,12 +535,17 @@ function PendingThumb({ id, onRemove, onOpen }: { id: string; onRemove: () => vo
   )
 }
 
-function ContextSummary({ messages, promptTexts, draftKey }: { messages: readonly TMessage[]; promptTexts: readonly string[]; draftKey: string }) {
-  const draft = useDraft(draftKey)
-  const systemPrompt = useSettings(s => s.customSystemPromptEnabled ? s.customSystemPrompt : '')
-  const base = useMemo(() => estimateContextUsage({ messages, promptTexts, systemPrompt }), [messages, promptTexts, systemPrompt])
+function ContextSummary({ messages }: { messages: readonly TMessage[] }) {
+  const imageCount = new Set(messages.filter(m => m.role === 'user').flatMap(m => m.images)).size
+  const latestReply = [...messages].reverse().find(m => m.role === 'assistant')
+  const usage = latestReply?.status ? undefined : latestReply?.tokenUsage
+  const measured = messages.filter(m => m.role === 'assistant' && !m.status && m.tokenUsage)
+  const cumulative = measured.reduce((sum, m) => sum + m.tokenUsage!.totalTokens, 0)
   return <div className={css.contextUsage} data-testid="composer-context-usage" aria-live="polite">
-    {tx('已占用上下文 · 约 ', 'Context used · about ')}{formatEstimatedTokens(base.estimatedTextTokens + estimateTextTokens(draft.text))} tokens{tx(' · 累计 ' + base.imageCount + ' 张图', ' · ' + base.imageCount + ' images total')}
+    {usage && <span data-testid="official-token-usage">{tx('上次请求（接口返回）· 输入 ', 'Last request (API) · input ')}{usage.inputTokens.toLocaleString()}{tx(' / 输出 ', ' / output ')}{usage.outputTokens.toLocaleString()} tokens · </span>}
+    {measured.length > 0 && <span data-testid="cumulative-token-usage">{tx('路线累计用量 ', 'Path cumulative usage ')}{cumulative.toLocaleString()} tokens{tx('（已统计 ' + measured.length + ' 次）· ', ' (' + measured.length + ' measured requests) · ')}</span>}
+    {!usage && <span>{tx('上次请求暂无官方用量 · ', 'Last request usage unavailable · ')}</span>}
+    {tx('累计 ' + imageCount + ' 张图', imageCount + ' images total')}
   </div>
 }
 
