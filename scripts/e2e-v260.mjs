@@ -11,7 +11,7 @@ try {
   const now = Date.now()
   await seedAndBoot(page, { convs: [{ id: 'v260', title: 'Web research test', createdAt: now, updatedAt: now, messages: [msg('u1', 'user', 'old', ['one', 'two']), msg('a1', 'assistant', 'first'), msg('u2', 'user', 'new', ['three']), msg('a2', 'assistant', 'second')] }], settings: { apiKey: 'sk-test', model: 'deepseek-chat', uiLanguage: 'en', lastConversationId: 'v260', visionCapability: 'supports-image' } })
   const summary = page.locator('[data-testid="composer-context-usage"]')
-  await summary.getByText(/3 images total/).waitFor()
+  await summary.getByText(/3 images/).waitFor()
   assert.equal(await summary.getAttribute('title'), null)
   assert.ok(await summary.locator('xpath=ancestor::*[@role="navigation"]').count())
   const mode = page.getByRole('button', { name: 'Switch chat mode', exact: true })
@@ -73,13 +73,13 @@ try {
     await textarea.fill('Study image batch ' + number)
     await textarea.press('Enter')
     await page.getByText('Image batch ' + number + ' understood.', { exact: true }).waitFor({ timeout: 15000 })
-    await summary.getByText(new RegExp(number + ' images total')).waitFor()
+    await summary.getByText(new RegExp(number + ' images')).waitFor()
   }
   await page.locator('[data-testid="message-actions"]').nth(2).click()
   await page.locator('[data-testid="message-action-branch"]').click()
-  await summary.getByText(/0 images total/).waitFor()
+  await summary.getByText(/0 images/).waitFor()
   await page.getByRole('button', { name: 'Switch to Main', exact: true }).click()
-  await summary.getByText(/2 images total/).waitFor()
+  await summary.getByText(/2 images/).waitFor()
   // Stop while Search is pending: the chat-completions call must never start.
   await page.unroute('**/v1/tools/search')
   let searchStarted
