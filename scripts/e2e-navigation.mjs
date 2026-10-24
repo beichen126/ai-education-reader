@@ -7,6 +7,12 @@ export async function dismissProductGuide(page) {
   }
 }
 
+export async function openProductGuide(page) {
+  await openSettings(page, 'help')
+  await page.getByTestId('settings-user-guide').click()
+  await page.getByTestId('product-guide').waitFor({ state: 'visible' })
+}
+
 export async function openDocumentLibrary(page) {
   await dismissProductGuide(page)
   const library = page.locator('[data-testid="document-library"]')

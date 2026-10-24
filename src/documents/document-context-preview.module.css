@@ -1,6 +1,6 @@
 .overlay { position: fixed; inset: 0; z-index: 2300; display: flex; align-items: center; justify-content: center; background: rgba(12,14,18,0.5); padding: 16px; }
 .preview { width: min(900px, calc(100vw - 32px)); height: min(760px, calc(100vh - 32px)); display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; box-shadow: 0 12px 44px rgba(0,0,0,0.3); }
-.header { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.header { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .back, .tocToggle, .navButton, .zoomButton { min-height: 36px; padding: 5px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; white-space: nowrap; }
 .back:hover, .tocToggle:hover, .navButton:hover, .zoomButton:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .title { flex: 1; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 14px; color: var(--dsw-alias-label-primary); }

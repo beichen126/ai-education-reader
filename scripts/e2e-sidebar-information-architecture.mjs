@@ -37,8 +37,8 @@ assert(await page.locator('[data-testid="sidebar-entry-images"]').isVisible() &&
 assert(await page.locator('[data-testid="sidebar-entry-cards"]').isVisible(), 'expanded sidebar exposes the 学习卡片 entry that opens the global learning centre (got ' + (await testIdsOf('[data-testid^="sidebar-entry-"]')).join('|') + ')')
 const sidebarButtons = await testIdsOf('[data-testid="sidebar"] button, [data-testid="mobile-history-drawer"] button, .sidebar button')
 const expandedOrder = await page.locator('button[data-testid^="sidebar-"], button[data-testid^="help-"]').evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')))
-assert(expandedOrder[expandedOrder.length - 1] === 'help-product-guide', 'Help is the last visible sidebar action (got ' + expandedOrder[expandedOrder.length - 1] + ')')
-assert(expandedOrder.indexOf('help-product-guide') > expandedOrder.indexOf('sidebar-settings'), 'Help sits below 设置 in the footer')
+assert(expandedOrder[expandedOrder.length - 1] === 'sidebar-settings', 'Settings is the last sidebar action')
+assert(!expandedOrder.includes('help-product-guide'), 'standalone sidebar Help is removed')
 assert(!expandedOrder.includes('sidebar-entry-prompts'), 'the removed prompt entry is absent from the DOM order')
 assert(sidebarButtons.length > 0 || expandedOrder.length > 0, 'sidebar controls were enumerated')
 
@@ -47,13 +47,13 @@ await page.evaluate(() => {
   const list = document.querySelector('[class*="sidebarList"]')
   if (list) list.scrollTop = list.scrollHeight
 })
-assert(await page.locator('[data-testid="help-product-guide"]').isVisible(), 'Help stays visible while the conversation list is scrolled')
+assert(await page.locator('[data-testid="sidebar-settings"]').isVisible(), 'Settings stays visible while the conversation list is scrolled')
 
 // ---- collapsed rail order ----
 await page.locator('[data-testid="sidebar-collapse"]').click()
 await page.locator('[data-testid="rail-history"]').waitFor({ state: 'visible', timeout: 10000 })
 const railOrder = await testIdsOf('[data-testid^="rail-"]')
-assert(railOrder.join('|') === 'rail-history|rail-new-chat|rail-images|rail-files|rail-cards|rail-fullscreen|rail-settings|rail-help', 'collapsed rail order is 历史/新建/图片/文件/学习卡片/全屏/设置/帮助 (got ' + railOrder.join('|') + ')')
+assert(railOrder.join('|') === 'rail-history|rail-new-chat|rail-images|rail-files|rail-cards|rail-fullscreen|rail-settings', 'collapsed rail ends with Settings (got ' + railOrder.join('|') + ')')
 assert(await page.locator('[data-testid="rail-prompts"]').count() === 0, 'collapsed rail has no prompt button')
 const railNames = await page.locator('[data-testid^="rail-"]').evaluateAll(elements => elements.map(element => element.getAttribute('aria-label')))
 assert(railNames.every(name => typeof name === 'string' && name.trim().length > 0), 'every collapsed rail button has an accessible name')
@@ -100,8 +100,8 @@ assert(await drawer.locator('[data-testid="sidebar-entry-images"]').count() === 
 assert(await drawer.locator('[data-testid="sidebar-entry-cards"]').count() === 1, 'mobile drawer keeps the 学习卡片 entry')
 assert(await drawer.locator('[data-testid="sidebar-settings"]').count() === 1, 'mobile drawer keeps 设置 (the prompt entry point)')
 const drawerOrder = await drawer.locator('button[data-testid]').evaluateAll(elements => elements.map(element => element.getAttribute('data-testid')))
-assert(drawerOrder[drawerOrder.length - 1] === 'help-product-guide', 'Help is the last button in the mobile drawer (got ' + drawerOrder[drawerOrder.length - 1] + ')')
-assert(await drawer.locator('[data-testid="help-product-guide"]').isVisible(), 'Help is visible in the mobile drawer without covering the conversation list')
+assert(drawerOrder[drawerOrder.length - 1] === 'sidebar-settings', 'Settings is the last mobile drawer button')
+assert(await drawer.locator('[data-testid="help-product-guide"]').count() === 0, 'standalone mobile Help is removed')
 assert(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 2), '375px navigation has no horizontal overflow')
 
 assert(errors.length === 0, 'information architecture produced no page errors or unhandled rejections')

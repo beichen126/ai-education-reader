@@ -12,6 +12,7 @@ import { learningUiActions } from '../study-cards/learning-ui-store'
 import { IconPhoto16 } from './composer-icons'
 import css from './cockpit.module.css'
 import { useFullscreen } from '../engine/use-fullscreen'
+import { isAndroidReader } from '../engine/platform'
 
 function localizedSessionTitle(session: ChatSession): string {
   return localizedConversationTitle(displayTitle(session))
@@ -58,9 +59,8 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         <button type="button" className={css.railBtn} data-testid="rail-files" aria-label={tx('本地文件', 'Local files')} title={tx('本地文件', 'Local files')} onClick={() => documentUiActions.openLibrary()}><IconFolderOpenOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-cards" aria-label={tx('学习中心', 'Learning center')} title={tx('学习中心', 'Learning center')} onClick={() => learningUiActions.openLibrary('cards')}><IconListPenOutline16 /></button>
         <div className={css.railSpacer} />
-        <button type="button" className={css.railBtn} data-testid="rail-fullscreen" aria-label={fsTitle} title={fsTitle} onClick={toggle}><IconFullscreenOutline16 /></button>
+        {!isAndroidReader() && <button type="button" className={css.railBtn} data-testid="rail-fullscreen" aria-label={fsTitle} title={fsTitle} onClick={toggle}><IconFullscreenOutline16 /></button>}
         <button type="button" className={css.railBtn} data-testid="rail-settings" aria-label={tx('设置', 'Settings')} title={tx('设置', 'Settings')} onClick={uiActions.openSettings}><IconSettingsOutline16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-help" aria-label={tx('帮助', 'Help')} title={tx('帮助', 'Help')} onClick={uiActions.openProductGuide}><IconQuestionOutline14 size={16} /></button>
       </div>
     )
   }
@@ -99,9 +99,8 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         {filtered.length === 0 && <div className={css.sidebarEmpty}>{tx('暂无会话', 'No chats')}</div>}
       </div>
       <div className={css.sidebarFoot}>
-        <button type="button" className={css.footBtn} data-testid="sidebar-fullscreen" onClick={toggle}><IconFullscreenOutline16 /> <span>{fsTitle}</span></button>
+        {!isAndroidReader() && <button type="button" className={css.footBtn} data-testid="sidebar-fullscreen" onClick={toggle}><IconFullscreenOutline16 /> <span>{fsTitle}</span></button>}
         <button type="button" className={css.footBtn} data-testid="sidebar-settings" onClick={uiActions.openSettings}><IconSettingsOutline16 /> <span>{tx('设置', 'Settings')}</span></button>
-        <button type="button" className={css.footBtn + ' ' + css.footBtnQuiet} data-testid="help-product-guide" onClick={uiActions.openProductGuide}><IconQuestionOutline14 size={16} /> <span>{tx('帮助', 'Help')}</span></button>
       </div>
     </div>
   )

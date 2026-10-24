@@ -90,7 +90,7 @@ export function localErrorLabel(code: string): string {
   if (code === 'invalid_stream_type') return tx('OpenAI 返回了明确的非流式响应，无法继续解析；不是登录授权问题。', 'OpenAI returned an explicitly non-streaming response. This is not a sign-in authorization issue.')
   if (code === 'invalid_status') return tx('本机服务可访问，但返回的状态格式不匹配，请更新服务后检查连接。', 'The local service is reachable, but its status format does not match. Update the service and check again.')
   if (code === 'local_status_timeout') return tx('本机状态检查超时；这不代表 ChatGPT 授权丢失。请点击“检查本机状态”重试。', 'Local status check timed out; this does not mean ChatGPT authorization was lost. Check local status again.')
-  if (code === 'service_unavailable') return tx('无法连接本机服务（127.0.0.1:8091）。请在本电脑运行 npm run local:server，并允许浏览器的本地网络访问权限；若被拦截，请检查站点权限或改用本地 Reader。ChatGPT 授权不会因此删除。', 'Cannot reach the local service at 127.0.0.1:8091. Run npm run local:server on this computer and allow browser local network access. Check site permissions or use the local Reader if blocked. ChatGPT authorization is not deleted.')
+  if (code === 'service_unavailable') return tx('无法连接本机服务。请启动服务并允许浏览器访问本地网络；已保存的 ChatGPT 授权不会丢失。', 'Cannot reach the local service. Start it and allow browser local network access. Saved ChatGPT authorization is preserved.')
   if (code.includes('quota') || code.includes('usage_limit') || code.includes('usage_unavailable')) return tx('订阅额度或请求速率受限，请检查账户用量。', 'Subscription usage or request rate is limited. Check account usage.')
   if (code === 'model_unavailable' || code === 'model_not_found') return tx('当前账户不可使用所选模型。', 'The selected model is unavailable to this account.')
   if (code === 'authorization_expired' || code === 'invalid_api_key') return tx('本机授权已失效，需要重新授权。', 'Local authorization has expired. Authorize again.')

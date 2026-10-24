@@ -63,6 +63,16 @@ const EMPTY_DOC_STATE = {
 }
 
 export function DocumentReader() {
+  const topbarRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const bar = topbarRef.current
+    if (!bar) return
+    const sync = () => bar.parentElement?.style.setProperty('--reader-topbar-height', `${bar.getBoundingClientRect().height}px`)
+    sync()
+    const observer = new ResizeObserver(sync)
+    observer.observe(bar)
+    return () => observer.disconnect()
+  })
   const ui = useDocumentUi(x => x)
   useBackTarget(ui.view === 'reader', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
@@ -1138,7 +1148,7 @@ export function DocumentReader() {
 
   return (
     <div className={css.overlay} data-testid="document-reader">
-      <div className={css.topbar}>
+      <div ref={topbarRef} className={css.topbar}>
         <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary() }}>← {tx('文件', 'Files')}</button>
         <span className={css.title} data-testid="reader-title">{doc?.fileName ?? recordMeta?.fileName ?? '…'}</span>
         <div className={css.topActions}>

@@ -209,9 +209,10 @@ export function SettingsDialog() {
       <div ref={scrollRef} className={css.settingsScroll} data-testid="settings-panel-scroll">
       <section id="settings-section-api" role="tabpanel" aria-labelledby="settings-tab-api" hidden={section!=='api'} className={css.settingsSection}>
       <LocalProviderSettings />
+      {s.chatProvider !== 'openai-local' && <>
       <div className={css.byokBlock} data-testid="settings-byok">
-        <div className={css.byokTitle}>{tx('BYOK（自备 API Key）', 'BYOK (bring your own API key)')}</div>
-        <div className={css.settingsHint}>{tx('本项目采用 BYOK：应用本身不提供模型额度。默认可使用 DeepSeek API，也可以填写兼容的 API Base URL 和模型。API Key 仅保存在当前浏览器本地。', 'This app uses BYOK and does not provide model credits. Use DeepSeek by default or enter a compatible API base URL and model. Your API key stays in this browser only.')}</div>
+        <div className={css.byokTitle}>{tx('API Key 接入', 'BYOK (bring your own API key)')}</div>
+        <div className={css.settingsHint}>{tx('填写服务地址、API Key 和模型。Key 仅保存在此浏览器，调用由服务商计费。', 'Enter your endpoint, API key and model. Keys stay in this browser; provider usage is billed separately.')}</div>
         <a className={css.byokLink} href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer" data-testid="settings-deepseek-link">{tx('打开 DeepSeek 开放平台获取 API Key', 'Get an API key from DeepSeek')}</a>
         <a className={css.byokLinkSub} href="https://api-docs.deepseek.com/zh-cn/" target="_blank" rel="noopener noreferrer">{tx('DeepSeek API 文档', 'DeepSeek API documentation')}</a>
       </div>
@@ -235,7 +236,7 @@ export function SettingsDialog() {
           <button type="button" className={css.appearanceOpt} data-testid="vision-supports" aria-pressed={visionCapability === 'supports-image'} onClick={() => setVisionCapability('supports-image')}>{tx('支持图片', 'Supports images')}</button>
           <button type="button" className={css.appearanceOpt} data-testid="vision-textonly" aria-pressed={visionCapability === 'text-only'} onClick={() => setVisionCapability('text-only')}>{tx('仅文本', 'Text only')}</button>
         </div>
-        <div className={css.settingsHint}>{tx('「自动」按模型名推断；「支持图片」对名称不含 vision 但支持图片的模型开启图片；「仅文本」禁止发送图片，避免误发。该设置会随备份一起导出。', 'Auto infers support from the model name. Supports images enables vision for compatible models whose names do not contain “vision”. Text only prevents images from being sent. This setting is included in backups.')}</div>
+        <div className={css.settingsHint}>{tx('不确定时选“自动”；模型支持图片但未识别时，可手动开启。', 'Use Auto unless image support needs to be enabled manually.')}</div>
       </div>
       <div className={css.apiChecklist} data-testid="api-setup-checklist">
         <div className={css.apiChecklistTitle}>{tx('配置检查', 'Configuration checklist')}</div>
@@ -250,7 +251,7 @@ export function SettingsDialog() {
           </div>
         ))}
       </div>
-      <div className={css.settingsHint}>{tx('API Key 保存在当前浏览器本地（IndexedDB），不进源码、不走 Git。发送消息时，所选文本与图片会直接发送到你配置的 API 服务（默认 https://api.deepseek.com）。本项目自身没有中转服务器。', 'Your API key is stored locally in this browser (IndexedDB), never in source control. When you send a message, selected text and images go directly to your configured API service. This project has no relay server.')}</div>
+      <div className={css.settingsHint}>{tx('仅将所选上下文直接发送到配置的服务，不经过 Reader 中转。', 'Selected context goes directly to your configured provider, without a Reader relay.')}</div>
       <div className={css.settingsActions}>
         <Button variant="outline" onClick={onTest}>{test === tx('正在测试…', 'Testing…') ? test : tx('检查 API 配置', 'Check API configuration')}</Button>
         <Button variant="primary" onClick={onSave}>{saved ? tx('已保存', 'Saved') : tx('保存 API 设置', 'Save API settings')}</Button>
@@ -259,31 +260,10 @@ export function SettingsDialog() {
         <div className={css.testResult} data-ok="false" data-testid="settings-mutation-error">{localizedErrorText(mutation.error, 'Failed to save settings.')}</div>
       )}
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
-      <div className={css.settingsHint}>{tx('“检查 API 配置”仅调用 GET /models，核对服务、Key 与模型名；不会发送聊天内容、图片或文档，也不会改变会话的推理强度。', 'Check API configuration only calls GET /models to verify the service, key, and model name. It sends no chats, images, or documents and does not change chat reasoning settings.')}</div>
+      <div className={css.settingsHint}>{tx('检查仅请求模型列表，不发送对话、图片或文档。', 'Checks the model list only; no chats, images or documents are sent.')}</div>
+      </>}
       </section>
       <section id="settings-section-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={section!=='general'} className={css.settingsSection}>
-      <div className={css.exportSection}>
-        <div className={css.exportTitle}>{tx('对话阅读位置','Conversation reading position')}</div>
-        <label className={css.speechRateRow}>
-          <input type="checkbox" data-testid="settings-remember-reading-position" checked={s.rememberReadingPosition===true} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({rememberReadingPosition:event.target.checked}).catch(()=>{})}} />
-          <span>{tx('记住上次阅读位置','Remember last reading position')}</span>
-        </label>
-        <div className={css.settingsHint}>{tx('默认关闭。开启后每 10 秒自动保存，切换对话或离开页面时也会保存；重新进入时恢复到上次阅读处。每个对话和分支分别记忆，仅保存在此浏览器，具体位置不随备份迁移。关闭后不再保存或恢复。','Off by default. When enabled, saves every 10 seconds and when switching chats or leaving the page, then resumes where you left off. Chats and branches are tracked separately in this browser; exact positions are not included in backups. Turning it off stops saving and restoring.')}</div>
-        {mutation.status==='error' && mutation.error && <div className={css.testResult} data-ok="false">{localizedErrorText(mutation.error,'Unable to save this setting. Please retry.')}</div>}
-      </div>
-      <div className={css.exportSection}>
-        <div className={css.exportTitle}>{tx('朗读倍速', 'Read aloud speed')}</div>
-        {(['chineseSpeechRate','englishSpeechRate'] as const).map((key,i)=><label className={css.speechRateRow} key={key}>
-          <span>{i===0?tx('中文','Chinese'):tx('英文','English')}</span>
-          <select data-testid={'settings-'+key} value={s[key] ?? (i===0?1:0.9)} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({[key]:Number(event.target.value)}).catch(()=>{})}}>
-            {[0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.25,1.3,1.4,1.5,1.6,1.7,1.75,1.8,1.9,2].map(rate=><option key={rate} value={rate}>{rate}×</option>)}
-          </select>
-        </label>)}
-        <div className={css.settingsHint}>{tx('自动识别句子语言，默认中文 1×、英文 0.9×；自动保存，下次朗读生效。Edge 优先使用在线自然声音，其他浏览器使用可用声音；在线朗读会发送所选文字给语音服务。','Sentence language is detected automatically. Defaults: Chinese 1×, English 0.9×. Saved automatically for the next reading. Prefers Edge online natural voices, otherwise available browser voices. Online speech sends the selected text to the voice provider.')}</div>
-        <label className={css.speechRateRow}><span>{tx('重复朗读次数','Reading repetitions')}</span><select data-testid="settings-speechRepeatCount" value={s.speechRepeatCount ?? 3} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({speechRepeatCount:Number(event.target.value)}).catch(()=>{})}}>{Array.from({length:10},(_,i)=>i+1).map(count=><option key={count} value={count}>{tx(count+' 次',count+' passes')}</option>)}</select></label>
-        <div className={css.settingsHint}>{tx('默认完整朗读所选内容 3 遍，可随时暂停或停止。','Reads the entire selection 3 times by default. Pause or stop at any time.')}</div>
-        {mutation.status==='error' && mutation.error && <div className={css.testResult} data-ok="false" data-testid="settings-general-error">{localizedErrorText(mutation.error,'Unable to save general settings. Please retry.')}</div>}
-      </div>
       <div className={css.exportSection}>
         <div className={css.exportTitle}>{tx('外观', 'Appearance')}</div>
         <div className={css.appearanceRow} data-testid="settings-appearance">
@@ -292,14 +272,6 @@ export function SettingsDialog() {
           <button type="button" className={css.appearanceOpt} data-testid="appearance-dark" aria-pressed={s.appearance === 'dark'} data-selected={s.appearance === 'dark'} onClick={() => void setAppearance('dark')}>{tx('深色', 'Dark')}</button>
         </div>
         <div className={css.settingsHint}>{tx('选择后自动保存。', 'Saved automatically.')}</div>
-      </div>
-      <div className={css.exportSection} data-testid="settings-language">
-        <div className={css.exportTitle} id="settings-language-label">{tx('界面语言', 'Interface language')}</div>
-        <div className={css.appearanceRow} role="radiogroup" aria-labelledby="settings-language-label">
-          <button type="button" role="radio" className={css.appearanceOpt} data-testid="language-zh-cn" aria-checked={s.uiLanguage === 'zh-CN'} data-selected={s.uiLanguage === 'zh-CN'} onClick={() => void setUiLanguage('zh-CN')}>简体中文</button>
-          <button type="button" role="radio" className={css.appearanceOpt} data-testid="language-en" aria-checked={s.uiLanguage === 'en'} data-selected={s.uiLanguage === 'en'} onClick={() => void setUiLanguage('en')}>English</button>
-        </div>
-        <div className={css.settingsHint}>{tx('选择 English 后页面会同步设置 lang="en"，便于浏览器翻译工具正确识别。', 'Selecting English also sets the page language to lang="en" for browser translation tools.')}</div>
       </div>
       <div className={css.exportSection} data-testid="settings-pdf-navigation">
         <div className={css.exportTitle} id="settings-pdf-navigation-label">{tx('PDF 阅读方式', 'PDF reading mode')}</div>
@@ -330,6 +302,36 @@ export function SettingsDialog() {
           ))}
         </div>
         <div className={css.settingsHint}>{tx('打开提示词管理后可按分类查看、编辑、复制或停用提示词；系统协议只在提示词管理的“系统协议”分类里查看。', 'Open prompt management to view, edit, duplicate, or disable prompts by category. System protocols appear only in its System protocols category.')}</div>
+      </div>
+      <div className={css.exportSection}>
+        <div className={css.exportTitle}>{tx('对话阅读位置','Conversation reading position')}</div>
+        <label className={css.speechRateRow}>
+          <input type="checkbox" data-testid="settings-remember-reading-position" checked={s.rememberReadingPosition===true} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({rememberReadingPosition:event.target.checked}).catch(()=>{})}} />
+          <span>{tx('记住上次阅读位置','Remember last reading position')}</span>
+        </label>
+        <div className={css.settingsHint}>{tx('默认开启，每 10 秒及离开页面时保存。对话与分支分别记忆，仅保存在此浏览器。','On by default. Saves every 10 seconds and when leaving. Each chat and branch is remembered in this browser.')}</div>
+        {mutation.status==='error' && mutation.error && <div className={css.testResult} data-ok="false">{localizedErrorText(mutation.error,'Unable to save this setting. Please retry.')}</div>}
+      </div>
+      <div className={css.exportSection} data-testid="settings-language">
+        <div className={css.exportTitle} id="settings-language-label">{tx('界面语言', 'Interface language')}</div>
+        <div className={css.appearanceRow} role="radiogroup" aria-labelledby="settings-language-label">
+          <button type="button" role="radio" className={css.appearanceOpt} data-testid="language-zh-cn" aria-checked={s.uiLanguage === 'zh-CN'} data-selected={s.uiLanguage === 'zh-CN'} onClick={() => void setUiLanguage('zh-CN')}>简体中文</button>
+          <button type="button" role="radio" className={css.appearanceOpt} data-testid="language-en" aria-checked={s.uiLanguage === 'en'} data-selected={s.uiLanguage === 'en'} onClick={() => void setUiLanguage('en')}>English</button>
+        </div>
+        <div className={css.settingsHint}>{tx('选择 English 后页面会同步设置 lang="en"，便于浏览器翻译工具正确识别。', 'Selecting English also sets the page language to lang="en" for browser translation tools.')}</div>
+      </div>
+      <div className={css.exportSection}>
+        <div className={css.exportTitle}>{tx('朗读倍速', 'Read aloud speed')}</div>
+        {(['chineseSpeechRate','englishSpeechRate'] as const).map((key,i)=><label className={css.speechRateRow} key={key}>
+          <span>{i===0?tx('中文','Chinese'):tx('英文','English')}</span>
+          <select data-testid={'settings-'+key} value={s[key] ?? (i===0?1:0.9)} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({[key]:Number(event.target.value)}).catch(()=>{})}}>
+            {[0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.25,1.3,1.4,1.5,1.6,1.7,1.75,1.8,1.9,2].map(rate=><option key={rate} value={rate}>{rate}×</option>)}
+          </select>
+        </label>)}
+        <div className={css.settingsHint}>{tx('自动识别句子语言，默认中文 1×、英文 0.9×；自动保存，下次朗读生效。Edge 优先使用在线自然声音，其他浏览器使用可用声音；在线朗读会发送所选文字给语音服务。','Sentence language is detected automatically. Defaults: Chinese 1×, English 0.9×. Saved automatically for the next reading. Prefers Edge online natural voices, otherwise available browser voices. Online speech sends the selected text to the voice provider.')}</div>
+        <label className={css.speechRateRow}><span>{tx('重复朗读次数','Reading repetitions')}</span><select data-testid="settings-speechRepeatCount" value={s.speechRepeatCount ?? 3} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({speechRepeatCount:Number(event.target.value)}).catch(()=>{})}}>{Array.from({length:10},(_,i)=>i+1).map(count=><option key={count} value={count}>{tx(count+' 次',count+' passes')}</option>)}</select></label>
+        <div className={css.settingsHint}>{tx('默认完整朗读所选内容 3 遍，可随时暂停或停止。','Reads the entire selection 3 times by default. Pause or stop at any time.')}</div>
+        {mutation.status==='error' && mutation.error && <div className={css.testResult} data-ok="false" data-testid="settings-general-error">{localizedErrorText(mutation.error,'Unable to save general settings. Please retry.')}</div>}
       </div>
       </section>
       <section id="settings-section-security" role="tabpanel" aria-labelledby="settings-tab-security" hidden={section!=='security'} className={css.settingsSection}>
@@ -437,7 +439,7 @@ export function SettingsDialog() {
           </article>
         </div>
         <div className={css.helpLinks}>
-          <Button variant="outline" onClick={()=>{uiActions.closeSettings();uiActions.openProductGuide()}}>{tx('使用指南','User guide')}</Button>
+          <Button variant="outline" data-testid="settings-user-guide" onClick={()=>{uiActions.closeSettings();uiActions.openProductGuide()}}>{tx('使用指南','User guide')}</Button>
           <a href="https://github.com/beichen126/ai-education-reader#readme" target="_blank" rel="noopener noreferrer">{tx('项目说明','Project documentation')}</a>
           <a href="https://github.com/beichen126/ai-education-reader/issues" target="_blank" rel="noopener noreferrer">{tx('报告问题','Report an issue')}</a>
         </div>

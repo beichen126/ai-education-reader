@@ -1,13 +1,13 @@
 .overlay { position: fixed; left: 0; top: 0; right: 0; bottom: 0; z-index: 1500; display: flex; flex-direction: column; background: var(--dsw-alias-bg-base); overflow: hidden; }
-.topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.topbar { flex: none; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
 .backBtn, .closeBtn { min-height: 36px; padding: 4px 12px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; border-radius: 8px; color: var(--dsw-alias-label-secondary); font-size: 13px; cursor: pointer; white-space: nowrap; }
 .closeBtn { color: var(--dsw-alias-label-primary); }
 .title { flex: 1; min-width: 0; text-align: center; font-size: 14px; font-weight: 600; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
-.topActions { display: flex; align-items: center; gap: 8px; }
+.topActions { display: flex; flex-wrap: wrap; min-width: 0; align-items: center; gap: 8px; }
 .tocToggle, .noteToggle { min-height: 36px; padding: 4px 12px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; border-radius: 8px; color: var(--dsw-alias-label-primary); font-size: 13px; cursor: pointer; }
 .tocToggle { display: inline-block; }
 .noteToggle { display: inline-block; }
-.body { flex: 1; min-height: 0; display: flex; }
+.body { position: relative; flex: 1; min-height: 0; display: flex; }
 .toc { flex: none; width: 240px; border-right: 1px solid var(--dsw-alias-border-l2); overflow-y: auto; overflow-x: hidden; padding: 10px 8px; background: var(--dsw-alias-bg-layer-1); }
 .tocClosed { display: none; }
 .tocHeader { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 0 8px; }
@@ -111,9 +111,12 @@
 .zoomStepBtn:focus-visible, .zoomValueBtn:focus-visible { outline: 2px solid var(--dsw-alias-button-primary-fill); outline-offset: 1px; }
 .zoomStepBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 @media (max-width: 1023px) {
-  .toc { position: fixed; left: 0; top: 57px; bottom: 58px; width: min(280px, 80vw); z-index: 20; background: var(--dsw-alias-bg-base); border-right: 1px solid var(--dsw-alias-border-l2); transform: translateX(-100%); transition: transform 140ms ease-out; box-shadow: 0 4px 18px rgba(0,0,0,0.18); }
+  .toc { position: absolute; left: 0; top: 0; bottom: 0; width: min(280px, 80vw); z-index: 20; background: var(--dsw-alias-bg-base); border-right: 1px solid var(--dsw-alias-border-l2); transform: translateX(-100%); transition: transform 140ms ease-out; box-shadow: 0 4px 18px rgba(0,0,0,0.18); }
   .toc.tocOpen { transform: translateX(0); }
-  .notePanel { position: fixed; right: 0; top: 57px; bottom: 58px; width: min(280px, 82vw); min-width: 0; z-index: 20; box-shadow: 0 4px 18px rgba(0,0,0,0.18); }
+  .notePanel { position: absolute; right: 0; top: 0; bottom: 0; width: min(280px, 82vw); min-width: 0; z-index: 20; box-shadow: 0 4px 18px rgba(0,0,0,0.18); }
+  .topActions { flex: 1 0 100%; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+  .topActions > button { min-width: 0; min-height: 40px; padding: 5px 4px; white-space: normal; overflow-wrap: anywhere; line-height: 18px; }
+  .topbar { padding: 8px; gap: 6px; }
 }
 @media (max-width: 680px) {
   .navBar { gap: 6px; flex-wrap: wrap; }
@@ -121,3 +124,4 @@
   .readerZoom { margin-left: 0; padding-left: 0; border-left: 0; }
   .zoomSlider { width: 88px; }
 }
+.relatedPanel, .ctxMenu { top: var(--reader-topbar-height, 56px); box-sizing: border-box; max-height: min(460px, calc(100dvh - var(--reader-topbar-height, 56px) - 80px)); overflow-y: auto; }

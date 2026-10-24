@@ -13,7 +13,7 @@ try {
     const context=await browser.newContext({viewport:{width:1280,height:850}})
     const page=await context.newPage(), errors=[]
     page.on('pageerror',error=>errors.push(error.message))
-    await seedAndBoot(page,{convs:[{id:'reading-chat',title:'Reading test',createdAt:1,updatedAt:1,messages:Array.from({length:24},(_,i)=>msg('reading-'+i,i%2?'assistant':'user','Paragraph '+i+'\n\n'+text))}],settings:{lastConversationId:'reading-chat',uiLanguage:language}})
+    await seedAndBoot(page,{convs:[{id:'reading-chat',title:'Reading test',createdAt:1,updatedAt:1,messages:Array.from({length:24},(_,i)=>msg('reading-'+i,i%2?'assistant':'user','Paragraph '+i+'\n\n'+text))}],settings:{lastConversationId:'reading-chat',uiLanguage:language,rememberReadingPosition:false}})
     await page.setViewportSize({width,height:850})
     const scroll=page.locator('[data-testid="conversation-scroll"]')
     const move=async(id,offset=40)=>{
@@ -28,7 +28,7 @@ try {
     await openSettings(page)
     assert.ok(await scroll.evaluate(root=>root.clientHeight>0 && root.clientWidth>0),'opening mobile navigation/settings must not collapse the reading viewport')
     const toggle=page.locator('[data-testid="settings-remember-reading-position"]')
-    assert.equal(await toggle.isChecked(),false,'default is off')
+    assert.equal(await toggle.isChecked(),false,'explicitly disabled setting is preserved')
     await page.keyboard.press('Escape')
     await move('reading-8')
     await page.evaluate(()=>window.dispatchEvent(new Event('pagehide')))

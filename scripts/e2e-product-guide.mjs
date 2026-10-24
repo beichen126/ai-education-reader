@@ -1,4 +1,5 @@
 import { launchBrowser } from './e2e-browser.mjs'
+import { openProductGuide } from './e2e-navigation.mjs'
 
 const results = []
 const errors = []
@@ -44,13 +45,13 @@ await page.locator('[data-testid="product-guide-import"]').click()
 await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(await page.locator('[data-testid="library-import"]').isVisible(), '导入 PDF opens the real library import surface')
 await page.locator('[data-testid="library-close"]').click()
-await page.locator('[data-testid="help-product-guide"]').click()
+await openProductGuide(page)
 await guide.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="product-guide-library"]').click()
 await page.locator('[data-testid="document-library"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(await page.locator('[data-testid="document-library"]').isVisible(), '打开资料库 routes to the document library')
 await page.locator('[data-testid="library-close"]').click()
-await page.locator('[data-testid="help-product-guide"]').click()
+await openProductGuide(page)
 await page.locator('[data-testid="product-guide-settings"]').click()
 await page.locator('[data-testid="settings-byok"]').waitFor({ state: 'visible', timeout: 10000 })
 assert(await page.locator('[data-testid="settings-byok"]').isVisible(), '配置 API routes to Settings')
@@ -80,21 +81,16 @@ await page.reload({ waitUntil: 'networkidle' })
 await waitForApp(page)
 await page.waitForTimeout(400)
 assert(await guide.count() === 0, 'configured API key suppresses the first-entry guide')
-await page.locator('[data-testid="help-product-guide"]').click()
+await openProductGuide(page)
 await guide.waitFor({ state: 'visible', timeout: 10000 })
-assert(await guide.isVisible(), 'expanded sidebar Help entry always opens the guide')
+assert(await guide.isVisible(), 'Settings Help opens the guide')
 await page.locator('[data-testid="product-guide-close"]').click()
 assert(await guide.count() === 0, 'close action dismisses the guide')
 
 // Mobile full-screen, scroll-to-top and focus/close behavior.
 await page.setViewportSize({ width: 390, height: 844 })
 await page.waitForTimeout(500)
-const helpEntry = page.locator('[data-testid="help-product-guide"]')
-if (await helpEntry.isVisible().catch(() => false)) await helpEntry.click({ timeout: 10000 })
-else {
-  await page.locator('[data-testid="mobile-menu-toggle"]').click()
-  await page.locator('[data-testid="mobile-history-drawer"] [data-testid="help-product-guide"]').click({ timeout: 10000 })
-}
+await openProductGuide(page)
 await guide.waitFor({ state: 'visible', timeout: 10000 })
 const mobileBox = await guide.boundingBox()
 assert(mobileBox && mobileBox.width >= 389 && mobileBox.height >= 843, 'mobile guide uses the full viewport')
@@ -102,7 +98,7 @@ assert(await page.locator('[data-testid="product-guide-scroll"]').isVisible(), '
 await page.locator('[data-testid="product-guide-scroll"]').evaluate(el => { el.scrollTop = el.scrollHeight })
 assert(await page.locator('[data-testid="product-guide-top"]').isVisible(), 'long guide exposes 回到顶部')
 await page.locator('[data-testid="product-guide-top"]').click()
-await page.waitForTimeout(100)
+await page.waitForFunction(() => document.querySelector('[data-testid="product-guide-scroll"]')?.scrollTop < 8)
 const scrollTop = await page.locator('[data-testid="product-guide-scroll"]').evaluate(el => el.scrollTop)
 assert(scrollTop < 8, '回到顶部 returns the guide scroll position to the top')
 await page.keyboard.press('Escape')

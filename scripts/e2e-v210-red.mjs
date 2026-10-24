@@ -58,7 +58,7 @@ await page.evaluate(() => new Promise((resolve, reject) => {
 await page.reload({ waitUntil: 'networkidle' })
 await page.locator('input[type="file"][accept*="image/"]').waitFor({ state: 'attached', timeout: 20000 })
 assert(await page.locator('[data-testid="product-guide"]').isVisible().catch(() => false), 'V210-RED no-key first entry opens Product Guide')
-assert(await page.locator('[data-testid="help-product-guide"], [data-testid="rail-help"]').count() > 0, 'V210-RED permanent Help entry is reachable')
+assert(await page.locator('[data-testid="sidebar-settings"], [data-testid="rail-settings"]').count() > 0, 'Settings is the persistent entry for Help')
 
 const promptRows = await openAppDb(page, { store: 'prompts' })
 assert(promptRows.some(row => row.id === 'v210-red-custom-mode'), 'V210-RED browser fixture can restore a persisted custom mode')

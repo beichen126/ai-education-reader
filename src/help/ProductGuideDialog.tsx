@@ -108,7 +108,7 @@ export function ProductGuideDialog({
           </div>
         </div>
         <footer className={css.footer}>
-          <span>{tx('可以先关闭，之后随时从侧栏“帮助”再次打开。', 'You can close this and reopen it anytime from Help in the sidebar.')}</span>
+          <span>{tx('可以先关闭，之后从“设置 → 帮助 → 使用指南”再次打开。', 'Reopen anytime from Settings → Help → User guide.')}</span>
           <button type="button" className={css.later} data-testid="product-guide-later" onClick={onClose}>{tx('稍后再看', 'View later')}</button>
         </footer>
       </div>

@@ -29,7 +29,7 @@ const railOrder = await page.evaluate(() => {
 assert(railOrder.length >= 2, 'A1: collapsed rail exposes interactive buttons (got ' + railOrder.length + ')')
 assert(railOrder[0] === 'rail-history', 'A1: rail-history is the FIRST rail control (got ' + railOrder[0] + ')')
 assert(railOrder.indexOf('rail-new-chat') > railOrder.indexOf('rail-history'), 'A1: rail-new-chat comes AFTER rail-history')
-assert(railOrder.slice(-3).join(',') === 'rail-fullscreen,rail-settings,rail-help', 'A1: bottom utility controls stay grouped at the bottom')
+assert(railOrder.slice(-2).join(',') === 'rail-fullscreen,rail-settings', 'bottom utility controls stay grouped without Help')
 
 // Clicking rail-history restores the expanded sidebar.
 await page.locator('[data-testid="rail-history"]').click()

@@ -604,7 +604,7 @@ export async function restoreBackup(backup: Backup, binaries?: {
       { key: 'chineseSpeechRate', value: String(backup.settings?.chineseSpeechRate ?? 1) },
       { key: 'englishSpeechRate', value: String(backup.settings?.englishSpeechRate ?? 0.9) },
       { key: 'speechRepeatCount', value: String(backup.settings?.speechRepeatCount ?? 3) },
-      { key: 'rememberReadingPosition', value: backup.settings?.rememberReadingPosition === true ? 'true' : 'false' },
+      { key: 'rememberReadingPosition', value: backup.settings?.rememberReadingPosition === false ? 'false' : 'true' },
       { key: LAYOUT_PREFERENCES_KEY, value: normalizeLayoutPreferences((backup.settings as { layoutPreferences?: unknown } | undefined)?.layoutPreferences) },
       { key: 'productGuideSeenVersion', value: typeof (backup.settings as { productGuideSeenVersion?: unknown } | undefined)?.productGuideSeenVersion === 'string' ? (backup.settings as { productGuideSeenVersion: string }).productGuideSeenVersion : '' },
       { key: 'lastConversationId', value: typeof (backup.settings as { lastConversationId?: unknown } | undefined)?.lastConversationId === 'string' && backup.conversations.some(conversation => conversation.id === (backup.settings as { lastConversationId: string }).lastConversationId) ? (backup.settings as { lastConversationId: string }).lastConversationId : '' },

@@ -33,7 +33,7 @@ try {
   const page = await context.newPage()
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
-  await seedAndBoot(page, { settings: { uiLanguage: 'zh-CN' } })
+  await seedAndBoot(page, { settings: { uiLanguage: 'zh-CN', chatProvider: 'openai-local' } })
   await openSettings(page, 'api')
   const panel = page.getByTestId('local-provider-settings'), login = panel.getByRole('button', { name: 'Continue with ChatGPT', exact: true })
   await panel.getByRole('status').getByText(/尚未连接本机服务/).waitFor()

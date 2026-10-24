@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "3.0.12",
+  "version": "3.0.13",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
