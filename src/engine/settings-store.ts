@@ -73,7 +73,8 @@ export async function initSettings(): Promise<void> {
   const webSearchEnabled = await getSetting('webSearchEnabled') === 'true'
   const [zhRate, enRate] = await Promise.all([getSetting('chineseSpeechRate'),getSetting('englishSpeechRate')])
   const repeat = await getSetting('speechRepeatCount')
-  const rememberReadingPosition = await getSetting('rememberReadingPosition') !== 'false'
+  const storedReadingPosition: unknown = await getSetting('rememberReadingPosition')
+  const rememberReadingPosition = storedReadingPosition !== false && storedReadingPosition !== 'false'
   const [chatProvider, openaiLocalModel] = await Promise.all([getSetting('chatProvider'), getSetting('openaiLocalModel')])
   set(normalizeSettings({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)), rememberReadingPosition, chatProvider, openaiLocalModel }))
   writeAppearanceHint(resolvedAppearance)
