@@ -2,7 +2,7 @@
 // -> draft -> buildApiMessages image_url parts (base64 decodable). Runs offline with
 // fake-indexeddb. Source imports only; no real DeepSeek call, no API key.
 import 'fake-indexeddb/auto'
-import { saveGeneratedImages, getAttachment, toDataUrl, deleteAttachment, existsAttachment, sumAttachmentBytes, isInlineImageOverBudget, MAX_INLINE_IMAGE_RAW_BYTES } from '../src/engine/attachment-service.ts'
+import { saveGeneratedImages, getAttachment, toDataUrl, deleteAttachment, existsAttachment, sumAttachmentBytes } from '../src/engine/attachment-service.ts'
 import { addDraftImages, getDraft, resetDrafts } from '../src/engine/draft-store.ts'
 import { buildApiMessages } from '../src/api/deepseek.ts'
 import { pdfPageAttachmentName } from '../src/pdf/pdf-types.ts'
@@ -59,8 +59,6 @@ assert(parts.some(p => p.type === 'text' && p.text === '【图片 1/4】'), 'ide
 // --- inline payload guard ---
 const sizes = await sumAttachmentBytes(ids)
 assert(sizes === 100, 'sumAttachmentBytes = 100')
-assert(!isInlineImageOverBudget(100), 'under budget -> pass')
-assert(isInlineImageOverBudget(MAX_INLINE_IMAGE_RAW_BYTES + 1), 'over budget -> block')
 
 // --- empty batch ---
 let err = ''

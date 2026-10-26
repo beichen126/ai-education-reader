@@ -6,7 +6,9 @@ import { LocalError, responsesRequest, relayResponses } from './openai-contract.
 const PAGES_ORIGIN = 'https://beichen126.github.io'
 const ORIGINS = new Set(['http://127.0.0.1:5173', 'http://127.0.0.1:4173', PAGES_ORIGIN])
 const SESSION_MS = 8 * 60 * 60 * 1000
-const MAX_BODY = 24 * 1024 * 1024
+// Official image-input payload ceiling (decimal MB). Pairing/control endpoints
+// retain their separate 1 KiB limits. Never log request bodies or credentials.
+const MAX_BODY = 512 * 1000 * 1000
 const equal = (a, b) => typeof a === 'string' && Buffer.byteLength(a) === Buffer.byteLength(b) && timingSafeEqual(Buffer.from(a), Buffer.from(b))
 
 // No live authentication adapter is installed until independent Reader authorization
@@ -140,7 +142,10 @@ export function createLocalService({ adapter = pendingAdapter, pairingCode = ran
           if (!status.models.includes(request.model)) throw new LocalError('model_unavailable', 400)
           if (!status.imageModels?.includes(request.model) && request.input.some(m => m.content.some(p => p.type === 'input_image'))) throw new LocalError('vision_unsupported')
           const upstream = await adapter.stream(request, controller.signal)
-          if (!upstream.ok) throw new LocalError(upstream.status === 401 ? 'authorization_expired' : upstream.status === 429 ? 'quota_or_rate_limit' : 'upstream_failed', 502)
+          if (!upstream.ok) {
+            await upstream.body?.cancel()
+            throw new LocalError(upstream.status === 401 ? 'authorization_expired' : upstream.status === 413 ? 'upstream_request_too_large' : upstream.status === 429 ? 'quota_or_rate_limit' : 'upstream_failed', 502)
+          }
           // The official subscription route can omit Content-Type while returning
           // valid Responses SSE. A missing header is not evidence of a non-stream.
           // Keep rejecting explicit incompatible types and validate the actual

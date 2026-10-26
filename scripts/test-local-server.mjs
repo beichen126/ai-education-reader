@@ -187,7 +187,30 @@ test('images use selected-model capabilities and preserve page order', async t =
   assert.equal(captured, undefined)
   assert.match(await (await send('vision')).text(), /completed/)
   assert.deepEqual(captured.input[0].content.filter(p => p.type === 'input_image').map(p => p.image_url), urls)
-  assert.throws(() => responsesRequest({ model: 'vision', messages: [{ role: 'user', content: Array.from({ length: 101 }, () => ({ type: 'image_url', image_url: { url: urls[0] } })) }] }), /image_limit/)
+  assert.throws(() => responsesRequest({ model: 'vision', messages: [{ role: 'user', content: Array.from({ length: 1501 }, () => ({ type: 'image_url', image_url: { url: urls[0] } })) }] }), /image_limit/)
+})
+
+test('OpenAI accepts payloads above the former local 24 MiB ceiling', async t => {
+  let captured
+  const f = await fixture(t, {
+    status: async () => ({ready:true,auth:'authorized',models:['vision'],imageModels:['vision']}),
+    stream: async request => { captured=request;return sse([{type:'response.completed'}]) },
+  });await f.pair()
+  const image='data:image/jpeg;base64,'+'A'.repeat(26*1024*1024)
+  const response=await f.request('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'vision',messages:[{role:'user',content:[{type:'image_url',image_url:{url:image}}]}]})})
+  assert.match(await response.text(),/completed/)
+  assert.equal(captured.input[0].content[0].image_url.length,image.length)
+  assert.equal(responsesRequest({model:'vision',messages:[{role:'user',content:Array.from({length:1500},()=>({type:'image_url',image_url:{url:'data:image/png;base64,YQ=='}}))}]}).input[0].content.length,1500)
+})
+
+test('OpenAI actual upstream 413 is distinct from authentication failure', async t => {
+  const f=await fixture(t,{
+    status:async()=>({ready:true,auth:'authorized',models:['vision'],imageModels:['vision']}),
+    stream:async()=>new Response('{}',{status:413}),
+  });await f.pair()
+  const response=await f.request('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'vision',messages:[{role:'user',content:'hello'}]})})
+  assert.equal((await response.json()).error.code,'upstream_request_too_large')
+  assert.equal((await (await f.request('/status')).json()).auth,'authorized')
 })
 
 test('upstream incomplete, usage failures, malformed and missing terminal events are not successes', async () => {

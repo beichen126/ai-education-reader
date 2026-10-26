@@ -51,24 +51,15 @@ const gids2 = new Set(all2.map(a => a.meta.source?.groupId))
 assert(gids2.size === 2, 'separate operations -> separate groupIds (no auto-merge)')
 assert(getDraft(convId).imageIds.length === 4, 'draft keeps both groups')
 
-// budget exceeded -> no new attachments
+// Regression: adding 25 pages, then 19 pages must preserve both groups above 30 MiB.
 await idbClearAll(); resetDrafts()
-const big = { ...payload, pages: [jpg(1, 16 * 1024 * 1024), jpg(2, 16 * 1024 * 1024)] } // 32MiB > 30MiB budget
-const res3 = await addPdfContextToDraft(convId, big as any)
-assert(res3.ok === false, 'draft budget exceeded -> rejected')
-assert((await idbGetAll('attachments')).length === 0, 'budget failure leaves NO attachments')
-
-// existing draft bytes push over budget -> rejected, no rollback orphans
-await idbClearAll(); resetDrafts()
-await saveGeneratedImages([{ blob: new Blob([new Uint8Array(29 * 1024 * 1024)], { type: 'image/jpeg' }), name: 'pre.jpg' }]).catch(() => {})
-const pre = await idbGetAll('attachments') as Array<{ id: string; meta: Attachment }>
-if (pre.length === 1) {
-  addDraftImages(convId, [pre[0].id])
-  const res4 = await addPdfContextToDraft(convId, { ...payload, pages: [jpg(1, 2 * 1024 * 1024)] } as any)
-  assert(res4.ok === false && (await idbGetAll('attachments')).length === 1, 'existing 29MiB + 2MiB -> reject, no orphan')
-} else {
-  assert(true, 'note: 29MiB blob skipped (fake-indexeddb size limits)')
-}
+await saveConversation({ id: convId, title: 'c', createdAt: 1, updatedAt: 1, messages: [] })
+const first = await addPdfContextToDraft(convId, { ...payload, pages: Array.from({length:25}, (_,i)=>jpg(i+1, 1024*1024)) } as any)
+const second = await addPdfContextToDraft(convId, { ...payload, pages: Array.from({length:19}, (_,i)=>jpg(i+26, 1024*1024)) } as any)
+assert(first.ok && second.ok, '25 + 19 pages can be added above the old 30 MiB budget')
+assert(getDraft(convId).imageIds.length === 44, 'all 44 pages remain in the draft')
+const largeAttachments = await idbGetAll('attachments') as Array<{ meta: Attachment }>
+assert(largeAttachments.length === 44 && new Set(largeAttachments.map(a=>a.meta.source?.groupId)).size === 2, 'all 44 persisted with two source groups')
 
 // addDraftImages failure -> created attachments rolled back (test seam)
 await idbClearAll(); resetDrafts()

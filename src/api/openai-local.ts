@@ -69,8 +69,9 @@ export function localErrorLabel(code: string): string {
     return tx(`OpenAI 凭证接口返回 HTTP ${status}。`, `The OpenAI token endpoint returned HTTP ${status}. `) + (status === '403' ? tx('请求被拒绝，请检查返回策略及网络出口；重复登录未必能解决。现有凭证已保留。', 'The request was denied. Check policy and network egress; signing in repeatedly may not help. Existing credentials are retained.') : tx('这不是配对失败；请保留该错误码以便排查，现有凭证未清除。', 'This is not a pairing failure. Keep this error code for diagnosis; existing credentials have not been cleared.'))
   }
   if (code === 'vision_unsupported') return tx('所选 ChatGPT 模型未声明支持图片，请切换支持图片的模型。', 'The selected ChatGPT model does not declare image support. Choose an image-capable model.')
-  if (code === 'image_limit') return tx('本次请求超过 100 张图片，请减少已选页面或图片。', 'This request exceeds 100 images. Select fewer pages or images.')
-  if (code === 'request_too_large') return tx('本次请求超过本机服务的 24 MiB 上限，请减少已选页面或图片。', 'This request exceeds the local service’s 24 MiB limit. Select fewer pages or images.')
+  if (code === 'image_limit') return tx('本次请求超过 OpenAI 的 1,500 张图片上限，请减少已选页面或图片。', 'This request exceeds OpenAI’s 1,500-image limit. Select fewer pages or images.')
+  if (code === 'request_too_large') return tx('本次请求超过 OpenAI 的 512 MB 请求体上限，请减少页面或图片。', 'This request exceeds OpenAI’s 512 MB payload limit. Select fewer pages or images.')
+  if (code === 'upstream_request_too_large') return tx('OpenAI 接口拒绝了本次请求：请求体过大（413）。请减少本次发送的页面或图片。', 'OpenAI rejected the request as too large (413). Send fewer pages or images.')
   if (code === 'local_only') return tx('本机 OpenAI 仅允许官方 Reader GitHub Pages 或受支持的本地地址。', 'Local OpenAI access is restricted to the official Reader GitHub Pages or supported local origins.')
   if (code === 'local_transport_unavailable') return tx('本机连接尚未就绪或已过期。启动/重启 npm run local:server 后点击“检查本机状态”；无需重新授权 ChatGPT。', 'Local transport is not ready or has expired. Start/restart npm run local:server and check status; no ChatGPT reauthorization needed.')
   if (code === 'pairing_required') return tx('尚未连接本机服务：填写配对码后先点“配对”，成功后才能登录 ChatGPT。', 'Not paired: enter the pairing code and click Pair before signing in with ChatGPT.')

@@ -2,13 +2,13 @@
 // BOTH the Composer PdfPanel and the Document Reader — no second render policy.
 //
 // Core responsibilities: normalize ranges, bounds check, unique-page count, 120-page
-// hard limit, single-page sequential rendering, 24 MiB raw-byte budget, all-or-nothing
+// hard limit, single-page sequential rendering, all-or-nothing
 // failure, progress reporting, cancellation checks. The caller supplies renderPage
 // (PdfPanel singleton or a Reader-owned PdfSession) and owns preview object URLs.
-import { normalizePdfRanges, countPdfRangePages, expandPdfRangePages, exceedsPdfContextHardLimit, exceedsPdfGroupByteBudget, MAX_PDF_GROUP_RAW_BYTES, MAX_PDF_CONTEXT_PAGES, type PdfRange, type RenderedPdfPage } from './pdf-types'
+import { normalizePdfRanges, countPdfRangePages, expandPdfRangePages, exceedsPdfContextHardLimit, MAX_PDF_CONTEXT_PAGES, type PdfRange, type RenderedPdfPage } from './pdf-types'
 import { tx } from '../engine/locale'
 
-export type PdfContextRenderErrorKind = 'empty' | 'out-of-range' | 'hard-limit' | 'byte-budget' | 'render-failed' | 'cancelled'
+export type PdfContextRenderErrorKind = 'empty' | 'out-of-range' | 'hard-limit' | 'render-failed' | 'cancelled'
 
 export class PdfContextRenderError extends Error {
   readonly kind: PdfContextRenderErrorKind
@@ -56,12 +56,9 @@ export async function renderPdfContextRanges(opts: PdfContextRenderOptions): Pro
     if (opts.isCancelled && opts.isCancelled()) throw new PdfContextRenderError('cancelled', 'context render cancelled')
     bytes += r.blob.size
     const page: RenderedPdfPage = { pageNumber: n, ...r }
-    if (exceedsPdfGroupByteBudget(bytes)) throw new PdfContextRenderError('byte-budget', tx('该范围生成的图片数据过大，已超过当前单次 PDF Context 的安全限制（' + (MAX_PDF_GROUP_RAW_BYTES / (1024 * 1024)).toFixed(0) + ' MiB）。请减少选择的页面范围后重试。', 'The generated images exceed the ' + (MAX_PDF_GROUP_RAW_BYTES / (1024 * 1024)).toFixed(0) + ' MiB safety limit. Select fewer pages and try again.'), n)
     pages.push(page)
     opts.onPage && opts.onPage(page, i, total)
     opts.onProgress && opts.onProgress({ done: pages.length, total, bytes })
   }
   return { pages }
 }
-
-export { MAX_PDF_GROUP_RAW_BYTES }

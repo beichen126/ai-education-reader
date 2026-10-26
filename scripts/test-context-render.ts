@@ -20,13 +20,9 @@ assert(one.pages.length === 120, '120 pages exactly allowed')
 let hard = false
 try { await renderPdfContextRanges({ ranges: [{ startPage: 1, endPage: 121 }], pageCount: 500, renderPage: fakeRender, isCancelled: noCancel }) } catch (e) { hard = e instanceof PdfContextRenderError && e.kind === 'hard-limit' }
 assert(hard, '121 pages -> hard-limit error')
-// 24 MiB exactly allowed / +1 blocked
-let ok24 = true
-try { await renderPdfContextRanges({ ranges: [{ startPage: 1, endPage: 2 }], pageCount: 10, renderPage: (n) => fakeRender(n, 12 * MB), isCancelled: noCancel }) } catch { ok24 = false }
-assert(ok24, '24 MiB exactly allowed')
-let over = false
-try { await renderPdfContextRanges({ ranges: [{ startPage: 1, endPage: 3 }], pageCount: 10, renderPage: (n) => fakeRender(n, 12 * MB + 1024), isCancelled: noCancel }) } catch (e) { over = e instanceof PdfContextRenderError && e.kind === 'byte-budget' }
-assert(over, '24 MiB + 1 -> byte-budget error')
+// Large groups are local data, not a provider request: no guessed 24 MiB cutoff.
+const large = await renderPdfContextRanges({ ranges: [{ startPage: 1, endPage: 44 }], pageCount: 50, renderPage: n => fakeRender(n, MB), isCancelled: noCancel })
+assert(large.pages.length === 44, '44 MiB group fully renders without a guessed API limit')
 // render failure -> all-or-nothing error
 let rf: PdfContextRenderError | null = null
 try { await renderPdfContextRanges({ ranges: [{ startPage: 1, endPage: 3 }], pageCount: 10, renderPage: (n) => { if (n === 2) throw new Error('boom'); return fakeRender(n) }, isCancelled: noCancel }) } catch (e) { if (e instanceof PdfContextRenderError && e.kind === 'render-failed') rf = e }
@@ -75,13 +71,6 @@ assert(oor, 'out-of-bounds range rejected')
     isCancelled: noCancel,
   })
   assert(seen.join(',') === '1,2,3' && d.pages.length === 3, 'onPage fires progressively per accepted page')
-}
-{
-  let pageInfo: number | undefined
-  try {
-    await renderPdfContextRanges({ ranges: [{ startPage: 1, endPage: 3 }], pageCount: 5, renderPage: (n) => fakeRender(n, 12 * MB + 1024), isCancelled: noCancel })
-  } catch (e) { if (e instanceof PdfContextRenderError) pageInfo = e.pageNumber }
-  assert(pageInfo === 2, 'byte-budget error carries structured pageNumber (got ' + pageInfo + ')')
 }
 // ---- 9.2B2.1: architecture assertion — PdfPanel path imports the shared core ----
 {

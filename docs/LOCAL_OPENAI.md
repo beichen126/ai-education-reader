@@ -84,7 +84,9 @@ Platform API 是另一计费体系，ChatGPT Plus 不等于 Platform API 额度�
 
 `server/local-server.mjs` 负责本机 HTTP 服务、Host/Origin 检查、配对会话、请求限制和生命周期。`server/start.mjs` 负责固定回环地址启动与进程退出。它们只使用 Node.js 内置模块，没有新增服务框架或数据库。
 
-`server/openai-contract.mjs` 把 Reader 已选上下文投影为 Responses 输入：system 转 developer，保留用户文本和已编码的页面图片，不读取 PDF、不自行扩展历史。远程图片 URL 不被服务抓取，避免任意代理和 SSRF。当前上限为 24 MiB 请求、100 张图片、1000 条消息，超限明确报错；这只是本机资源限制，不代表真实模型能力。真实模型适配器仍需按所选模型实施能力与上下文限制。
+`server/openai-contract.mjs` 把 Reader 已选上下文投影为 Responses 输入：system 转 developer，保留用户文本和已编码的页面图片，不读取 PDF、不自行扩展历史。远程图片 URL 不被服务抓取，避免任意代理和 SSRF。请求体与图片数量按 [OpenAI 视觉文档](https://developers.openai.com/api/docs/guides/images-vision) 放宽为 512 MB、1,500 张图片，保留 1000 条消息的本机资源约束。SIWC 仍依赖所选模型和账户权限，通用视觉文档不能证明所有订阅模型均能接收上限规模；实际拒绝会明确报错，不删除授权与本地页面。小型配对和控制接口仍保持独立的 1 KiB 限制。
+
+PDF 准备与草稿添加不再使用 24/30 MiB 的统一图片预算。DeepSeek 与 OpenAI 分开处理：DeepSeek 官方端点完整 JSON 请求超过 48 MiB，或单张内联图片超过 32 MiB 时，使用 [官方 Files API](https://api-docs.deepseek.com/api/create-file/) 上传所选图片，五路受控并行，模型请求中使用 file_id。临时文件在请求结束后删除，并设置一小时过期，编号不写入对话、备份或日志；浏览器 CORS、账户配额和实际上传支持仍需用户环境验证。自定义兼容代理保持原路径，不假定它实现了 Files API。OpenAI SIWC 不使用未获支持的 Files 上传接口，继续直接传入选定图片。
 
 `src/api/chat-provider.ts` 是对话发送前检查与流式分流的最小边界；原 `deepseek.ts` 完全不改。`src/api/openai-local.ts` 只处理本机协议，复用现有消息格式。`LocalProviderSettings.tsx` 提供中英文 Provider 选择、配对、状态和本机模型入口。
 

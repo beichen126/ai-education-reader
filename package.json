@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "3.0.16",
+  "version": "3.0.17",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -56,7 +56,7 @@
     "test:prompt-send": "npx tsx scripts/test-prompt-send.ts",
     "test:prompt-mode": "npx tsx scripts/test-prompt-mode-service.ts",
     "test:provider-prompt-policy": "npx tsx scripts/test-provider-prompt-policy.ts",
-    "test:deepseek-reasoning": "npx tsx scripts/test-deepseek-reasoning.ts",
+    "test:deepseek-reasoning": "npx tsx scripts/test-deepseek-reasoning.ts && npx tsx scripts/test-deepseek-files.ts",
     "test:stream-ordering": "npx tsx scripts/test-stream-ordering.ts",
     "test:image-draft-atomicity": "npx tsx scripts/test-image-draft-atomicity.ts",
     "test:sse": "npx tsx scripts/test-sse.ts",

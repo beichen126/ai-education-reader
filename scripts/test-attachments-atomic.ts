@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { saveFiles, isSupportedImage, MAX_IMAGE_BYTES } from '../src/engine/attachment-service.ts'
+import { saveFiles, isSupportedImage } from '../src/engine/attachment-service.ts'
 import { saveAttachment, getAttachmentRow } from '../src/storage/storage.ts'
 import { idbGetAll } from '../src/storage/idb.ts'
 import { newStableId } from '../src/engine/types.ts'
@@ -22,15 +22,14 @@ async function allIds(): Promise<string[]> { const rows = await idbGetAll('attac
   assert(after === before, 'no orphan/blobs persisted for a rejected batch (count unchanged '+before+' -> '+after+')')
 }
 
-// 2) A batch with a too-large file is also all-or-nothing.
+// 2) Local storage must not impose a made-up 8 MiB provider limit.
 {
   const before = (await allIds()).length
   const ok1 = await mkFile('ok.png','image/png',[1,2,3])
-  const big = await mkFile('big.png','image/png',new Array(MAX_IMAGE_BYTES+1).fill(0))
-  let kind = ''
-  try { await saveFiles([ok1, big]) } catch(e){ kind = (e as any).kind }
-  assert(kind === 'image-too-large', 'oversized file -> image-too-large thrown')
-  assert((await allIds()).length === before, 'oversized batch leaves no orphan')
+  const big = new File([new Uint8Array(9 * 1024 * 1024)], 'big.png', {type:'image/png'})
+  const saved = await saveFiles([ok1, big])
+  assert(saved.length === 2, '9 MiB image accepted without arbitrary provider preflight')
+  assert((await allIds()).length === before + 2, 'larger batch commits atomically')
 }
 
 // 3) A fully-valid batch persists all, and each is readable.

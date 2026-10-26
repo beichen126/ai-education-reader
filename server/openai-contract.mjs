@@ -16,7 +16,7 @@ export function responsesRequest(body) {
       if (part?.type === 'text' && typeof part.text === 'string') return { type: role === 'assistant' ? 'output_text' : 'input_text', text: part.text }
       if (part?.type === 'image_url' && role === 'user' && typeof part.image_url?.url === 'string'
         && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(part.image_url.url)) {
-        if (++images > 100) throw new LocalError('image_limit')
+        if (++images > 1500) throw new LocalError('image_limit')
         return { type: 'input_image', image_url: part.image_url.url, detail: 'auto' }
       }
       throw new LocalError('unsupported_content')

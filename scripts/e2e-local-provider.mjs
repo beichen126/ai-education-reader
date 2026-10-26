@@ -9,7 +9,7 @@ import { openSettings } from './e2e-navigation.mjs'
 // Real browser CORS/cookie test; upstream is injected in-process, never real OpenAI.
 let captured
 const service = createLocalService({ pairingCode: 'browser-test-code', adapter: {
-  status: async () => ({ ready: true, auth: 'authorized', models: ['mock-model'], images: true }),
+  status: async () => ({ ready: true, auth: 'authorized', models: ['mock-model'], imageModels: ['mock-model'], images: true }),
   stream: async request => {
     captured = request
     return new Response('data: {"type":"response.output_text.delta","delta":"mock answer"}\n\ndata: {"type":"response.completed"}\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
@@ -64,11 +64,11 @@ try {
   assert.equal(await panel.getByRole('combobox', { name: 'Chat provider', exact: true }).inputValue(), 'openai-local')
   await panel.getByRole('button', { name: 'Check local status', exact: true }).click()
   await panel.getByText('Service ready.', { exact: true }).waitFor()
-  await panel.getByRole('button', { name: 'Disconnect local pairing', exact: true }).click()
+  await panel.getByRole('button', { name: 'Disconnect and forget pairing', exact: true }).click()
   await panel.getByText('Local pairing disconnected; this does not revoke OpenAI authorization.', { exact: true }).waitFor()
   await service.stop()
   await panel.getByRole('button', { name: 'Check local status', exact: true }).click()
-  await panel.getByText(/OpenAI local service is unavailable/).waitFor()
+  await panel.getByText(/Cannot reach the local service/).waitFor()
   await panel.getByRole('combobox', { name: 'Chat provider', exact: true }).selectOption('deepseek')
   assert.deepEqual(errors, [])
   console.log('PASS browser: local CORS, HttpOnly pairing, UI persistence, mock text/image completion, root and branch sends without API key, disconnect and stopped-service feedback')

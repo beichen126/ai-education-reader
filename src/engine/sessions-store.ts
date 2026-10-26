@@ -5,7 +5,7 @@ import { getSetting, setSetting, getConversation, saveConversation, saveConversa
 import { getSettingsSnapshot } from './settings-store'
 import { providerPreflight } from '../api/chat-provider'
 import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, isVisionModel, exceedsVisionImageCount } from '../api/deepseek'
-import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
+import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError } from './attachment-service'
 import { deleteConvAnnotations } from '../annotations/annotation-store'
 import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
 import { runThreadReply, type ReplyThread } from './stream-reply'

@@ -119,6 +119,7 @@ function transportRetryPrompt(kind: ErrorKind): string {
     unauthorized: 'the API rejected authentication',
     billing: 'the API reported a billing or balance problem',
     'rate-limited': 'the API rate-limited the request',
+    'request-too-large': 'the API rejected the request body size',
     'bad-request': 'the API rejected the request parameters or payload',
     server: 'the API returned a server error',
     'bad-json': 'the API response was not valid JSON',

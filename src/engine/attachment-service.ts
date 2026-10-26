@@ -22,8 +22,6 @@ export function attachmentErrorLabel(kind: AttachmentErrorKind): string {
 }
 
 const SUPPORTED_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
-export const MAX_IMAGE_BYTES = 8 * 1024 * 1024
-export const MAX_INLINE_IMAGE_RAW_BYTES = 30 * 1024 * 1024
 type PreviewUrlEntry = { url?: string; pending?: Promise<string>; refs: number }
 const urlRegistry = new Map<string, PreviewUrlEntry>()
 const previewReads = new PreviewReadQueue(typeof navigator !== 'undefined' && navigator.hardwareConcurrency >= 8 ? 4 : 2)
@@ -82,7 +80,6 @@ export async function saveFiles(files: File[]): Promise<Attachment[]> {
   const blobs: Blob[] = []
   for (const f of files) {
     if (!isSupportedImage(f)) throw new AttachmentError('unsupported-format', 'unsupported image');
-    if (f.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large');
     metas.push({ id: newStableId(), name: f.name, mimeType: f.type, size: f.size, createdAt: now, updatedAt: now });
     blobs.push(f);
   }
@@ -116,7 +113,6 @@ export async function saveGeneratedImagesAndDraft(images: GeneratedImageInput[],
   for (const g of images) {
     if (!(g.blob instanceof Blob) || g.blob.size <= 0) throw new AttachmentError('read-failed', 'empty blob')
     if (!SUPPORTED_MIME.has(g.blob.type)) throw new AttachmentError('unsupported-format', 'unsupported image')
-    if (g.blob.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large')
     metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}) })
     blobs.push(g.blob)
   }
@@ -163,7 +159,6 @@ export async function saveGeneratedImagesAndBranchDraft(images: GeneratedImageIn
   for (const g of images) {
     if (!(g.blob instanceof Blob) || g.blob.size <= 0) throw new AttachmentError('read-failed', 'empty blob')
     if (!SUPPORTED_MIME.has(g.blob.type)) throw new AttachmentError('unsupported-format', 'unsupported image')
-    if (g.blob.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large')
     metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}) })
     blobs.push(g.blob)
   }
@@ -199,7 +194,6 @@ export async function saveGeneratedImagesAndBranchDraft(images: GeneratedImageIn
 export async function saveImagesAndDraft(files: File[], draft: DraftOwnership, deps: DraftCommitDeps = {}): Promise<Attachment[]> {
   const inputs: GeneratedImageInput[] = files.map((f) => {
     if (!isSupportedImage(f)) throw new AttachmentError('unsupported-format', 'unsupported image')
-    if (f.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large')
     return { blob: f, name: f.name }
   })
   return saveGeneratedImagesAndDraft(inputs, draft, deps)
@@ -213,7 +207,6 @@ export async function saveGeneratedImages(images: GeneratedImageInput[]): Promis
   for (const g of images) {
     if (!(g.blob instanceof Blob) || g.blob.size <= 0) throw new AttachmentError('read-failed', 'empty blob');
     if (!SUPPORTED_MIME.has(g.blob.type)) throw new AttachmentError('unsupported-format', 'unsupported image');
-    if (g.blob.size > MAX_IMAGE_BYTES) throw new AttachmentError('image-too-large', 'image too large');
     metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}) });
     blobs.push(g.blob);
   }
@@ -227,8 +220,6 @@ export async function sumAttachmentBytes(ids: StableId[]): Promise<number> {
   return total
 }
 
-export function isInlineImageOverBudget(totalBytes: number): boolean { return totalBytes > MAX_INLINE_IMAGE_RAW_BYTES }
-export function wouldExceedInlineBudget(existingBytes: number, newBytes: number): boolean { return existingBytes + newBytes > MAX_INLINE_IMAGE_RAW_BYTES }
 
 export async function getAttachment(id: StableId): Promise<Attachment | undefined> { const row = await getAttachmentRow(id); return row ? row.meta : undefined }
 export async function getAttachments(ids: StableId[]): Promise<Attachment[]> {

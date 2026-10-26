@@ -22,7 +22,6 @@ export type PdfRange = { startPage: number; endPage: number }
 /** Product safety limits for a single PDF context (NOT DeepSeek/API limits). */
 export const PDF_CONTEXT_SOFT_WARNING_PAGES = 30
 export const MAX_PDF_CONTEXT_PAGES = 120
-export const MAX_PDF_GROUP_RAW_BYTES = 24 * 1024 * 1024
 export const PDF_GROUP_PREVIEW_BATCH = 24
 /** Preview thumbnails shown at the panel for large contexts: first 3 + last 3. */
 export const PDF_LARGE_PREVIEW_COUNT = 3
@@ -34,10 +33,6 @@ export function needsPdfContextSoftConfirm(pageCount: number): boolean {
 /** Page-count hard product limit (>120): block outright. */
 export function exceedsPdfContextHardLimit(pageCount: number): boolean {
   return pageCount > MAX_PDF_CONTEXT_PAGES
-}
-/** Real accumulated raw-byte budget for one generated group (24 MiB). */
-export function exceedsPdfGroupByteBudget(totalBytes: number): boolean {
-  return totalBytes > MAX_PDF_GROUP_RAW_BYTES
 }
 
 export const PDF_FILE_MIME = 'application/pdf'

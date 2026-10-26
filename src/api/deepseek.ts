@@ -2,8 +2,9 @@
 import { hasMeaningfulAssistantContent } from '../engine/types'
 import { tx } from '../engine/locale'
 import { parseTokenUsage, type TokenUsage } from '../engine/token-usage'
+import { prepareDeepSeekFiles } from './deepseek-files'
 
-export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }
+export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } } | { type: 'file'; file_id: string }
 export type ApiChatMessage = { role: 'user' | 'assistant' | 'system'; content: string | ChatContentPart[] }
 export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal; reasoningEffort?: DeepSeekReasoningEffort; thinking?: 'enabled' | 'disabled'; jsonObject?: boolean; maxTokens?: number }
 export type SendTextChatResult = { content: string; finishReason?: string }
@@ -14,7 +15,7 @@ export function exceedsVisionImageCount(count: number): boolean { return count >
 
 export type ErrorKind =
   | 'no-api-key' | 'network-or-cors' | 'unauthorized' | 'billing'
-  | 'rate-limited' | 'bad-request' | 'server' | 'bad-json' | 'no-content' | 'aborted'
+  | 'rate-limited' | 'request-too-large' | 'bad-request' | 'server' | 'bad-json' | 'no-content' | 'aborted'
 
 export class DeepSeekError extends Error {
   readonly kind: ErrorKind; readonly status?: number
@@ -28,6 +29,7 @@ export function errorKindLabel(kind: ErrorKind): string {
     case 'unauthorized': return tx('API Key 无效（401），请检查后重试。', 'The API key is invalid (401). Check it and try again.')
     case 'billing': return tx('余额或计费问题（402），请检查账户。', 'There is a balance or billing issue (402). Check the account.')
     case 'rate-limited': return tx('请求过于频繁（429），请稍后重试。', 'Too many requests (429). Try again later.')
+    case 'request-too-large': return tx('接口拒绝了本次请求：请求体过大（413）。请减少本次发送的页面或图片；DeepSeek 内联请求体上限为 48 MiB（包含 Base64 和文字）。', 'The API rejected this request as too large (413). Send fewer pages or images; DeepSeek limits inline requests to 48 MiB including Base64 and text.')
     case 'bad-request': return tx('请求参数错误，请检查 Base URL 与 Model。', 'The request is invalid. Check the Base URL and model.')
     case 'server': return tx('DeepSeek 服务端错误，请稍后重试。', 'The API service returned a server error. Try again later.')
     case 'bad-json': return tx('返回内容不是有效的 JSON。', 'The response is not valid JSON.')
@@ -58,7 +60,22 @@ export function deepSeekRequestOptions(baseUrl: string, model: string, reasoning
   return isDeepSeekRequest(baseUrl, model) ? { reasoning_effort: reasoningEffort } : {}
 }
 
-export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChatResult> {
+function chatRequestBody(args: SendTextChatArgs, stream: boolean) {
+  const { model, messages, baseUrl } = args
+  return { model, messages, stream, ...(args.jsonObject ? { response_format: { type: 'json_object' } } : {}), ...(args.maxTokens ? { max_tokens: args.maxTokens } : {}), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'disabled' ? { thinking: { type: 'disabled' } } : { ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'enabled' ? { thinking: { type: 'enabled' } } : {}) }) }
+}
+
+async function withDeepSeekFiles<T>(args: SendTextChatArgs, stream: boolean, run: (messages: ApiChatMessage[]) => Promise<T>): Promise<T> {
+  if (!args.apiKey) throw new DeepSeekError('no-api-key', 'missing api key')
+  const prepared = await prepareDeepSeekFiles(args, new Blob([JSON.stringify(chatRequestBody(args, stream))]).size)
+  try { return await run(prepared.messages) } finally { await prepared.cleanup() }
+}
+
+export function sendTextChat(args: SendTextChatArgs): Promise<SendTextChatResult> {
+  return withDeepSeekFiles(args, false, messages => sendTextChatInline({ ...args, messages }))
+}
+
+async function sendTextChatInline(args: SendTextChatArgs): Promise<SendTextChatResult> {
   const { apiKey, baseUrl, model, messages, signal } = args
   if (!apiKey) throw new DeepSeekError('no-api-key', 'missing api key')
   const endpoint = (baseUrl || DEFAULT_BASE).replace(/\/+$/, '') + '/chat/completions'
@@ -81,6 +98,7 @@ export async function sendTextChat(args: SendTextChatArgs): Promise<SendTextChat
     let kind: ErrorKind = 'bad-request'
     if (res.status === 401) kind = 'unauthorized'
     else if (res.status === 402) kind = 'billing'
+    else if (res.status === 413) kind = 'request-too-large'
     else if (res.status === 429) kind = 'rate-limited'
     else if (res.status >= 500) kind = 'server'
     else if (res.status >= 400) kind = 'bad-request'
@@ -146,6 +164,7 @@ export async function testConnection(args: { apiKey: string; baseUrl: string; mo
     let kind: ErrorKind = 'bad-request'
     if (res.status === 401) kind = 'unauthorized'
     else if (res.status === 402) kind = 'billing'
+    else if (res.status === 413) kind = 'request-too-large'
     else if (res.status === 429) kind = 'rate-limited'
     else if (res.status >= 500) kind = 'server'
     // 404/405 on GET /models is NOT proof /chat/completions is unusable; report the distinction.
@@ -242,7 +261,11 @@ function deltaOf(data: string): { delta: string; finishReason?: string; usage?: 
   return { delta: d, finishReason: fr, usage: parseTokenUsage(evt?.usage) }
 }
 
-export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTextChatResult> {
+export function streamTextChat(args: StreamTextChatArgs): Promise<StreamTextChatResult> {
+  return withDeepSeekFiles(args, true, messages => streamTextChatInline({ ...args, messages }))
+}
+
+async function streamTextChatInline(args: StreamTextChatArgs): Promise<StreamTextChatResult> {
   const { apiKey, baseUrl, model, messages, signal, onDelta } = args
   if (!apiKey) throw new DeepSeekError('no-api-key', 'missing api key')
   const endpoint = (baseUrl || DEFAULT_BASE).replace(/\/+$/, '') + '/chat/completions'
@@ -264,6 +287,7 @@ export async function streamTextChat(args: StreamTextChatArgs): Promise<StreamTe
     let kind: ErrorKind = 'bad-request'
     if (res.status === 401) kind = 'unauthorized'
     else if (res.status === 402) kind = 'billing'
+    else if (res.status === 413) kind = 'request-too-large'
     else if (res.status === 429) kind = 'rate-limited'
     else if (res.status >= 500) kind = 'server'
     else if (res.status >= 400) kind = 'bad-request'

@@ -2,7 +2,7 @@
 // UI; owns the component state machine, page-range validation, objectURL and
 // document lifecycle. Also reads the document outline (same active document).
 // Stage 6: large-context safety — sequential render with a real accumulated
-// raw-byte budget (stop >24 MiB), all-or-nothing on page failure, and a
+// progress byte count, all-or-nothing on page failure, and a
 // "first-3 + last-3" preview strategy for >30 page contexts.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { openPdf, renderPdfPage, closePdf, readPdfOutline, pdfErrorMessage, PdfError } from './pdf-service'
@@ -169,7 +169,6 @@ export function usePdfPreview(): PdfPreviewApi {
       setPages([]); setProgress(undefined)
       if (e instanceof PdfContextRenderError) {
         if (e.kind === 'hard-limit') setError(tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少选择的页面范围后重试。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Reduce the range and try again.'))
-        else if (e.kind === 'byte-budget') setError(tx('该范围生成的图片数据过大，已超过当前单次 PDF Context 的安全限制。请减少选择的页面范围后重试。（本次处理到第 ' + (e.pageNumber ?? '') + ' 页时超过限制。）', 'The generated images exceed the safe size limit for one PDF context. Reduce the range and try again. (Limit reached at page ' + (e.pageNumber ?? '') + '.)'))
         else if (e.kind === 'render-failed') setError(tx('第 ' + (e.pageNumber ?? '') + ' 页处理失败，本次范围未加入对话。你可以重新尝试，或切换到“选页”模式缩小范围。', 'Page ' + (e.pageNumber ?? '') + ' failed to process, so the range was not added. Try again or select fewer pages.'))
         else if (e.kind === 'out-of-range') setError(tx('页码范围超出范围，该 PDF 共 ' + doc.pageCount + ' 页。', 'The page range is out of bounds. This PDF has ' + doc.pageCount + ' pages.'))
         else setError(e.message)

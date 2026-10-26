@@ -1,7 +1,7 @@
 import { newStableId, type Message, type StableId } from './types'
 import type { Settings } from './settings-store'
-import { buildContextMessages, buildApiMessages, countImageParts, isVisionModel, exceedsVisionImageCount, DeepSeekError, errorKindLabel } from '../api/deepseek'
-import { toDataUrl, AttachmentError, attachmentErrorLabel, sumAttachmentBytes, isInlineImageOverBudget } from './attachment-service'
+import { buildContextMessages, buildApiMessages, countImageParts, isVisionModel, DeepSeekError, errorKindLabel } from '../api/deepseek'
+import { toDataUrl, AttachmentError, attachmentErrorLabel } from './attachment-service'
 import { generationRegistry, type GenerationLease } from './generation-registry'
 import { projectLogicalPromptContext } from '../prompts/prompt-compile-strategies'
 import type { AcceptedSendContext } from '../prompts/prompt-send'
@@ -9,6 +9,7 @@ import type { SendFailure, SendOutcome } from './send-outcome'
 import { prepareWebResearch, WebResearchError } from '../api/deepseek-web'
 import { streamProviderChat } from '../api/chat-provider'
 import { getLocalStatus, LocalProviderError } from '../api/openai-local'
+import { DeepSeekFilesError } from '../api/deepseek-files'
 
 /**
  * Thread-agnostic streaming reply engine. ONE generation pipeline is shared by the ROOT
@@ -84,19 +85,8 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       const failure: SendFailure = { kind: 'failed', code: 'vision-unsupported', message: attachmentErrorLabel('vision-unsupported') }
       ownedLease.release(); thread.setError(failure); return failure
     }
-    const retainedImageIds = contextMessages.flatMap((x) => x.images)
-    if (retainedImageIds.length > 0) {
-      const totalImageBytes = await sumAttachmentBytes(retainedImageIds)
-      if (isInlineImageOverBudget(totalImageBytes)) {
-        const failure: SendFailure = { kind: 'failed', code: 'image-budget-exceeded', message: '当前消息包含的图片数据过多，可能超过模型接口的请求大小限制。请减少本次选择的 PDF 页数或图片数量。' }
-        ownedLease.release(); thread.setError(failure); return failure
-      }
-      const retainedImages = contextMessages.reduce((sum, mm) => sum + mm.images.length, 0)
-      if (exceedsVisionImageCount(retainedImages)) {
-        const failure: SendFailure = { kind: 'failed', code: 'vision-image-limit', message: '当前对话需要发送的图片数量过多。请减少本次 PDF 页面或图片后重试。' }
-        ownedLease.release(); thread.setError(failure); return failure
-      }
-    }
+    // Provider limits differ. Never apply DeepSeek counts or an arbitrary raw
+    // image-byte budget to OpenAI / compatible endpoints. Surface actual errors.
     const reqMessages = acceptedSendContext
       ? await projectLogicalPromptContext(acceptedSendContext.logical, acceptedSendContext.compilePolicy.systemMessagePolicy, toDataUrl)
       : await buildApiMessages(contextMessages, toDataUrl)
@@ -157,7 +147,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       ownedLease.release(); thread.setIdle()
       return { kind: 'aborted', ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
     }
-    const label = e instanceof WebResearchError || e instanceof LocalProviderError ? e.message : errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : '')
+    const label = e instanceof WebResearchError || e instanceof LocalProviderError || e instanceof DeepSeekFilesError ? e.message : errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : '')
     const failure: SendFailure = { kind: 'failed', code: e instanceof LocalProviderError ? e.code : err.kind, message: label, ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
     if (placeholderCreated) thread.settleAssistant('failed', label)
     await thread.persistFinal()

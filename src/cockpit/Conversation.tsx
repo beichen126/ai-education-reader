@@ -5,7 +5,7 @@ import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/
 import { patchSettings, useSettings, useSettingsMutation } from '../engine/settings-store'
 import { formatTokenCount } from '../engine/token-usage'
 import { uiActions, useUi } from '../engine/ui-store'
-import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, sumAttachmentBytes, wouldExceedInlineBudget } from '../engine/attachment-service'
+import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel } from '../engine/attachment-service'
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
 import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
 import { localizedErrorText, localizedStudyCardTitle, t, tx, useUiLanguage } from '../engine/locale'
@@ -595,7 +595,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
     return () => { setComposerTriggers(null); libCancelledRef.current = true; libGenRef.current++ }
   }, [])
   const addPdfToDraft = async (payload: PdfAddPayload): Promise<PdfAddResult> => {
-    // Shared implementation (also used by the Document Reader): budget guard -> one
+    // Shared implementation (also used by the Document Reader): one
     // groupId -> saveGeneratedImages -> addDraftImages with full rollback.
     if (!sessionId) return { ok: false, count: 0, error: tx('没有当前会话，无法加入。', 'There is no active chat to add this to.') }
     return addPdfContextToDraft(sessionId, payload)
