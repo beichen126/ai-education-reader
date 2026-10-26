@@ -3,6 +3,34 @@
 export class LocalError extends Error {
   constructor(code, status = 400) { super(code); this.code = code; this.status = status }
 }
+const SAFE_UPSTREAM_CODES = new Set(['context_length_exceeded', 'invalid_image', 'invalid_image_url', 'image_parse_error', 'invalid_model', 'model_not_found', 'unsupported_parameter', 'unsupported_value', 'rate_limit_exceeded', 'insufficient_quota', 'unsupported_country_region_territory', 'subscription_sharing_usage_limit_exceeded', 'subscription_sharing_usage_unavailable', 'invalid_api_key'])
+
+/** Keep HTTP diagnostics useful without exposing upstream messages, prompts,
+ * credentials or arbitrary response fields. Only known error codes may escape. */
+export async function upstreamHttpError(response) {
+  let code = ''
+  const reader = response.body?.getReader()
+  if (reader) {
+    try {
+      let body = '', bytes = 0
+      const decoder = new TextDecoder()
+      while (bytes <= 32768) {
+        const next = await reader.read()
+        if (next.done) break
+        bytes += next.value.byteLength
+        if (bytes > 32768) break
+        body += decoder.decode(next.value, { stream: true })
+      }
+      const parsed = JSON.parse(body)
+      if (SAFE_UPSTREAM_CODES.has(parsed?.error?.code)) code = parsed.error.code
+    } catch { /* non-JSON and oversized error bodies retain the HTTP status */ }
+    finally { await reader.cancel().catch(() => {}) }
+  }
+  if (response.status === 401) return new LocalError('authorization_expired', 502)
+  if (response.status === 413) return new LocalError('upstream_request_too_large', 502)
+  if (response.status === 429 && !code) return new LocalError('quota_or_rate_limit', 502)
+  return new LocalError(code || `upstream_http_${response.status}`, 502)
+}
 export function responsesRequest(body) {
   if (!body || typeof body.model !== 'string' || !/^[a-zA-Z0-9._:-]{1,128}$/.test(body.model)
     || !Array.isArray(body.messages) || !body.messages.length || body.messages.length > 1000) throw new LocalError('invalid_request')
@@ -68,8 +96,8 @@ export async function relayResponses(body, emit) {
     }
     else if (event.type === 'response.failed' || event.type === 'response.incomplete' || event.type === 'error') {
       // Never forward untrusted upstream error messages (may contain request data).
-      const raw = event.response?.error?.code ?? event.code
-      const code = ['subscription_sharing_usage_limit_exceeded', 'subscription_sharing_usage_unavailable', 'model_not_found', 'invalid_api_key'].includes(raw) ? raw : 'upstream_failed'
+      const raw = event.response?.error?.code ?? event.error?.code ?? event.code
+      const code = SAFE_UPSTREAM_CODES.has(raw) ? raw : event.type === 'response.incomplete' ? 'stream_incomplete' : 'upstream_failed'
       throw new LocalError(code, 502)
     }
   }

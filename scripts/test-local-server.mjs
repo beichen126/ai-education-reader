@@ -3,10 +3,21 @@ import assert from 'node:assert/strict'
 import { once } from 'node:events'
 import { request as httpRequest } from 'node:http'
 import { createLocalService } from '../server/local-server.mjs'
-import { responsesRequest, relayResponses, webCitationLinks } from '../server/openai-contract.mjs'
+import { responsesRequest, relayResponses, webCitationLinks, upstreamHttpError } from '../server/openai-contract.mjs'
 import { isTrustedLocalProxyRequest, prepareLocalTransport, readLocalTransport } from '../server/local-transport.mjs'
 
 const origin = 'http://127.0.0.1:5173'
+
+test('HTTP failures preserve status and only allowlisted codes, never upstream text', async () => {
+  const context = await upstreamHttpError(Response.json({error:{code:'context_length_exceeded',message:'PRIVATE_PROMPT'}},{status:400}))
+  assert.equal(context.code,'context_length_exceeded')
+  const unknown = await upstreamHttpError(Response.json({error:{code:'PRIVATE_TOKEN',message:'PRIVATE_PROMPT'}},{status:503}))
+  assert.equal(unknown.code,'upstream_http_503')
+  assert(!JSON.stringify(unknown).includes('PRIVATE'))
+  assert.equal((await upstreamHttpError(new Response('gateway',{status:502}))).code,'upstream_http_502')
+  const stream = new Response('data: '+JSON.stringify({type:'response.failed',response:{error:{code:'context_length_exceeded',message:'PRIVATE_PROMPT'}}})+'\n\n')
+  await assert.rejects(relayResponses(stream.body,async()=>{}), /context_length_exceeded/)
+})
 test('local proxy requires exact host/origin and persists a separate transport capability', async () => {
   assert.equal(isTrustedLocalProxyRequest({host:'127.0.0.1:5173',origin},'POST'),true)
   assert.equal(isTrustedLocalProxyRequest({host:'127.0.0.1:5173',referer:origin+'/ai-education-reader/'},'GET'),true)

@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { once } from 'node:events'
-import { LocalError, responsesRequest, relayResponses } from './openai-contract.mjs'
+import { LocalError, responsesRequest, relayResponses, upstreamHttpError } from './openai-contract.mjs'
 
 const PAGES_ORIGIN = 'https://beichen126.github.io'
 const ORIGINS = new Set(['http://127.0.0.1:5173', 'http://127.0.0.1:4173', PAGES_ORIGIN])
@@ -142,10 +142,7 @@ export function createLocalService({ adapter = pendingAdapter, pairingCode = ran
           if (!status.models.includes(request.model)) throw new LocalError('model_unavailable', 400)
           if (!status.imageModels?.includes(request.model) && request.input.some(m => m.content.some(p => p.type === 'input_image'))) throw new LocalError('vision_unsupported')
           const upstream = await adapter.stream(request, controller.signal)
-          if (!upstream.ok) {
-            await upstream.body?.cancel()
-            throw new LocalError(upstream.status === 401 ? 'authorization_expired' : upstream.status === 413 ? 'upstream_request_too_large' : upstream.status === 429 ? 'quota_or_rate_limit' : 'upstream_failed', 502)
-          }
+          if (!upstream.ok) throw await upstreamHttpError(upstream)
           // The official subscription route can omit Content-Type while returning
           // valid Responses SSE. A missing header is not evidence of a non-stream.
           // Keep rejecting explicit incompatible types and validate the actual
