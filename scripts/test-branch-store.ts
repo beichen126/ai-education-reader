@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { newStableId, type Conversation, type Message } from '../src/engine/types.ts'
 import { saveConversation, getConversation } from '../src/storage/storage.ts'
 import { closeDb } from '../src/storage/idb.ts'
-import { listBranchesByConversation, getBranch, getActiveBranch, setActiveBranch } from '../src/branches/branch-store.ts'
+import { listBranchesByConversation, getBranch, getActiveBranch, setActiveBranch, saveBranch, subscribeBranchChanges } from '../src/branches/branch-store.ts'
 import { createBranchFromMessage, renameBranch, deleteBranchSubtree, acceptBranchUserMessage } from '../src/branches/branch-service.ts'
 import { setBranchDraftText, addBranchDraftImages, getBranchDraft, initBranchDrafts, branchDraftSettingKey, getDraft, setDraftText } from '../src/engine/draft-store.ts'
 import { getSetting } from '../src/storage/storage.ts'
@@ -96,5 +96,24 @@ await closeDb()
 await initBranchDrafts([b4.id])
 assert(getBranchDraft(b4.id).text === 'survivor draft', 'branch draft restored after reload')
 
+const changes: any[]=[]
+const committedReads:Promise<boolean>[]=[]
+const unsubscribe=subscribeBranchChanges(change=>{
+  changes.push(change)
+  if(change.kind==='saved')committedReads.push(getBranch(change.branch.id).then(saved=>saved?.messages.length===change.branch.messages.length))
+})
+const unsubscribeThrow=subscribeBranchChanges(()=>{throw new Error('view_failed')})
+await acceptBranchUserMessage(b4.id,msg('live-user','user','accepted now'))
+assert(changes.at(-1)?.branch.messages.at(-1)?.id==='live-user','accepted user transaction publishes an immediate view update')
+const live=await getBranch(b4.id)
+await saveBranch({...live!,messages:[...live!.messages,msg('live-assistant','assistant','partial reply')]})
+assert(changes.at(-1)?.branch.messages.at(-1)?.content==='partial reply','stream write publishes its committed content even if another listener throws')
+assert((await Promise.all(committedReads)).every(Boolean),'every saved notification observes already committed data')
+await deleteBranchSubtree(b4.id)
+assert(changes.at(-1)?.kind==='deleted' && changes.at(-1)?.id===b4.id,'deletion notifies the live view')
+unsubscribe();unsubscribeThrow()
+const count=changes.length
+await createBranchFromMessage(convId,'m1')
+assert(changes.length===count,'unmounted views stop receiving notifications')
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)

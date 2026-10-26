@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { type Conversation, type Message, type StableId } from '../engine/types'
 import { buildEffectiveConversationPath, validateBranchGraph } from '../branches/branch-path'
-import { listBranchesByConversation, getActiveBranch, setActiveBranch } from '../branches/branch-store'
+import { listBranchesByConversation, getActiveBranch, setActiveBranch, subscribeBranchChanges, type BranchChange } from '../branches/branch-store'
 import { createBranchFromMessage, renameBranch, deleteBranchSubtree } from '../branches/branch-service'
 import type { ConversationBranch } from '../branches/branch-types'
+
+function applyChange(branches:ConversationBranch[],change:BranchChange):ConversationBranch[] {
+  if(change.kind==='deleted')return branches.filter(branch=>branch.id!==change.id)
+  return [...branches.filter(branch=>branch.id!==change.branch.id),change.branch].sort((a,b)=>a.createdAt-b.createdAt)
+}
 
 export function useBranchChat(conversation: Conversation | undefined): {
   branches: ConversationBranch[]
@@ -21,17 +26,35 @@ export function useBranchChat(conversation: Conversation | undefined): {
   const [activeBranchId, setActiveBranchId] = useState<StableId | undefined>(undefined)
   const [loadedConversationId, setLoadedConversationId] = useState<StableId | undefined>(undefined)
   const refreshGeneration = useRef(0)
+  const changeVersion=useRef(0)
+  const recentChanges=useRef(new Map<string,{version:number;change:BranchChange}>())
+  useEffect(()=>{
+    recentChanges.current.clear();changeVersion.current=0
+    if(!conversation?.id)return
+    const conversationId=conversation.id
+    return subscribeBranchChanges(change=>{
+      if(change.kind==='saved' && change.branch.conversationId!==conversationId)return
+      const id=change.kind==='saved'?change.branch.id:change.id
+      recentChanges.current.set(id,{version:++changeVersion.current,change})
+      setBranches(previous=>applyChange(previous,change))
+    })
+  },[conversation?.id])
 
   const refresh = useCallback(async () => {
     const conversationId = conversation?.id
     const generation = ++refreshGeneration.current
+    const version=changeVersion.current
     if (!conversationId) { setBranches([]); setActiveBranchId(undefined); setLoadedConversationId(undefined); return }
     setLoadedConversationId(undefined)
     const bs = await listBranchesByConversation(conversationId)
     const active = await getActiveBranch(conversationId)
     if (generation !== refreshGeneration.current) return
-    const valid = active && bs.some((b) => b.id === active) ? active : undefined
-    setBranches(bs)
+    // A read started before a committed stream delta must not overwrite that
+    // newer notification when its slower snapshot finally resolves.
+    let merged=bs
+    for(const item of recentChanges.current.values())if(item.version>version)merged=applyChange(merged,item.change)
+    const valid = active && merged.some((b) => b.id === active) ? active : undefined
+    setBranches(merged)
     setActiveBranchId(valid)
     setLoadedConversationId(conversationId)
   }, [conversation?.id])

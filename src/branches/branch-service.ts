@@ -2,7 +2,7 @@ import { newStableId, type Conversation, type Message, type StableId, type Draft
 import { getConversation } from '../storage/storage'
 import { idbRunTxn } from '../storage/idb'
 import { canForkFromMessage, canonicalForkOwner, descendantBranchIds } from './branch-path'
-import { getBranch, saveBranchAndActive, listBranchesByConversation, getActiveBranch, setActiveBranch, deleteBranches } from './branch-store'
+import { getBranch, saveBranchAndActive, listBranchesByConversation, getActiveBranch, setActiveBranch, deleteBranches, notifyBranchSaved } from './branch-store'
 import { branchDraftSettingKey, deleteBranchDraft, clearBranchDraftMemory } from '../engine/draft-store'
 import type { ConversationBranch } from './branch-types'
 import type { PromptTransition } from '../prompts/prompt-types'
@@ -95,6 +95,7 @@ export async function acceptBranchUserMessage(branchId: StableId, message: Messa
     txn.objectStore('conversationBranches').put(updated)
     if (draftDisposition === 'clear') txn.objectStore('settings').delete(branchDraftSettingKey(branchId))
   })
+  notifyBranchSaved(updated)
   if (draftDisposition === 'clear') clearBranchDraftMemory(branchId)
   return true
 }

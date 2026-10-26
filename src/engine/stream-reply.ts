@@ -52,11 +52,27 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
   let received = ''
   let lastRender = 0
   let lastDurable = 0
+  let renderTimer: ReturnType<typeof setTimeout> | undefined
   const update = (content: string, flushDurable: boolean) => {
     thread.updateAssistantContent(content)
     if (flushDurable && Date.now() - lastDurable >= DURABLE_CHECKPOINT_MS) { lastDurable = Date.now(); thread.persistCheckpoint(content) }
   }
-  const onDelta = (d: string) => { received += d; const t = Date.now(); if (t - lastRender >= STREAM_RENDER_INTERVAL_MS) { lastRender = t; update(received, false) } }
+  const onDelta = (d: string) => {
+    received += d
+    const elapsed=Date.now()-lastRender
+    if(elapsed>=STREAM_RENDER_INTERVAL_MS) {
+      clearTimeout(renderTimer);renderTimer=undefined
+      lastRender=Date.now();update(received,false)
+    } else if(renderTimer===undefined) {
+      // Flush the trailing delta even when the server pauses before its next
+      // chunk. Throttling must delay rendering, never wait for completion.
+      renderTimer=setTimeout(()=>{
+        renderTimer=undefined
+        if(!ownedLease.isCurrent() || controller.signal.aborted)return
+        lastRender=Date.now();update(received,false)
+      },STREAM_RENDER_INTERVAL_MS-elapsed)
+    }
+  }
 
   try {
     const contextMessages = acceptedSendContext?.logical.messages ?? buildContextMessages(await thread.getContextMessages())
@@ -113,6 +129,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       webFooter = research.footer
     }
     const r = await streamProviderChat(settings, { apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages, signal: controller.signal, onDelta })
+    clearTimeout(renderTimer);renderTimer=undefined
     received = r.content + webFooter
     update(received, true)
     if (r.usage) thread.updateAssistantContent(received, r.usage)
@@ -122,6 +139,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     thread.setIdle()
     return { kind: 'completed', assistantMessageId: assistantId }
   } catch (e) {
+    clearTimeout(renderTimer);renderTimer=undefined
     update(received, true)
     if (e instanceof AttachmentError) {
       const failure: SendFailure = { kind: 'failed', code: 'attachment-' + e.kind, message: attachmentErrorLabel(e.kind), ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
@@ -148,6 +166,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     thread.setError(failure)
     return failure
   } finally {
+    clearTimeout(renderTimer)
     ownedLease.release()
   }
 }

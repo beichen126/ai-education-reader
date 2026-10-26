@@ -64,7 +64,7 @@ export class BranchReplyThread implements ReplyThread {
   async persistFinal(): Promise<void> { await drainBranchWrites(this.branchId) }
   async drainWrites(): Promise<void> { await drainBranchWrites(this.branchId) }
   async exists(): Promise<boolean> { return !!(await getBranch(this.branchId)) }
-  setStreaming(): void { /* branch UI reads IDB on switch; no idle bus */ }
+  setStreaming(): void { /* generation registry owns status; committed writes notify branch views */ }
   setIdle(): void { /* no-op */ }
   settleAssistant(status: 'failed' | 'aborted', message: string): void {
     this.mutate((b) => {
