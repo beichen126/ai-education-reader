@@ -56,7 +56,7 @@ export function responsesRequest(body) {
 }
 
 // SSE parsing tolerates CRLF, split UTF-8 and multiline data, with bounded frames.
-export async function* readEvents(body) {
+export async function* readEvents(body, onActivity = () => {}) {
   if (!body) throw new LocalError('empty_stream', 502)
   const reader = body.getReader()
   const decoder = new TextDecoder()
@@ -64,6 +64,7 @@ export async function* readEvents(body) {
   try {
     while (!ended) {
       const next = await reader.read()
+      if (next.value?.byteLength) onActivity()
       ended = next.done
       buffer += decoder.decode(next.value, { stream: !ended })
       let match
@@ -82,9 +83,9 @@ export async function* readEvents(body) {
   } finally { await reader.cancel().catch(() => {}); reader.releaseLock() }
 }
 
-export async function relayResponses(body, emit) {
+export async function relayResponses(body, emit, onActivity = () => {}) {
   const sources = new Set()
-  for await (const event of readEvents(body)) {
+  for await (const event of readEvents(body, onActivity)) {
     const links = webCitationLinks(event, sources)
     if (links) await emit({ type: 'delta', text: links })
     if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') await emit({ type: 'delta', text: event.delta })

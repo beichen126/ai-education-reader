@@ -78,7 +78,8 @@ export function localErrorLabel(code: string): string {
   if (code === 'pairing_rejected') return tx('配对码不正确，请复制本次服务启动时显示的完整配对码。', 'Incorrect pairing code. Copy the complete code from the current service startup.')
   if (code === 'pairing_expired') return tx('配对码已过期或已使用，请重启本机服务获取新码；已有连接可点“检查本机状态”。', 'The pairing code expired or was already used. Restart the local service for a new code, or check local status if already paired.')
   if (code === 'authorization_not_verified') return tx('本机服务已连接，但 ChatGPT 订阅授权尚未验证，真实调用未启用。不会自动改用付费 API Key。', 'Local service connected, but ChatGPT subscription authorization is not verified. Live requests are disabled; no paid API key fallback is used.')
-  if (code === 'request_cancelled') return tx('本机请求已停止或超时。', 'The local request was stopped or timed out.')
+  if (code === 'request_cancelled') return tx('本次生成已停止。', 'Generation stopped.')
+  if (code === 'request_idle_timeout') return tx('连续 15 分钟未收到模型数据，等待已超时。已生成的内容会保留，可以重试；无需重新授权。', 'No model data arrived for 15 minutes. The wait timed out. Partial content is preserved; retry without signing in again.')
   if (code === 'subscription_scope_missing') return tx('账户未授予使用 ChatGPT 订阅的权限，请重新授权并同意订阅使用。', 'ChatGPT plan permission was not granted. Authorize again and approve plan usage.')
   if (code === 'authorization_denied') return tx('你取消了授权或未同意权限。', 'Authorization was cancelled or permission was denied.')
   if (code === 'authorization_timeout') return tx('登录已超时，请重新点击登录。', 'Sign-in timed out. Start sign-in again.')
@@ -251,7 +252,9 @@ export async function selectChatGPTAccount(id: string): Promise<void> {
 export async function streamLocalChat(args: { model: string; messages: ApiChatMessage[]; signal?: AbortSignal; onDelta: (delta: string) => void }): Promise<{ content: string; usage?: TokenUsage }> {
   const bridge = androidBridge()
   if (bridge) return await androidStreamChat(bridge, args)
-  const signal = args.signal ? AbortSignal.any([args.signal, AbortSignal.timeout(180000)]) : AbortSignal.timeout(180000)
+  // The backend owns the upstream inactivity timeout. A healthy long stream must
+  // not be cancelled by a second, unrelated browser wall-clock deadline.
+  const signal = args.signal ?? new AbortController().signal
   const response = await localFetch('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: args.model, messages: args.messages }), signal })
   if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) throw new LocalProviderError('stream_incomplete')
   const reader = response.body.getReader(), decoder = new TextDecoder()
@@ -286,8 +289,8 @@ async function androidStreamChat(
   args: { model: string; messages: ApiChatMessage[]; signal?: AbortSignal; onDelta: (delta: string) => void },
 ): Promise<{ content: string; usage?: TokenUsage }> {
   const requestId = `android-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
-  // A timer below owns the deadline; do not require recent AbortSignal helpers
-  // in Android WebView. Cancellation remains wired to the caller's signal.
+  // Native socket reads own the inactivity timeout. Keep only explicit caller
+  // cancellation here; reasoning may run a long time before a text delta arrives.
   const signal = args.signal ?? new AbortController().signal
   if (signal.aborted) throw new LocalProviderError('request_cancelled')
   return await new Promise<{ content: string; usage?: TokenUsage }>((resolve, reject) => {
@@ -299,7 +302,6 @@ async function androidStreamChat(
     }
     const cleanup = () => {
       off()
-      clearTimeout(timer)
       signal.removeEventListener?.('abort', onAbort)
     }
     const finish = (action: () => void) => {
@@ -319,10 +321,6 @@ async function androidStreamChat(
         finish(() => reject(new LocalProviderError(typeof event.code === 'string' ? event.code : 'invalid_stream')))
       }
     })
-    const timer = setTimeout(() => {
-      bridge.native.cancelChat(requestId)
-      finish(() => reject(new LocalProviderError('request_cancelled')))
-    }, 180000)
     signal.addEventListener?.('abort', onAbort, { once: true })
     try {
       bridge.native.streamChat(requestId, args.model, JSON.stringify(args.messages))

@@ -287,7 +287,7 @@ test('client disconnect aborts the upstream request; service stop is determinist
   await Promise.race([cancelled, new Promise((_, reject) => { const timer = setTimeout(() => reject(new Error('upstream not aborted')), 2000); timer.unref() })])
 })
 
-test('service deadline cancels upstream and releases capacity', async t => {
+test('service inactivity timeout cancels a silent upstream and releases capacity', async t => {
   let cancelled = false
   const adapter = {
     status: async () => ({ ready: true, auth: 'authorized', models: ['mock-model'], images: false }),
@@ -296,6 +296,37 @@ test('service deadline cancels upstream and releases capacity', async t => {
   const f = await fixture(t, adapter, { requestTimeoutMs: 50 }); await f.pair()
   const response = await f.request('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'mock-model', messages: [{ role: 'user', content: 'hello' }] }) })
   assert.equal(response.status, 408)
+  assert.equal((await response.json()).error.code, 'request_idle_timeout')
   assert.equal(cancelled, true)
   assert.equal((await f.request('/status')).status, 200)
+})
+
+test('reasoning and heartbeat activity keep a long generation alive beyond the timeout interval', async t => {
+  const encoder=new TextEncoder()
+  const f=await fixture(t,{
+    status:async()=>({ready:true,auth:'authorized',models:['mock-model']}),
+    stream:async()=>new Response(new ReadableStream({start(controller){
+      let ticks=0
+      const timer=setInterval(()=>{
+        if(++ticks===9){clearInterval(timer);controller.enqueue(encoder.encode('data: {"type":"response.completed"}\n\n'));controller.close()}
+        else controller.enqueue(encoder.encode(ticks%2 ? ': keepalive\n\n' : 'data: {"type":"response.reasoning_summary_text.delta","delta":"thinking"}\n\n'))
+      },30)
+    }})),
+  },{requestTimeoutMs:120});await f.pair()
+  const response=await f.request('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'mock-model',messages:[{role:'user',content:'long reasoning'}]})})
+  assert.match(await response.text(),/"type":"completed"/)
+})
+
+test('a stalled stream preserves partial text and reports inactivity separately from stop', async t => {
+  const encoder=new TextEncoder()
+  const f=await fixture(t,{
+    status:async()=>({ready:true,auth:'authorized',models:['mock-model']}),
+    stream:async(_,signal)=>new Response(new ReadableStream({start(controller){
+      controller.enqueue(encoder.encode('data: {"type":"response.output_text.delta","delta":"partial"}\n\n'))
+      signal.addEventListener('abort',()=>controller.error(new Error('idle')),{once:true})
+    }})),
+  },{requestTimeoutMs:50});await f.pair()
+  const response=await f.request('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'mock-model',messages:[{role:'user',content:'hello'}]})})
+  const body=await response.text()
+  assert.match(body,/partial/);assert.match(body,/request_idle_timeout/)
 })

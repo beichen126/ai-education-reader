@@ -18,7 +18,7 @@ const pendingAdapter = {
   stream: async () => { throw new LocalError('authorization_not_verified', 503) },
 }
 
-export function createLocalService({ adapter = pendingAdapter, pairingCode = randomBytes(18).toString('base64url'), requestTimeoutMs = 180000, localTransport = null, pairingStore = null } = {}) {
+export function createLocalService({ adapter = pendingAdapter, pairingCode = randomBytes(18).toString('base64url'), requestTimeoutMs = 15 * 60 * 1000, localTransport = null, pairingStore = null } = {}) {
   let pairAvailable = true, pairFailures = 0
   const pairExpires = Date.now() + 10 * 60 * 1000
   const sessions = new Map(), controllers = new Set()
@@ -127,14 +127,22 @@ export function createLocalService({ adapter = pendingAdapter, pairingCode = ran
         if (controllers.size >= 2) throw new LocalError('service_busy', 429)
         const controller = new AbortController()
         controllers.add(controller)
-        const timer = setTimeout(() => controller.abort(), requestTimeoutMs)
+        // This is an inactivity timeout, not a total generation deadline.
+        // Reasoning events and SSE comments also count as upstream activity.
+        let timedOut = false, timer
+        const touch = () => {
+          clearTimeout(timer)
+          timer = setTimeout(() => { timedOut = true; controller.abort() }, requestTimeoutMs)
+        }
+        touch()
+        const abortCode = () => timedOut ? 'request_idle_timeout' : 'request_cancelled'
         const abort = () => { if (!res.writableFinished) controller.abort() }
         res.on('close', abort); req.on('aborted', abort)
         try {
           const request = responsesRequest(await readJson(req))
-          if (controller.signal.aborted) throw new LocalError('request_cancelled', 408)
+          if (controller.signal.aborted) throw new LocalError(abortCode(), 408)
           const status = await adapter.status()
-          if (controller.signal.aborted) throw new LocalError('request_cancelled', 408)
+          if (controller.signal.aborted) throw new LocalError(abortCode(), 408)
           if (status.errorCode && /^[a-z0-9_]{1,80}$/.test(status.errorCode)) throw new LocalError(status.errorCode, 503)
           if (status.login === 'pending') throw new LocalError('authorization_pending', 409)
           if (status.auth !== 'authorized') throw new LocalError('authorization_not_verified', 503)
@@ -154,14 +162,14 @@ export function createLocalService({ adapter = pendingAdapter, pairingCode = ran
           }
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'X-Accel-Buffering': 'no' })
           const emit = async event => {
-            if (controller.signal.aborted) throw new LocalError('request_cancelled', 408)
+            if (controller.signal.aborted) throw new LocalError(abortCode(), 408)
             if (!res.write(`data: ${JSON.stringify(event)}\n\n`)) await once(res, 'drain', { signal: controller.signal })
           }
-          await relayResponses(upstream.body, emit)
+          await relayResponses(upstream.body, emit, touch)
           res.end()
         } catch (error) {
-          if (res.headersSent) { if (!res.destroyed) res.end(`data: ${JSON.stringify({ type: 'error', code: controller.signal.aborted ? 'request_cancelled' : error instanceof LocalError ? error.code : 'upstream_failed' })}\n\n`) }
-          else throw controller.signal.aborted ? new LocalError('request_cancelled', 408) : error
+          if (res.headersSent) { if (!res.destroyed) res.end(`data: ${JSON.stringify({ type: 'error', code: controller.signal.aborted ? abortCode() : error instanceof LocalError ? error.code : 'upstream_failed' })}\n\n`) }
+          else throw controller.signal.aborted ? new LocalError(abortCode(), 408) : error
         } finally { clearTimeout(timer); controllers.delete(controller); res.off('close', abort); req.off('aborted', abort) }
         return
       }
