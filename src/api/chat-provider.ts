@@ -1,4 +1,3 @@
-import { GENUI_PROMPT } from '../genui/schema'
 import type { Settings } from '../engine/settings-store'
 import type { RejectedSend } from '../engine/send-outcome'
 import { errorKindLabel, streamTextChat, type StreamTextChatArgs } from './deepseek'
@@ -18,13 +17,6 @@ export async function providerPreflight(settings: Settings, signal?: AbortSignal
   } catch (error) { return { kind: 'rejected', code: error instanceof LocalProviderError ? error.code : 'local-unavailable', message: error instanceof LocalProviderError ? error.message : tx('本机服务不可用。', 'Local service unavailable.') } }
 }
 export function streamProviderChat(settings: Settings, args: StreamTextChatArgs) {
-  if (!args.jsonObject) {
-    const messages = args.messages.slice()
-    const first = messages[0]
-    if (first?.role === 'system' && typeof first.content === 'string') messages[0] = { ...first, content: first.content + '\n\n' + GENUI_PROMPT }
-    else messages.unshift({ role: 'system', content: GENUI_PROMPT })
-    args = { ...args, messages }
-  }
   return settings.chatProvider === 'openai-local'
     ? streamLocalChat({ ...args, model: settings.openaiLocalModel || '' })
     : streamTextChat(args)

@@ -88,7 +88,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     // Provider limits differ. Never apply DeepSeek counts or an arbitrary raw
     // image-byte budget to OpenAI / compatible endpoints. Surface actual errors.
     const reqMessages = acceptedSendContext
-      ? await projectLogicalPromptContext(acceptedSendContext.logical, acceptedSendContext.compilePolicy.systemMessagePolicy, toDataUrl)
+      ? await projectLogicalPromptContext(acceptedSendContext.logical, acceptedSendContext.compilePolicy.systemMessagePolicy, toDataUrl, { genUi: true })
       : await buildApiMessages(contextMessages, toDataUrl)
     const expectedImages = contextMessages.reduce((sum, mm) => sum + mm.images.length, 0)
     const encodedImages = countImageParts(reqMessages)

@@ -1,3 +1,4 @@
+import { GENUI_PROMPT } from '../genui/schema'
 import { buildApiMessages, type ApiChatMessage } from '../api/deepseek'
 import type { ChatThreadRef } from '../branches/branch-types'
 import type { Message, StableId } from '../engine/types'
@@ -90,10 +91,15 @@ export async function projectLogicalPromptContext(
   context: LogicalPromptContext,
   policy: 'interleaved' | 'flattened',
   toDataUrl: PromptImageResolver = safeImageResolver(),
+  options: { genUi?: boolean } = {},
 ): Promise<ApiChatMessage[]> {
   const history = await historyMessages(context.messages, toDataUrl)
 
   if (context.domain === 'conversation') {
+    // Rendering capability is request-local guidance, not a conversation mode.
+    // Keep timeline JSON and the empty-default system-message contract intact.
+    if (options.genUi) appendGenUiGuidance(history)
+
     const hasNonEmptyMode = context.segments.some((segment) => segment.snapshot.content.length > 0)
     if (policy === 'flattened') {
       return hasNonEmptyMode
@@ -132,4 +138,17 @@ export async function projectLogicalPromptContext(
     ...history,
     ...after.map((binding) => userMessage(binding.snapshot)),
   ]
+}
+
+/** Clone the last user turn so durable messages and multipart attachments stay intact. */
+export function appendGenUiGuidance(messages: ApiChatMessage[]): void {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index]
+    if (message.role !== 'user') continue
+    const guidance = '\n\n[Reader rendering capabilities]\n' + GENUI_PROMPT
+    messages[index] = { ...message, content: typeof message.content === 'string'
+      ? message.content + guidance
+      : [...message.content, { type: 'text', text: guidance }] }
+    return
+  }
 }
