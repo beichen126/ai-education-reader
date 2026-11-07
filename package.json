@@ -42,6 +42,8 @@
     "pretest": "npm run test:token-usage && npm run test:v240 && npm run test:v250 && npm run test:streaming-backup && npm run test:chatgpt-auth && npm run test:local-server",
     "test:token-usage": "tsx scripts/test-token-usage.ts",
     "test": "npm run test:all",
+    "test:genui": "tsx scripts/test-genui.ts",
+    "test:e2e-genui": "node scripts/e2e-genui.mjs",
     "test:storage": "npx tsx scripts/test-storage.ts",
     "test:idb-lifecycle": "npx tsx scripts/test-idb-lifecycle.ts",
     "test:send-atomicity": "npx tsx scripts/test-send-atomicity.ts",

@@ -1,3 +1,4 @@
+import { GenUiActions } from '../genui/GenUiBlock'
 
 import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -406,7 +407,13 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
  * The active answer is rendered as Markdown too, so already-received Markdown/LaTeX never
  * falls back to raw source while generation is in progress. */
 const StableAssistantContent = memo(function StableAssistantContent(props: { content: string; messageId: string; conversationId: string; branchId?: string }) {
-  return <div className={css.assistantBody}><AnnotatedMarkdown content={props.content} messageId={props.messageId} conversationId={props.conversationId} branchId={props.branchId} /></div>
+  return <GenUiActions.Provider value={async (text) => {
+    const outcome = props.branchId
+      ? await runBranchReply(props.conversationId, props.branchId, text, [], { draftDisposition: 'preserve' })
+      : await sessionsActions.sendUserMessage(props.conversationId, text, [], { draftDisposition: 'preserve' })
+    if (outcome?.kind === 'rejected' || outcome?.kind === 'failed') throw new Error(outcome.message)
+    if (outcome?.kind === 'aborted') throw new Error(tx('已停止生成', 'Generation stopped'))
+  }}><div className={css.assistantBody}><AnnotatedMarkdown content={props.content} messageId={props.messageId} conversationId={props.conversationId} branchId={props.branchId} /></div></GenUiActions.Provider>
 })
 
 function MessageTimestamp({ createdAt }: { createdAt: number }) {

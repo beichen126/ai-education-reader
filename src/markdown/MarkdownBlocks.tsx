@@ -1,3 +1,4 @@
+import { GenUiBlock } from '../genui/GenUiBlock'
 import { createElement, Fragment, useLayoutEffect, useMemo, useRef } from 'react'
 import { registerMarkdownSource } from './source-copy'
 import type { ReactNode } from 'react'
@@ -118,6 +119,7 @@ function blockEl(node: any, ctx: RenderCtx, onTableAction?: (tableId: string) =>
   }
   if (t === 'code') {
     const value = node.value || ''
+    if ((node.lang === 'dsh-ui' || node.lang === 'genui' || (node.lang === 'json' && node.meta === 'dsh-ui')) && ctx.annotations !== undefined) return <GenUiBlock source={value} />
     const st = cur.v
     cur.v += value.length
     // Code is ordinary canonical text. Keeping the complete value in one leaf
