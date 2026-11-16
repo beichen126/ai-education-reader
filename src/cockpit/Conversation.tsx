@@ -743,7 +743,6 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
           <span className={css.picCount}>{tx('已添加 ', 'Added ')}{picIds.length}{tx(' 张图片', ' images')}</span>
         </div>
       )}
-      <VoiceInput key={key} draftKey={key} disabled={busy || settingsPending} />
       <div className={css.composerBar}>
         {/* ONE unified attachment trigger (A2). Clicking opens a compact menu dispatching to
             the existing image / local-PDF / library actions. The hidden file inputs stay;
@@ -775,6 +774,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
         <textarea ref={textareaRef} rows={1} className={css.composerText} value={text} aria-label={tx('输入消息', 'Message')} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
           onChange={e => setDraftText(key, e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }} />
+      <VoiceInput key={key} draftKey={key} disabled={busy || settingsPending} />
         <button className={css.sendBtn} data-testid="composer-send-stop" aria-busy={busy} onClick={event => { if (event.detail > 1) return; if (busy) sessionsActions.stopGenerating(); else void send() }}>{preparing ? tx('准备中…', 'Preparing…') : busy ? tx('停止生成', 'Stop') : tx('发送', 'Send')}</button>
       </div>
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}

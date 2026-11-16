@@ -1,0 +1,8 @@
+.root { position: relative; display: flex; flex: 0 0 36px; height: 36px; }
+.button { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; }
+.button:hover { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.button:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.button[aria-pressed=true] { color: #e05252; background: color-mix(in srgb, #e05252 12%, transparent); }
+.button:disabled { opacity: .4; cursor: default; }
+.notice { position: absolute; bottom: 46px; right: 0; width: max-content; max-width: min(260px, 65vw); padding: 8px 12px; border-radius: 8px; background: var(--dsw-alias-interactive-bg-hover, #333); color: var(--dsw-alias-label-primary); font-size: 12px; box-shadow: 0 3px 16px #0003; z-index: 20; overflow-wrap: anywhere; }
+.notice button { border: 0; background: transparent; color: inherit; cursor: pointer; margin-left: 8px; }
