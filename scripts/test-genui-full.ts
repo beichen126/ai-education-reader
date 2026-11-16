@@ -1,3 +1,4 @@
+import {evaluateComputed} from '../node_modules/@changfenhuang/dsh-genui/src/client/computed.ts'
 import {OMITTED_GENUI_TYPES} from '../src/genui/catalog-policy.ts'
 import {compileMathExprProgram} from '../node_modules/@changfenhuang/dsh-genui/src/client/safe-math.ts'
 import {cardTemplates} from '../src/genui/card-templates.ts'
@@ -27,3 +28,11 @@ assert.equal(normalizeGenuiInput({items:[{type:'card',items:[]}]}).items[0].flat
 assert.equal(normalizeGenuiInput({items:[{type:'card',flat:false,items:[]}]}).items[0].flat,false)
 assert.equal(normalizeGenuiInput({items:[{type:'col',items:[]}]}).items[0].gap,8)
 assert.equal(normalizeGenuiInput({gap:12,items:[]}).gap,12)
+
+const areaSpec:any={computed:[{id:'area',expr:'pi*radius^2'}],items:[{type:'card',title:'圆面积',items:[{type:'slider',id:'radius',value:2,min:0.1,max:10,step:0.1},{type:'stat',label:'面积',value:'{{area}}'}]}]}
+assert.ok(isRenderableProcess(processGenuiSpec(areaSpec)))
+assert.equal(evaluateComputed(areaSpec,{}).values.area,Math.PI*4)
+assert.equal(evaluateComputed(areaSpec,{radius:'3'}).values.area,Math.PI*9)
+assert.ok(evaluateComputed({...areaSpec,computed:[{id:'area',expr:'pi*r^2'}]},{}).errors.area)
+assert.ok(evaluateComputed({...areaSpec,computed:[{id:'area',expr:'Math.PI*radius**2'}]},{}).errors.area)
+assert.ok(!/历史|禁止|勿|不/.test(FULL_GENUI_PROMPT),'generation instructions use affirmative wording')

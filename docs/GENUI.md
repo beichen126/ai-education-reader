@@ -78,3 +78,7 @@ DSH 专属的 slash command、宿主侧边栏插件及 Flutter SDK 的 transport
 提示词目录由运行时 Schema 生成，包含字段类型和枚举。`card.accent` 使用颜色字符串，`flat` 使用布尔值；`keyvalue.pairs` 中的 key/value 为字符串。已有消息的布尔 accent 在布局节点中转换为默认强调色或省略，不改写原始源码、数据对象，也不绕过组件安全校验。
 
 网格可以多次使用与嵌套。`grid.cols=3` 放 3 个节点是三列一行，放 6 个是三列两行；三路汇合结构使用 `col.items=[grid, arrow, card]`。手机自动堆叠，顺序保持不变。模板中心仅展示精选目录内的模板。
+
+## 计算字段
+
+数值滑块声明唯一 id 和 value，根级 computed 通过该 id 计算，text.content 或 stat.value 用 `{{结果id}}` 展示。圆面积示例：slider.id 为 radius，computed 为 `{id:"area",expr:"pi*radius^2"}`，stat.value 为 `{{area}}`。曲线 x 和 series.params 属于各自 plot；根级计算的参数使用 slider/select/textarea 字段声明。表达式使用安全数学语法，如 `sqrt(x)`、`pow(x,2)`、`pi`。
