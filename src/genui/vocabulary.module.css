@@ -1,8 +1,7 @@
 .list{display:flex;flex-direction:column;gap:14px;margin:16px 0;min-width:0}
 .list h3{margin:0;font-size:1.05rem}
 .card{background:var(--dsw-alias-bg-layer-1,#222);border:1px solid var(--dsw-alias-border-l2,#444);border-radius:24px;padding:20px 24px;color:var(--dsw-alias-label-primary,inherit);min-width:0}
-.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-.label{font-size:.85rem;color:var(--dsw-alias-label-secondary);white-space:nowrap}
+.top{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap}
 .controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .controls button,.controls select{font:inherit;color:inherit;background:transparent;border:1px solid transparent;border-radius:9px;padding:6px;cursor:pointer;max-width:100%}
 .controls select{background:var(--dsw-alias-bg-layer-1);font-size:.85rem}

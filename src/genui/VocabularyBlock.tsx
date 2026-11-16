@@ -35,7 +35,6 @@ function WordCard({ item }: { item: VocabularyWord }) {
   }
   return <article className={css.card} data-testid="genui-word-card">
     <div className={css.top}>
-      <span className={css.label}>{tx('单词发音', 'Pronunciation')}</span>
       <div className={css.controls}>
         <button type="button" aria-label={tx('复制单词', 'Copy word')} onClick={() => { void navigator.clipboard.writeText(item.word).then(() => setNotice(tx('已复制', 'Copied'))).catch(() => setNotice(tx('复制失败，请手动选择单词。', 'Copy failed. Select the word manually.'))) }}>⧉</button>
         <select aria-label={tx('单词音色', 'Word voice')} value={voice} disabled={updating} onChange={e => { stopReadAloud(owner); void preferences({speechVoice:e.target.value as 'stella' | 'tide'}) }}><option value="stella">Stella</option><option value="tide">Tide</option></select>
@@ -47,7 +46,7 @@ function WordCard({ item }: { item: VocabularyWord }) {
         </button>
       </div>
     </div>
-    <small className={css.preferenceHint}>{tx('音色、倍速和次数与设置同步','Voice, speed and repetitions sync with Settings')}{active&&speech.repeat ? ' · '+(loop?tx('循环 · 第 ','Loop · pass '):tx('第 ','Pass '))+speech.repeat+(loop?'':' / '+repeats):''}</small>
+    {active&&speech.repeat ? <small className={css.preferenceHint}>{(loop?tx('循环 · 第 ','Loop · pass '):tx('第 ','Pass '))+speech.repeat+(loop?'':' / '+repeats)}</small> : null}
     <div className={css.word}>{item.word}</div>
     <div className={css.phonetic}>{item.phonetic}</div>
     <div className={css.meaning}>{item.meaning}</div>
