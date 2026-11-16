@@ -559,6 +559,7 @@ function ContextSummary({ messages }: { messages: readonly TMessage[] }) {
   const usage = latestReply?.status ? undefined : latestReply?.tokenUsage
   return <div className={css.contextUsage} data-testid="composer-context-usage" aria-live="polite">
     {usage && <span data-testid="official-token-usage">{tx('输入 ', 'In ')}{formatTokenCount(usage.inputTokens)} · {tx('输出 ', 'Out ')}{formatTokenCount(usage.outputTokens)} · </span>}
+    {usage && <details style={{display:'inline-block',textAlign:'left'}}><summary>{tx('用量明细','Usage details')}</summary><div>{tx('输入','Input')}: {usage.inputTokens.toLocaleString()} · {tx('输出','Output')}: {usage.outputTokens.toLocaleString()} · {tx('总计','Total')}: {usage.totalTokens.toLocaleString()}</div>{usage.cachedReadTokens !== undefined && <div>{tx('缓存读取','Cache read')}: {usage.cachedReadTokens.toLocaleString()}</div>}{usage.cachedWriteTokens !== undefined && <div>{tx('缓存写入','Cache write')}: {usage.cachedWriteTokens.toLocaleString()}</div>}{usage.reasoningTokens !== undefined && <div>{tx('推理','Reasoning')}: {usage.reasoningTokens.toLocaleString()}</div>}<div>{tx('按本次接口返回值展示；细分项不重复累加，费用以服务商账单为准。','Values reported for this request; breakdowns are not added again. Billing follows the provider.')}</div></details>}
     {!usage && <span>{tx('Token 未返回 · ', 'No token usage · ')}</span>}
     {tx('图 ' + imageCount, imageCount + ' images')}
   </div>

@@ -220,7 +220,7 @@ export function SettingsDialog() {
         <a className={css.byokLinkSub} href="https://api-docs.deepseek.com/zh-cn/" target="_blank" rel="noopener noreferrer">{tx('DeepSeek API 文档', 'DeepSeek API documentation')}</a>
       </div>
       <div className={css.apiPresetRow}>
-        <span className={css.settingsHint}>{tx('服务预设', 'Provider preset')}</span>
+        <span className={css.settingsHint}>{tx('快速填写地址和模型', 'Fill endpoint and model')}</span>
         <Button size="sm" variant="outline" onClick={() => { setBase(DEFAULT_SETTINGS.apiBaseUrl); setModel(DEFAULT_SETTINGS.model); setTest(null); setTestOk(null) }}>DeepSeek</Button>
       </div>
       <ApiProfiles draft={{...s,apiBaseUrl:base,apiKey:key,model,visionCapability}} onApply={next=>{setBase(next.apiBaseUrl);setKey(next.apiKey);setModel(next.model);setVisionCapability(next.visionCapability);setShowKey(false);setTest(null);setTestOk(null);setSaved(false)}} />

@@ -60,9 +60,14 @@ export function deepSeekRequestOptions(baseUrl: string, model: string, reasoning
   return isDeepSeekRequest(baseUrl, model) ? { reasoning_effort: reasoningEffort } : {}
 }
 
+export function streamUsageOptions(baseUrl: string): {stream_options?: {include_usage: true}} {
+  try { if (new URL(baseUrl).hostname === 'teamorouter.com' || new URL(baseUrl).hostname === 'api.teamorouter.com') return {stream_options:{include_usage:true}} } catch {}
+  return {}
+}
+
 function chatRequestBody(args: SendTextChatArgs, stream: boolean) {
   const { model, messages, baseUrl } = args
-  return { model, messages, stream, ...(args.nativeTools?.length ? { tools: args.nativeTools.map(type=>({type})) } : {}), ...(args.generateTitle ? {title:{enabled:true}} : {}), ...(args.jsonObject ? { response_format: { type: 'json_object' } } : {}), ...(args.maxTokens ? { max_tokens: args.maxTokens } : {}), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'disabled' ? { thinking: { type: 'disabled' } } : { ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'enabled' ? { thinking: { type: 'enabled' } } : {}) }) }
+  return { model, messages, stream, ...(stream ? streamUsageOptions(baseUrl) : {}), ...(args.nativeTools?.length ? { tools: args.nativeTools.map(type=>({type})) } : {}), ...(args.generateTitle ? {title:{enabled:true}} : {}), ...(args.jsonObject ? { response_format: { type: 'json_object' } } : {}), ...(args.maxTokens ? { max_tokens: args.maxTokens } : {}), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'disabled' ? { thinking: { type: 'disabled' } } : { ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'enabled' ? { thinking: { type: 'enabled' } } : {}) }) }
 }
 
 async function withDeepSeekFiles<T>(args: SendTextChatArgs, stream: boolean, run: (messages: ApiChatMessage[]) => Promise<T>): Promise<T> {

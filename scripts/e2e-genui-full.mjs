@@ -9,8 +9,10 @@ try {
  const context=await browser.newContext({viewport:{width:1280,height:900}}),page=await context.newPage(),errors=[],requests=[]
  page.on('pageerror',e=>errors.push(e.message))
  await page.route('**/chat/completions',async route=>{requests.push(route.request().postDataJSON());await route.fulfill({json:{choices:[{message:{content:'计划已收到。'},finish_reason:'stop'}]}})})
- const content=Object.values(fixtures).map(spec=>'```dsh-ui\n'+JSON.stringify(spec)+'\n```').join('\n\n')
+ const content=[...Object.values(fixtures),{schema:'dsh-genui',title:'Model Profile',items:[{type:'card',title:'Luna · Gemini 3.8 Flash',eyebrow:'AI LEARNING COMPANION',accent:true,items:[{type:'keyvalue',pairs:[{key:'模型',value:'Gemini'}]}]}]}].map(spec=>'```dsh-ui\n'+JSON.stringify(spec)+'\n```').join('\n\n')
  await seedAndBoot(page,{convs:[{id:'full-genui',title:'GenUI full test',createdAt:1,updatedAt:1,messages:[msg('gu','user','展示交互界面'),msg('ga','assistant',content)]}],settings:{apiKey:'mock',lastConversationId:'full-genui',appearance:'dark'}})
+ await page.getByText('Luna · Gemini 3.8 Flash',{exact:true}).waitFor({timeout:30000})
+ assert.equal(await page.getByText('items[0].accent must be a string',{exact:true}).count(),0)
  const curve=page.locator('svg[aria-label="Sine curve"]')
  await curve.waitFor({timeout:30000})
  const before=await curve.locator('polyline').first().getAttribute('points')

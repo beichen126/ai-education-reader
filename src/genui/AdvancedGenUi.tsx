@@ -1,4 +1,5 @@
 import {cardTemplates} from './card-templates'
+import {normalizeGenuiInput} from './normalize-input'
 import {genuiTemplates} from 'reader-genui-templates'
 import {useContext,useEffect,useMemo,useRef,useState} from 'react'
 import {createPortal} from 'react-dom'
@@ -24,7 +25,7 @@ export default function AdvancedGenUi({source,stateKey}:{source:string;stateKey?
    try {raw=JSON.parse(source)}catch{complete=false;raw=parsePartialGenuiSpec(source)}
    if(!raw)return {error:'界面正在生成…'}
    delete raw.schema
-   const processed=processGenuiSpec(raw)
+   const processed=processGenuiSpec(normalizeGenuiInput(raw))
    if(!isRenderableProcess(processed))return {error:processed.errors.slice(0,4).join('；')}
    return {spec:processed.spec,complete}
   }catch(e){return {error:e instanceof Error?e.message:'界面格式无效'}}

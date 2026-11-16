@@ -2,7 +2,7 @@ import {writeFileSync} from 'node:fs'
 import {COMPONENT_SCHEMAS,GENUI_SPEC_SCHEMA} from '../node_modules/@changfenhuang/dsh-genui/src/client/genui-runtime/schema.ts'
 const common=new Set(['type','span','when','enableWhen'])
 const describe=(s:any):string=>{
- const fields=Object.keys(s.fields).filter(k=>!common.has(k)).map(k=>k+(s.required.includes(k)?'*':'')+(s.enums[k]?':'+s.enums[k].join('|'):s.fields[k]==='nodes'?':nodes':'')).join(',')
+ const fields=Object.keys(s.fields).filter(k=>!common.has(k)).map(k=>k+(s.required.includes(k)?'*':'')+':'+(s.enums[k]?s.enums[k].join('|'):s.fields[k])).join(',')
  const nested=Object.entries(s.nested).filter(([k])=>!common.has(k)).map(([k,v])=>k+'{'+describe(v)+'}').join(';')
  return fields+(nested?' ['+nested+']':'')
 }
@@ -27,6 +27,7 @@ const intro=`GenUI 生成规则（真实可渲染，不只是示意代码）
 - image/carousel/image-group/svg/audio/video：图片与媒体展示；只用真实可访问来源，不编造资源 URL。
 - reader-vocabulary：词汇学习与发音；展示单词、音标、释义，可加例句，DeepSeek 朗读由用户点播。
 输出：使用 dsh-ui 围栏，普通组件根为 {"schema":"dsh-genui","title":"简短标题","items":[...]}。节点有 type；布局 items 是节点数组。只使用下面字段，*=必填；嵌套字段列在 [] 中。通用字段 span；条件 when/enableWhen:{field,op,value}，op=eq|neq|in|not-in|gt|gte|lt|lte|empty|not-empty|checked。表单 id/group 绑定本地状态，submit.groups 引用这些 id/group；computed:[{id,expr}]，用 "{{id}}" 引用结果。
+类型规则：字段后的 string/number/boolean/array/object/nodes 是 JSON 类型；可选字段不确定就省略，不填 null。card.accent 是颜色字符串（如 "#5b8def"），不是 true/false；flat 才是布尔值。keyvalue.pairs 用 [{"key":"模型","value":"Gemini"}]，key/value 均为字符串。生成前检查必填项、字段类型与枚举；不得把不同组件的同名字段混用。
 按钮 action 回传当前会话，回传数据当作用户输入；不索取密钥，不执行 JS/HTML。最多200节点、8层、256KB。语言跟随用户，公式可用 $...$。支持展开画布与 JSON/HTML 导出；不把 DSH 宿主插件或 Flutter transport 当成本应用功能。
 最小例子：
 紧凑卡片图 {"type":"col","gap":8,"items":[{"type":"text","size":"h2","center":true,"content":"输入"},{"type":"arrow","dir":"down","length":20},{"type":"grid","cols":2,"items":[{"type":"card","title":"处理一","items":[{"type":"text","content":"简短说明"}]},{"type":"card","title":"处理二","items":[{"type":"text","content":"简短说明"}]}]},{"type":"arrow","dir":"down","length":20,"label":"汇合"},{"type":"text","center":true,"content":"输出结论"}]}。
