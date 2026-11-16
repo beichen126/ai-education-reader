@@ -1,3 +1,4 @@
+import {validTranscript} from '../youtube/transcript'
 import { validOcrPage } from '../api/deepseek-ocr'
 import {parseProfiles} from '../engine/api-profiles'
 import { idbReplaceAll, idbGetAll } from '../storage/idb'
@@ -291,6 +292,7 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
   for (const key of ['userMetadataEnabled', 'autoTitleEnabled', 'readUrlEnabled', 'nativeDeepSeekProxy'] as const) if (settings[key] !== undefined && typeof settings[key] !== 'boolean') throw new BackupError('invalid '+key)
   if (settings.speechVoice !== undefined && !['stella','tide'].includes(settings.speechVoice)) throw new BackupError('invalid speechVoice')
   if (settings.speechApiUrl !== undefined && typeof settings.speechApiUrl !== 'string') throw new BackupError('invalid speechApiUrl')
+  if (settings.speechLoop !== undefined && typeof settings.speechLoop !== 'boolean') throw new BackupError('invalid speechLoop')
   if (settings.speechRepeatCount !== undefined && (!isInt(settings.speechRepeatCount) || settings.speechRepeatCount<1 || settings.speechRepeatCount>10)) throw new BackupError('settings.speechRepeatCount must be an integer between 1 and 10')
   if (settings.rememberReadingPosition !== undefined && typeof settings.rememberReadingPosition !== 'boolean') throw new BackupError('settings.rememberReadingPosition must be boolean')
   if ((settings as any).documentSort !== undefined && !isDocumentSortKey((settings as any).documentSort)) throw new BackupError('settings.documentSort 非法')
@@ -327,6 +329,7 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
   for (const at of input.attachments) {
     if (!isObj(at) || !isNonEmptyStr(at.id)) throw new BackupError('attachment 缺少合法的 id')
     if (!isObj(at.meta) || at.meta.id !== at.id) throw new BackupError('attachment.meta.id 必须与 at.id 一致')
+    if (at.meta.transcript !== undefined && !validTranscript(at.meta.transcript)) throw new BackupError('attachment.transcript 非法')
     if (at.meta.ocr !== undefined && (!validOcrPage(at.meta.ocr) || at.meta.source?.type !== 'pdf-page')) throw new BackupError('attachment.ocr 非法')
     if (!isStr(at.mimeType) || !/^image\//.test(at.mimeType)) throw new BackupError('attachment.mimeType 非法')
     if (!isBase64(at.data)) throw new BackupError('attachment.data 不是合法的 base64')
@@ -621,6 +624,7 @@ export async function restoreBackup(backup: Backup, binaries?: {
       { key: 'webSearchEnabled', value: backup.settings?.webSearchEnabled === true ? 'true' : 'false' },
       { key: 'chineseSpeechRate', value: String(backup.settings?.chineseSpeechRate ?? 1) },
       { key: 'englishSpeechRate', value: String(backup.settings?.englishSpeechRate ?? 0.9) },
+      { key: 'speechLoop', value: String(backup.settings?.speechLoop === true) },
       { key: 'speechRepeatCount', value: String(backup.settings?.speechRepeatCount ?? 3) },
       { key: 'rememberReadingPosition', value: backup.settings?.rememberReadingPosition === false ? 'false' : 'true' },
       { key: LAYOUT_PREFERENCES_KEY, value: normalizeLayoutPreferences((backup.settings as { layoutPreferences?: unknown } | undefined)?.layoutPreferences) },

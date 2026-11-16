@@ -16,6 +16,8 @@ import { clearOpfsAppRoot } from './binary-store'
 // failure returns `partialCleanup:true` so the UI can say retry — IDB is already empty, and
 // the next clear re-attempts the OPFS cleanup even though nothing is left in IDB.
 export async function clearAllLocalData(): Promise<{ partialCleanup: boolean; failedPaths: string[] }> {
+  const {stopReadAloud}=await import('../speech/read-aloud');stopReadAloud()
+  const {clearSpeechCache}=await import('../speech/audio-cache');await clearSpeechCache()
   await idbClearAll()
   clearReadingPositions()
   try { if(typeof localStorage!=='undefined') for(const key of Object.keys(localStorage)) if(key.startsWith('dsh.genui.')) localStorage.removeItem(key) } catch { /* Storage may be unavailable in private mode. */ }
@@ -98,7 +100,7 @@ export async function commitAcceptedUserMessage(conv: any, lastConversationId: s
  * failure can no longer leave a mixed configuration after reload (e.g. apiKey committed
  * but model not). Values commit first, then the caller publishes them as saved state.
  */
-export async function saveSettingsAtomic(values: { apiProfiles?: string; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: string; autoTitleEnabled?: string; readUrlEnabled?: string; nativeDeepSeekProxy?: string;  speechVoice?: string; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string; pdfNavigationMode: string; uiLanguage: string; webSearchEnabled?: string; chineseSpeechRate?: string; englishSpeechRate?: string; speechRepeatCount?: string; rememberReadingPosition?: string; chatProvider?: string; openaiLocalModel?: string }): Promise<void> {
+export async function saveSettingsAtomic(values: { apiProfiles?: string; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: string; autoTitleEnabled?: string; readUrlEnabled?: string; nativeDeepSeekProxy?: string;  speechVoice?: string; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string; pdfNavigationMode: string; uiLanguage: string; webSearchEnabled?: string; chineseSpeechRate?: string; englishSpeechRate?: string; speechRepeatCount?: string; speechLoop?: string; rememberReadingPosition?: string; chatProvider?: string; openaiLocalModel?: string }): Promise<void> {
   await idbRunTxn(['settings'], (txn) => {
     const os = txn.objectStore('settings')
     os.put({ key: 'apiBaseUrl', value: values.apiBaseUrl })
@@ -114,6 +116,7 @@ export async function saveSettingsAtomic(values: { apiProfiles?: string; activeA
     os.put({ key: 'chineseSpeechRate', value: values.chineseSpeechRate ?? '1' })
     os.put({ key: 'englishSpeechRate', value: values.englishSpeechRate ?? '0.9' })
     for (const key of ['apiProfiles', 'activeApiProfileId', 'speechVoice', 'speechApiUrl', 'speechApiKey', 'userLocation', 'userMetadataEnabled', 'autoTitleEnabled', 'readUrlEnabled', 'nativeDeepSeekProxy'] as const) if(values[key] !== undefined) os.put({key,value:values[key]})
+    os.put({ key: 'speechLoop', value: values.speechLoop ?? 'false' })
     os.put({ key: 'speechRepeatCount', value: values.speechRepeatCount ?? '3' })
     os.put({ key: 'rememberReadingPosition', value: values.rememberReadingPosition ?? 'false' })
     if (values.chatProvider !== undefined) os.put({ key: 'chatProvider', value: values.chatProvider })

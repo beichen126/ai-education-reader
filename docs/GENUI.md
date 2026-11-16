@@ -57,7 +57,7 @@ DSH 专属的 slash command、宿主侧边栏插件及 Flutter SDK 的 transport
 
 用途指南涵盖分类卡片、步骤、流程与架构、统计图、连续函数、状态对比、指标、输入与计算、测验、分组展开、3D/地图、结构化内容、媒体、词汇学习。字段目录压缩公共字段，整份默认协议约 8.5K 字符。已有自定义启用版本不会被覆盖；要使用新版默认规则，可切回内置协议或重新复制。
 
-宿主扩展 `reader-vocabulary` 在独立 dsh-ui 围栏中呈现单词、IPA、释义和可选例句。播放只朗读单词，固定使用 DeepSeek 官方 TTS，并复用已保存的 DeepSeek 官方配置；可以切换 Stella/Tide、0.5–2× 倍速、停止和复制。更改播放倍速在本地生效，不重新请求音频。不会自动播放，不把凭证放进模型生成的 JSON。
+宿主扩展 `reader-vocabulary` 在独立 dsh-ui 围栏中呈现单词、IPA、释义和可选例句。播放只朗读单词，固定使用 DeepSeek 官方 TTS，并复用已保存的 DeepSeek 官方配置；可以切换 Stella/Tide、0.5–2× 倍速、1–10 遍或循环、停止和复制，音色/倍速/次数与设置同步。更改播放倍速在本地生效，不重新请求音频。不会自动播放，不把凭证放进模型生成的 JSON。
 
 ```dsh-ui
 {"schema":"reader-vocabulary","items":[{"type":"vocabulary","word":"analytics","phonetic":"/ˌænəˈlɪtɪks/","meaning":"n. 数据分析；分析学","example":"We use analytics to understand learning progress."}]}
@@ -70,3 +70,5 @@ DSH 专属的 slash command、宿主侧边栏插件及 Flutter SDK 的 transport
 流程/架构等无环依赖图在宿主中采用 HTML 大卡片 + SVG 连线，按依赖自动分层，保留节点选择与字段绑定。默认标题 18px、说明 14px，不缩成固定高度的缩略图；桌面撑满回答区，手机可横向滚动，支持 100–200% 放大。循环图、时序图、有分区约束等仍使用原生图解，采用保留尺寸的滚动展示。导出/模板/源码位于辅助菜单，默认工具栏只保留展开和更多。
 
 讲解型流程优先原生紧凑卡片组合：单一外框、居中文字段、等宽并行卡片和短箭头，不固定卡片高度、不缩小整图。新增三个模板覆盖分支汇合、跨列分组和参数联动；accordion/tabs/slider 均可直接操作。卡片内间距6px、布局间距8–12px，窄屏分支堆叠，保留内容字号。精确网络连线再使用 diagram/Mermaid。
+
+朗读音频按接口、凭证隔离、文本、音色与格式生成哈希键，持久化在独立 IndexedDB 中（不保存 API Key 或原文）。7 天 TTL，32 MiB / 128 条 LRU；停止和组件卸载释放播放器与 Object URL，但保留可复用 Blob。重复请求合并，失败不缓存，设置内可清理；全量清除本地数据也清除此缓存。播放速度与遍数仅在本地作用，不参与合成请求。

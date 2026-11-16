@@ -8,7 +8,7 @@ export async function buildOcrAwareContext(messages: Message[]): Promise<Message
   return Promise.all(recent.map(async (message, index) => {
     if (message.images.length || !messages[index].images.length) return message
     const ids: string[] = []
-    for (const id of messages[index].images) if ((await getAttachment(id))?.ocr) ids.push(id)
+    for (const id of messages[index].images) {const meta=await getAttachment(id);if (meta?.ocr || meta?.transcript) ids.push(id)}
     return ids.length ? { ...message, images: ids } : message
   }))
 }

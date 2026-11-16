@@ -1,0 +1,7 @@
+{
+ "manifest_version":3,"name":"AI 学习阅读器 · YouTube 字幕桥接","version":"1.0.0",
+ "description":"读取用户指定的 YouTube 视频字幕，返回 AI 学习阅读器；不使用字幕服务器。",
+ "permissions":["scripting"],"host_permissions":["https://www.youtube.com/*"],
+ "background":{"service_worker":"background.js"},
+ "content_scripts":[{"matches":["https://beichen126.github.io/ai-education-reader/*"],"js":["reader.js"]}]
+}

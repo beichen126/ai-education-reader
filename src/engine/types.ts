@@ -73,7 +73,7 @@ export type PdfContext = {
 
 /** Canonical attachment metadata. The binary blob lives in IndexedDB 'attachments' keyed by id. No base64/objectURL here.
  * source is OPTIONAL: ordinary user-uploaded images and all pre-Stage-5 attachments omit it. */
-export type Attachment = { id: StableId; name: string; mimeType: string; size: number; createdAt: number; updatedAt: number; source?: PdfAttachmentSource; ocr?: import('../api/deepseek-ocr').OcrPage }
+export type Attachment = { id: StableId; name: string; mimeType: string; size: number; createdAt: number; updatedAt: number; source?: PdfAttachmentSource; ocr?: import('../api/deepseek-ocr').OcrPage; transcript?: import('../youtube/transcript').YoutubeTranscript }
 /** Message holds only stable attachment id references, never objectURL/base64. */
 export type Message = {
   serverToolCalls?: unknown[]

@@ -135,6 +135,7 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
     englishSpeechRate: Number(await getSetting('englishSpeechRate')) || 0.9,
     speechVoice: await getSetting('speechVoice') === 'tide' ? 'tide' : 'stella',
     speechApiUrl: await getSetting('speechApiUrl') || '',
+    speechLoop: await getSetting('speechLoop') === 'true',
     speechRepeatCount: Number(await getSetting('speechRepeatCount')) || 3,
     rememberReadingPosition: await getSetting('rememberReadingPosition') === 'true',
     customArtifactActions: await listCustomActions(),

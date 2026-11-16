@@ -1,3 +1,6 @@
+import {YoutubePicker} from '../youtube/YoutubePicker'
+import {transcriptPreview} from '../youtube/preview'
+import type {YoutubeTranscript} from '../youtube/transcript'
 import { DeepSeekDocumentPicker } from './DeepSeekDocumentPicker'
 import type { DeepSeekDocument } from '../api/deepseek-documents'
 import { isOfficialDeepSeek } from '../api/deepseek-files'
@@ -11,7 +14,7 @@ import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/
 import { patchSettings, useSettings, useSettingsMutation } from '../engine/settings-store'
 import { formatTokenCount } from '../engine/token-usage'
 import { uiActions, useUi } from '../engine/ui-store'
-import { saveImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel } from '../engine/attachment-service'
+import { saveImagesAndDraft, saveGeneratedImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel } from '../engine/attachment-service'
 import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
 import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
 import { localizedErrorText, localizedStudyCardTitle, t, tx, useUiLanguage } from '../engine/locale'
@@ -567,6 +570,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
   const key = isBranch ? branchThreadKey(thread!.branchId!) : (sessionId ?? '__none__')
   const composerKeyRef = useRef(key); composerKeyRef.current = key
   const [documentPicker,setDocumentPicker]=useState(false)
+  const [youtubePicker,setYoutubePicker]=useState(false)
   const [documentDraft,setDocumentDraft]=useState<{key:string;docs:DeepSeekDocument[]}>({key:'',docs:[]})
   const documents=documentDraft.key===key?documentDraft.docs:[]
   const supportsDocuments=useSettings(s=>s.chatProvider!=='openai-local'&&isOfficialDeepSeek(s.apiBaseUrl)&&s.model==='deepseek-flash')
@@ -739,8 +743,17 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
     // then belong to the message (ownership transfer), so we must NOT delete them here.
     if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { clearDraftMemory(key); setDocumentDraft({key,docs:[]}); setPhotoError(undefined); setOpenId(null) }
   }
+  async function attachTranscript(data:YoutubeTranscript){
+    const targetKey=key,blob=await transcriptPreview(data);
+    if(composerKeyRef.current!==targetKey)throw new Error('会话已切换，请重新加入。');
+    const current=getDraft(targetKey),inputs=[{blob,name:data.title+'.png',transcript:data}];
+    const metas=isBranch&&thread?.branchId?await saveGeneratedImagesAndBranchDraft(inputs,{branchId:thread.branchId,text:current.text,existingImageIds:current.imageIds}):sessionId?await saveGeneratedImagesAndDraft(inputs,{conversationId:sessionId,text:current.text,existingImageIds:current.imageIds}):[];
+    if(!metas.length)throw new Error('请先新建会话。');
+    const latest=getDraft(targetKey);updateDraftMemory(targetKey,{text:latest.text,imageIds:[...new Set([...latest.imageIds,...metas.map(m=>m.id)])]});
+  }
   return (
     <div className={css.composer} data-testid="composer">
+      {youtubePicker && <YoutubePicker key={key} onClose={()=>setYoutubePicker(false)} onSelect={attachTranscript} />}
       {documentPicker && <DeepSeekDocumentPicker key={key} onClose={()=>setDocumentPicker(false)} onSelect={docs=>setDocumentDraft({key,docs})} />}
       {documents.length>0 && <div>{documents.map(d=><span key={d.id}>{d.name} <button type="button" aria-label={tx('移除文件','Remove file')} onClick={()=>setDocumentDraft({key,docs:documents.filter(x=>x.id!==d.id)})}>×</button> </span>)}</div>}
       {photoError && <div className={css.errorBanner}>{photoError}</div>}
@@ -751,7 +764,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
           ) : (
             <PdfContextCard key={'g' + item.groupId + '-' + idx} item={item} onDelete={() => removeGroup(item)} onRemovePage={id => removePic(id)} />
           ))}
-          <span className={css.picCount}>{tx('已添加 ', 'Added ')}{picIds.length}{metas.some(m => m.ocr) ? tx(' 个页面/图片附件', ' page/image attachments') : tx(' 张图片', ' images')}</span>
+          <span className={css.picCount}>{tx('已添加 ', 'Added ')}{picIds.length}{metas.some(m => m.ocr || m.transcript) ? tx(' 个附件', ' attachments') : tx(' 张图片', ' images')}</span>
         </div>
       )}
       <div className={css.composerBar}>
@@ -764,10 +777,11 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
         {attachMenuOpen && (
           <div className={css.addFileMenu} data-testid="composer-add-file-menu" ref={attachMenuRef}>
             <div className={css.menuTitle}>{tx('添加资料', 'Add material')}</div>
-            {supportsDocuments && <button type="button" className={css.menuItem} onClick={()=>{setDocumentPicker(true);setAttachMenuOpen(false)}}>{tx('批量文件 · DeepSeek 解析','Batch files · DeepSeek parsing')}</button>}
             <div className={css.materialActions}>
               <button type="button" className={css.menuItem} data-testid="composer-add-local" onClick={() => { setAttachMenuOpen(false); materialsInputRef.current?.click() }}><IconDocument16 /><span>{tx('本地文件', 'Local files')}<small>{tx('图片或单个 PDF', 'Images or one PDF')}</small></span></button>
               <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}><IconFolderOpenOutline16 /><span>{tx('资料库', 'Library')}<small>{tx('选择已保存的资料', 'Choose saved materials')}</small></span></button>
+              <button type="button" className={css.menuItem} data-testid="composer-youtube" onClick={()=>{setAttachMenuOpen(false);setYoutubePicker(true)}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3Z"/></svg><span>{tx('YouTube 视频解析','YouTube video')}<small>{tx('提取字幕作为上下文','Add captions as context')}</small></span></button>
+              <button type="button" className={css.menuItem} data-testid="composer-deepseek-files" disabled={!supportsDocuments} title={!supportsDocuments?tx('请切换到 DeepSeek 官方 deepseek-flash 配置','Switch to official DeepSeek deepseek-flash'):undefined} onClick={()=>{setAttachMenuOpen(false);setDocumentPicker(true)}}><IconDocument16/><span>{tx('DeepSeek 文件解析','DeepSeek files')}<small>{supportsDocuments?tx('整份文件 · 批量上传','Whole files · batch upload'):tx('需 DeepSeek 官方配置','Official DeepSeek required')}</small></span></button>
             </div>
             {androidCamera && <button type="button" className={css.menuItem} data-testid="composer-camera" onClick={() => { setAttachMenuOpen(false); cameraInputRef.current?.click() }}><IconDocument16 /><span>{tx('拍照', 'Take photo')}<small>{tx('拍摄后加入草稿', 'Add captured photo to draft')}</small></span></button>}
             {openaiWebSearch ? <>

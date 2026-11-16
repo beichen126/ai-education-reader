@@ -12,8 +12,8 @@ try {
 
     })
     const page=await context.newPage(), errors=[]
-    const requests=[]
-    await page.route('**/v1/tools/tts', async route=>{requests.push(route.request().postDataJSON());await route.fulfill({status:200,contentType:'audio/wav',body:Buffer.alloc(100)})})
+    const requests=[];const audioBytes=Buffer.alloc(100);audioBytes.write('RIFF');audioBytes.write('WAVE',8)
+    await page.route('**/v1/tools/tts', async route=>{requests.push(route.request().postDataJSON());await route.fulfill({status:200,contentType:'audio/wav',body:audioBytes})})
     page.on('pageerror',error=>errors.push(error.message))
     const content='Zero. One. Two. Target sentence. Four. Five. Six.'
     await seedAndBoot(page,{convs:[{id:'read-chat',title:'Read test',createdAt:1,updatedAt:1,messages:[msg('read-u','user','Explain'),msg('read-a','assistant',content)]}],settings:{apiKey:'test-tts-key',speechVoice:'tide',speechApiUrl:'https://api.deepseek.com',uiLanguage:language,lastConversationId:'read-chat'}})
@@ -38,8 +38,10 @@ try {
     await page.locator('[data-testid="read-aloud-pause"]').click()
     await page.locator('[data-testid="read-aloud-resume"]').click()
     await page.evaluate(()=>window.__spoken[0].onended())
+    await page.locator('[data-testid="read-aloud-repeat"]').waitFor()
     assert.match(await page.locator('[data-testid="read-aloud-repeat"]').textContent(),/2 \/ 3/)
     await page.evaluate(()=>window.__spoken[1].onended())
+    await page.locator('[data-testid="read-aloud-repeat"]').waitFor()
     assert.match(await page.locator('[data-testid="read-aloud-repeat"]').textContent(),/3 \/ 3/)
     await page.evaluate(()=>window.__spoken[2].onended())
     assert.equal(await page.locator('[data-testid="read-aloud-player"]').count(),0)

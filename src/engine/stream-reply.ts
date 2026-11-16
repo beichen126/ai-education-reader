@@ -85,7 +85,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     const contextMessages = acceptedSendContext?.logical.messages ?? await buildOcrAwareContext(await thread.getContextMessages())
     validateDocumentContext(contextMessages.flatMap(m=>m.documents || []), settings.chatProvider==='openai-local'?'':settings.apiBaseUrl, settings.chatProvider==='openai-local'?'':settings.model)
     const contextAttachments = await Promise.all(contextMessages.flatMap(x => x.images).map(async id => ({ id, meta: await getAttachment(id) })))
-    const expectedImages = contextAttachments.filter(a => !a.meta?.ocr).length
+    const expectedImages = contextAttachments.filter(a => !a.meta?.ocr && !a.meta?.transcript).length
     const hasImages = expectedImages > 0
     const supportsImages = !hasImages || (settings.chatProvider === 'openai-local'
       ? (await getLocalStatus(controller.signal, 15000)).imageModels?.includes(settings.openaiLocalModel || '') === true

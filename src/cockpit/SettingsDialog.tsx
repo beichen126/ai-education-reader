@@ -1,3 +1,5 @@
+import {clearSpeechCache} from '../speech/audio-cache'
+import {stopReadAloud} from '../speech/read-aloud'
 import {ApiProfiles} from './ApiProfiles'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useSettings, patchSettings, DEFAULT_SETTINGS, useSettingsMutation } from '../engine/settings-store'
@@ -338,7 +340,9 @@ export function SettingsDialog() {
           </select>
         </label>)}
         <div className={css.settingsHint}>{tx('自动识别中英文，默认中文 1×、英文 0.9×。使用当前 API 配置的 Key，调用 DeepSeek 官方语音接口。选中朗读或回答下方的“朗读全文”会发送对应文字；重复播放复用本次音频。倍速在本地播放器调整。','Detects Chinese/English. Defaults: Chinese 1×, English 0.9×. Speech uses the current API key with the official DeepSeek endpoint. Select text or choose Read all aloud below an answer. Replays reuse audio; speed is adjusted locally.')}</div>
-        <label className={css.speechRateRow}><span>{tx('重复朗读次数','Reading repetitions')}</span><select data-testid="settings-speechRepeatCount" value={s.speechRepeatCount ?? 3} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({speechRepeatCount:Number(event.target.value)}).catch(()=>{})}}>{Array.from({length:10},(_,i)=>i+1).map(count=><option key={count} value={count}>{tx(count+' 次',count+' passes')}</option>)}</select></label>
+        <label className={css.speechRateRow}><span>{tx('重复朗读次数','Reading repetitions')}</span><select data-testid="settings-speechRepeatCount" value={s.speechRepeatCount ?? 3} disabled={mutation.status==='pending'||s.speechLoop===true} onChange={event=>{void patchSettings({speechRepeatCount:Number(event.target.value)}).catch(()=>{})}}>{Array.from({length:10},(_,i)=>i+1).map(count=><option key={count} value={count}>{tx(count+' 次',count+' passes')}</option>)}</select></label>
+        <label className={css.speechRateRow}><span>{tx('循环播放（直到停止）','Loop until stopped')}</span><input type="checkbox" aria-label={tx('循环播放','Loop playback')} checked={s.speechLoop===true} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({speechLoop:e.target.checked}).catch(()=>{})}}/></label>
+        <SpeechCacheControl />
         <div className={css.settingsHint}>{tx('默认完整朗读所选内容 3 遍，可随时暂停或停止。','Reads the entire selection 3 times by default. Pause or stop at any time.')}</div>
         {mutation.status==='error' && mutation.error && <div className={css.testResult} data-ok="false" data-testid="settings-general-error">{localizedErrorText(mutation.error,'Unable to save general settings. Please retry.')}</div>}
       </div>
@@ -477,3 +481,5 @@ export function SettingsDialog() {
     </Modal>
   )
 }
+
+function SpeechCacheControl(){const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);return <div className={css.settingsHint}><p>{tx('语音缓存在本机保存 7 天，上限 32 MiB / 128 条，超限优先清理最久未使用的音频。倍速、次数和循环不重新合成。','Audio stays on this device for 7 days, up to 32 MiB / 128 entries, evicting least recently used audio. Speed and repeats do not resynthesize.')}</p><Button variant="outline" size="sm" disabled={busy} onClick={()=>{stopReadAloud();setBusy(true);void clearSpeechCache().then(()=>setStatus(tx('语音缓存已清理','Audio cache cleared'))).catch(()=>setStatus(tx('清理失败，请重试','Unable to clear cache'))).finally(()=>setBusy(false))}}>{tx('清理语音缓存','Clear audio cache')}</Button>{status&&<span role="status">{status}</span>}</div>}

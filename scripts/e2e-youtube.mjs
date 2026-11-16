@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict'
+import {launchBrowser} from './e2e-browser.mjs'
+import {seedAndBoot} from './e2e-fixture.mjs'
+const browser=await launchBrowser()
+try{
+ const page=await browser.newPage({viewport:{width:1100,height:850}}),requests=[]
+ await page.addInitScript(()=>{
+  window.__youtubeCalls=0;
+  window.addEventListener('message',e=>{if(e.source!==window||e.data?.channel!=='reader-youtube-request')return;const m=e.data;
+   if(m.type==='ping')window.postMessage({channel:'reader-youtube-response',id:m.id,available:true},location.origin);
+   if(m.type==='extract'){window.__youtubeCalls++;window.postMessage({channel:'reader-youtube-response',id:m.id,data:{videoId:m.videoId,title:'字幕课程',language:'en',fetchedAt:Date.now(),segments:[{start:61,duration:5,text:'The mitochondrion produces energy.'}]}},location.origin)}
+  });
+ });
+ await page.route('**/chat/completions',async route=>{requests.push(route.request().postDataJSON());await route.fulfill({json:{choices:[{message:{content:'已收到字幕'},finish_reason:'stop'}]}})})
+ await seedAndBoot(page,{convs:[{id:'yt-test',title:'YT test',createdAt:1,updatedAt:1,messages:[]}],settings:{apiKey:'test',model:'text-only',modelVision:'text',lastConversationId:'yt-test'}})
+ await page.locator('[data-testid="composer-attach"]').click()
+ const menu=page.locator('[data-testid="composer-add-file-menu"]');const local=await page.locator('[data-testid="composer-add-local"]').boundingBox(),yt=await page.locator('[data-testid="composer-youtube"]').boundingBox(),ds=await page.locator('[data-testid="composer-deepseek-files"]').boundingBox();assert.ok(yt.y>local.y&&Math.abs(ds.y-yt.y)<2)
+ await menu.screenshot({path:'tmp/material-menu-2x2.png'})
+ await page.locator('[data-testid="composer-youtube"]').click()
+ const dialog=page.getByRole('dialog',{name:'YouTube 视频解析'});
+ await dialog.getByLabel('视频链接').fill('https://youtu.be/dQw4w9WgXcQ');await dialog.getByRole('button',{name:'提取字幕',exact:true}).click();await dialog.getByText('字幕课程',{exact:true}).waitFor();await dialog.screenshot({path:'tmp/youtube-picker.png'});await dialog.getByRole('button',{name:'加入本次提问',exact:true}).click()
+ assert.equal(await page.getByRole('textbox',{name:'输入消息',exact:true}).inputValue(),'')
+ await page.getByRole('textbox',{name:'输入消息',exact:true}).fill('解释视频');await page.locator('[data-testid="composer-send-stop"]').click();await page.getByText('已收到字幕',{exact:true}).first().waitFor();assert.ok(JSON.stringify(requests[0]).includes('The mitochondrion'));assert.ok(!JSON.stringify(requests[0]).includes('image_url'))
+ await page.reload({waitUntil:'networkidle'});await page.locator('[data-testid="composer-attach"]').click();await page.locator('[data-testid="composer-youtube"]').click();await dialog.getByLabel('视频链接').fill('https://youtu.be/dQw4w9WgXcQ');await dialog.getByRole('button',{name:'提取字幕',exact:true}).click();await dialog.getByText('已读取本地缓存，无需重复提取。',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>window.__youtubeCalls),0)
+ await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await dialog.getByRole('button',{name:'关闭',exact:true}).click();await page.locator('[data-testid="composer-attach"]').click();await menu.screenshot({path:'tmp/material-menu-mobile.png'});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
+ console.log('PASS material 2x2 menu, YouTube bridge preview, text-only context, unchanged composer, reload cache and mobile layout')
+}finally{await browser.close()}

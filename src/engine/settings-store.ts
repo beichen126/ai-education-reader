@@ -9,8 +9,8 @@ import { DEFAULT_MODEL, resolveStoredModel } from '../api/model-defaults'
 
 export type { VisionCapability }
 export type { PdfNavigationMode }
-export type Settings = { apiProfiles?: ApiProfile[]; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: boolean; autoTitleEnabled?: boolean; readUrlEnabled?: boolean; nativeDeepSeekProxy?: boolean;  speechVoice?: 'stella' | 'tide'; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number; rememberReadingPosition?: boolean; chatProvider?: 'deepseek' | 'openai-local'; openaiLocalModel?: string }
-export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: DEFAULT_MODEL, customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN', chineseSpeechRate: 1, englishSpeechRate: 0.9, speechRepeatCount: 3, rememberReadingPosition: true }
+export type Settings = { apiProfiles?: ApiProfile[]; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: boolean; autoTitleEnabled?: boolean; readUrlEnabled?: boolean; nativeDeepSeekProxy?: boolean;  speechVoice?: 'stella' | 'tide'; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number; speechLoop?: boolean; rememberReadingPosition?: boolean; chatProvider?: 'deepseek' | 'openai-local'; openaiLocalModel?: string }
+export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: DEFAULT_MODEL, customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN', chineseSpeechRate: 1, englishSpeechRate: 0.9, speechRepeatCount: 3, speechLoop: false, rememberReadingPosition: true }
 
 /** A partial settings change. Every mutation goes through {@link patchSettings}. */
 export type SettingsPatch = Partial<Settings>
@@ -71,6 +71,7 @@ export function normalizeSettings(input: Settings): Settings {
     chineseSpeechRate: normalizeSpeechRate(input.chineseSpeechRate, 1),
     englishSpeechRate: normalizeSpeechRate(input.englishSpeechRate, 0.9),
     speechRepeatCount: normalizeSpeechRepeat(input.speechRepeatCount),
+    speechLoop: input.speechLoop === true,
     rememberReadingPosition: typeof input.rememberReadingPosition === 'boolean' ? input.rememberReadingPosition : true,
   }
 }
@@ -89,7 +90,7 @@ export async function initSettings(): Promise<void> {
   const storedReadingPosition: unknown = await getSetting('rememberReadingPosition')
   const rememberReadingPosition = storedReadingPosition !== false && storedReadingPosition !== 'false'
   const [chatProvider, openaiLocalModel] = await Promise.all([getSetting('chatProvider'), getSetting('openaiLocalModel')])
-  set(normalizeSettings({ apiProfiles:parseProfiles(await getSetting('apiProfiles')), activeApiProfileId:await getSetting('activeApiProfileId') || '', userLocation: await getSetting('userLocation') || '', userMetadataEnabled: await getSetting('userMetadataEnabled') !== 'false', autoTitleEnabled: await getSetting('autoTitleEnabled') !== 'false', readUrlEnabled: await getSetting('readUrlEnabled') !== 'false', nativeDeepSeekProxy: await getSetting('nativeDeepSeekProxy') === 'true', speechVoice, speechApiUrl, speechApiKey, apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)), rememberReadingPosition, chatProvider, openaiLocalModel }))
+  set(normalizeSettings({ apiProfiles:parseProfiles(await getSetting('apiProfiles')), activeApiProfileId:await getSetting('activeApiProfileId') || '', userLocation: await getSetting('userLocation') || '', userMetadataEnabled: await getSetting('userMetadataEnabled') !== 'false', autoTitleEnabled: await getSetting('autoTitleEnabled') !== 'false', readUrlEnabled: await getSetting('readUrlEnabled') !== 'false', nativeDeepSeekProxy: await getSetting('nativeDeepSeekProxy') === 'true', speechVoice, speechApiUrl, speechApiKey, apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)), speechLoop: await getSetting('speechLoop') === 'true', rememberReadingPosition, chatProvider, openaiLocalModel }))
   writeAppearanceHint(resolvedAppearance)
 }
 
@@ -128,6 +129,7 @@ async function commitPatch(patch: SettingsPatch): Promise<Settings> {
       webSearchEnabled: String(next.webSearchEnabled === true),
       chineseSpeechRate: String(next.chineseSpeechRate), englishSpeechRate: String(next.englishSpeechRate),
       speechRepeatCount: String(next.speechRepeatCount),
+      speechLoop: String(next.speechLoop === true),
       speechVoice: next.speechVoice || 'stella', speechApiUrl: next.speechApiUrl || '', speechApiKey: next.speechApiKey || '',
       rememberReadingPosition: String(next.rememberReadingPosition === true),
     })

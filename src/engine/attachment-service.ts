@@ -87,7 +87,7 @@ export async function saveFiles(files: File[]): Promise<Attachment[]> {
   return metas;
 }
 
-export type GeneratedImageInput = { blob: Blob; name: string; source?: PdfAttachmentSource; ocr?: import('../api/deepseek-ocr').OcrPage }
+export type GeneratedImageInput = { blob: Blob; name: string; source?: PdfAttachmentSource; ocr?: import('../api/deepseek-ocr').OcrPage; transcript?: import('../youtube/transcript').YoutubeTranscript }
 
 export type DraftOwnership = { conversationId: string; text: string; existingImageIds: string[] }
 
@@ -113,7 +113,7 @@ export async function saveGeneratedImagesAndDraft(images: GeneratedImageInput[],
   for (const g of images) {
     if (!(g.blob instanceof Blob) || g.blob.size <= 0) throw new AttachmentError('read-failed', 'empty blob')
     if (!SUPPORTED_MIME.has(g.blob.type)) throw new AttachmentError('unsupported-format', 'unsupported image')
-    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}), ...(g.ocr ? { ocr: g.ocr } : {}) })
+    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}), ...(g.ocr ? { ocr: g.ocr } : {}), ...(g.transcript ? { transcript: g.transcript } : {}) })
     blobs.push(g.blob)
   }
   const rows = await stageAttachmentRows(metas, blobs)
@@ -159,7 +159,7 @@ export async function saveGeneratedImagesAndBranchDraft(images: GeneratedImageIn
   for (const g of images) {
     if (!(g.blob instanceof Blob) || g.blob.size <= 0) throw new AttachmentError('read-failed', 'empty blob')
     if (!SUPPORTED_MIME.has(g.blob.type)) throw new AttachmentError('unsupported-format', 'unsupported image')
-    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}), ...(g.ocr ? { ocr: g.ocr } : {}) })
+    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}), ...(g.ocr ? { ocr: g.ocr } : {}), ...(g.transcript ? { transcript: g.transcript } : {}) })
     blobs.push(g.blob)
   }
   const rows = await stageAttachmentRows(metas, blobs)
@@ -207,7 +207,7 @@ export async function saveGeneratedImages(images: GeneratedImageInput[]): Promis
   for (const g of images) {
     if (!(g.blob instanceof Blob) || g.blob.size <= 0) throw new AttachmentError('read-failed', 'empty blob');
     if (!SUPPORTED_MIME.has(g.blob.type)) throw new AttachmentError('unsupported-format', 'unsupported image');
-    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}), ...(g.ocr ? { ocr: g.ocr } : {}) });
+    metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}), ...(g.ocr ? { ocr: g.ocr } : {}), ...(g.transcript ? { transcript: g.transcript } : {}) });
     blobs.push(g.blob);
   }
   await writeBatch('attachments', metas, blobs);
@@ -341,6 +341,7 @@ export async function cleanupOrphanAttachments(graceMs = 24 * 60 * 60 * 1000): P
 /** Model projection keeps the saved preview, but OCR attachments transmit text only. */
 export async function toModelAttachment(id: StableId): Promise<string | { text: string }> {
   const meta = await getAttachment(id)
+  if (meta?.transcript) { const {validTranscript,transcriptContext}=await import('../youtube/transcript'); if(!validTranscript(meta.transcript))throw new AttachmentError('read-failed','invalid transcript'); return {text:transcriptContext(meta.transcript)} }
   if (meta?.ocr) {
     const { validOcrPage, ocrContextText } = await import('../api/deepseek-ocr')
     if (!validOcrPage(meta.ocr)) throw new AttachmentError('read-failed', 'invalid OCR metadata')

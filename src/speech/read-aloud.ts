@@ -1,3 +1,5 @@
+import {cachedSpeechAudio,evictSpeechAudio} from './audio-cache'
+import {selectedDeepSeekServiceProfile} from '../engine/deepseek-service-profile'
 import { useSyncExternalStore } from 'react'
 import { getSettingsSnapshot } from '../engine/settings-store'
 
@@ -28,18 +30,18 @@ export function preferredVoice(voices: readonly SpeechSynthesisVoice[], lang: st
   return [...candidates].sort((a,b) => score(b)-score(a))[0]
 }
 
-type State = {status:'idle'|'loading'|'speaking'|'paused'|'error'; owner?:string; voice?:string; lang?:string; rate?:number; repeat?:number; repeats?:number; error?:string}
+type State = {status:'idle'|'loading'|'speaking'|'paused'|'error'; owner?:string; voice?:string; lang?:string; rate?:number; repeat?:number; repeats?:number; loop?:boolean; error?:string}
 let state: State = {status:'idle'}, generation = 0
 let audio: HTMLAudioElement | null = null
-let controller: AbortController | null = null
 let urls: string[] = []
+let liveRate: number | undefined
 const listeners = new Set<() => void>()
 function publish(next: State) { state = next; listeners.forEach(fn=>fn()) }
 export const speechSnapshot = () => state
 export function useReadAloud() { return useSyncExternalStore(fn=>{listeners.add(fn);return()=>{listeners.delete(fn)}},speechSnapshot) }
 export function stopReadAloud(owner?: string) {
   if (owner && state.owner !== owner) return
-  generation++; controller?.abort();controller=null
+  generation++;liveRate=undefined
   if(audio){audio.onended=null;audio.onerror=null;audio.pause();audio.removeAttribute('src');audio.load();audio=null}
   urls.forEach(url=>URL.revokeObjectURL(url));urls=[]
   publish({status:'idle'})
@@ -66,25 +68,22 @@ export function ttsEndpoint(base: string): string {
 }
 export function setReadAloudRate(owner: string, rate: number) {
   if (state.owner !== owner || !Number.isFinite(rate) || rate < 0.5 || rate > 2) return
+  liveRate = rate
   if (audio) audio.playbackRate = rate
   publish({ ...state, rate })
 }
-export function readAloud(text: string, owner: string, options: { rate?: number; repeats?: number; voice?: 'stella' | 'tide'; apiKey?: string } = {}) {
+export function readAloud(text: string, owner: string, options: { rate?: number; repeats?: number; loop?:boolean; voice?: 'stella' | 'tide'; apiKey?: string } = {}) {
   stopReadAloud()
   const chunks=ttsChunks(text)
   if(!chunks.length)return
   const settings=getSettingsSnapshot(), token=generation
-  const apiKey=options.apiKey ?? settings.apiKey
+  const apiKey=options.apiKey ?? selectedDeepSeekServiceProfile()?.config.apiKey
   const voice=options.voice || settings.speechVoice || 'stella'
   const voiceName=voice==='tide'?'DeepSeek · Tide':'DeepSeek · Stella'
   if(!apiKey){publish({status:'error',owner,error:'请先在设置中配置 DeepSeek API Key。'});return}
-  const requestController=new AbortController()
-  controller=requestController
-  const signal=requestController.signal
   const player=new Audio();audio=player
-  const repeats=options.repeats ?? settings.speechRepeatCount ?? 3
+  const repeats=options.repeats ?? settings.speechRepeatCount ?? 3, loop=options.loop ?? settings.speechLoop ?? false
   let index=0, repeat=1
-  const cache=new Map<number,string>()
   const fail=(error: unknown)=>{
     if(token!==generation)return
     stopReadAloud()
@@ -92,30 +91,21 @@ export function readAloud(text: string, owner: string, options: { rate?: number;
   }
   async function next() {
     if(token!==generation)return
-    if(index>=chunks.length){index=0;repeat++;if(repeat>repeats){stopReadAloud();return}}
+    if(index>=chunks.length){index=0;repeat++;if(!loop&&repeat>repeats){stopReadAloud();return}}
     const current=index++
     const lang=/\p{Script=Han}/u.test(chunks[current])?'zh-CN':'en-US'
-    const rate=options.rate ?? (lang==='zh-CN' ? settings.chineseSpeechRate ?? 1 : settings.englishSpeechRate ?? 0.9)
-    publish({status:'loading',owner,voice:voiceName,lang,rate,repeat,repeats})
+    const rate=liveRate ?? options.rate ?? (lang==='zh-CN' ? settings.chineseSpeechRate ?? 1 : settings.englishSpeechRate ?? 0.9)
+    publish({status:'loading',owner,voice:voiceName,lang,rate,repeat,repeats,loop})
     try {
-      let url=cache.get(current)
-      if(!url){
-        const timer=setTimeout(()=>requestController.abort(),120000)
-        let blob:Blob
-        try {
-          const response=await fetch(ttsEndpoint('https://api.deepseek.com'),{method:'POST',headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json'},body:JSON.stringify({text:chunks[current],voice_id:voice,format:'wav',filter_markdown:true}),signal})
-          if(!response.ok)throw new Error('DeepSeek 朗读请求失败（HTTP '+response.status+'），请检查 API Key、余额或稍后重试。')
-          blob=await response.blob()
-          if(blob.size<44)throw new Error('DeepSeek 返回的音频不完整，请重试。')
-        } finally {clearTimeout(timer)}
-        if(token!==generation)return
-        url=URL.createObjectURL(blob);urls.push(url);cache.set(current,url)
-      }
+      const blob=await cachedSpeechAudio(ttsEndpoint('https://api.deepseek.com'),apiKey!,chunks[current],voice)
+      if(token!==generation)return
+      urls.forEach(old=>URL.revokeObjectURL(old));urls=[]
+      const url=URL.createObjectURL(blob);urls.push(url)
       player.src=url;player.playbackRate=state.owner===owner ? state.rate ?? rate : rate
       player.onended=()=>{void next()}
-      player.onerror=()=>fail(new Error('音频无法播放或数据不完整，请重试。'))
+      player.onerror=()=>{void evictSpeechAudio(ttsEndpoint('https://api.deepseek.com'),apiKey!,chunks[current],voice).catch(()=>{});fail(new Error('音频无法播放或数据不完整，请重试。'))}
       await player.play()
-      if(token===generation)publish({status:'speaking',owner,voice:voiceName,lang,rate:player.playbackRate,repeat,repeats})
+      if(token===generation)publish({status:'speaking',owner,voice:voiceName,lang,rate:player.playbackRate,repeat,repeats,loop})
     } catch(error){fail(error)}
   }
   void next()

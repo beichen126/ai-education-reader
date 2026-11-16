@@ -1,0 +1,4 @@
+import type {YoutubeTranscript} from './transcript'
+export async function transcriptPreview(data:YoutubeTranscript):Promise<Blob>{
+ const canvas=document.createElement('canvas');canvas.width=720;canvas.height=400;const c=canvas.getContext('2d');if(!c)throw new Error('无法生成字幕预览');c.fillStyle='#191b21';c.fillRect(0,0,720,400);c.fillStyle='#f4f5f7';c.font='bold 28px sans-serif';c.fillText('YouTube · 字幕附件',32,56);c.font='22px sans-serif';let y=106;for(let i=0;i<data.title.length&&i<90;i+=25){c.fillText(data.title.slice(i,i+25),32,y);y+=32}c.fillStyle='#b6bdcc';c.font='18px sans-serif';c.fillText(data.language+' · '+data.segments.length+' 段字幕',32,240);c.fillText('文字和时间戳将加入上下文',32,280);c.fillText('youtube.com/watch?v='+data.videoId,32,340);return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('预览失败')),'image/png'))
+}
