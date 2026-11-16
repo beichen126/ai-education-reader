@@ -5,6 +5,8 @@ export function normalizeGenuiInput(value: any): any {
  function visit(node: any, depth: number): any {
   if (!node || typeof node !== 'object' || Array.isArray(node) || depth > 8 || ++count > 200) return node
   const next = {...node}
+  if (next.type === 'card' && next.flat === undefined) next.flat = true
+  if (next.type === 'col' && next.gap === undefined) next.gap = 8
   if (next.type === 'card' && typeof next.accent === 'boolean') {
    if (next.accent) next.accent = '#5b8def'
    else delete next.accent
@@ -23,5 +25,5 @@ export function normalizeGenuiInput(value: any): any {
  }
  if (!value || typeof value !== 'object' || Array.isArray(value)) return value
  if (value.type) return visit(value, 0)
- return {...value, ...(Array.isArray(value.items) ? {items:value.items.map((n: any) => visit(n, 0))} : {})}
+ return {...value, ...(value.gap === undefined ? {gap:8} : {}), ...(Array.isArray(value.items) ? {items:value.items.map((n: any) => visit(n, 0))} : {})}
 }

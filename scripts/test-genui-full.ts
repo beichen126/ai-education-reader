@@ -22,3 +22,8 @@ for(const name of GENUI_NATIVE_TYPES)assert.equal(FULL_GENUI_PROMPT.includes('\n
 assert.ok(!isRenderableProcess(processGenuiSpec({items:[{type:'script',content:'alert(1)'}]})))
 assert.equal(compileMathExprProgram('window.location=1'),null)
 console.log('PASS '+GENUI_NATIVE_TYPES.size+' catalog types, '+genuiTemplates().length+' templates, functional fixtures and unsafe-component guards')
+
+assert.equal(normalizeGenuiInput({items:[{type:'card',items:[]}]}).items[0].flat,true)
+assert.equal(normalizeGenuiInput({items:[{type:'card',flat:false,items:[]}]}).items[0].flat,false)
+assert.equal(normalizeGenuiInput({items:[{type:'col',items:[]}]}).items[0].gap,8)
+assert.equal(normalizeGenuiInput({gap:12,items:[]}).gap,12)

@@ -1,2 +1,2 @@
 // Generation catalog only. Keep the full renderer for existing conversations.
-export const OMITTED_GENUI_TYPES = new Set(["divider", "spacer", "tabs", "popover", "avatar", "keyvalue", "breadcrumb", "entity-card", "diagram", "mermaid", "map", "input", "switch", "segmented-control", "date-picker", "editor", "audio", "diff", "json", "file-tree", "copy", "link"])
+export const OMITTED_GENUI_TYPES = new Set(["divider", "spacer", "tabs", "popover", "avatar", "keyvalue", "breadcrumb", "entity-card", "diagram", "mermaid", "map", "input", "switch", "segmented-control", "date-picker", "editor", "audio", "diff", "json", "file-tree", "copy", "link", "list", "table", "timeline", "button", "carousel", "compare"])
