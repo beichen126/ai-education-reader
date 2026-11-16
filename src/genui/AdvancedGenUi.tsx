@@ -1,3 +1,4 @@
+import {OMITTED_GENUI_TYPES} from './catalog-policy'
 import {cardTemplates} from './card-templates'
 import {normalizeGenuiInput} from './normalize-input'
 import {genuiTemplates} from 'reader-genui-templates'
@@ -16,7 +17,7 @@ export default function AdvancedGenUi({source,stateKey}:{source:string;stateKey?
  const busy=useRef(false),[status,setStatus]=useState(''),[expanded,setExpanded]=useState(false),[template,setTemplate]=useState(''),[showTemplates,setShowTemplates]=useState(false)
  const snapshot=useRef<any>(undefined)
  const text=(zh:string,en:string)=>language==='en'?en:zh
- const templates=useMemo(()=>[...cardTemplates,...genuiTemplates()],[language]),selected=templates.find(t=>t.id===template)
+ const templates=useMemo(()=>[...cardTemplates,...genuiTemplates()].filter(t=>!JSON.stringify(t.demo).match(/"type"\s*:\s*"([^"]+)"/g)?.some(token=>OMITTED_GENUI_TYPES.has(JSON.parse('{'+token+'}').type))),[language]),selected=templates.find(t=>t.id===template)
  useEffect(()=>{setLocale(language==='en'?'en':'zh')},[language])
  const result=useMemo(()=>{
   if(source.length>256000)return {error:'界面超过 256 KB 限制'}

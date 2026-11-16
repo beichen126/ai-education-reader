@@ -1,3 +1,4 @@
+import {OMITTED_GENUI_TYPES} from '../src/genui/catalog-policy.ts'
 import {compileMathExprProgram} from '../node_modules/@changfenhuang/dsh-genui/src/client/safe-math.ts'
 import {cardTemplates} from '../src/genui/card-templates.ts'
 import assert from 'node:assert/strict'
@@ -17,7 +18,7 @@ assert.ok(!isRenderableProcess(processGenuiSpec(normalizeGenuiInput({items:[{typ
 assert.ok(FULL_GENUI_PROMPT.includes('accent:string,flat:boolean'))
 for(const [name,raw] of Object.entries(fixtures)){const {schema,...spec}=raw as any;const result=processGenuiSpec(spec);assert.ok(isRenderableProcess(result),name+': '+result.errors.join(';'))}
 for(const t of [...cardTemplates,...genuiTemplates()]){const result=processGenuiSpec(t.demo);assert.ok(isRenderableProcess(result),t.id+': '+result.errors.join(';'))}
-for(const name of GENUI_NATIVE_TYPES)assert.ok(FULL_GENUI_PROMPT.includes(name+': '),name+' is taught to the model')
+for(const name of GENUI_NATIVE_TYPES)assert.equal(FULL_GENUI_PROMPT.includes('\n'+name+': '),!OMITTED_GENUI_TYPES.has(name),name+' follows generation policy')
 assert.ok(!isRenderableProcess(processGenuiSpec({items:[{type:'script',content:'alert(1)'}]})))
 assert.equal(compileMathExprProgram('window.location=1'),null)
 console.log('PASS '+GENUI_NATIVE_TYPES.size+' catalog types, '+genuiTemplates().length+' templates, functional fixtures and unsafe-component guards')
