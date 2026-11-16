@@ -28,7 +28,7 @@ export function ApiProfiles({draft,onApply}:{draft:Settings;onApply:(settings:Se
  }
  return <div className={css.exportSection} data-testid="api-profiles">
   <div className={css.exportTitle}>{tx('我的 API 配置','My API configurations')}</div>
-  <label className={css.field}><span>{tx('切换配置','Switch configuration')}</span><select className={css.fieldInput} aria-label={tx('切换配置','Switch configuration')} value={settings.activeApiProfileId||''} disabled={disabled} onChange={e=>void apply(snapshot(),e.target.value)}>
+  <label className={css.field}><span>{tx('切换配置','Switch configuration')}</span><select className={css.profileSelect} aria-label={tx('切换配置','Switch configuration')} value={settings.activeApiProfileId||''} disabled={disabled} onChange={e=>void apply(snapshot(),e.target.value)}>
    {!settings.activeApiProfileId&&<option value="">{tx('当前配置（未命名）','Current configuration (unnamed)')}</option>}
    {profiles.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
   </select></label>
