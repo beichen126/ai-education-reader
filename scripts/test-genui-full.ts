@@ -35,4 +35,9 @@ assert.equal(evaluateComputed(areaSpec,{}).values.area,Math.PI*4)
 assert.equal(evaluateComputed(areaSpec,{radius:'3'}).values.area,Math.PI*9)
 assert.ok(evaluateComputed({...areaSpec,computed:[{id:'area',expr:'pi*r^2'}]},{}).errors.area)
 assert.ok(evaluateComputed({...areaSpec,computed:[{id:'area',expr:'Math.PI*radius**2'}]},{}).errors.area)
-assert.ok(!/历史|禁止|勿|不/.test(FULL_GENUI_PROMPT),'generation instructions use affirmative wording')
+assert.ok(!/历史|禁止|勿|不要|不得|不能|不生成|不执行|不索取/.test(FULL_GENUI_PROMPT),'generation instructions use affirmative wording')
+
+const costSpec:any={computed:[{id:'area',expr:'width*height'},{id:'cost',expr:'area*unit_price',format:{maximumFractionDigits:2}}],items:[{type:'slider',id:'width',value:2,min:1,max:10},{type:'slider',id:'height',value:3,min:1,max:10},{type:'slider',id:'unit_price',value:5,min:1,max:20},{type:'stat',label:'费用',value:'{{cost}}'}]}
+assert.ok(isRenderableProcess(processGenuiSpec(costSpec)))
+assert.equal(evaluateComputed(costSpec,{}).values.cost,30)
+assert.equal(evaluateComputed(costSpec,{width:'4'}).values.cost,60)

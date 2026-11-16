@@ -32,7 +32,22 @@ const intro=`GenUI 生成规则（可渲染、可交互）
 面积示例 {"schema":"dsh-genui","computed":[{"id":"area","expr":"pi*radius^2"}],"items":[{"type":"card","title":"圆面积","items":[{"type":"slider","id":"radius","label":"半径","value":2,"min":0.1,"max":10,"step":0.1},{"type":"stat","label":"面积","value":"{{area}}"}]}]}。
 类型规则：字段后的 string/number/boolean/array/object/nodes 是 JSON 类型；可选字段按需填写，并遵循对应类型。card.accent 使用颜色字符串（如 "#5b8def"）；flat 使用布尔值。生成前检查必填项、字段类型与枚举；每个字段遵循所属组件的定义。
 提交 action 回传当前会话，回传数据当作用户输入；表单收集学习内容；计算使用安全数学表达式，展示使用组件字段。最多200节点、8层、256KB。语言跟随用户，公式可用 $...$。支持展开画布与 JSON/HTML 导出；可用能力以本目录和阅读器接入功能为准。
-最小例子：
+构建顺序：
+1. 确定回答中的核心关系：概念分组用 card/grid，依赖链用 col/arrow，数据趋势用 chart/echart，数学函数用 plot，练习用 quiz 或 radio/submit。
+2. 根对象填写 schema、title、items；需要实时计算时添加根级 computed。每个可视节点填写 type 与对应组件字段；card/col/row/grid 的 items 是子节点数组，steps.steps 和 quiz.options 则按各自记录结构填写。
+3. 为交互字段声明唯一 id 和初值，再编写计算表达式，最后将计算结果放入可见文本。根据 min/max/step 为滑杆给出实际有意义的调节区间。
+4. 按完整初始状态核算一遍结果，检查调参后对应结果变化；提供数值单位、参数解释和题目解析。
+布局细则：根 items 按阅读顺序排列。card 负责语义分组；col 纵向排列；row 适合少量短内容；grid 适合等宽卡片。grid.cols=3 配3项形成一行，配6项形成两行。不同列数的 grid 可以依次放入同一个 col。span 为当前网格的跨列数，取1至cols；需要整行汇总时把汇总卡放在 grid 后，与网格同属一个 col。箭头作为 grid 的同级节点，居中连接上下阶段；label 简述依赖或汇合含义。卡片标题简短，正文紧随标题；手机布局按节点阅读顺序排列。
+字段约定：JSON 字符串使用双引号，数值字段填写数字，布尔字段填写 true/false。文本展示字段（如 text.content、stat.value）填写字符串。size、tone、kind、preset 等枚举采用所属组件目录中的值。描述文字放入 text 节点，卡片主体放入 items 数组，步骤说明放入 steps 中每项的 desc。id 使用如 radius、days、unit_price 的稳定名称；label/title 面向用户，可使用中文。
+计算细则：computed 是 [{id,expr,format?}] 数组；每项 id 是结果名，expr 是一个数学表达式字符串。例如 id="area"、expr="pi*radius^2"。数值常量直接写进 expr，交互变量对应同界面 slider/select/textarea 的 id。优先用 slider 提供数值初值；select 的选项和 textarea 的内容用于计算时采用可解析的十进制数值。派生量可以引用另一 computed.id，例如 area=width*height、cost=area*unit_price；计算器按依赖顺序求值。每个输入和结果各有独立 id。
+算式写法：乘法用 *，除法用 /，乘方用 ^ 或 pow(a,b)，括号控制优先级；函数写 sin(x)、cos(x)、tan(x)、sqrt(x)、abs(x)、min(a,b)、max(a,b)、round(x)、ln(x)、log(x)。ln 为自然对数，log 为以10为底的对数，三角函数角度采用弧度。常量 pi、e、tau 可直接使用。为除数选取正的 min，为平方根和对数选取对应的有效参数区间。格式化通过 computed.format 设置，例如 {maximumFractionDigits:2}；结果显示使用 "{{area}} 平方米"。
+变量作用域：根级 computed 读取组件字段 id 和 computed.id。plot.series 每条曲线通过 expr 中的 x 采样，通过自身 params 数组声明可调参数；例如 expr="a*sin(x)" 与 params:[{name:"a",value:1,min:0.1,max:3,step:0.1}]。需要数值指标时，用根级字段与 computed 构建对应指标；曲线调节使用 plot 自带参数控件。分开的 dsh-ui 围栏分别构成独立界面。
+表单与题目：slider/select/textarea 使用 id；radio/checkbox 使用 group；submit.groups 列出本次提交的 id/group。单题优先 quiz，options 为 [{label,correct?,feedback?}]，其中一项标记 correct:true，并填写 explanation。多题可使用带 group、answer、explanation 的 radio，再用 submit.groups 对应这些 group。普通参数控件负责本地状态，computed 展示本地联动结果；需要把用户选择交给模型时配置 action，提交内容随后进入会话。
+条件展示：when 与 enableWhen 使用 {field,op,value}，field 对应已声明字段，op 采用目录枚举。例如 select.id="mode"、options=["基础","进阶"]，补充说明的 when={field:"mode",op:"eq",value:"进阶"}。将关键结论放在始终可见的位置，补充推导放进 accordion.items:[{title,items}]。
+图形选择：chart 的 data 为 [{label,value}]，适合少量分类与趋势数据；echart 根据任务选择 preset 与对应数据，适合雷达、热力、桑基等；plot 用表达式绘制连续数学曲线。单位与来源写在图形附近。示意数据标明“示例数据”，学习计算标明假设和参数范围。普通文字列表和静态对照表使用围栏外的 Markdown。
+输出检查：核对根结构、组件类型、必填字段、枚举、输入id、计算依赖、初始结果、引用位置和布局层级。保留约定内的组件与字段，按这些规则输出完整 JSON。
+完整示例：
+
 紧凑卡片图 {"type":"col","gap":8,"items":[{"type":"text","size":"h2","center":true,"content":"输入"},{"type":"arrow","dir":"down","length":20},{"type":"grid","cols":2,"items":[{"type":"card","title":"处理一","items":[{"type":"text","content":"简短说明"}]},{"type":"card","title":"处理二","items":[{"type":"text","content":"简短说明"}]}]},{"type":"arrow","dir":"down","length":20,"label":"汇合"},{"type":"text","center":true,"content":"输出结论"}]}。
 
 曲线 {"type":"plot","xMin":-6.28,"xMax":6.28,"yMin":-3,"yMax":3,"series":[{"expr":"a*sin(x)","label":"y=a sin(x)","params":[{"name":"a","value":1,"min":0.1,"max":3,"step":0.1}]}]}。支持 x,pi,e,trig,sqrt,log,exp,abs,pow,min,max；参数可设置 animateTo,durationMs,loop。
