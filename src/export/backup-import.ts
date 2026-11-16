@@ -1,3 +1,4 @@
+import { validOcrPage } from '../api/deepseek-ocr'
 import {parseProfiles} from '../engine/api-profiles'
 import { idbReplaceAll, idbGetAll } from '../storage/idb'
 import { resolveStoredModel } from '../api/model-defaults'
@@ -90,6 +91,7 @@ function validateDocuments(input: Record<string, any>): void {
     const okLastRead = m.lastReadPage === 0 || (isInt(m.lastReadPage) && m.lastReadPage >= 1 && m.lastReadPage <= m.pageCount)
     if (!okLastRead) throw new BackupError('document.lastReadPage 非法（0 或 1..pageCount 的整数）')
     if (m.lastReadAt !== undefined && !isNum(m.lastReadAt)) throw new BackupError('document.lastReadAt 必须是数字')
+    if (m.ocrPages !== undefined && (!isObj(m.ocrPages) || Object.entries(m.ocrPages).some(([page, result]) => !/^[1-9]\d*$/.test(page) || Number(page) > m.pageCount || !validOcrPage(result)))) throw new BackupError('document.ocrPages 非法')
     if (m.contentHash !== undefined && !isStr(m.contentHash)) throw new BackupError('document.contentHash 非法')
     if (m.fastFingerprint !== undefined && !isStr(m.fastFingerprint)) throw new BackupError('document.fastFingerprint 非法')
     if (m.lastReadAt !== undefined && m.lastReadAt < 0) throw new BackupError('document.lastReadAt 不能为负')
@@ -325,6 +327,7 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
   for (const at of input.attachments) {
     if (!isObj(at) || !isNonEmptyStr(at.id)) throw new BackupError('attachment 缺少合法的 id')
     if (!isObj(at.meta) || at.meta.id !== at.id) throw new BackupError('attachment.meta.id 必须与 at.id 一致')
+    if (at.meta.ocr !== undefined && (!validOcrPage(at.meta.ocr) || at.meta.source?.type !== 'pdf-page')) throw new BackupError('attachment.ocr 非法')
     if (!isStr(at.mimeType) || !/^image\//.test(at.mimeType)) throw new BackupError('attachment.mimeType 非法')
     if (!isBase64(at.data)) throw new BackupError('attachment.data 不是合法的 base64')
     attIds.add(at.id)

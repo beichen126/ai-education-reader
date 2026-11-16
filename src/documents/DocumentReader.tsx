@@ -1,3 +1,5 @@
+import { PdfContextMode, PdfPageOcrButton } from './PdfOcrControls'
+import { renderSessionPage as renderOcrPage } from '../pdf/pdf-session'
 // Document Reader (Stage 9.2B1 / 9.2B1.1): full-document reading space backed by an
 // explicit PDF session (never the PdfPanel singleton). Lifecycle contract:
 // the [docId] load effect OWNS the session it opens and only closes its OWN
@@ -171,6 +173,7 @@ export function DocumentReader() {
   const [relatedConversations, setRelatedConversations] = useState<PdfPageConversationHit[]>([])
   const [relatedOpen, setRelatedOpen] = useState(false)
   const [relatedError, setRelatedError] = useState<string | null>(null)
+  const [contextMode, setContextMode] = useState<'image' | 'ocr'>('image')
   const [ctxPending, setCtxPending] = useState<ReaderContextRequest | null>(null)
   const ctxGenRef = useRef(0)
   const ctxMenuOpenRef = useRef(false); ctxMenuOpenRef.current = ctxMenuOpen
@@ -744,14 +747,14 @@ export function DocumentReader() {
     }
     const request: ReaderContextRequest = {
       targetConversationId, documentId: doc.id, fileName: doc.fileName,
-      selection, ranges, pageCount,
+      selection: { ...selection, contextMode }, ranges, pageCount,
       session: sessionRef.current,
       count,
     }
     setCtxMenuOpen(false); setCtxMode('menu'); setManualError(null)
     if (needsPdfContextSoftConfirm(count)) { setCtxPending(request); return }
     void executeContext(request)
-  }, [doc, conv, ctxBusy, pageCount])
+  }, [doc, conv, ctxBusy, pageCount, contextMode])
 
   const executeContext = useCallback(async (request: ReaderContextRequest) => {
     const gen = ++ctxGenRef.current
@@ -815,7 +818,7 @@ export function DocumentReader() {
       setCtxMsg(res.ok ? { text: label, ok: true } : { text: localizedErrorText(res.error, 'Unable to add the PDF context to the chat.'), ok: false })
     } catch { if (gen === ctxGenRef.current) setCtxMsg({ text: tx('无法生成上下文。', 'Unable to build context.'), ok: false }) }
     finally { if (gen === ctxGenRef.current) { setCtxBusy(false); setCtxRunning(null) } }
-  }, [doc, conv, ctxBusy, pageCount])
+  }, [doc, conv, ctxBusy, pageCount, contextMode])
 
   const applyCommittedBookmarkRangePreferences = useCallback((delta: BookmarkRangePreferenceDelta) => {
     setDoc(current => applyBookmarkRangePreferenceDelta(current, delta))
@@ -1152,6 +1155,7 @@ export function DocumentReader() {
         <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary() }}>← {tx('文件', 'Files')}</button>
         <span className={css.title} data-testid="reader-title">{doc?.fileName ?? recordMeta?.fileName ?? '…'}</span>
         <div className={css.topActions}>
+          {doc && sessionRef.current && <PdfPageOcrButton documentId={doc.id} page={page} render={async () => (await renderOcrPage(sessionRef.current!, page)).blob} />}
           {doc && (
             <button className={css.ctxBtn} data-testid="reader-ctx-toggle" aria-label={tx('加入对话', 'Add to chat')} title={tx('加入对话', 'Add to chat')} disabled={ctxBusy} onClick={() => setCtxMenuOpen(o => !o)}>
               {ctxBusy ? tx('处理中', 'Processing') : tx('加入对话', 'Add to chat')}
@@ -1301,6 +1305,7 @@ export function DocumentReader() {
       {ctxMenuOpen && !ctxBusy && (
         <div className={css.ctxMenu} data-testid="reader-ctx-menu">
           <div className={css.ctxMenuTitle}>{tx('加入对话', 'Add to chat')}</div>
+          <PdfContextMode value={contextMode} onChange={setContextMode} />
           <button type="button" className={css.menuItem} data-testid="reader-ctx-current-page" onClick={() => { const s = buildCurrentPageSelection(page); void requestContext(s, s.ranges) }}>
             {tx('当前页', 'Current page')}<span className={css.menuMeta}>{tx('第 ' + page + ' 页', 'Page ' + page)}</span>
           </button>

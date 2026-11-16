@@ -13,7 +13,7 @@ type EnglishPromptCopy = {
 /** English presentation copy for source-owned prompts. Canonical stored definitions stay
  * unchanged, so old backups, ids, hashes and Chinese-mode behavior remain compatible. */
 const ENGLISH_BUILTINS: Record<string, EnglishPromptCopy> = {
-  [BUILTIN_PROMPT_IDS.protocolGenUi]: {name:'GenUI · interactive interface',description:'Generate interactive cards, tables, charts and quizzes when useful. Applied to regular chats; copy to customize.',validatorDescription:'Validates supported components, structure and size. Plain text replies need no UI.'},
+  [BUILTIN_PROMPT_IDS.protocolGenUi]: {name:'GenUI · interactive interface',description:'Choose charts, diagrams, cards, simulations, quizzes, media or vocabulary by purpose. Render explicit requests directly; copy to customize.',validatorDescription:'Validates supported components, structure and size. Plain text replies need no UI.'},
   [BUILTIN_PROMPT_IDS.conversationDefault]: {
     name: 'Default',
     description: 'Keep the original 1.x chat behavior without an additional mode prompt.',

@@ -1,3 +1,4 @@
+import { buildOcrAwareContext } from './ocr-context'
 import {resolveCurrentProtocol} from '../prompts/prompt-resolution'
 import {appendGenUiGuidance} from '../prompts/prompt-compile-strategies'
 import { nativeConversationOptions, citationFooter } from '../api/deepseek-native'
@@ -5,7 +6,7 @@ import { validateDocumentContext } from '../api/deepseek-documents'
 import { newStableId, type Message, type StableId } from './types'
 import type { Settings } from './settings-store'
 import { buildContextMessages, buildApiMessages, countImageParts, isVisionModel, DeepSeekError, errorKindLabel } from '../api/deepseek'
-import { toDataUrl, AttachmentError, attachmentErrorLabel } from './attachment-service'
+import { toModelAttachment as toDataUrl, getAttachment, AttachmentError, attachmentErrorLabel } from './attachment-service'
 import { generationRegistry, type GenerationLease } from './generation-registry'
 import { projectLogicalPromptContext } from '../prompts/prompt-compile-strategies'
 import type { AcceptedSendContext } from '../prompts/prompt-send'
@@ -81,9 +82,11 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
   }
 
   try {
-    const contextMessages = acceptedSendContext?.logical.messages ?? buildContextMessages(await thread.getContextMessages())
+    const contextMessages = acceptedSendContext?.logical.messages ?? await buildOcrAwareContext(await thread.getContextMessages())
     validateDocumentContext(contextMessages.flatMap(m=>m.documents || []), settings.chatProvider==='openai-local'?'':settings.apiBaseUrl, settings.chatProvider==='openai-local'?'':settings.model)
-    const hasImages = contextMessages.some((x) => x.images.length > 0)
+    const contextAttachments = await Promise.all(contextMessages.flatMap(x => x.images).map(async id => ({ id, meta: await getAttachment(id) })))
+    const expectedImages = contextAttachments.filter(a => !a.meta?.ocr).length
+    const hasImages = expectedImages > 0
     const supportsImages = !hasImages || (settings.chatProvider === 'openai-local'
       ? (await getLocalStatus(controller.signal, 15000)).imageModels?.includes(settings.openaiLocalModel || '') === true
       : isVisionModel(settings.model, settings.visionCapability))
@@ -98,7 +101,6 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       ? await projectLogicalPromptContext(acceptedSendContext.logical, acceptedSendContext.compilePolicy.systemMessagePolicy, toDataUrl, { genUi: true, genUiPrompt })
       : await buildApiMessages(contextMessages, toDataUrl)
     if (!acceptedSendContext) appendGenUiGuidance(reqMessages, genUiPrompt)
-    const expectedImages = contextMessages.reduce((sum, mm) => sum + mm.images.length, 0)
     const encodedImages = countImageParts(reqMessages)
     if (encodedImages !== expectedImages) {
       const failure: SendFailure = { kind: 'failed', code: 'attachment-encode-failed', message: '图片准备失败：已选择 ' + expectedImages + ' 张，实际仅准备成功 ' + encodedImages + ' 张。请检查附件后重试。' }

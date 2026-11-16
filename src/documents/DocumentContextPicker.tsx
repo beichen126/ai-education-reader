@@ -1,5 +1,6 @@
 
 
+import { PdfContextMode } from './PdfOcrControls'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { listDocumentSummaries, getDocument, getDocumentContextDescriptor, documentBinaryExists, setDocumentBookmarkRangePreferences, DocumentBinaryMissingError, type DocumentContextDescriptor, type DocumentSummary, type BookmarkRangePreferenceUpdate } from './document-service'
 import { buildChapterNodesSelection, findChapterById, selectableChapterRange } from './document-context'
@@ -41,6 +42,7 @@ type PreferenceWriteEntry = {
 // Back semantics (0.10): only the unscoped picker has a document-list back; a scoped picker
 // has no back that would clear the document and leave an empty panel.
 export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferencesCommitted }: Props) {
+  const [contextMode, setContextMode] = useState<'image' | 'ocr'>('image')
   const scoped = !!documentId
   const [stage, setStage] = useState<'document' | 'context'>(scoped ? 'context' : 'document')
   const [doc, setDoc] = useState<DocumentContextDescriptor | null>(null)
@@ -298,7 +300,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
     if (needsPdfContextSoftConfirm(count)) { setConfirming(currentSelection); return }
     finishAdd(currentSelection)
   }
-  const finishAdd = (sel: PdfSelection) => { if (doc) onAdd(sel, doc.id, doc.fileName) }
+  const finishAdd = (sel: PdfSelection) => { if (doc) onAdd({ ...sel, contextMode }, doc.id, doc.fileName) }
 
   const returnFromPreview = () => {
     setPreviewDoc(null)
@@ -378,6 +380,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
                 <button type="button" className={css.btn} data-testid="doc-context-manual-add" onClick={addManual}>{tx('选择范围', 'Select range')}</button>
               </div>
             )}
+            <PdfContextMode value={contextMode} onChange={setContextMode} />
             <div className={css.footer}>
               <div className={css.summary} data-testid="doc-context-summary">
                 {hasScope ? (

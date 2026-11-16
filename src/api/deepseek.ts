@@ -363,7 +363,7 @@ export function isVisionModel(model: string, capability?: VisionCapability): boo
   if (capability === 'text-only') return false
   return /vision/i.test(model) || /^deepseek-flash$/i.test(model.trim())
 }
-export async function buildApiMessages(msgs: import('../engine/types').Message[], toDataUrl: (id: string) => Promise<string>): Promise<ApiChatMessage[]> {
+export async function buildApiMessages(msgs: import('../engine/types').Message[], toDataUrl: (id: string) => Promise<string | { text: string }>): Promise<ApiChatMessage[]> {
   const out: ApiChatMessage[] = []
   for (const m of msgs) {
     if (m.role === 'assistant') { out.push({ role: 'assistant', content: m.content, ...(m.serverToolCalls ? {server_tool_calls:m.serverToolCalls} : {}) }); continue }
@@ -374,8 +374,11 @@ export async function buildApiMessages(msgs: import('../engine/types').Message[]
       for(const doc of m.documents || []) parts.push({type:'file',file_id:doc.id})
       if (m.content) parts.push({ type: 'text', text: m.content })
       for (let idx = 0; idx < m.images.length; idx++) {
-        parts.push({ type: 'text', text: '【图片 ' + (idx + 1) + '/' + m.images.length + '】' })
-        parts.push({ type: 'image_url', image_url: { url: await toDataUrl(m.images[idx]) } })
+        const attachment = await toDataUrl(m.images[idx])
+        if (typeof attachment === 'string') {
+          parts.push({ type: 'text', text: '【图片 ' + (idx + 1) + '/' + m.images.length + '】' })
+          parts.push({ type: 'image_url', image_url: { url: attachment } })
+        } else parts.push({ type: 'text', text: attachment.text })
       }
       out.push({ role: 'user', content: parts })
     } else {

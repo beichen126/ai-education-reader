@@ -6,6 +6,7 @@
 // Blobs. Stage 9.1: multi-chapter selection — several (non-contiguous) chapters
 // normalize into ONE PdfRange[] context; adding to the draft no longer closes
 // the panel so the user can keep selecting and add a second group.
+import { PdfContextMode, PdfPageOcrButton } from '../documents/PdfOcrControls'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Modal, Button, Input } from '../dsh/primitives'
 import { formatBytes } from '../storage/diagnostics'
@@ -52,6 +53,9 @@ export function PdfPanel({
   const [selError, setSelError] = useState<string | null>(null)
   const [lastRanges, setLastRanges] = useState<PdfRange[] | null>(null)
   const [pendingConfirm, setPendingConfirm] = useState<{ ranges: PdfRange[]; count: number } | null>(null)
+  const [contextMode, setContextMode] = useState<'image' | 'ocr'>('image')
+  const alive = useRef(true)
+  useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   const [adding, setAdding] = useState(false)
   const [addMsg, setAddMsg] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
@@ -148,8 +152,10 @@ export function PdfPanel({
       const res = await onAddToDraft({
         fileName: doc.fileName,
         ...(documentId ? { documentId } : {}),
-        selection,
+        selection: { ...selection, contextMode },
         pages,
+        isCancelled: () => !alive.current,
+        onOcrProgress: (done, total) => { if (alive.current) setAddMsg(tx('OCR / 缓存 ' + done + ' / ' + total + ' 页', 'OCR / cache ' + done + ' / ' + total + ' pages')) },
       })
       setAddMsg(res.ok ? tx('已加入 ' + res.count + ' 页', 'Added ' + res.count + ' pages') : localizedErrorText(res.error, 'Unable to add the PDF pages to the chat.'))
     } catch { setAddMsg(tx('无法将 PDF 页面加入对话。', 'Unable to add the PDF pages to the chat.')) }
@@ -232,10 +238,10 @@ export function PdfPanel({
               {error && <div className={css.error} data-testid="pdf-error">{localizedErrorText(error, 'PDF processing failed.')}</div>}
 
               <div className={css.actions}>
-                <Button variant="primary" data-testid="pdf-generate" disabled={generating || (inChapterMode && selectedNodes.length === 0)} onClick={onGenerate}>
+                <Button variant="primary" data-testid="pdf-generate" disabled={adding || generating || (inChapterMode && selectedNodes.length === 0)} onClick={onGenerate}>
                   {generating ? tx('正在渲染…', 'Rendering…') : tx('生成预览', 'Generate preview')}
                 </Button>
-                <Button variant="outline" disabled={generating} onClick={() => fileRef.current?.click()}>{tx('重新选择', 'Choose another')}</Button>
+                <Button variant="outline" disabled={generating || adding} onClick={() => fileRef.current?.click()}>{tx('重新选择', 'Choose another')}</Button>
               </div>
 
               {pendingConfirm && (
@@ -257,6 +263,7 @@ export function PdfPanel({
                 <>
                   <div className={css.progress}>{tx('共生成 ' + pages.length + ' 页', 'Generated ' + pages.length + ' pages')}</div>
                   {largePreview && <div className={css.empty} data-testid="pdf-preview-note">{tx('以下仅展示部分页面预览（共 ' + pages.length + ' 页，Blob 已全部生成）。', 'Only a sample is shown below. All ' + pages.length + ' page blobs were generated.')}</div>}
+                  <PdfContextMode value={contextMode} onChange={setContextMode} disabled={adding} />
                   <div className={css.addBar}>
                     <span className={css.fileName}>{doc.fileName}</span>
                     <span className={css.fileMeta}>{addBarTitle}{addBarRange} · {tx('共 ' + pages.length + ' 页', pages.length + ' pages')}</span>
@@ -271,6 +278,7 @@ export function PdfPanel({
                     {visiblePages.map(p => (
                       <div className={css.pageItem} key={p.pageNumber} data-testid="pdf-page">
                         <span className={css.pageLabel}>{tx('第 ' + p.pageNumber + ' 页', 'Page ' + p.pageNumber)}</span>
+                        <PdfPageOcrButton documentId={documentId} page={p.pageNumber} render={async () => p.blob} />
                         <img className={css.pageImg} src={p.previewUrl} alt={tx('第 ' + p.pageNumber + ' 页', 'Page ' + p.pageNumber)} width={p.width} height={p.height} />
                       </div>
                     ))}

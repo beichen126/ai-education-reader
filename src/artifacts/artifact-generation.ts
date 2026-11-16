@@ -1,8 +1,9 @@
+import { buildOcrAwareContext } from '../engine/ocr-context'
 import { type StableId, type Message } from '../engine/types'
 import { getSettingsSnapshot } from '../engine/settings-store'
 import { buildContextMessages, type ApiChatMessage } from '../api/deepseek'
 import { DEFAULT_PROVIDER_CAPABILITIES } from '../api/provider-capabilities'
-import { toDataUrl, AttachmentError } from '../engine/attachment-service'
+import { toModelAttachment as toDataUrl, AttachmentError } from '../engine/attachment-service'
 import { globalGenerationLock } from '../engine/chat-generation-service'
 import { getArtifact } from './artifact-store'
 import { markArtifactReady, markArtifactError, markArtifactGenerating, materializeSourceMessages } from './artifact-service'
@@ -81,7 +82,7 @@ export async function generateArtifact(artifactId: StableId, opts: { call: Artif
     if (!settings.apiKey) { await markArtifactError(artifactId, '未配置 API Key'); throw new ArtifactGenerationError('no-api-key', '未配置 API Key') }
     // Frozen source: never re-read the live conversation, never include later messages.
     const sourceMsgs = materializeSourceMessages(a.source)
-    const contextMsgs = buildContextMessages(sourceMsgs)
+    const contextMsgs = await buildOcrAwareContext(sourceMsgs)
     const selected = resolveArtifactPromptBundle(a)
     let compiled
     try {

@@ -64,20 +64,25 @@ export function ttsEndpoint(base: string): string {
   return raw.replace(/\/(?:v1|beta)$/, '') + '/v1/tools/tts'
 
 }
-export function readAloud(text: string, owner: string) {
+export function setReadAloudRate(owner: string, rate: number) {
+  if (state.owner !== owner || !Number.isFinite(rate) || rate < 0.5 || rate > 2) return
+  if (audio) audio.playbackRate = rate
+  publish({ ...state, rate })
+}
+export function readAloud(text: string, owner: string, options: { rate?: number; repeats?: number; voice?: 'stella' | 'tide'; apiKey?: string } = {}) {
   stopReadAloud()
   const chunks=ttsChunks(text)
   if(!chunks.length)return
   const settings=getSettingsSnapshot(), token=generation
-  const apiKey=settings.apiKey
-  const voice=settings.speechVoice || 'stella'
+  const apiKey=options.apiKey ?? settings.apiKey
+  const voice=options.voice || settings.speechVoice || 'stella'
   const voiceName=voice==='tide'?'DeepSeek · Tide':'DeepSeek · Stella'
   if(!apiKey){publish({status:'error',owner,error:'请先在设置中配置 DeepSeek API Key。'});return}
   const requestController=new AbortController()
   controller=requestController
   const signal=requestController.signal
   const player=new Audio();audio=player
-  const repeats=settings.speechRepeatCount ?? 3
+  const repeats=options.repeats ?? settings.speechRepeatCount ?? 3
   let index=0, repeat=1
   const cache=new Map<number,string>()
   const fail=(error: unknown)=>{
@@ -90,7 +95,7 @@ export function readAloud(text: string, owner: string) {
     if(index>=chunks.length){index=0;repeat++;if(repeat>repeats){stopReadAloud();return}}
     const current=index++
     const lang=/\p{Script=Han}/u.test(chunks[current])?'zh-CN':'en-US'
-    const rate=lang==='zh-CN' ? settings.chineseSpeechRate ?? 1 : settings.englishSpeechRate ?? 0.9
+    const rate=options.rate ?? (lang==='zh-CN' ? settings.chineseSpeechRate ?? 1 : settings.englishSpeechRate ?? 0.9)
     publish({status:'loading',owner,voice:voiceName,lang,rate,repeat,repeats})
     try {
       let url=cache.get(current)
@@ -106,11 +111,11 @@ export function readAloud(text: string, owner: string) {
         if(token!==generation)return
         url=URL.createObjectURL(blob);urls.push(url);cache.set(current,url)
       }
-      player.src=url;player.playbackRate=rate
+      player.src=url;player.playbackRate=state.owner===owner ? state.rate ?? rate : rate
       player.onended=()=>{void next()}
       player.onerror=()=>fail(new Error('音频无法播放或数据不完整，请重试。'))
       await player.play()
-      if(token===generation)publish({status:'speaking',owner,voice:voiceName,lang,rate,repeat,repeats})
+      if(token===generation)publish({status:'speaking',owner,voice:voiceName,lang,rate:player.playbackRate,repeat,repeats})
     } catch(error){fail(error)}
   }
   void next()

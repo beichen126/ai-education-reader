@@ -13,3 +13,5 @@ declare module 'reader-genui-partial' {export function parsePartialGenuiSpec(sou
 declare module 'reader-genui-locale' {export function setLocale(locale:string):void}
 
 declare module 'reader-genui-templates' {export function genuiTemplates():Array<{id:string;name:string;description:string;instruction:string;demo:any}>}
+
+declare module 'reader-genui-diagram-original' { export const DiagramNode: import('react').ComponentType<any> }

@@ -7,3 +7,27 @@
 .reader-genui-surface>details{font-size:12px;margin-top:10px}
 
 .reader-genui-templates{border:1px solid var(--dsw-alias-border-l2);padding:12px;border-radius:10px;margin-bottom:12px}.reader-genui-templates select{max-width:100%;padding:8px;font:inherit;color:inherit;background:var(--dsw-alias-bg-layer-1)}
+
+.reader-genui-surface{width:100%;box-sizing:border-box}
+.reader-genui-surface [data-genui-mermaid]{justify-content:flex-start;max-height:820px;overflow:auto}
+.reader-genui-surface [data-genui-mermaid] svg{min-width:600px;width:100%;max-width:none;max-height:none}
+.reader-genui-tools details{position:relative}
+.reader-genui-tools summary{cursor:pointer;list-style:none;font-size:13px;padding:7px 10px;color:var(--dsw-alias-label-secondary)}
+.reader-genui-tools details[open]{border:1px solid var(--dsw-alias-border-l2);border-radius:10px;padding:4px;background:var(--dsw-alias-bg-layer-1)}
+.reader-genui-tools details[open] button{display:inline-block;margin:3px;font-size:12px}
+.reader-genui-tools>button{font-size:12px;padding:5px 10px}
+/* Card compositions use content height; never shrink a canvas to fit. */
+.reader-genui-surface [data-reader-layout]{min-width:0}
+.reader-genui-surface [data-reader-layout="grid"]{gap:10px;align-items:stretch}
+.reader-genui-surface [data-reader-layout="row"]{gap:10px;align-items:stretch}
+.reader-genui-surface [data-reader-card]{padding:14px 16px;gap:6px;min-width:0;border-radius:12px;box-sizing:border-box}
+.reader-genui-surface [data-reader-card-title]{font-size:17px;line-height:1.4;font-weight:650}
+.reader-genui-surface [data-reader-card] [data-reader-card]{padding:12px;gap:6px}
+.reader-genui-surface [data-genui-arrow]{margin:0 auto}
+@media(max-width:560px){
+ .reader-genui-surface [data-reader-layout="grid"]{grid-template-columns:minmax(0,1fr)!important}
+ .reader-genui-surface [data-reader-layout="grid"]>div{grid-column:auto!important}
+ .reader-genui-surface [data-reader-layout="row"]:has(>[data-reader-card]){flex-wrap:wrap}
+ .reader-genui-surface [data-reader-layout="row"]>[data-reader-card]{flex:1 1 220px}
+ .reader-genui-surface [data-reader-card]{padding:12px;gap:6px}
+}

@@ -565,6 +565,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
   // Draft is keyed by thread (root conversation or branch), so switching A<->B shows each one's own text/images.
   const isBranch = thread?.type === 'branch'
   const key = isBranch ? branchThreadKey(thread!.branchId!) : (sessionId ?? '__none__')
+  const composerKeyRef = useRef(key); composerKeyRef.current = key
   const [documentPicker,setDocumentPicker]=useState(false)
   const [documentDraft,setDocumentDraft]=useState<{key:string;docs:DeepSeekDocument[]}>({key:'',docs:[]})
   const documents=documentDraft.key===key?documentDraft.docs:[]
@@ -616,7 +617,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
     // Shared implementation (also used by the Document Reader): one
     // groupId -> saveGeneratedImages -> addDraftImages with full rollback.
     if (!sessionId) return { ok: false, count: 0, error: tx('没有当前会话，无法加入。', 'There is no active chat to add this to.') }
-    return addPdfContextToDraft(sessionId, payload)
+    return addPdfContextToDraft(sessionId, { ...payload, branchId: isBranch ? thread?.branchId : undefined, isCancelled: () => composerKeyRef.current !== key || !!payload.isCancelled?.() })
   }
   // Block 0.4: operation ownership + cancellation. Snapshot the operation identity at
   // start; a stale / cancelled op NEVER writes into a conversation that is no longer the
@@ -630,11 +631,11 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
     setLibPickerOpen(false)
     setLibBusy({ done: 0, total: 1 }); setLibMsg(null)
     const isCancelled = () => libCancelledRef.current || gen !== libGenRef.current
-    const isStale = () => gen !== libGenRef.current || sessionId !== targetConversationId
+    const isStale = () => gen !== libGenRef.current || composerKeyRef.current !== key
     try {
       if (isCancelled()) return
       const { executeDocumentContext } = await import('../documents/document-context-service')
-      const res = await executeDocumentContext({ targetConversationId, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === libGenRef.current) setLibBusy({ done: p.done, total: p.total }) } })
+      const res = await executeDocumentContext({ targetConversationId, targetBranchId: isBranch ? thread?.branchId : undefined, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === libGenRef.current) setLibBusy({ done: p.done, total: p.total }) } })
       if (gen !== libGenRef.current) return
       if (!res.ok && res.error) setLibMsg(res.error)
       else if (res.ok) setLibMsg(null)
@@ -750,7 +751,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
           ) : (
             <PdfContextCard key={'g' + item.groupId + '-' + idx} item={item} onDelete={() => removeGroup(item)} onRemovePage={id => removePic(id)} />
           ))}
-          <span className={css.picCount}>{tx('已添加 ', 'Added ')}{picIds.length}{tx(' 张图片', ' images')}</span>
+          <span className={css.picCount}>{tx('已添加 ', 'Added ')}{picIds.length}{metas.some(m => m.ocr) ? tx(' 个页面/图片附件', ' page/image attachments') : tx(' 张图片', ' images')}</span>
         </div>
       )}
       <div className={css.composerBar}>

@@ -37,7 +37,7 @@ export function PdfContextCard({
       <div className={css.groupInfo}>
         <span className={css.groupFileName}>📄 {item.fileName}</span>
         {item.title && <span className={css.groupTitle}>{item.title}</span>}
-        <span className={css.groupRange}>{countText}</span>
+        <span className={css.groupRange}>{countText}{item.contextMode === 'ocr' ? tx(' · OCR 文本', ' · OCR text') : ''}</span>
       </div>
       <div className={css.groupActions}>
         <button

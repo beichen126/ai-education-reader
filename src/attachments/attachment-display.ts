@@ -9,6 +9,7 @@ export type AttachmentDisplayItem =
   | { type: 'image'; attachmentId: StableId }
   | {
       type: 'pdf-group'
+      contextMode?: 'ocr'
       groupId: StableId
       attachmentIds: StableId[]
       fileName: string
@@ -49,6 +50,7 @@ export function buildAttachmentDisplayItems(ids: StableId[], metas: Attachment[]
       const ranges = selectionRanges(first.source.selection)
       out.push({
         type: 'pdf-group',
+        ...(first.ocr ? { contextMode: 'ocr' as const } : {}),
         groupId: gid,
         attachmentIds: [...run],
         fileName: first.source.fileName,

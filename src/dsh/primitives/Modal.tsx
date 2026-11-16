@@ -15,6 +15,7 @@ interface ModalBaseProps {
   footer?: ReactNode
   className?: string
   contentClassName?: string
+  rootClassName?: string
 }
 
 type ModalProps = ModalBaseProps & (
@@ -37,7 +38,7 @@ type ModalProps = ModalBaseProps & (
  * @returns null when closed; otherwise the overlay tree.
  */
 export function Modal({
-  open, onClose, title, closeLabel, description, children, footer, className, contentClassName, headless = false,
+  open, onClose, title, closeLabel, description, children, footer, className, contentClassName, rootClassName, headless = false,
 }: ModalProps) {
   const previousFocusRef = useRef<HTMLElement | null>(null)
   useBackTarget(open, onClose)
@@ -62,7 +63,7 @@ export function Modal({
   if (!open) return null
 
   return createPortal((
-    <div className={css.root} role="presentation">
+    <div className={clsx(css.root, rootClassName)} role="presentation">
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
       <div
         className={clsx(css.dialog, className)}

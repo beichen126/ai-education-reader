@@ -32,6 +32,7 @@ export type ChapterVersion = {
 }
 
 export type LearningDocument = {
+  ocrPages?: Record<number, import('../api/deepseek-ocr').OcrPage>
   id: string
   kind: 'pdf'
   fileName: string

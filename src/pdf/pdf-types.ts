@@ -93,6 +93,7 @@ export function pdfSelectionTitle(titles: string[]): string {
  * Multi-range from Stage 9.1: chapters may be non-contiguous; `ranges` is the
  * normalized, deduped page set; `selectedChapterIds` keeps the original chapter refs. */
 export type PdfSelection = {
+  contextMode?: 'image' | 'ocr'
   kind: 'outline' | 'manual'
   title?: string
   ranges: PdfRange[]
@@ -121,6 +122,9 @@ export function validatePdfRange(startText: string, endText: string, pageCount: 
 
 /** Payload handed from the PDF panel to the engine when the user clicks 加入对话. */
 export type PdfAddPayload = {
+  branchId?: string
+  isCancelled?: () => boolean
+  onOcrProgress?: (done: number, total: number) => void
   fileName: string
   /** Optional: the persistent local Document this context came from (undefined when
    * the document could not be saved). Document provenance != Selection: a document

@@ -1,3 +1,5 @@
+import { PdfPageOcrButton } from './PdfOcrControls'
+import { renderSessionPage } from '../pdf/pdf-session'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { closePdfSession, openPdfSession, type PdfSession } from '../pdf/pdf-session'
 import { PdfError, pdfErrorMessage } from '../pdf/pdf-service'
@@ -188,6 +190,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
           <h2 id="doc-context-preview-title" className={css.title} data-testid="doc-context-preview-title">{tx('PDF 预览', 'PDF preview')} · {sourceDoc.fileName}</h2>
           <button type="button" className={css.tocToggle} data-testid="doc-context-preview-toc-toggle" aria-expanded={tocVisible} aria-controls="doc-context-preview-toc" onClick={() => { setTocClosed(false); setTocOpen(open => !open) }}>{tx('目录', 'Outline')}</button>
         </header>
+        {session && <PdfPageOcrButton documentId={sourceDoc.id} page={page} render={async () => (await renderSessionPage(session, page)).blob} />}
         <div className={css.body}>
           {tocVisible && (
             <aside id="doc-context-preview-toc" className={css.toc} data-testid="doc-context-preview-toc">

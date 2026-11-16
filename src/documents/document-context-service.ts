@@ -13,6 +13,7 @@ import type { PdfAddResult } from '../pdf/pdf-types'
 
 export type DocumentContextExecuteOptions = {
   targetConversationId: string
+  targetBranchId?: string
   documentId: string
   fileName: string
   pageCount: number
@@ -65,7 +66,7 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
     // no longer the caller's active conversation (blocker 0.4).
     if (opts.isStale && opts.isStale()) return { ok: false, count: 0, error: '' }
     const draft: PdfAddResult = await addPdfContextToDraft(opts.targetConversationId, {
-      documentId: opts.documentId, fileName: opts.fileName, selection: opts.selection, pages: res.pages,
+      branchId: opts.targetBranchId, documentId: opts.documentId, fileName: opts.fileName, selection: opts.selection, pages: res.pages, onOcrProgress: (done, total) => opts.onProgress?.({ done, total, bytes: res.pages.reduce((sum, p) => sum + p.blob.size, 0) }), isCancelled: () => !!(opts.isCancelled?.() || opts.isStale?.()),
     })
     return { ok: draft.ok, count: draft.count, error: draft.error }
   } catch (e) {

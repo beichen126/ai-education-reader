@@ -1,3 +1,4 @@
+import { buildOcrAwareContext } from '../engine/ocr-context'
 import type { ProviderCapabilities, ResolvedSystemMessagePolicy } from '../api/provider-capabilities'
 import { DEFAULT_PROVIDER_CAPABILITIES } from '../api/provider-capabilities'
 import type { ChatThreadRef } from '../branches/branch-types'
@@ -205,7 +206,7 @@ export async function prepareAcceptedSendContext(input: PrepareSendContextInput)
   const providerCapabilities = { ...DEFAULT_PROVIDER_CAPABILITIES }
   const compiled = compileConversationLogicalContext({
     thread: input.threadRef,
-    effectiveMessages: buildContextMessages(input.candidateMessages),
+    effectiveMessages: await buildOcrAwareContext(input.candidateMessages),
     effectiveTransitions: selected.effectiveTransitions,
     systemMessagePolicy: 'auto',
     providerCapabilities,
