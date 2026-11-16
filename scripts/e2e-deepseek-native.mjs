@@ -12,6 +12,7 @@ try {
  await seedAndBoot(page,{convs:[{id:'native-test',title:'Native test',createdAt:1,updatedAt:1,messages:[]}],settings:{apiKey:'test-native',apiBaseUrl:'https://api.deepseek.com',model:'deepseek-flash',lastConversationId:'native-test',webSearchEnabled:'true',userLocation:'杭州'}})
  await page.locator('[data-testid="composer-attach"]').click()
  await page.getByRole('button',{name:'批量文件 · DeepSeek 解析'}).click()
+ await page.waitForFunction(()=>document.querySelector('input[aria-label="批量上传文件"]')?.disabled===false)
  await page.getByLabel('批量上传文件').setInputFiles({name:'lesson.txt',mimeType:'text/plain',buffer:Buffer.from('Hello')})
  await page.getByText('lesson.txt',{exact:true}).waitFor()
  await page.getByRole('checkbox',{name:'lesson.txt'}).check()
