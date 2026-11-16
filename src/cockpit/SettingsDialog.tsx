@@ -321,12 +321,11 @@ export function SettingsDialog() {
         <div className={css.settingsHint}>{tx('选择 English 后页面会同步设置 lang="en"，便于浏览器翻译工具正确识别。', 'Selecting English also sets the page language to lang="en" for browser translation tools.')}</div>
       </div>
       <div className={css.exportSection}>
-        <div className={css.exportTitle}>{tx('DeepSeek 朗读', 'DeepSeek read aloud')}</div>
-        <label className={css.speechRateRow}><span>{tx('音色', 'Voice')}</span><select aria-label="朗读音色" value={s.speechVoice || 'stella'} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({speechVoice:e.target.value as 'stella'|'tide'}).catch(()=>{})}}><option value="stella">Stella · 女声</option><option value="tide">Tide · 男声</option></select></label>
+        <div className={css.exportTitle}>{tx('朗读倍速', 'Read aloud speed')}</div>
+        <label className={css.speechRateRow}><span>{tx('音色', 'Voice')}</span><select aria-label="朗读音色" value={s.speechVoice || 'stella'} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({speechVoice:e.target.value as 'stella'|'tide'}).catch(()=>{})}}><option value="stella">{tx('Stella · 女声','Stella · Female')}</option><option value="tide">{tx('Tide · 男声','Tide · Male')}</option></select></label>
         <label className={css.speechRateRow}><span>{tx('语音 API 地址', 'Speech API URL')}</span><input key={'speech-url-'+s.speechApiUrl} aria-label="语音 API 地址" defaultValue={s.speechApiUrl || ''} placeholder="https://api.deepseek.com" onBlur={e=>{void patchSettings({speechApiUrl:e.target.value}).catch(()=>{})}} /></label>
         <label className={css.speechRateRow}><span>{tx('语音 API Key', 'Speech API key')}</span><input key={'speech-key-'+s.speechApiKey} aria-label="语音 API Key" type="password" autoComplete="off" defaultValue={s.speechApiKey || ''} placeholder={tx('留空使用对话 API Key','Use chat API key when blank')} onBlur={e=>{void patchSettings({speechApiKey:e.target.value}).catch(()=>{})}} /></label>
         <div className={css.settingsHint}>{tx('TTS 与 ASR 默认使用 https://api.deepseek.com，不跟随对话中转地址。请填写 DeepSeek 官方 Key；也可自定义支持语音接口的服务地址。','TTS and ASR default to https://api.deepseek.com independently of chat routing. Supply an official DeepSeek key or a compatible speech endpoint.')}</div>
-        <div className={css.exportTitle}>{tx('朗读倍速', 'Read aloud speed')}</div>
         {(['chineseSpeechRate','englishSpeechRate'] as const).map((key,i)=><label className={css.speechRateRow} key={key}>
           <span>{i===0?tx('中文','Chinese'):tx('英文','English')}</span>
           <select data-testid={'settings-'+key} value={s[key] ?? (i===0?1:0.9)} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({[key]:Number(event.target.value)}).catch(()=>{})}}>

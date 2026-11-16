@@ -1,3 +1,4 @@
+import { tx } from '../engine/locale'
 import { useEffect, useRef, useState } from 'react'
 import { transcribeAudio } from './transcribe'
 import { getDraft, setDraftText } from '../engine/draft-store'
@@ -25,10 +26,10 @@ export function VoiceInput({draftKey,disabled}:{draftKey:string;disabled:boolean
     }catch(e){if(epoch.current===token){setStatus('');setError(e instanceof Error?e.message:'无法使用麦克风')}}
   }
   return <div style={{display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',fontSize:12}}>
-    <button type="button" disabled={disabled || (!!status && status!=='录音中')} onClick={()=>void record()}>{status==='录音中'?'结束并转文字':'语音转文字'}</button>
-    <button type="button" disabled={disabled || !!status} onClick={()=>file.current?.click()}>导入音频</button>
+    <button type="button" disabled={disabled || (!!status && status!=='录音中')} onClick={()=>void record()}>{status==='录音中'?tx('结束并转文字','Transcribe recording'):tx('语音转文字','Voice input')}</button>
+    <button type="button" disabled={disabled || !!status} onClick={()=>file.current?.click()}>{tx('导入音频','Import audio')}</button>
     <input ref={file} type="file" accept="audio/*" hidden onChange={e=>{const selected=e.target.files?.[0];e.target.value='';if(selected){setError('');void recognize(selected,++epoch.current)}}} />
-    {status&&<><span role="status">{status}</span><button type="button" onClick={cancel}>取消</button></>}
+    {status&&<><span role="status">{status}</span><button type="button" onClick={cancel}>{tx('取消','Cancel')}</button></>}
     {error&&<span role="alert">{error}</span>}
   </div>
 }

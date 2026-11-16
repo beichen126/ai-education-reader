@@ -380,8 +380,8 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
       )}
       {m.status && m.error && <div className={css.errorBanner} role="alert" data-testid="assistant-generation-error">{m.status === 'aborted' ? tx('已停止生成：', 'Generation stopped: ') : tx('生成失败：', 'Generation failed: ')}{localizedErrorText(m.error, m.status === 'aborted' ? 'The response was stopped.' : 'The model request failed.')}</div>}
         <div className={css.messageTools}>
-          {canCopySource && <MessageSourceCopyButton source={m.content} />}
           {m.content.trim() && !isStreaming && <button type="button" className={css.messageToolButton} data-testid="message-read-aloud" onClick={()=>readAloud(m.content,m.id)}>{tx('朗读全文','Read all aloud')}</button>}
+          {canCopySource && <MessageSourceCopyButton source={m.content} />}
           <MessageTimestamp createdAt={m.createdAt} />
           {stable && onToggleMenu && onBranch && onArtifact && <div className={css.messageMenuAnchor}>
             <button type="button" className={css.messageToolButton} aria-label={tx('消息操作', 'Message actions')} data-testid="message-actions" title={tx('从这里分支 / 特殊分支 / 学习卡片', 'Branch / study output / study card')} aria-haspopup="menu" aria-expanded={!!menuOpen} onClick={() => onToggleMenu(!menuOpen)}>⋯</button>
@@ -743,6 +743,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
           <span className={css.picCount}>{tx('已添加 ', 'Added ')}{picIds.length}{tx(' 张图片', ' images')}</span>
         </div>
       )}
+      <VoiceInput key={key} draftKey={key} disabled={busy || settingsPending} />
       <div className={css.composerBar}>
         {/* ONE unified attachment trigger (A2). Clicking opens a compact menu dispatching to
             the existing image / local-PDF / library actions. The hidden file inputs stay;
@@ -777,7 +778,6 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
         <button className={css.sendBtn} data-testid="composer-send-stop" aria-busy={busy} onClick={event => { if (event.detail > 1) return; if (busy) sessionsActions.stopGenerating(); else void send() }}>{preparing ? tx('准备中…', 'Preparing…') : busy ? tx('停止生成', 'Stop') : tx('发送', 'Send')}</button>
       </div>
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}
-      <VoiceInput key={key} draftKey={key} disabled={busy || settingsPending} />
       <Suspense fallback={null}>
         {pdfPanel.open && <PdfPanel initialFile={pdfPanel.file} onClose={() => setPdfPanel({ open: false })} onAddToDraft={addPdfToDraft} />}
         {libPickerOpen && <DocumentContextPicker documentId={undefined} onCancel={() => { setLibPickerOpen(false); setLibMsg(null) }} onAdd={(selection, docId, fileName) => { void addFromLibrary(selection, docId, fileName) }} />}
