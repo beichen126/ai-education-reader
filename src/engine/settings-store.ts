@@ -8,7 +8,7 @@ import { DEFAULT_MODEL, resolveStoredModel } from '../api/model-defaults'
 
 export type { VisionCapability }
 export type { PdfNavigationMode }
-export type Settings = { apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number; rememberReadingPosition?: boolean; chatProvider?: 'deepseek' | 'openai-local'; openaiLocalModel?: string }
+export type Settings = { speechVoice?: 'stella' | 'tide'; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number; rememberReadingPosition?: boolean; chatProvider?: 'deepseek' | 'openai-local'; openaiLocalModel?: string }
 export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: DEFAULT_MODEL, customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN', chineseSpeechRate: 1, englishSpeechRate: 0.9, speechRepeatCount: 3, rememberReadingPosition: true }
 
 /** A partial settings change. Every mutation goes through {@link patchSettings}. */
@@ -46,6 +46,9 @@ export function normalizeSettings(input: Settings): Settings {
   const appearance: AppearanceMode = (input.appearance === 'light' || input.appearance === 'dark') ? input.appearance : DEFAULT_APPEARANCE
   const visionCapability: VisionCapability = (input.visionCapability === 'supports-image' || input.visionCapability === 'text-only') ? input.visionCapability : 'auto'
   return {
+    speechVoice: input.speechVoice === 'tide' ? 'tide' : 'stella',
+    speechApiUrl: typeof input.speechApiUrl === 'string' ? input.speechApiUrl.trim() : '',
+    speechApiKey: typeof input.speechApiKey === 'string' ? input.speechApiKey.trim() : '',
     chatProvider: input.chatProvider === 'openai-local' ? 'openai-local' : 'deepseek',
     openaiLocalModel: typeof input.openaiLocalModel === 'string' ? input.openaiLocalModel.slice(0, 128) : '',
     apiBaseUrl: typeof input.apiBaseUrl === 'string' ? input.apiBaseUrl : DEFAULT_SETTINGS.apiBaseUrl,
@@ -73,10 +76,13 @@ export async function initSettings(): Promise<void> {
   const webSearchEnabled = await getSetting('webSearchEnabled') === 'true'
   const [zhRate, enRate] = await Promise.all([getSetting('chineseSpeechRate'),getSetting('englishSpeechRate')])
   const repeat = await getSetting('speechRepeatCount')
+  const speechVoice = await getSetting('speechVoice') === 'tide' ? 'tide' : 'stella'
+  const speechApiUrl = await getSetting('speechApiUrl') || ''
+  const speechApiKey = await getSetting('speechApiKey') || ''
   const storedReadingPosition: unknown = await getSetting('rememberReadingPosition')
   const rememberReadingPosition = storedReadingPosition !== false && storedReadingPosition !== 'false'
   const [chatProvider, openaiLocalModel] = await Promise.all([getSetting('chatProvider'), getSetting('openaiLocalModel')])
-  set(normalizeSettings({ apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)), rememberReadingPosition, chatProvider, openaiLocalModel }))
+  set(normalizeSettings({ speechVoice, speechApiUrl, speechApiKey, apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)), rememberReadingPosition, chatProvider, openaiLocalModel }))
   writeAppearanceHint(resolvedAppearance)
 }
 
@@ -108,6 +114,7 @@ async function commitPatch(patch: SettingsPatch): Promise<Settings> {
       webSearchEnabled: String(next.webSearchEnabled === true),
       chineseSpeechRate: String(next.chineseSpeechRate), englishSpeechRate: String(next.englishSpeechRate),
       speechRepeatCount: String(next.speechRepeatCount),
+      speechVoice: next.speechVoice || 'stella', speechApiUrl: next.speechApiUrl || '', speechApiKey: next.speechApiKey || '',
       rememberReadingPosition: String(next.rememberReadingPosition === true),
     })
   } catch (error) {

@@ -8,13 +8,15 @@ try {
     const context=await browser.newContext({viewport:{width:1100,height:850}})
     await context.addInitScript(()=>{
       window.__spoken=[]
-      Object.defineProperty(window,'speechSynthesis',{configurable:true,value:{cancel(){},pause(){},resume(){},getVoices(){return [{name:'Microsoft English Online Natural',lang:'en-US'},{name:'Microsoft Chinese Online Natural',lang:'zh-CN'}]},speak(utterance){window.__spoken.push(utterance)}}})
-      window.SpeechSynthesisUtterance=class{constructor(text){this.text=text}}
+      window.Audio=class { pause(){} load(){} removeAttribute(){} async play(){window.__spoken.push(this)} }
+
     })
     const page=await context.newPage(), errors=[]
+    const requests=[]
+    await page.route('**/v1/tools/tts', async route=>{requests.push(route.request().postDataJSON());await route.fulfill({status:200,contentType:'audio/wav',body:Buffer.alloc(100)})})
     page.on('pageerror',error=>errors.push(error.message))
     const content='Zero. One. Two. Target sentence. Four. Five. Six.'
-    await seedAndBoot(page,{convs:[{id:'read-chat',title:'Read test',createdAt:1,updatedAt:1,messages:[msg('read-u','user','Explain'),msg('read-a','assistant',content)]}],settings:{uiLanguage:language,lastConversationId:'read-chat'}})
+    await seedAndBoot(page,{convs:[{id:'read-chat',title:'Read test',createdAt:1,updatedAt:1,messages:[msg('read-u','user','Explain'),msg('read-a','assistant',content)]}],settings:{apiKey:'test-tts-key',speechVoice:'tide',speechApiUrl:'https://api.teamorouter.com/v1',uiLanguage:language,lastConversationId:'read-chat'}})
     const select=async()=>{
       const root=page.locator('[data-message-id="read-a"]').first()
       await root.scrollIntoViewIfNeeded()
@@ -29,17 +31,24 @@ try {
     }
     await select()
     await page.locator('[data-testid="selection-read-aloud"]').click()
-    const first=await page.evaluate(()=>({text:window.__spoken[0].text,rate:window.__spoken[0].rate,voice:window.__spoken[0].voice.name}))
-    assert.equal(first.text,'Target sentence.');assert.equal(first.rate,0.9);assert.match(first.voice,/Microsoft/)
+    await page.locator('[data-testid="read-aloud-repeat"]').waitFor()
+    assert.equal(requests[0].text,'Target sentence.');assert.equal(requests[0].voice_id,'tide')
+    assert.equal(await page.evaluate(()=>window.__spoken[0].playbackRate),0.9)
     assert.match(await page.locator('[data-testid="read-aloud-repeat"]').textContent(),/1 \/ 3/)
     await page.locator('[data-testid="read-aloud-pause"]').click()
     await page.locator('[data-testid="read-aloud-resume"]').click()
-    await page.evaluate(()=>window.__spoken[0].onend())
+    await page.evaluate(()=>window.__spoken[0].onended())
     assert.match(await page.locator('[data-testid="read-aloud-repeat"]').textContent(),/2 \/ 3/)
-    await page.evaluate(()=>window.__spoken[1].onend())
+    await page.evaluate(()=>window.__spoken[1].onended())
     assert.match(await page.locator('[data-testid="read-aloud-repeat"]').textContent(),/3 \/ 3/)
-    await page.evaluate(()=>window.__spoken[2].onend())
+    await page.evaluate(()=>window.__spoken[2].onended())
     assert.equal(await page.locator('[data-testid="read-aloud-player"]').count(),0)
+    assert.equal(requests.length,1,'replays reuse synthesized audio')
+    await page.evaluate(()=>{getSelection().removeAllRanges();document.dispatchEvent(new Event('selectionchange'))})
+    await page.locator('[data-testid="message-read-aloud"]').click()
+    await page.locator('[data-testid="read-aloud-repeat"]').waitFor()
+    assert.equal(requests.at(-1).text,content,'full answer sent to TTS')
+    await page.locator('[data-testid="read-aloud-stop"]').click()
     await select()
     await page.getByRole('button',{name:language==='en'?'Mark':'标记',exact:true}).click()
     await page.waitForTimeout(250)

@@ -284,6 +284,8 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
     const rate = (settings as any)[key]
     if (rate !== undefined && (!isNum(rate) || rate < 0.5 || rate > 2)) throw new BackupError('settings.' + key + ' must be between 0.5 and 2')
   }
+  if (settings.speechVoice !== undefined && !['stella','tide'].includes(settings.speechVoice)) throw new BackupError('invalid speechVoice')
+  if (settings.speechApiUrl !== undefined && typeof settings.speechApiUrl !== 'string') throw new BackupError('invalid speechApiUrl')
   if (settings.speechRepeatCount !== undefined && (!isInt(settings.speechRepeatCount) || settings.speechRepeatCount<1 || settings.speechRepeatCount>10)) throw new BackupError('settings.speechRepeatCount must be an integer between 1 and 10')
   if (settings.rememberReadingPosition !== undefined && typeof settings.rememberReadingPosition !== 'boolean') throw new BackupError('settings.rememberReadingPosition must be boolean')
   if ((settings as any).documentSort !== undefined && !isDocumentSortKey((settings as any).documentSort)) throw new BackupError('settings.documentSort 非法')
@@ -593,6 +595,9 @@ export async function restoreBackup(backup: Backup, binaries?: {
       { key: 'customSystemPrompt', value: backup.settings?.customSystemPrompt || '' },
       { key: 'customSystemPromptEnabled', value: backup.settings?.customSystemPromptEnabled ? 'true' : 'false' },
       { key: 'apiKey', value: '' },
+      { key: 'speechApiKey', value: '' },
+      { key: 'speechApiUrl', value: backup.settings?.speechApiUrl || '' },
+      { key: 'speechVoice', value: backup.settings?.speechVoice || 'stella' },
       // v1.1.3: restore saved reusable custom actions (settings KV). Missing field in an old
       // backup -> empty (no custom actions), never an error.
       { key: 'customArtifactActions', value: (backup.settings as { customArtifactActions?: unknown } | undefined)?.customArtifactActions || [] },

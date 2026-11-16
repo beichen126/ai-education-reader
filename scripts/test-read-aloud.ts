@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto'
 import assert from 'node:assert/strict'
-import { speechChunks, preferredVoice, readAloud, speechSnapshot, stopReadAloud, pauseReadAloud, resumeReadAloud } from '../src/speech/read-aloud.ts'
+import { ttsChunks, ttsEndpoint, speechChunks, preferredVoice, readAloud, speechSnapshot, stopReadAloud, pauseReadAloud, resumeReadAloud } from '../src/speech/read-aloud.ts'
 import { patchSettings, initSettings, getSettingsSnapshot, normalizeSpeechRate, normalizeSpeechRepeat } from '../src/engine/settings-store.ts'
 import { markContext } from '../src/study-cards/mark-context.ts'
 import { buildBackup } from '../src/export/backup-export.ts'
@@ -16,20 +16,29 @@ const voices = [{name:'Microsoft Natural Online',lang:'en-US',default:false},{na
 assert.equal(preferredVoice(voices,'en-US')?.name,'Microsoft Natural Online')
 assert.equal(preferredVoice(voices,'zh-CN')?.name,'Microsoft Xiaoxiao Online')
 assert.equal(preferredVoice([{name:'Microsoft Cantonese Online',lang:'zh-HK'},{name:'Mandarin local',lang:'zh-CN'}] as SpeechSynthesisVoice[],'zh-CN')?.name,'Mandarin local','Mandarin must not silently become Cantonese just to use an online voice')
-const spoken: any[] = []
-let cancels=0,pauses=0,resumes=0
-Object.assign(globalThis,{window:{speechSynthesis:{cancel(){cancels++},pause(){pauses++},resume(){resumes++},getVoices(){return voices},speak(utterance:any){spoken.push(utterance)}}},SpeechSynthesisUtterance:class{constructor(public text:string){}}})
-readAloud('你好。 Hello.','owner')
-assert.equal(spoken.length,1)
-pauseReadAloud();assert.equal(speechSnapshot().status,'paused');resumeReadAloud();assert.equal(speechSnapshot().status,'speaking')
-for(let i=0;i<6;i++) spoken[i].onend()
-assert.deepEqual(spoken.map(item=>item.lang),['zh-CN','en-US','zh-CN','en-US','zh-CN','en-US'],'whole bilingual selection repeats exactly three times')
-assert.equal(speechSnapshot().status,'idle');assert.equal(pauses,1);assert.equal(resumes,1)
-readAloud('Hello.','old'); const stale=spoken[6]
-readAloud('你好。','new');const count=spoken.length
-stale.onend();stale.onerror();assert.equal(spoken.length,count);assert.equal(speechSnapshot().owner,'new')
-stopReadAloud('old');assert.equal(speechSnapshot().owner,'new')
-stopReadAloud('new');assert.equal(speechSnapshot().status,'idle');assert.ok(cancels>=3)
+const players: any[]=[]
+class Player {onended:any;onerror:any;src='';playbackRate=1;pause(){}load(){}removeAttribute(){} async play(){} constructor(){players.push(this)}}
+Object.assign(globalThis,{Audio:Player})
+readAloud('hello','missing');assert.match(speechSnapshot().error!,/API Key/)
+await patchSettings({apiKey:'test-key',apiBaseUrl:'https://api.deepseek.com/v1'})
+let calls=0
+Object.assign(globalThis,{fetch:async(url:string,init:any)=>{calls++;assert.equal(url,'https://api.deepseek.com/v1/tools/tts');assert.equal(init.headers.Authorization,'Bearer test-key');assert.equal(JSON.parse(init.body).filter_markdown,true);return new Response(new Uint8Array(100),{headers:{'Content-Type':'audio/wav'}})}})
+const settle=()=>new Promise(r=>setTimeout(r,10))
+readAloud('你好。 Hello.','owner');await settle()
+assert.equal(speechSnapshot().status,'speaking')
+pauseReadAloud();assert.equal(speechSnapshot().status,'paused')
+resumeReadAloud();await settle();assert.equal(speechSnapshot().status,'speaking')
+players.at(-1).onended();await settle();assert.equal(speechSnapshot().repeat,2)
+players.at(-1).onended();await settle();assert.equal(speechSnapshot().repeat,3)
+players.at(-1).onended();await settle();assert.equal(speechSnapshot().status,'idle');assert.equal(calls,1)
+assert.equal(ttsChunks('中'.repeat(9000)).length,5)
+assert.equal(ttsEndpoint('https://api.deepseek.com/'),'https://api.deepseek.com/v1/tools/tts')
+let resolve:any
+Object.assign(globalThis,{fetch:()=>new Promise(r=>{resolve=r})})
+readAloud('cancel','old');stopReadAloud();resolve(new Response(new Uint8Array(100)));await settle();assert.equal(speechSnapshot().status,'idle')
+Object.assign(globalThis,{fetch:async()=>new Response('',{status:401})})
+readAloud('error','new');await settle();assert.match(speechSnapshot().error!,/401/)
+stopReadAloud()
 await patchSettings({chineseSpeechRate:1.2,englishSpeechRate:0.8,speechRepeatCount:5})
 await initSettings()
 assert.deepEqual(speechChunks('你好。 Hello.').map(chunk=>chunk.rate),[1.2,0.8])
@@ -44,22 +53,35 @@ const start=text.indexOf('Target')
 assert.deepEqual(markContext(text,start,start+7),{before:'One. Two. ',exact:'Target.',after:' Four. Five. '})
 const chinese='零。前一。前二。标记。后一。后二。不要。'
 assert.equal(markContext(chinese,chinese.indexOf('标记'),chinese.indexOf('标记')+3).after,'后一。后二。')
-console.log('PASS read aloud: bilingual rates, three whole-selection repetitions, preferred online voices, pause/resume/stop, stale callbacks, local preferences/backup and two-sentence mark context')
-// Delayed voice discovery on non-Edge engines, cancellation and actionable errors.
-let available:SpeechSynthesisVoice[]=[]
-let changed:(()=>void)|undefined
-const synth=(globalThis as any).window.speechSynthesis
-synth.getVoices=()=>available
-synth.addEventListener=(_name:string,fn:()=>void)=>{changed=fn}
-synth.removeEventListener=()=>{changed=undefined}
-readAloud('Delayed voices.','delayed')
-assert.equal(speechSnapshot().status,'loading')
-available=voices;changed?.()
-assert.equal(speechSnapshot().status,'speaking')
-spoken.at(-1).onerror({error:'language-unavailable'})
-assert.equal(speechSnapshot().error,'voice-unavailable')
-available=[];readAloud('Cancelled.','waiting');stopReadAloud()
-assert.equal(changed,undefined);assert.equal(speechSnapshot().status,'idle')
-available=voices;readAloud('Blocked.','blocked');spoken.at(-1).onerror({error:'not-allowed'})
-assert.equal(speechSnapshot().error,'not-allowed');stopReadAloud()
-console.log('PASS delayed system voices, cancellation and language/playback error feedback')
+console.log('PASS DeepSeek TTS: auth, endpoint, repeat cache, pause/resume, cancellation, errors, chunking, preferences and backup')
+
+await patchSettings({speechVoice:'tide',speechApiUrl:'https://api.teamorouter.com/v1',speechApiKey:'relay-test'})
+await initSettings()
+assert.equal(getSettingsSnapshot().speechVoice,'tide')
+Object.assign(globalThis,{fetch:async(url:string,init:any)=>{assert.equal(url,'https://api.teamorouter.com/v1/tools/tts');assert.equal(init.headers.Authorization,'Bearer relay-test');assert.equal(JSON.parse(init.body).voice_id,'tide');return new Response(new Uint8Array(100))}})
+readAloud('relay','relay');await settle();assert.equal(speechSnapshot().status,'speaking');stopReadAloud()
+assert.equal(ttsEndpoint('https://relay.example/custom/v1/tools/tts'),'https://relay.example/custom/v1/tools/tts')
+assert.throws(()=>ttsEndpoint('javascript:alert(1)'))
+const speechBackup=await buildBackup()
+assert.equal(speechBackup.settings.speechVoice,'tide')
+assert.equal(JSON.stringify(speechBackup).includes('relay-test'),false)
+await restoreBackup(parseAndValidate(speechBackup));await initSettings()
+assert.equal(getSettingsSnapshot().speechApiKey,'')
+assert.equal(getSettingsSnapshot().speechVoice,'tide')
+console.log('PASS voice selection, custom relay URL/key, persistence and credential-free backup')
+
+const {pcmWav}=await import('../src/speech/transcribe')
+const wav=new DataView(await pcmWav(new Float32Array([-1,0,1])).arrayBuffer())
+assert.equal(wav.getUint32(24,true),16000)
+assert.equal(wav.getInt16(44,true),-32768)
+assert.equal(wav.getInt16(48,true),32767)
+console.log('PASS ASR PCM WAV encoding')
+
+const {transcribeAudio}=await import('../src/speech/transcribe')
+await patchSettings({speechApiUrl:'',speechApiKey:'official-test',apiBaseUrl:'https://api.teamorouter.com/v1'})
+Object.assign(globalThis,{AudioContext:class{async decodeAudioData(){return {duration:1}}async close(){}},OfflineAudioContext:class{destination={};createBufferSource(){return {connect(){},start(){}}}async startRendering(){return {getChannelData(){return new Float32Array(16000)}}}},fetch:async(url:string,init:any)=>{assert.equal(url,'https://api.deepseek.com/v1/tools/asr');assert.equal(init.headers.Authorization,'Bearer official-test');assert.equal(init.body.get('file').type,'audio/wav');return Response.json({text:'识别文字'})}})
+assert.equal(await transcribeAudio(new Blob(['audio']),new AbortController().signal),'识别文字')
+await assert.rejects(()=>transcribeAudio(new Blob([new Uint8Array(8*1024*1024+1)]),new AbortController().signal),/8 MiB/)
+const aborted=new AbortController();aborted.abort()
+await assert.rejects(()=>transcribeAudio(new Blob(['audio']),aborted.signal),/Aborted/)
+console.log('PASS ASR official default, independent key, multipart WAV, cancellation and size limit')

@@ -28,68 +28,90 @@ export function preferredVoice(voices: readonly SpeechSynthesisVoice[], lang: st
   return [...candidates].sort((a,b) => score(b)-score(a))[0]
 }
 
-type State = {status:'idle'|'loading'|'speaking'|'paused'|'error'; owner?:string; voice?:string; lang?:string; rate?:number; repeat?:number; repeats?:number; error?:'unsupported'|'failed'|'voice-unavailable'|'not-allowed'}
+type State = {status:'idle'|'loading'|'speaking'|'paused'|'error'; owner?:string; voice?:string; lang?:string; rate?:number; repeat?:number; repeats?:number; error?:string}
 let state: State = {status:'idle'}, generation = 0
-let currentUtterance: SpeechSynthesisUtterance | null = null
-let cancelVoiceWait: (()=>void) | null = null
-let startTimer: ReturnType<typeof setTimeout> | undefined
+let audio: HTMLAudioElement | null = null
+let controller: AbortController | null = null
+let urls: string[] = []
 const listeners = new Set<() => void>()
 function publish(next: State) { state = next; listeners.forEach(fn=>fn()) }
 export const speechSnapshot = () => state
 export function useReadAloud() { return useSyncExternalStore(fn=>{listeners.add(fn);return()=>{listeners.delete(fn)}},speechSnapshot) }
 export function stopReadAloud(owner?: string) {
   if (owner && state.owner !== owner) return
-  generation++; currentUtterance = null
-  cancelVoiceWait?.(); cancelVoiceWait=null; clearTimeout(startTimer)
-  try { const synth=window.speechSynthesis; synth?.cancel(); if(synth?.paused)synth.resume() } catch {}
+  generation++; controller?.abort();controller=null
+  if(audio){audio.onended=null;audio.onerror=null;audio.pause();audio.removeAttribute('src');audio.load();audio=null}
+  urls.forEach(url=>URL.revokeObjectURL(url));urls=[]
   publish({status:'idle'})
 }
-export function pauseReadAloud() { if(state.status==='speaking') { clearTimeout(startTimer);window.speechSynthesis.pause();publish({...state,status:'paused'}) } }
-export function resumeReadAloud() { if(state.status==='paused') { window.speechSynthesis.resume();publish({...state,status:'speaking'}) } }
+export function pauseReadAloud() { if(state.status==='speaking' && audio){audio.pause();publish({...state,status:'paused'})} }
+export function resumeReadAloud() {
+  if(state.status!=='paused' || !audio)return
+  const token=generation
+  void audio.play().then(()=>{if(token===generation)publish({...state,status:'speaking'})}).catch(()=>{if(token===generation)publish({...state,status:'error',error:'浏览器阻止播放，请再次点击朗读。'})})
+}
+export function ttsChunks(text: string): string[] {
+  // <= 3,600 billed characters and <= 22 KB JSON even for escaped input.
+  const chars=Array.from(text.trim()), chunks:string[]=[]
+  for(let i=0;i<chars.length;i+=1800) chunks.push(chars.slice(i,i+1800).join(''))
+  return chunks
+}
+export function ttsEndpoint(base: string): string {
+  const raw=(base || 'https://api.deepseek.com').trim().replace(/\/+$/, '')
+  const url=new URL(raw)
+  if(!['https:','http:'].includes(url.protocol) || url.username || url.password || url.search || url.hash)throw new Error('朗读 API 地址须为 HTTP(S) 地址，不能包含账号、查询参数或片段。')
+  if(url.pathname.endsWith('/tools/tts'))return raw
+  return raw.replace(/\/(?:v1|beta)$/, '') + '/v1/tools/tts'
 
+}
 export function readAloud(text: string, owner: string) {
   stopReadAloud()
-  if (typeof window === 'undefined' || !window.speechSynthesis || typeof SpeechSynthesisUtterance === 'undefined') { publish({status:'error',owner,error:'unsupported'}); return }
-  const chunks = speechChunks(text)
-  if (!chunks.length) return
-  const token = generation
-  const repeats = getSettingsSnapshot().speechRepeatCount ?? 3
-  let index = 0
-  let repeat = 1
-  const next = () => {
-    if (token !== generation) return
-    if (index >= chunks.length && repeat < repeats) { index=0; repeat++ }
-    const chunk = chunks[index++]
-    if (!chunk) {currentUtterance=null;publish({status:'idle'});return}
-    try {
-      const utterance = new SpeechSynthesisUtterance(chunk.text)
-      currentUtterance = utterance // retain until callbacks; some engines need a strong reference
-      const voice = preferredVoice(window.speechSynthesis.getVoices(),chunk.lang)
-      if (voice) utterance.voice = voice
-      utterance.lang = chunk.lang; utterance.rate = chunk.rate
-      utterance.onstart = () => {if(token===generation && currentUtterance===utterance)clearTimeout(startTimer)}
-      utterance.onend = () => { if(token===generation && currentUtterance === utterance) {clearTimeout(startTimer);next()} }
-      utterance.onerror = event => { if(token===generation && currentUtterance===utterance) {clearTimeout(startTimer);currentUtterance=null;publish({status:'error',owner,error:['language-unavailable','voice-unavailable','synthesis-unavailable'].includes(event.error)?'voice-unavailable':event.error==='not-allowed'?'not-allowed':'failed'})} }
-      publish({status:'speaking',owner,voice:voice?.name,lang:chunk.lang,rate:chunk.rate,repeat,repeats})
-      clearTimeout(startTimer)
-      startTimer=setTimeout(()=>{
-        if(token!==generation || currentUtterance!==utterance || state.status!=='speaking')return
-        currentUtterance=null;window.speechSynthesis.cancel();publish({status:'error',owner,error:'voice-unavailable'})
-      },15000)
-      ;(startTimer as unknown as {unref?:()=>void}).unref?.()
-      window.speechSynthesis.speak(utterance)
-    } catch { if(token===generation) publish({status:'error',owner,error:'failed'}) }
+  const chunks=ttsChunks(text)
+  if(!chunks.length)return
+  const settings=getSettingsSnapshot(), token=generation
+  const apiKey=settings.speechApiKey || settings.apiKey
+  const voice=settings.speechVoice || 'stella'
+  const voiceName=voice==='tide'?'DeepSeek · Tide':'DeepSeek · Stella'
+  if(!apiKey){publish({status:'error',owner,error:'请先在设置中配置 DeepSeek API Key。'});return}
+  const requestController=new AbortController()
+  controller=requestController
+  const signal=requestController.signal
+  const player=new Audio();audio=player
+  const repeats=settings.speechRepeatCount ?? 3
+  let index=0, repeat=1
+  const cache=new Map<number,string>()
+  const fail=(error: unknown)=>{
+    if(token!==generation)return
+    stopReadAloud()
+    publish({status:'error',owner,error:error instanceof Error ? error.message : '语音合成或播放失败，请重试。'})
   }
-  const synth=window.speechSynthesis
-  // System voices can arrive asynchronously in Chrome, Firefox and Android.
-  if (!synth.getVoices().length && typeof synth.addEventListener==='function') {
-    publish({status:'loading',owner})
-    let timer:ReturnType<typeof setTimeout>
-    const cleanup=()=>{clearTimeout(timer);synth.removeEventListener('voiceschanged',ready);cancelVoiceWait=null}
-    const ready=()=>{if(!synth.getVoices().length)return;cleanup();if(token===generation)next()}
-    synth.addEventListener('voiceschanged',ready)
-    timer=setTimeout(()=>{cleanup();if(token===generation)next()},2000)
-    cancelVoiceWait=cleanup
-    ready()
-  } else next()
+  async function next() {
+    if(token!==generation)return
+    if(index>=chunks.length){index=0;repeat++;if(repeat>repeats){stopReadAloud();return}}
+    const current=index++
+    const lang=/\p{Script=Han}/u.test(chunks[current])?'zh-CN':'en-US'
+    const rate=lang==='zh-CN' ? settings.chineseSpeechRate ?? 1 : settings.englishSpeechRate ?? 0.9
+    publish({status:'loading',owner,voice:voiceName,lang,rate,repeat,repeats})
+    try {
+      let url=cache.get(current)
+      if(!url){
+        const timer=setTimeout(()=>requestController.abort(),120000)
+        let blob:Blob
+        try {
+          const response=await fetch(ttsEndpoint(settings.speechApiUrl || 'https://api.deepseek.com'),{method:'POST',headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json'},body:JSON.stringify({text:chunks[current],voice_id:voice,format:'wav',filter_markdown:true}),signal})
+          if(!response.ok)throw new Error('DeepSeek 朗读请求失败（HTTP '+response.status+'），请检查 API Key、余额或稍后重试。')
+          blob=await response.blob()
+          if(blob.size<44)throw new Error('DeepSeek 返回的音频不完整，请重试。')
+        } finally {clearTimeout(timer)}
+        if(token!==generation)return
+        url=URL.createObjectURL(blob);urls.push(url);cache.set(current,url)
+      }
+      player.src=url;player.playbackRate=rate
+      player.onended=()=>{void next()}
+      player.onerror=()=>fail(new Error('音频无法播放或数据不完整，请重试。'))
+      await player.play()
+      if(token===generation)publish({status:'speaking',owner,voice:voiceName,lang,rate,repeat,repeats})
+    } catch(error){fail(error)}
+  }
+  void next()
 }

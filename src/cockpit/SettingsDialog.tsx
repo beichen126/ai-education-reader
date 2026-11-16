@@ -321,6 +321,11 @@ export function SettingsDialog() {
         <div className={css.settingsHint}>{tx('选择 English 后页面会同步设置 lang="en"，便于浏览器翻译工具正确识别。', 'Selecting English also sets the page language to lang="en" for browser translation tools.')}</div>
       </div>
       <div className={css.exportSection}>
+        <div className={css.exportTitle}>{tx('DeepSeek 朗读', 'DeepSeek read aloud')}</div>
+        <label className={css.speechRateRow}><span>{tx('音色', 'Voice')}</span><select aria-label="朗读音色" value={s.speechVoice || 'stella'} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({speechVoice:e.target.value as 'stella'|'tide'}).catch(()=>{})}}><option value="stella">Stella · 女声</option><option value="tide">Tide · 男声</option></select></label>
+        <label className={css.speechRateRow}><span>{tx('语音 API 地址', 'Speech API URL')}</span><input key={'speech-url-'+s.speechApiUrl} aria-label="语音 API 地址" defaultValue={s.speechApiUrl || ''} placeholder="https://api.deepseek.com" onBlur={e=>{void patchSettings({speechApiUrl:e.target.value}).catch(()=>{})}} /></label>
+        <label className={css.speechRateRow}><span>{tx('语音 API Key', 'Speech API key')}</span><input key={'speech-key-'+s.speechApiKey} aria-label="语音 API Key" type="password" autoComplete="off" defaultValue={s.speechApiKey || ''} placeholder={tx('留空使用对话 API Key','Use chat API key when blank')} onBlur={e=>{void patchSettings({speechApiKey:e.target.value}).catch(()=>{})}} /></label>
+        <div className={css.settingsHint}>{tx('TTS 与 ASR 默认使用 https://api.deepseek.com，不跟随对话中转地址。请填写 DeepSeek 官方 Key；也可自定义支持语音接口的服务地址。','TTS and ASR default to https://api.deepseek.com independently of chat routing. Supply an official DeepSeek key or a compatible speech endpoint.')}</div>
         <div className={css.exportTitle}>{tx('朗读倍速', 'Read aloud speed')}</div>
         {(['chineseSpeechRate','englishSpeechRate'] as const).map((key,i)=><label className={css.speechRateRow} key={key}>
           <span>{i===0?tx('中文','Chinese'):tx('英文','English')}</span>
@@ -328,7 +333,7 @@ export function SettingsDialog() {
             {[0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.25,1.3,1.4,1.5,1.6,1.7,1.75,1.8,1.9,2].map(rate=><option key={rate} value={rate}>{rate}×</option>)}
           </select>
         </label>)}
-        <div className={css.settingsHint}>{tx('自动识别中英文，默认中文 1×、英文 0.9×。安卓版使用系统文字转语音；Chrome、Firefox 等使用设备可用声音，无需 Edge。没有声音时，请在系统语音设置安装中英文语音。在线声音会发送所选文字给语音服务。','Detects Chinese/English. Defaults: Chinese 1×, English 0.9×. Android uses system text-to-speech; other browsers use available device voices without requiring Edge. Install Chinese/English voices in system settings if missing. Online voices send selected text to the speech provider.')}</div>
+        <div className={css.settingsHint}>{tx('自动识别中英文，默认中文 1×、英文 0.9×。使用已配置的 DeepSeek API Key 和服务地址合成语音。选中朗读或回答下方的“朗读全文”会发送对应文字；重复播放复用本次音频。倍速在本地播放器调整。','Detects Chinese/English. Defaults: Chinese 1×, English 0.9×. Speech uses your configured DeepSeek API key and endpoint. Select text or choose Read all aloud below an answer. Replays reuse audio; speed is adjusted locally.')}</div>
         <label className={css.speechRateRow}><span>{tx('重复朗读次数','Reading repetitions')}</span><select data-testid="settings-speechRepeatCount" value={s.speechRepeatCount ?? 3} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({speechRepeatCount:Number(event.target.value)}).catch(()=>{})}}>{Array.from({length:10},(_,i)=>i+1).map(count=><option key={count} value={count}>{tx(count+' 次',count+' passes')}</option>)}</select></label>
         <div className={css.settingsHint}>{tx('默认完整朗读所选内容 3 遍，可随时暂停或停止。','Reads the entire selection 3 times by default. Pause or stop at any time.')}</div>
         {mutation.status==='error' && mutation.error && <div className={css.testResult} data-ok="false" data-testid="settings-general-error">{localizedErrorText(mutation.error,'Unable to save general settings. Please retry.')}</div>}
@@ -398,7 +403,7 @@ export function SettingsDialog() {
       </div>
       <div className={css.storageSection}>
         <div className={css.exportTitle}>{tx('隐私', 'Privacy')}</div>
-        <div className={css.storageHint}>{tx('数据保存在浏览器本地，PDF 在浏览器内处理。AI 请求会将所选内容发送到你配置的服务；使用在线朗读时，浏览器会将所选文字交给语音服务。本项目无自有中转后端。详见仓库 PRIVACY.md。', 'Data stays in this browser and PDFs are processed locally. AI requests send selected content to your configured service. Online read aloud sends selected text to the browser’s speech provider. This project has no relay backend. See PRIVACY.md.')}</div>
+        <div className={css.storageHint}>{tx('数据保存在浏览器本地，PDF 在浏览器内处理。AI 请求会将所选内容发送到你配置的服务；使用在线朗读时，对应文字会发送到配置的 DeepSeek API 服务。本项目无自有中转后端。详见仓库 PRIVACY.md。', 'Data stays in this browser and PDFs are processed locally. AI requests send selected content to your configured service. Online read aloud sends selected text to the configured DeepSeek API. This project has no relay backend. See PRIVACY.md.')}</div>
         <div className={css.settingsActions}>
           <Button variant="outline" disabled={clearing} data-testid="settings-clear-data" onClick={() => void onClearData()}>{clearing ? tx('正在清除…', 'Clearing…') : tx('清除本地数据', 'Clear local data')}</Button>
         </div>
@@ -429,7 +434,7 @@ export function SettingsDialog() {
           </article>
           <article>
             <h4>{tx('朗读与联网搜索','Read aloud and web search')}</h4>
-            <p>{tx('选中文字后点击“朗读”，可暂停或停止；在“通用”中设置中英文倍速和重复次数，默认重复三次。语音取决于设备和浏览器，在线语音可能把选中文字发给语音服务。','Select text and choose Read aloud; playback can be paused or stopped. Set Chinese/English rates and repeat count in General; the default is three passes. Voices depend on your device and browser; online voices may send selected text to the speech service.')}</p>
+            <p>{tx('选中文字后点击“朗读”，可暂停或停止；在“通用”中设置中英文倍速和重复次数，默认重复三次。也可点击回答下方“朗读全文”。使用配置的 DeepSeek API 合成语音。','Select text and choose Read aloud; playback can be paused or stopped. Set Chinese/English rates and repeat count in General; the default is three passes. Choose Read all aloud below an answer to read its full text using the configured DeepSeek API.')}</p>
             <p>{tx('资料菜单中的联网搜索默认关闭，可按需开启。它使用当前 API 服务的 Search / Fetch 能力，代理需支持相关接口和浏览器跨域访问，联网请求可能单独计费。','Web search in the materials menu is off by default. It uses the configured provider’s Search / Fetch tools; proxies need compatible endpoints and browser CORS support. Tool requests may incur separate charges.')}</p>
           </article>
           <article>
