@@ -24,10 +24,12 @@
 .categoryBtn[data-active='true'] { font-weight: 600; }
 .categoryBtn small { color: var(--dsw-alias-label-tertiary); font-size: 11px; font-weight: 400; }
 .listPane { display: flex; flex-direction: column; border-right: 1px solid var(--dsw-alias-border-l2); }
-.listToolbar { display: flex; align-items: flex-end; gap: 8px; padding: 16px 14px 8px; }
+.listToolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px; padding: 16px 14px 8px; }
 .searchField { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 5px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
 .searchField input, .listMeta select { min-width: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; }
-.searchField input { height: 34px; padding: 0 9px; font-size: 12px; }
+.searchField > span { white-space: nowrap; }
+.protocolHint { grid-column: 1 / -1; margin: 0; font-size: 11px; line-height: 1.5; color: var(--dsw-alias-label-tertiary); overflow-wrap: anywhere; }
+.searchField input { box-sizing: border-box; width: 100%; height: 34px; padding: 0 9px; font-size: 12px; }
 .searchField input:focus, .editorField input:focus, .editorField select:focus, .editorField textarea:focus { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: 1px; }
 .newButton, .primaryAction, .secondaryAction, .dangerAction { min-height: 34px; padding: 0 10px; border-radius: 7px; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .newButton, .primaryAction { border: 1px solid var(--dsw-alias-button-primary-fill); background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); }
@@ -89,7 +91,7 @@
   .categoryPane { padding: 16px; }
   .categoryBtn { padding: 13px 12px; border: 1px solid var(--dsw-alias-border-l1); }
   .listToolbar { align-items: flex-end; flex-wrap: wrap; padding: 14px 14px 8px; }
-  .listToolbar .mobileBack { display: block; width: 100%; margin-bottom: 2px; }
+  .listToolbar .mobileBack { grid-column: 1 / -1; display: block; width: 100%; margin-bottom: 2px; }
   .newButton { min-height: 34px; }
   .editorPane { overflow: hidden; }
   .editorPane > .mobileBack { display: block; margin: 12px 16px 0; }

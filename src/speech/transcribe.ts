@@ -9,7 +9,7 @@ export function pcmWav(samples: Float32Array, rate=16000): Blob {
   return new Blob([buffer],{type:'audio/wav'})
 }
 export async function transcribeAudio(blob: Blob, signal: AbortSignal): Promise<string> {
-  const settings=getSettingsSnapshot(),key=settings.speechApiKey || settings.apiKey
+  const settings=getSettingsSnapshot(),key=settings.apiKey
   if(!key)throw new Error('请先在通用设置填写 DeepSeek 语音 API Key。')
   if(blob.size>8*1024*1024)throw new Error('音频文件不能超过 8 MiB。')
   const context=new AudioContext()
@@ -21,7 +21,7 @@ export async function transcribeAudio(blob: Blob, signal: AbortSignal): Promise<
   const source=offline.createBufferSource();source.buffer=decoded;source.connect(offline.destination);source.start()
   const rendered=await offline.startRendering()
   const form=new FormData();form.append('file',pcmWav(rendered.getChannelData(0)),'speech.wav')
-  const endpoint=ttsEndpoint(settings.speechApiUrl || 'https://api.deepseek.com').replace(/\/tts$/,'/asr')
+  const endpoint=ttsEndpoint('https://api.deepseek.com').replace(/\/tts$/,'/asr')
   const response=await fetch(endpoint,{method:'POST',headers:{Authorization:'Bearer '+key},body:form,signal})
   if(!response.ok)throw new Error('DeepSeek 语音识别失败（HTTP '+response.status+'）')
   const result=await response.json()

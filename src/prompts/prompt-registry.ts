@@ -1,3 +1,4 @@
+import {GENUI_PROMPT} from '../genui/schema'
 import type { ArtifactKind, TransformationPreset } from '../artifacts/artifact-types'
 import { presetForKind, QUIZ_OUTPUT_PROTOCOL_PROMPT, TRANSFORMATION_PRESETS } from '../artifacts/artifact-prompts'
 import { parseQuizDocument } from '../artifacts/artifact-validation'
@@ -27,6 +28,7 @@ export const BUILTIN_PROMPT_IDS = {
   artifactCustom: 'builtin-artifact-custom',
   protocolAiTocTranscription: 'builtin-protocol-ai-toc-transcription',
   protocolAiTocStructure: 'builtin-protocol-ai-toc-structure',
+  protocolGenUi: 'builtin-protocol-genui',
   protocolQuizOutput: 'builtin-protocol-quiz-output',
 } as const
 
@@ -73,6 +75,7 @@ type ProtocolAdapter = {
 
 /** Adapters point at production constants/functions; they intentionally contain no copied prompt text. */
 export const PROTOCOL_METADATA_ADAPTERS: readonly ProtocolAdapter[] = [
+  {id:BUILTIN_PROMPT_IDS.protocolGenUi,name:'GenUI · 交互界面',description:'在对话中按需生成交互卡片、表格、图表和自测题。自动用于普通对话，可复制后自定义。',domain:'genui',getSystemPrompt:()=>GENUI_PROMPT,outputContract:'Optional dsh-ui JSON fences validated by parseGenUi()',validator:{name:'parseGenUi',description:'校验允许的组件、结构和大小；普通文字回答不强制生成界面。'}},
   {
     id: BUILTIN_PROMPT_IDS.protocolAiTocTranscription,
     name: 'AI 目录 · 文字转录',

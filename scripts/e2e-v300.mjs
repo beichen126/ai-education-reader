@@ -16,7 +16,7 @@ try {
     await page.route('**/v1/tools/tts', async route=>{requests.push(route.request().postDataJSON());await route.fulfill({status:200,contentType:'audio/wav',body:Buffer.alloc(100)})})
     page.on('pageerror',error=>errors.push(error.message))
     const content='Zero. One. Two. Target sentence. Four. Five. Six.'
-    await seedAndBoot(page,{convs:[{id:'read-chat',title:'Read test',createdAt:1,updatedAt:1,messages:[msg('read-u','user','Explain'),msg('read-a','assistant',content)]}],settings:{apiKey:'test-tts-key',speechVoice:'tide',speechApiUrl:'https://api.teamorouter.com/v1',uiLanguage:language,lastConversationId:'read-chat'}})
+    await seedAndBoot(page,{convs:[{id:'read-chat',title:'Read test',createdAt:1,updatedAt:1,messages:[msg('read-u','user','Explain'),msg('read-a','assistant',content)]}],settings:{apiKey:'test-tts-key',speechVoice:'tide',speechApiUrl:'https://api.deepseek.com',uiLanguage:language,lastConversationId:'read-chat'}})
     const select=async()=>{
       const root=page.locator('[data-message-id="read-a"]').first()
       await root.scrollIntoViewIfNeeded()

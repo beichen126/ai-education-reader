@@ -69,7 +69,7 @@ export function readAloud(text: string, owner: string) {
   const chunks=ttsChunks(text)
   if(!chunks.length)return
   const settings=getSettingsSnapshot(), token=generation
-  const apiKey=settings.speechApiKey || settings.apiKey
+  const apiKey=settings.apiKey
   const voice=settings.speechVoice || 'stella'
   const voiceName=voice==='tide'?'DeepSeek · Tide':'DeepSeek · Stella'
   if(!apiKey){publish({status:'error',owner,error:'请先在设置中配置 DeepSeek API Key。'});return}
@@ -98,7 +98,7 @@ export function readAloud(text: string, owner: string) {
         const timer=setTimeout(()=>requestController.abort(),120000)
         let blob:Blob
         try {
-          const response=await fetch(ttsEndpoint(settings.speechApiUrl || 'https://api.deepseek.com'),{method:'POST',headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json'},body:JSON.stringify({text:chunks[current],voice_id:voice,format:'wav',filter_markdown:true}),signal})
+          const response=await fetch(ttsEndpoint('https://api.deepseek.com'),{method:'POST',headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json'},body:JSON.stringify({text:chunks[current],voice_id:voice,format:'wav',filter_markdown:true}),signal})
           if(!response.ok)throw new Error('DeepSeek 朗读请求失败（HTTP '+response.status+'），请检查 API Key、余额或稍后重试。')
           blob=await response.blob()
           if(blob.size<44)throw new Error('DeepSeek 返回的音频不完整，请重试。')

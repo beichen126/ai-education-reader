@@ -72,7 +72,7 @@ assert(await branchComposer.inputValue() === 'branch no-key draft', 'branch no-k
 // Save a key through the real Settings UI, keeping the branch and its draft alive.
 await page.getByRole('button', { name: '打开设置' }).click()
 const settings = page.getByRole('dialog', { name: '设置' })
-await settings.locator('input').nth(1).fill('sk-test')
+await settings.getByPlaceholder('sk-...').fill('sk-test')
 await settings.getByRole('button', { name: '保存 API 设置', exact: true }).click()
 await settings.getByRole('button', { name: '关闭' }).click()
 

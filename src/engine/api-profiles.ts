@@ -1,5 +1,5 @@
 import type { Settings } from './settings-store'
-export const PROFILE_FIELDS = ['apiBaseUrl','apiKey','model','visionCapability','webSearchEnabled','readUrlEnabled','autoTitleEnabled','userMetadataEnabled','nativeDeepSeekProxy','speechApiUrl','speechApiKey','speechVoice'] as const
+export const PROFILE_FIELDS = ['apiBaseUrl','apiKey','model','visionCapability','webSearchEnabled','readUrlEnabled','autoTitleEnabled','userMetadataEnabled','nativeDeepSeekProxy','speechVoice'] as const
 export type ApiProfileConfig = Pick<Settings, typeof PROFILE_FIELDS[number]>
 export type ApiProfile = {id:string;name:string;config:ApiProfileConfig}
 export function profileConfig(settings: Settings): ApiProfileConfig {

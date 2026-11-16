@@ -539,7 +539,7 @@ export function PromptManager() {
             <button type="button" className={css.mobileBack} onClick={() => setMobileStep('categories')}>‹ {tx('分类', 'Categories')}</button>
             <label className={css.searchField}><span>{tx('搜索提示词', 'Search prompts')}</span><input data-testid="prompt-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tx('搜索名称、描述或内容', 'Search names, descriptions, or content')} /></label>
             <button type="button" className={css.newButton} data-testid="prompt-new" disabled={category === 'protocol'} title={category === 'protocol' ? tx('系统协议需从 canonical 复制', 'System protocols must be copied from canonical') : undefined} onClick={startCreate}>＋ {tx('新建', 'New')}</button>
-            {category === 'protocol' && <span data-testid="protocol-new-hint" role="note">{tx('系统协议请从 canonical 复制', 'Copy system protocols from canonical')}</span>}
+            {category === 'protocol' && <span className={css.protocolHint} data-testid="protocol-new-hint" role="note">{tx('选中内置协议后，可复制并自定义', 'Select a built-in protocol to copy and customize')}</span>}
           </div>
           <div className={css.listMeta}>
             <span>{loading ? tx('正在读取…', 'Loading…') : tx(filtered.length + ' 个提示词', filtered.length + ' prompts')}</span>
@@ -642,7 +642,7 @@ function PromptEditor(props: {
           <section className={css.protocolInspector} data-testid="protocol-inspector" aria-label={tx('协议详情', 'Protocol details')}>
             <div className={css.protocolInspectorTitle}>{tx('协议详情', 'Protocol details')}</div>
             <dl className={css.protocolMeta}>
-              <div><dt>{tx('作用位置', 'Used for')}</dt><dd>{definition.domain === 'ai-toc-transcription' ? tx('AI TOC · 文字转录', 'AI TOC · transcription') : definition.domain === 'ai-toc-structure' ? tx('AI TOC · 结构分析', 'AI TOC · structure') : definition.domain === 'quiz-output' ? tx('Quiz · 输出校验', 'Quiz · output validation') : tx('自定义协议域', 'Custom protocol domain')}</dd></div>
+              <div><dt>{tx('作用位置', 'Used for')}</dt><dd>{definition.domain === 'ai-toc-transcription' ? tx('AI TOC · 文字转录', 'AI TOC · transcription') : definition.domain === 'ai-toc-structure' ? tx('AI TOC · 结构分析', 'AI TOC · structure') : definition.domain === 'quiz-output' ? tx('Quiz · 输出校验', 'Quiz · output validation') : definition.domain === 'genui' ? tx('普通对话 · 交互界面', 'Regular chat · interactive interface') : tx('自定义协议域', 'Custom protocol domain')}</dd></div>
               <div><dt>{tx('模型职责', 'Model responsibility')}</dt><dd>{definition.description || tx('由协议 Prompt 约束结构化模型输出。', 'The protocol prompt constrains structured model output.')}</dd></div>
               <div><dt>{tx('来源', 'Source')}</dt><dd>{definition.source === 'builtin' ? tx('canonical / 内置', 'canonical / built-in') : definition.source + ' / experimental'}</dd></div>
               <div><dt>revision</dt><dd>v{definition.revision}</dd></div>

@@ -91,14 +91,14 @@ export async function projectLogicalPromptContext(
   context: LogicalPromptContext,
   policy: 'interleaved' | 'flattened',
   toDataUrl: PromptImageResolver = safeImageResolver(),
-  options: { genUi?: boolean } = {},
+  options: { genUi?: boolean; genUiPrompt?: string } = {},
 ): Promise<ApiChatMessage[]> {
   const history = await historyMessages(context.messages, toDataUrl)
 
   if (context.domain === 'conversation') {
     // Rendering capability is request-local guidance, not a conversation mode.
     // Keep timeline JSON and the empty-default system-message contract intact.
-    if (options.genUi) appendGenUiGuidance(history)
+    if (options.genUi) appendGenUiGuidance(history, options.genUiPrompt)
 
     const hasNonEmptyMode = context.segments.some((segment) => segment.snapshot.content.length > 0)
     if (policy === 'flattened') {
@@ -141,11 +141,11 @@ export async function projectLogicalPromptContext(
 }
 
 /** Clone the last user turn so durable messages and multipart attachments stay intact. */
-export function appendGenUiGuidance(messages: ApiChatMessage[]): void {
+export function appendGenUiGuidance(messages: ApiChatMessage[], prompt = GENUI_PROMPT): void {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]
     if (message.role !== 'user') continue
-    const guidance = '\n\n[Reader rendering capabilities]\n' + GENUI_PROMPT
+    const guidance = '\n\n[Reader rendering capabilities]\n' + prompt
     messages[index] = { ...message, content: typeof message.content === 'string'
       ? message.content + guidance
       : [...message.content, { type: 'text', text: guidance }] }

@@ -1,3 +1,5 @@
+import {resolveCurrentProtocol} from '../prompts/prompt-resolution'
+import {appendGenUiGuidance} from '../prompts/prompt-compile-strategies'
 import { nativeConversationOptions, citationFooter } from '../api/deepseek-native'
 import { validateDocumentContext } from '../api/deepseek-documents'
 import { newStableId, type Message, type StableId } from './types'
@@ -91,9 +93,11 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     }
     // Provider limits differ. Never apply DeepSeek counts or an arbitrary raw
     // image-byte budget to OpenAI / compatible endpoints. Surface actual errors.
+    const genUiPrompt = (await resolveCurrentProtocol('genui')).content
     const reqMessages = acceptedSendContext
-      ? await projectLogicalPromptContext(acceptedSendContext.logical, acceptedSendContext.compilePolicy.systemMessagePolicy, toDataUrl, { genUi: true })
+      ? await projectLogicalPromptContext(acceptedSendContext.logical, acceptedSendContext.compilePolicy.systemMessagePolicy, toDataUrl, { genUi: true, genUiPrompt })
       : await buildApiMessages(contextMessages, toDataUrl)
+    if (!acceptedSendContext) appendGenUiGuidance(reqMessages, genUiPrompt)
     const expectedImages = contextMessages.reduce((sum, mm) => sum + mm.images.length, 0)
     const encodedImages = countImageParts(reqMessages)
     if (encodedImages !== expectedImages) {
