@@ -32,3 +32,6 @@ playwright-report/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local user notes (not published)
+/local-notes/

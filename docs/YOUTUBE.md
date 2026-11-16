@@ -13,3 +13,7 @@ Android 工程位于 F:/Android/projects/ai-education-reader。本仓库 android
 语言是偏好，不保证视频提供该语言；转写面板回退使用页面当前语言，并在预览中明确显示。未接 ASR。网页必须安装扩展，普通手机浏览器不保证可用，请使用 APK。浏览器扩展依赖 YouTube 页面结构，未来变化可能需要更新。
 
 验证：真实 Chromium 加载完整扩展，从正式阅读器域名请求 3Blue1Brown 的 aircAruvnKk，收到 130 段，最后时间戳 1102 秒。浏览器模拟测试覆盖 2×2 菜单、预览、上下文文本、纯文本模型、刷新缓存和手机宽度。Android 经过编译、单元测试与 lint；当前没有连接实体手机，不能将共享提取逻辑的桌面验证等同于 Android 真机验证。
+
+扩展固定下载入口：[下载最新字幕扩展 ZIP](https://github.com/beichen126/ai-education-reader/releases/latest/download/AI-Education-Reader-YouTube-Bridge.zip)。发布工作流自动将同名 ZIP 上传到每次新 Release，扩展实际版本由 manifest.json 记录。
+
+电脑安装：右键 ZIP → 全部解压缩；在浏览器地址栏输入 `chrome://extensions` 或 `edge://extensions`，开启开发者模式，点击“加载已解压的扩展程序”（Edge 也可能叫“加载解压缩的扩展”），选择里面包含 manifest.json 的文件夹。看到“AI 学习阅读器 · YouTube 字幕桥接”后刷新阅读器。选择文件夹而不是 ZIP 文件。

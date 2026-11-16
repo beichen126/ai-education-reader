@@ -14,3 +14,5 @@
 .preview>div{max-height:260px;overflow:auto;overflow-wrap:anywhere}
 .preview p{margin:8px 0;line-height:1.6}
 .preview small{color:var(--dsw-alias-label-secondary)}
+
+.help ol{padding-left:22px;margin:12px 0}.help li{margin:12px 0;overflow-wrap:anywhere}.installAddress{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:6px 0}.installAddress code{user-select:all}

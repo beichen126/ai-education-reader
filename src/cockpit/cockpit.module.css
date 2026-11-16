@@ -347,3 +347,5 @@
 .materialActions .menuItem>span{min-width:0;overflow-wrap:anywhere;line-height:1.4}
 .materialActions .menuItem:disabled{opacity:.5;cursor:not-allowed}
 .addFileMenu{width:min(420px,calc(100vw - 24px));left:12px}
+
+.tokenDetails{display:inline-block;position:relative;text-align:left;margin-right:6px}.tokenDetails summary{cursor:pointer}.tokenDetails>section{position:absolute;right:0;top:100%;z-index:30;width:min(260px,75vw);box-sizing:border-box;padding:12px;border:1px solid var(--dsw-alias-border-l2);border-radius:10px;background:var(--dsw-alias-bg-base);color:var(--dsw-alias-label-primary);white-space:normal;line-height:1.6;box-shadow:0 6px 20px #0002}

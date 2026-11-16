@@ -32,6 +32,7 @@ try {
  await select.selectOption({label:'TeamoRouter'});await page.waitForFunction(()=>document.querySelector('input[placeholder="sk-..."]')?.value==='router-key')
  assert.equal(await model.inputValue(),'unsaved-model')
  await profile.getByRole('button',{name:'重命名',exact:true}).click();await name.fill('我的中转');await profile.getByRole('button',{name:'保存名称'}).click()
+ await profile.getByRole('status').filter({hasText:'名称已更新'}).waitFor()
  await page.reload({waitUntil:'networkidle'});await openSettings(page,'api')
  assert.equal(await key.inputValue(),'router-key');assert.equal(await select.locator('option:checked').textContent(),'我的中转')
  await page.setViewportSize({width:390,height:844})

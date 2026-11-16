@@ -6,12 +6,16 @@ try {
   const page = await browser.newPage({viewport:{width:1280,height:844}})
   await seedAndBoot(page, { convs: [{ id: 'usage-test', title: 'Usage test', createdAt: 1, updatedAt: 1, messages: [
     msg('u1', 'user', 'hello'), { ...msg('a1', 'assistant', 'first'), tokenUsage: { inputTokens: 100, outputTokens: 20, totalTokens: 120 } },
-    msg('u2', 'user', 'more'), { ...msg('a2', 'assistant', 'second'), tokenUsage: { inputTokens: 74650, outputTokens: 2114, totalTokens: 76764 } },
+    msg('u2', 'user', 'more'), { ...msg('a2', 'assistant', 'second'), tokenUsage: { inputTokens: 74650, outputTokens: 2114, totalTokens: 76764, cachedReadTokens: 1000, reasoningTokens: 500 } },
   ] }], settings: { lastConversationId: 'usage-test' } })
   for (let i = 0; i < 2; i++) {
     await page.setViewportSize({width:i===0?390:320,height:844})
     await page.getByTestId('official-token-usage').waitFor()
     assert.match(await page.getByTestId('official-token-usage').innerText(), /74\.65k.*2\.11k/)
+    await page.getByText('用量明细',{exact:true}).click()
+    await page.getByText('缓存读取: 1,000',{exact:true}).waitFor()
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1))
+    await page.getByText('用量明细',{exact:true}).click()
     assert.equal(await page.getByTestId('cumulative-token-usage').count(),0)
     assert.doesNotMatch(await page.getByTestId('composer-context-usage').innerText(), /估算|约|已占用/)
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1))

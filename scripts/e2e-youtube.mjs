@@ -18,6 +18,7 @@ try{
  await menu.screenshot({path:'tmp/material-menu-2x2.png'})
  await page.locator('[data-testid="composer-youtube"]').click()
  const dialog=page.getByRole('dialog',{name:'YouTube 视频解析'});
+ await dialog.getByText('第一次用？查看扩展安装步骤',{exact:true}).click();await dialog.getByRole('button',{name:'复制 Chrome 地址'}).waitFor();assert.ok((await dialog.getByRole('link',{name:'下载字幕扩展 ZIP'}).getAttribute('href')).endsWith('/releases/latest/download/AI-Education-Reader-YouTube-Bridge.zip'));await dialog.getByText('第一次用？查看扩展安装步骤',{exact:true}).click();
  await dialog.getByLabel('视频链接').fill('https://youtu.be/dQw4w9WgXcQ');await dialog.getByRole('button',{name:'提取字幕',exact:true}).click();await dialog.getByText('字幕课程',{exact:true}).waitFor();await dialog.screenshot({path:'tmp/youtube-picker.png'});await dialog.getByRole('button',{name:'加入本次提问',exact:true}).click()
  assert.equal(await page.getByRole('textbox',{name:'输入消息',exact:true}).inputValue(),'')
  await page.getByRole('textbox',{name:'输入消息',exact:true}).fill('解释视频');await page.locator('[data-testid="composer-send-stop"]').click();await page.getByText('已收到字幕',{exact:true}).first().waitFor();assert.ok(JSON.stringify(requests[0]).includes('The mitochondrion'));assert.ok(!JSON.stringify(requests[0]).includes('image_url'))
