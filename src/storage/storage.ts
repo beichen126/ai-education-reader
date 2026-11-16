@@ -18,6 +18,7 @@ import { clearOpfsAppRoot } from './binary-store'
 export async function clearAllLocalData(): Promise<{ partialCleanup: boolean; failedPaths: string[] }> {
   await idbClearAll()
   clearReadingPositions()
+  try { if(typeof localStorage!=='undefined') for(const key of Object.keys(localStorage)) if(key.startsWith('dsh.genui.')) localStorage.removeItem(key) } catch { /* Storage may be unavailable in private mode. */ }
   try {
     const r = await clearOpfsAppRoot()
     return r.completed ? { partialCleanup: false, failedPaths: [] } : { partialCleanup: true, failedPaths: r.failedPaths }

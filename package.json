@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "3.0.19",
+  "version": "3.0.20",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -42,7 +42,7 @@
     "pretest": "npm run test:token-usage && npm run test:v240 && npm run test:v250 && npm run test:streaming-backup && npm run test:chatgpt-auth && npm run test:local-server",
     "test:token-usage": "tsx scripts/test-token-usage.ts",
     "test": "npm run test:all",
-    "test:genui": "tsx scripts/test-genui.ts",
+    "test:genui": "tsx scripts/test-genui.ts && tsx scripts/test-genui-full.ts",
     "test:e2e-genui": "node scripts/e2e-genui.mjs",
     "test:storage": "npx tsx scripts/test-storage.ts",
     "test:idb-lifecycle": "npx tsx scripts/test-idb-lifecycle.ts",
@@ -265,9 +265,19 @@
     "test:release": "node scripts/test-release.mjs"
   },
   "dependencies": {
+    "@changfenhuang/dsh-genui": "0.16.0",
+    "@deepseek-ai/dsh-client-store": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-util-code-language": "0.2.2-rc.3",
+    "@deepseek-ai/dsh-util-workspace-path": "0.2.2-rc.3",
+    "@floating-ui/react": "0.27.20",
+    "@shikijs/langs": "4.5.0",
     "@types/mdast": "^4.0.4",
+    "anser": "2.3.5",
     "clsx": "^2.1.1",
+    "diff": "9.0.0",
     "fflate": "^0.8.3",
+    "immer": "11.1.21",
     "jose": "^6.2.12",
     "katex": "^0.16.47",
     "mdast-util-from-markdown": "^2.0.3",
@@ -282,7 +292,10 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.3.289",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "shiki": "4.5.0",
+    "simple-icons": "16.35.0",
+    "zustand": "5.0.15"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

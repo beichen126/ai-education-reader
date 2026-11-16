@@ -1,31 +1,54 @@
 # GenUI 交互回答
 
-参考 [dsh-genui](https://github.com/omdsh-dev/dsh-genui) 的声明式围栏与 action 回传设计，在阅读器内以 React 原生组件实现，无新增运行时依赖。不是 DSH 插件安装，也不承诺兼容其完整组件集。
+阅读器直接嵌入 [dsh-genui](https://github.com/omdsh-dev/dsh-genui) 的官方 React renderer（`@changfenhuang/dsh-genui@0.16.0`），不再局限于旧版简易条形图。参考 [Flutter GenUI](https://github.com/flutter/genui) 的组件目录、数据绑定和动作回传设计；本项目仍是 React 网页及 Android WebView，没有改写成 Flutter，也不宣称实现 Flutter/A2UI 的独立传输协议。
+
+## 已实现能力
+
+| 类别 | 实现 |
+| --- | --- |
+| 连续函数 | `plot`：多条函数曲线、line/area/scatter、参数滑杆、局部重绘、缩放/平移、参数动画 |
+| 统计图表 | `chart` 与 `echart`：折线、面积、柱状、环形/饼图、散点、雷达、仪表、漏斗、热力图、树图、桑基图、关系图、词云，以及数据型 ECharts option |
+| 图解 | Mermaid 流程/时序图；`diagram` 的架构、状态、ER、组织、泳道、数据流等 27 类布局与节点选择 |
+| 三维与地图 | Three.js 基础几何、拖动旋转和缩放；MapLibre 点位地图默认使用无网络底图模式，不会假装提供真实地图瓦片 |
+| 表单与绑定 | 输入框、多行文本、复选/单选、开关、下拉、滑块、日期区间、分段选择、文本编辑；computed 安全公式、条件显隐与条件启用 |
+| 学习 | 单题即时反馈、多题本地判分、解释与重做 |
+| 展示与媒体 | 卡片、指标、进度/环形、时间线、文件树、表格排序筛选/CSV、代码、差异、JSON 树、SVG、图片灯箱、轮播、音视频、KaTeX |
+| 状态与回传 | 分消息与内容指纹保存表单状态，刷新恢复；action 回传回答所属会话/分支；流式完整组件逐步出现 |
+| 画布与复用 | 展开画布、12 个内置模板预览/提问、JSON 导出和包含本地引擎的独立交互 HTML 导出 |
+
+模型协议由该版本的 **60 种原生组件定义**生成，维护脚本为 `scripts/generate-genui-catalog.ts`。功能不是仅写在提示词中：渲染使用同一版本的官方组件与结构校验。
 
 ## 使用
 
-在普通对话中输入：
+直接对模型说：
 
-> 用交互界面讲解牛顿第二定律，给一张质量与加速度的对比表，再出一道能直接点击作答的选择题。
+> 画 y=a sin(x) 和 cos(x) 的连续曲线，让我拖动 a 调整振幅，再给一张可排序的实验数据表。
 
-普通流式对话在提示词编译时向当前用户消息附加已支持组件的说明（仅用于本次请求，不改写保存的消息或模式时间线，也不额外插入 system 消息），DeepSeek 与 OpenAI 本机服务共用。模型仍可按问题选择纯文字；用户要求纯文字或严格 JSON 时应遵守该要求。结构化目录与学习成果生成不经过此注入入口。
+或：
 
-回复中的 `dsh-ui`、`json dsh-ui` 或 `genui` 围栏在助手回答中渲染；用户消息中的代码保持源码显示。组件正文按纯文本显示，不执行 HTML 或 JavaScript。原始消息仍以 Markdown 保存，复制、导出、重载时保留围栏源码。
+> 给我一个可以输入单价和数量、实时计算总价的表单，高级选项展开补充说明，最后提交计划。
 
-支持 text、heading、card、stack、row、grid、callout、stat、badge、progress、list、steps、table、chart（条形图）、quiz、input、select、slider、button、submit、tabs、accordion。完整字段约定见 `src/genui/schema.ts` 中的模型协议。
+在「设置 → 通用 → 提示词管理 → 系统协议 → GenUI · 交互界面」查看实际协议。可复制、修改并启用自己的版本；普通对话请求使用当前启用的协议。模型仍可选择纯文字，并遵守用户要求的严格 JSON 输出。AI 目录和其他结构化输出不被该协议干扰。
+
+新界面使用 `dsh-ui` 围栏及根标记 `"schema":"dsh-genui"`。完整组件字段在生成的模型协议中，旧版简易围栏仍保留兼容渲染。
 
 ```dsh-ui
-{"items":[{"type":"quiz","question":"质量不变时，合力加倍，加速度如何变化？","options":[{"label":"加倍","correct":true},{"label":"不变"}],"explanation":"由 F=ma，质量不变时加速度与合力成正比。"},{"type":"input","id":"topic","label":"想继续学习的主题","value":"牛顿定律"},{"type":"submit","label":"继续讲解","action":"explain-topic"}]}
+{"schema":"dsh-genui","title":"正弦函数","items":[{"type":"plot","xMin":-6.28,"xMax":6.28,"yMin":-4,"yMax":4,"series":[{"expr":"a*sin(x)","label":"y=a sin(x)","params":[{"name":"a","value":1,"min":0.1,"max":3,"step":0.1}]}]}]}
 ```
 
-选择题在本地判分。按钮及提交会发送包含 `action` 和当前区块 `fields` 的 `[genui-action]` 用户消息，沿该回答所属的主会话或分支继续生成，保留输入框草稿。发送失败时区块显示错误并可重试。没有对话宿主的展示不启用发送按钮。
+连续函数用受限数学解释器求值，不执行模型生成的 JavaScript。节点白名单、数值范围、深度及预算由上游 guard 校验；最多 200 个节点、8 层嵌套，本宿主围栏上限 256 KB。无法渲染时显示原因和原始源码。
 
-表格支持筛选、按列升降序排序。交互状态只保存在当前挂载的 UI 内，刷新后重置；相同回答的不同区块独立管理状态。表单须为每个字段提供唯一 id；不要用于输入密钥等敏感内容。
+## 资源与状态
 
-当前未实现参考插件的 Mermaid、ECharts、函数绘图、3D、任意 HTML、条件显隐、状态持久化。未知组件、格式错误或流式尚未完成时保留查看源码入口；限制围栏 64 KB、160 个组件及 8 层嵌套。
+ECharts、Mermaid、Three.js、MapLibre、图标和独立导出 runtime 随本地构建发布，遇到对应组件才加载，不依赖 CDN。网页、GitHub Pages 和 APK 使用相同资源。远端图片、音视频需要可访问的真实 URL；地图默认没有外部瓦片。WebGL 仍取决于设备支持。
+
+完整组件的输入/答案在本机 localStorage 保存，按消息位置和内容指纹隔离，最多保留 200 块。完整应用备份保留消息源码；交互状态可随 GenUI JSON/HTML 单独导出。清除全部本地数据同时清除 GenUI 状态。独立 HTML 保留本地交互，但没有阅读器宿主时不能继续向模型发送动作。
+
+DSH 专属的 slash command、宿主侧边栏插件及 Flutter SDK 的 transport 不属于本应用运行时；`panel` 内容在阅读器中内联显示并可展开画布，不调用不存在的 DSH 服务。
 
 ## 验证
 
-- `npm run test:genui`：协议解析、无效结构、组件白名单及资源上限。
-- 启动 `npm run dev -- --host 127.0.0.1 --port 5328 --strictPort` 后运行 `npm run test:e2e-genui`：桌面和手机宽度的 Markdown 围栏渲染、选择题判分、表格排序筛选、表单 action、标签页及横向溢出检查。
-- `npm run typecheck`、`npm run build`。
+- `npm run test:genui`：60 种组件提示词覆盖、12 个模板、功能样例、受限数学表达式与未知节点防护、旧围栏兼容。
+- 发布浏览器测试 `e2e-genui-full`：曲线滑杆改变 SVG 点列、计算绑定、条件显隐、刷新恢复、ECharts canvas、Mermaid SVG、WebGL 3D、画布、JSON/HTML 导出、独立 HTML 曲线交互和 action 请求。
+- `e2e-genui-protocol`：桌面/手机提示词布局，以及修改后的协议确实进入实际请求。
+- CI 六路浏览器测试、typecheck、完整单元测试；Android release 单元测试、lint、签名构建。

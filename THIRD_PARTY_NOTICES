@@ -33,3 +33,14 @@ and rendering PDF files entirely in the browser.
 - Copyright (c) Mozilla Foundation and contributors.
 - The complete Apache-2.0 license text is provided by the package itself
   (node_modules/pdfjs-dist/LICENSE) and is available from the upstream repository.
+
+
+DSH GenUI 0.16.0
+----------------
+This project embeds the official browser renderer from @changfenhuang/dsh-genui
+(https://github.com/omdsh-dev/dsh-genui), MIT, Copyright (c) 2026 dsh-external.
+The complete license and engine notices are shipped in genui-assets/0.16.0/
+within the web build and Android assets. It is used without the DSH server.
+ECharts, Mermaid, Three.js and MapLibre engines are distributed with their
+upstream notices. Flutter GenUI/A2UI is an architectural reference; no Flutter
+SDK code is copied into this React application.

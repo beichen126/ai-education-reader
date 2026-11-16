@@ -1,0 +1,9 @@
+.reader-genui-surface{min-width:0;max-width:100%;margin:16px 0;--dsh-genui-surface:var(--dsw-alias-bg-layer-1);font-size:14px;color:var(--dsw-alias-label-primary)}
+.reader-genui-surface pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto}
+.reader-genui-tools{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-bottom:8px}
+.reader-genui-tools button{font:inherit;color:inherit;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l2);padding:6px 12px;border-radius:8px;cursor:pointer}
+.reader-genui-canvas{position:fixed;inset:0;z-index:1300;overflow:auto;padding:20px;background:var(--dsw-alias-bg-base)}
+.reader-genui-canvas .reader-genui-surface{max-width:1300px;margin:auto}
+.reader-genui-surface>details{font-size:12px;margin-top:10px}
+
+.reader-genui-templates{border:1px solid var(--dsw-alias-border-l2);padding:12px;border-radius:10px;margin-bottom:12px}.reader-genui-templates select{max-width:100%;padding:8px;font:inherit;color:inherit;background:var(--dsw-alias-bg-layer-1)}

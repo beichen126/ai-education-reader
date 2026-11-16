@@ -119,7 +119,7 @@ function blockEl(node: any, ctx: RenderCtx, onTableAction?: (tableId: string) =>
   }
   if (t === 'code') {
     const value = node.value || ''
-    if ((node.lang === 'dsh-ui' || node.lang === 'genui' || (node.lang === 'json' && node.meta === 'dsh-ui')) && ctx.annotations !== undefined) return <GenUiBlock source={value} />
+    if ((node.lang === 'dsh-ui' || node.lang === 'genui' || (node.lang === 'json' && node.meta === 'dsh-ui')) && ctx.annotations !== undefined) return <GenUiBlock source={value} stateKey={messageId+':'+startOf(node)} />
     const st = cur.v
     cur.v += value.length
     // Code is ordinary canonical text. Keeping the complete value in one leaf
