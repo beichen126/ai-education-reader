@@ -25,7 +25,7 @@ const intro=`GenUI 生成规则（真实可渲染，不只是示意代码）
 - accordion：组织较多内容、展开细节；首屏保留核心结论。
 - scene3d：空间几何与旋转观察，用于理解三维关系。
 - text/code：正文、公式与代码讲解；属性和值用 text；普通列表和表格直接用围栏外的 Markdown，不生成 list/table 组件。
-- image/image-group/svg/video：图片与媒体展示；只用真实可访问来源，不编造资源 URL。
+- svg/video：矢量示意与视频展示；视频只用真实可访问来源，不编造资源 URL。
 - reader-vocabulary：词汇学习与发音；展示单词、音标、释义，可加例句，DeepSeek 朗读由用户点播。
 输出：使用 dsh-ui 围栏，普通组件根为 {"schema":"dsh-genui","title":"简短标题","items":[...]}。节点有 type；布局 items 是节点数组。只使用下面字段，*=必填；嵌套字段列在 [] 中。通用字段 span:number、disabledReason:string（禁用原因）；条件 when/enableWhen:{field,op,value}，op=eq|neq|in|not-in|gt|gte|lt|lte|empty|not-empty|checked。表单 id/group 绑定本地状态，submit.groups 引用这些 id/group；computed:[{id,expr}]，用 "{{id}}" 引用结果。
 类型规则：字段后的 string/number/boolean/array/object/nodes 是 JSON 类型；可选字段不确定就省略，不填 null。card.accent 是颜色字符串（如 "#5b8def"），不是 true/false；flat 才是布尔值。生成前检查必填项、字段类型与枚举；不得把不同组件的同名字段混用。
