@@ -1,3 +1,6 @@
+import { DeepSeekDocumentPicker } from './DeepSeekDocumentPicker'
+import type { DeepSeekDocument } from '../api/deepseek-documents'
+import { isOfficialDeepSeek } from '../api/deepseek-files'
 import { VoiceInput } from '../speech/VoiceInput'
 import { readAloud } from '../speech/read-aloud'
 import { GenUiActions } from '../genui/GenUiBlock'
@@ -359,6 +362,7 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
   if (m.role === 'user') {
     return (
       <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>
+        {m.documents?.length ? <div>{m.documents.map(d=><span key={d.id}>📄 {d.name} </span>)}</div> : null}
         <div className={css.bubble}><RenderedMarkdown content={m.content} messageId={m.id} /></div>
         <div className={css.messageTools}>{m.content && <MessageSourceCopyButton source={m.content} user />}<MessageTimestamp createdAt={m.createdAt} /></div>
         {m.quickFollowUp && <div className={css.quickFollowUpHistory} data-testid="quick-follow-up-history"><span>{tx('快捷追问', 'Quick follow-up')} · {m.quickFollowUp.labelSnapshot}</span><button type="button" data-testid="quick-follow-up-history-inspect" onClick={() => onInspectQuickFollowUp?.(m.quickFollowUp)}>{tx('查看实际提示词', 'View exact prompt')}</button></div>}
@@ -561,6 +565,10 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
   // Draft is keyed by thread (root conversation or branch), so switching A<->B shows each one's own text/images.
   const isBranch = thread?.type === 'branch'
   const key = isBranch ? branchThreadKey(thread!.branchId!) : (sessionId ?? '__none__')
+  const [documentPicker,setDocumentPicker]=useState(false)
+  const [documentDraft,setDocumentDraft]=useState<{key:string;docs:DeepSeekDocument[]}>({key:'',docs:[]})
+  const documents=documentDraft.key===key?documentDraft.docs:[]
+  const supportsDocuments=useSettings(s=>s.chatProvider!=='openai-local'&&isOfficialDeepSeek(s.apiBaseUrl)&&s.model==='deepseek-flash')
   const draft = useDraft(key)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const webSearchEnabled = useSettings(s => s.webSearchEnabled === true)
@@ -715,23 +723,25 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
     const sendTarget = isBranch && thread
       ? { conversationId: thread.conversationId, branchId: thread.branchId }
       : sessionId ? { conversationId: sessionId } : undefined
-    if (!text.trim() && picIds.length === 0) {
+    if (!text.trim() && picIds.length === 0 && !documents.length) {
       if (sendTarget) clearSessionsSendError(sendTarget)
       return
     }
     if (isBranch && thread) {
-      const outcome = await runBranchReply(thread.conversationId, thread.branchId!, text.trim(), picIds)
-      if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null); if (onBranchSent) onBranchSent() }
+      const outcome = await runBranchReply(thread.conversationId, thread.branchId!, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), picIds, {documents})
+      if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { clearDraftMemory(key); setDocumentDraft({key,docs:[]}); setPhotoError(undefined); setOpenId(null); if (onBranchSent) onBranchSent() }
       return
     }
     if (!sessionId) return
-    const outcome = await sessionsActions.sendUserMessage(sessionId, text.trim(), picIds)
+    const outcome = await sessionsActions.sendUserMessage(sessionId, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), picIds, {documents})
     // Only clear the draft once the user message is ACCEPTED & persisted; the image ids
     // then belong to the message (ownership transfer), so we must NOT delete them here.
-    if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { clearDraftMemory(key); setPhotoError(undefined); setOpenId(null) }
+    if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { clearDraftMemory(key); setDocumentDraft({key,docs:[]}); setPhotoError(undefined); setOpenId(null) }
   }
   return (
     <div className={css.composer} data-testid="composer">
+      {documentPicker && <DeepSeekDocumentPicker key={key} onClose={()=>setDocumentPicker(false)} onSelect={docs=>setDocumentDraft({key,docs})} />}
+      {documents.length>0 && <div>{documents.map(d=><span key={d.id}>{d.name} <button type="button" aria-label={tx('移除文件','Remove file')} onClick={()=>setDocumentDraft({key,docs:documents.filter(x=>x.id!==d.id)})}>×</button> </span>)}</div>}
       {photoError && <div className={css.errorBanner}>{photoError}</div>}
       {picIds.length > 0 && (
         <div className={css.composerPics}>
@@ -753,6 +763,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
         {attachMenuOpen && (
           <div className={css.addFileMenu} data-testid="composer-add-file-menu" ref={attachMenuRef}>
             <div className={css.menuTitle}>{tx('添加资料', 'Add material')}</div>
+            {supportsDocuments && <button type="button" className={css.menuItem} onClick={()=>{setDocumentPicker(true);setAttachMenuOpen(false)}}>{tx('批量文件 · DeepSeek 解析','Batch files · DeepSeek parsing')}</button>}
             <div className={css.materialActions}>
               <button type="button" className={css.menuItem} data-testid="composer-add-local" onClick={() => { setAttachMenuOpen(false); materialsInputRef.current?.click() }}><IconDocument16 /><span>{tx('本地文件', 'Local files')}<small>{tx('图片或单个 PDF', 'Images or one PDF')}</small></span></button>
               <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}><IconFolderOpenOutline16 /><span>{tx('资料库', 'Library')}<small>{tx('选择已保存的资料', 'Choose saved materials')}</small></span></button>

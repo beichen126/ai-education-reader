@@ -46,12 +46,12 @@ export class BranchReplyThread implements ReplyThread {
     const placeholder: Message = { id: assistantId, role: 'assistant', content: '', images: [], createdAt: now, updatedAt: now }
     this.mutate((b) => ({ ...b, updatedAt: now, messages: [...b.messages, placeholder] }))
   }
-  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage): void {
+  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage, native?: {serverToolCalls?: unknown[]; annotations?: unknown[]}): void {
     this.mutate((b) => {
       const last = b.messages[b.messages.length - 1]
       if (!last || last.id !== this.assistantId) return b
-      if (last.content === content && !usage) return b
-      return { ...b, updatedAt: Date.now(), messages: [...b.messages.slice(0, -1), { ...last, content, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }] }
+      if (last.content === content && !usage && !native) return b
+      return { ...b, updatedAt: Date.now(), messages: [...b.messages.slice(0, -1), { ...last, content, ...native, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }] }
     })
   }
   persistCheckpoint(content: string): void {
@@ -95,6 +95,7 @@ export class BranchReplyThread implements ReplyThread {
  */
 export type BranchReplyOptions = {
   quickFollowUp?: QuickFollowUpMetadata
+  documents?: import('../api/deepseek-documents').DeepSeekDocument[]
   draftDisposition?: DraftDisposition
 }
 
@@ -123,7 +124,7 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
       if (!lease.isCurrent()) { lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
       if (providerRejection) { lease.release(); return pendingRejected(providerRejection) }
       const now = Date.now()
-      const msg = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
+      const msg = await attachPdfContexts({ id: newStableId(), role: 'user', content, ...(options.documents?.length ? { documents: options.documents.map(d=>({...d})) } : {}), images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
       const conversation = await getConversation(conversationId)
       const branches = await listBranchesByConversation(conversationId)
       if (!conversation) {

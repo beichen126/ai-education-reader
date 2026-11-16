@@ -18,6 +18,8 @@ const SKIP_UNIT = process.env.RELEASE_SKIP_UNIT === '1'
 const EXTRA_E2E = process.env.RELEASE_EXTRA_E2E === '1'
 
 const CORE_E2E = [
+  'e2e-api-profiles',
+  'e2e-deepseek-native',
   'e2e-branch-live-view',
   'e2e-responsive-surfaces',
   'e2e-token-usage',

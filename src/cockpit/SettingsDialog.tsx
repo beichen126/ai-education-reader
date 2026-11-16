@@ -1,3 +1,4 @@
+import {ApiProfiles} from './ApiProfiles'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useSettings, patchSettings, DEFAULT_SETTINGS, useSettingsMutation } from '../engine/settings-store'
 import { testConnection, type VisionCapability } from '../api/deepseek'
@@ -220,6 +221,7 @@ export function SettingsDialog() {
         <span className={css.settingsHint}>{tx('服务预设', 'Provider preset')}</span>
         <Button size="sm" variant="outline" onClick={() => { setBase(DEFAULT_SETTINGS.apiBaseUrl); setModel(DEFAULT_SETTINGS.model); setTest(null); setTestOk(null) }}>DeepSeek</Button>
       </div>
+      <ApiProfiles draft={{...s,apiBaseUrl:base,apiKey:key,model,visionCapability}} onApply={next=>{setBase(next.apiBaseUrl);setKey(next.apiKey);setModel(next.model);setVisionCapability(next.visionCapability);setShowKey(false);setTest(null);setTestOk(null);setSaved(false)}} />
       <div className={css.field}><label>API Base URL</label><Input className={css.fieldInput} value={base} onChange={e => setBase(e.target.value)} placeholder={DEFAULT_SETTINGS.apiBaseUrl} /></div>
       <div className={css.field}>
         <label>API Key</label>
@@ -319,6 +321,12 @@ export function SettingsDialog() {
           <button type="button" role="radio" className={css.appearanceOpt} data-testid="language-en" aria-checked={s.uiLanguage === 'en'} data-selected={s.uiLanguage === 'en'} onClick={() => void setUiLanguage('en')}>English</button>
         </div>
         <div className={css.settingsHint}>{tx('选择 English 后页面会同步设置 lang="en"，便于浏览器翻译工具正确识别。', 'Selecting English also sets the page language to lang="en" for browser translation tools.')}</div>
+      </div>
+      <div className={css.exportSection}>
+        <div className={css.exportTitle}>{tx('DeepSeek 原生功能','DeepSeek native features')}</div>
+        {([['userMetadataEnabled','用户元信息标记','User metadata'],['autoTitleEnabled','自动生成会话标题','Automatic conversation titles'],['readUrlEnabled','阅读链接','Read links'],['nativeDeepSeekProxy','中转站支持 DeepSeek 原生扩展','Gateway supports DeepSeek native extensions']] as const).map(([key,zh,en])=><label key={key} className={css.speechRateRow}><span>{tx(zh,en)}</span><input type="checkbox" checked={key==='nativeDeepSeekProxy'?s[key]===true:s[key]!==false} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({[key]:e.target.checked}).catch(()=>{})}} /></label>)}
+        <label className={css.speechRateRow}><span>{tx('所在地（可选）','Location (optional)')}</span><input aria-label={tx('所在地','Location')} defaultValue={s.userLocation||''} maxLength={160} placeholder={tx('例如：中国，杭州','For example: Singapore')} onBlur={e=>{void patchSettings({userLocation:e.target.value}).catch(()=>{})}} /></label>
+        <div className={css.settingsHint}>{tx('使用 deepseek-flash 时生效。日期与语言自动填写，所在地由你填写。打开输入框的联网搜索后，使用原生深度思考搜索。中转站需支持这些扩展才能开启对应选项。','Available with deepseek-flash. Date and language are automatic; location is optional. Enable web search in the composer for native deep thinking search. Enable gateway extensions only when your gateway supports them.')}</div>
       </div>
       <div className={css.exportSection}>
         <div className={css.exportTitle}>{tx('朗读倍速', 'Read aloud speed')}</div>

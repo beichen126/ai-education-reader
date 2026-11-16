@@ -16,7 +16,7 @@ export async function providerPreflight(settings: Settings, signal?: AbortSignal
     if (!settings.openaiLocalModel || !status.models.includes(settings.openaiLocalModel)) throw new LocalProviderError('model_unavailable')
   } catch (error) { return { kind: 'rejected', code: error instanceof LocalProviderError ? error.code : 'local-unavailable', message: error instanceof LocalProviderError ? error.message : tx('本机服务不可用。', 'Local service unavailable.') } }
 }
-export function streamProviderChat(settings: Settings, args: StreamTextChatArgs) {
+export function streamProviderChat(settings: Settings, args: StreamTextChatArgs): Promise<import('./deepseek').StreamTextChatResult> {
   return settings.chatProvider === 'openai-local'
     ? streamLocalChat({ ...args, model: settings.openaiLocalModel || '' })
     : streamTextChat(args)

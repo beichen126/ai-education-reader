@@ -1,3 +1,4 @@
+import {parseProfiles} from '../engine/api-profiles'
 import { idbReplaceAll, idbGetAll } from '../storage/idb'
 import { resolveStoredModel } from '../api/model-defaults'
 import type { Annotation } from '../annotations/annotation-types'
@@ -284,6 +285,8 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
     const rate = (settings as any)[key]
     if (rate !== undefined && (!isNum(rate) || rate < 0.5 || rate > 2)) throw new BackupError('settings.' + key + ' must be between 0.5 and 2')
   }
+  if (settings.userLocation !== undefined && (typeof settings.userLocation !== 'string' || settings.userLocation.length>160)) throw new BackupError('invalid userLocation')
+  for (const key of ['userMetadataEnabled', 'autoTitleEnabled', 'readUrlEnabled', 'nativeDeepSeekProxy'] as const) if (settings[key] !== undefined && typeof settings[key] !== 'boolean') throw new BackupError('invalid '+key)
   if (settings.speechVoice !== undefined && !['stella','tide'].includes(settings.speechVoice)) throw new BackupError('invalid speechVoice')
   if (settings.speechApiUrl !== undefined && typeof settings.speechApiUrl !== 'string') throw new BackupError('invalid speechApiUrl')
   if (settings.speechRepeatCount !== undefined && (!isInt(settings.speechRepeatCount) || settings.speechRepeatCount<1 || settings.speechRepeatCount>10)) throw new BackupError('settings.speechRepeatCount must be an integer between 1 and 10')
@@ -597,6 +600,13 @@ export async function restoreBackup(backup: Backup, binaries?: {
       { key: 'apiKey', value: '' },
       { key: 'speechApiKey', value: '' },
       { key: 'speechApiUrl', value: backup.settings?.speechApiUrl || '' },
+      {key:'apiProfiles',value:JSON.stringify(parseProfiles(backup.settings?.apiProfiles).map(p=>({...p,config:{...p.config,apiKey:'',speechApiKey:''}})))},
+      {key:'activeApiProfileId',value:typeof backup.settings?.activeApiProfileId==='string'?backup.settings.activeApiProfileId:''},
+      {key:'userLocation',value:backup.settings?.userLocation || ''},
+      {key:'userMetadataEnabled',value:String(backup.settings?.userMetadataEnabled!==false)},
+      {key:'autoTitleEnabled',value:String(backup.settings?.autoTitleEnabled!==false)},
+      {key:'readUrlEnabled',value:String(backup.settings?.readUrlEnabled!==false)},
+      {key:'nativeDeepSeekProxy',value:String(backup.settings?.nativeDeepSeekProxy===true)},
       { key: 'speechVoice', value: backup.settings?.speechVoice || 'stella' },
       // v1.1.3: restore saved reusable custom actions (settings KV). Missing field in an old
       // backup -> empty (no custom actions), never an error.

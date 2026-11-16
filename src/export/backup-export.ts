@@ -1,3 +1,4 @@
+import {parseProfiles} from '../engine/api-profiles'
 import { listConversations, getAnnotationsByConversation, getAttachmentRow, getSetting } from '../storage/storage'
 import { resolveStoredModel } from '../api/model-defaults'
 import { idbGetAll } from '../storage/idb'
@@ -122,6 +123,13 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
     model: resolveStoredModel(model, apiBaseUrl),
     customSystemPrompt: (typeof customSystemPrompt === 'string' ? customSystemPrompt : ''),
     customSystemPromptEnabled: customSystemPromptEnabled === 'true',
+    apiProfiles: parseProfiles(await getSetting('apiProfiles')).map(p=>({...p,config:{...p.config,apiKey:'',speechApiKey:''}})),
+    activeApiProfileId: await getSetting('activeApiProfileId') || '',
+    userLocation: await getSetting('userLocation') || '',
+    userMetadataEnabled: await getSetting('userMetadataEnabled') !== 'false',
+    autoTitleEnabled: await getSetting('autoTitleEnabled') !== 'false',
+    readUrlEnabled: await getSetting('readUrlEnabled') !== 'false',
+    nativeDeepSeekProxy: await getSetting('nativeDeepSeekProxy') === 'true',
     webSearchEnabled: await getSetting('webSearchEnabled') === 'true',
     chineseSpeechRate: Number(await getSetting('chineseSpeechRate')) || 1,
     englishSpeechRate: Number(await getSetting('englishSpeechRate')) || 0.9,

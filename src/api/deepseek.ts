@@ -5,8 +5,8 @@ import { parseTokenUsage, type TokenUsage } from '../engine/token-usage'
 import { prepareDeepSeekFiles } from './deepseek-files'
 
 export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } } | { type: 'file'; file_id: string }
-export type ApiChatMessage = { role: 'user' | 'assistant' | 'system'; content: string | ChatContentPart[] }
-export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal; reasoningEffort?: DeepSeekReasoningEffort; thinking?: 'enabled' | 'disabled'; jsonObject?: boolean; maxTokens?: number }
+export type ApiChatMessage = { role: 'user' | 'assistant' | 'system' | 'latest_reminder'; server_tool_calls?: unknown[]; content: string | ChatContentPart[] }
+export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal; reasoningEffort?: DeepSeekReasoningEffort; thinking?: 'enabled' | 'disabled'; jsonObject?: boolean; maxTokens?: number; nativeTools?: string[]; generateTitle?: boolean }
 export type SendTextChatResult = { content: string; finishReason?: string }
 
 /** DeepSeek vision API limit: max images in ONE chat request (API limit, not product). */
@@ -62,7 +62,7 @@ export function deepSeekRequestOptions(baseUrl: string, model: string, reasoning
 
 function chatRequestBody(args: SendTextChatArgs, stream: boolean) {
   const { model, messages, baseUrl } = args
-  return { model, messages, stream, ...(args.jsonObject ? { response_format: { type: 'json_object' } } : {}), ...(args.maxTokens ? { max_tokens: args.maxTokens } : {}), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'disabled' ? { thinking: { type: 'disabled' } } : { ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'enabled' ? { thinking: { type: 'enabled' } } : {}) }) }
+  return { model, messages, stream, ...(args.nativeTools?.length ? { tools: args.nativeTools.map(type=>({type})) } : {}), ...(args.generateTitle ? {title:{enabled:true}} : {}), ...(args.jsonObject ? { response_format: { type: 'json_object' } } : {}), ...(args.maxTokens ? { max_tokens: args.maxTokens } : {}), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'disabled' ? { thinking: { type: 'disabled' } } : { ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'enabled' ? { thinking: { type: 'enabled' } } : {}) }) }
 }
 
 async function withDeepSeekFiles<T>(args: SendTextChatArgs, stream: boolean, run: (messages: ApiChatMessage[]) => Promise<T>): Promise<T> {
@@ -84,7 +84,7 @@ async function sendTextChatInline(args: SendTextChatArgs): Promise<SendTextChatR
     res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify({ model, messages, stream: false, ...(args.jsonObject ? { response_format: { type: 'json_object' } } : {}), ...(args.maxTokens ? { max_tokens: args.maxTokens } : {}), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'disabled' ? { thinking: { type: 'disabled' } } : { ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'enabled' ? { thinking: { type: 'enabled' } } : {}) }) }),
+      body: JSON.stringify(chatRequestBody(args, false)),
       signal,
     })
   } catch {
@@ -249,16 +249,17 @@ export class SSEParser {
 }
 
 export interface StreamTextChatArgs extends SendTextChatArgs { signal?: AbortSignal; onDelta: (delta: string) => void }
-export interface StreamTextChatResult { content: string; finishReason?: string; usage?: TokenUsage }
+export interface StreamTextChatResult { title?: string; serverToolCalls?: unknown[]; annotations?: unknown[]; content: string; finishReason?: string; usage?: TokenUsage }
 
 /** Extract the content delta from one SSE event payload (DeepSeek / OpenAI shape). */
-function deltaOf(data: string): { delta: string; finishReason?: string; usage?: TokenUsage } {
+function deltaOf(data: string): Omit<StreamTextChatResult, 'content'> & { delta: string } {
   let evt: any
   try { evt = JSON.parse(data) } catch { throw new DeepSeekError('bad-json', 'stream chunk is not valid JSON') }
   const ch = evt && evt.choices && evt.choices[0] ? evt.choices[0] : undefined
   const d = ch && ch.delta && typeof ch.delta.content === 'string' ? ch.delta.content : ''
   const fr = ch && ch.finish_reason ? ch.finish_reason : undefined
-  return { delta: d, finishReason: fr, usage: parseTokenUsage(evt?.usage) }
+  if (evt.error) throw new DeepSeekError('server', 'Server stream failed')
+  return { title: ch?.delta?.title, serverToolCalls: ch?.delta?.server_tool_calls, annotations: ch?.delta?.annotations, delta: d, finishReason: fr, usage: parseTokenUsage(evt?.usage) }
 }
 
 export function streamTextChat(args: StreamTextChatArgs): Promise<StreamTextChatResult> {
@@ -274,7 +275,7 @@ async function streamTextChatInline(args: StreamTextChatArgs): Promise<StreamTex
     res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify({ model, messages, stream: true, ...(args.jsonObject ? { response_format: { type: 'json_object' } } : {}), ...(args.maxTokens ? { max_tokens: args.maxTokens } : {}), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'disabled' ? { thinking: { type: 'disabled' } } : { ...deepSeekRequestOptions(baseUrl, model, args.reasoningEffort), ...(isDeepSeekRequest(baseUrl, model) && args.thinking === 'enabled' ? { thinking: { type: 'enabled' } } : {}) }) }),
+      body: JSON.stringify(chatRequestBody(args, true)),
       signal,
     })
   } catch (e) {
@@ -299,13 +300,16 @@ async function streamTextChatInline(args: StreamTextChatArgs): Promise<StreamTex
     const choice = payload?.choices?.[0], content = choice?.message?.content
     if (typeof content !== 'string' || !hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content')
     onDelta(content)
-    return { content, finishReason: choice.finish_reason, usage: parseTokenUsage(payload?.usage) }
+    return { title: choice.message.title, serverToolCalls: choice.message.server_tool_calls, annotations: choice.message.annotations, content, finishReason: choice.finish_reason, usage: parseTokenUsage(payload?.usage) }
   }
   if (!res.body) throw new DeepSeekError('bad-json', 'no response body')
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   const parser = new SSEParser()
   let content = ''
+  let title: string | undefined
+  let serverToolCalls: unknown[] | undefined
+  let annotations: unknown[] | undefined
   let finishReason: string | undefined
   let usage: TokenUsage | undefined
   let done = false
@@ -317,7 +321,10 @@ async function streamTextChatInline(args: StreamTextChatArgs): Promise<StreamTex
       for (const data of parser.feed(text)) {
         if (data === '[DONE]') { done = true; break }
         const d = deltaOf(data)
-        if (d.usage) usage = d.usage
+        if (typeof d.title === 'string') title = d.title
+      if (Array.isArray(d.serverToolCalls)) serverToolCalls = d.serverToolCalls
+      if (Array.isArray(d.annotations)) annotations = d.annotations
+      if (d.usage) usage = d.usage
         if (d.delta) { content += d.delta; onDelta(d.delta) }
         if (d.finishReason) finishReason = d.finishReason
       }
@@ -326,6 +333,9 @@ async function streamTextChatInline(args: StreamTextChatArgs): Promise<StreamTex
     for (const data of parser.finish()) {
       if (data === '[DONE]') { done = true; continue }
       const d = deltaOf(data)
+      if (typeof d.title === 'string') title = d.title
+      if (Array.isArray(d.serverToolCalls)) serverToolCalls = d.serverToolCalls
+      if (Array.isArray(d.annotations)) annotations = d.annotations
       if (d.usage) usage = d.usage
       if (d.delta) { content += d.delta; onDelta(d.delta) }
       if (d.finishReason) finishReason = d.finishReason
@@ -339,7 +349,7 @@ async function streamTextChatInline(args: StreamTextChatArgs): Promise<StreamTex
     reader.releaseLock()
   }
   if (!hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content in stream')
-  return { content, finishReason, usage }
+  return { content, finishReason, usage, title, serverToolCalls, annotations }
 }
 // ---- multimodal helpers (used by the store's message conversion; UI never builds this) ----
 export type VisionCapability = 'auto' | 'supports-image' | 'text-only'
@@ -356,11 +366,12 @@ export function isVisionModel(model: string, capability?: VisionCapability): boo
 export async function buildApiMessages(msgs: import('../engine/types').Message[], toDataUrl: (id: string) => Promise<string>): Promise<ApiChatMessage[]> {
   const out: ApiChatMessage[] = []
   for (const m of msgs) {
-    if (m.role === 'assistant') { out.push({ role: 'assistant', content: m.content }); continue }
-    if (m.images.length > 0) {
+    if (m.role === 'assistant') { out.push({ role: 'assistant', content: m.content, ...(m.serverToolCalls ? {server_tool_calls:m.serverToolCalls} : {}) }); continue }
+    if (m.images.length > 0 || m.documents?.length) {
       // Interleave an explicit 【图片 k/N】 text identity before every image so the
       // model can count and order a large batch of unlabeled images reliably.
       const parts: ChatContentPart[] = []
+      for(const doc of m.documents || []) parts.push({type:'file',file_id:doc.id})
       if (m.content) parts.push({ type: 'text', text: m.content })
       for (let idx = 0; idx < m.images.length; idx++) {
         parts.push({ type: 'text', text: '【图片 ' + (idx + 1) + '/' + m.images.length + '】' })

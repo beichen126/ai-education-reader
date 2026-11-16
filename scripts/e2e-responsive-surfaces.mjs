@@ -39,7 +39,7 @@ try {
     }
     await selectSettingsSection(page,'general')
     const headings = await page.locator('#settings-section-general > div > div:first-child').allTextContents()
-    assert.deepEqual(headings,language==='zh-CN' ? ['外观','PDF 阅读方式','提示词管理','对话阅读位置','界面语言','朗读倍速'] : ['Appearance','PDF reading mode','Prompt management','Conversation reading position','Interface language','Read aloud speed'])
+    assert.deepEqual(headings,language==='zh-CN' ? ['外观','PDF 阅读方式','提示词管理','对话阅读位置','界面语言','DeepSeek 原生功能','朗读倍速'] : ['Appearance','PDF reading mode','Prompt management','Conversation reading position','Interface language','DeepSeek native features','Read aloud speed'])
     assert.equal(await page.getByTestId('settings-remember-reading-position').isChecked(),true)
     await page.keyboard.press('Escape')
     await openDocumentLibrary(page)

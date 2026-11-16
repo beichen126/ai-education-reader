@@ -1,3 +1,5 @@
+import { nativeConversationOptions, citationFooter } from '../api/deepseek-native'
+import { validateDocumentContext } from '../api/deepseek-documents'
 import { newStableId, type Message, type StableId } from './types'
 import type { Settings } from './settings-store'
 import { buildContextMessages, buildApiMessages, countImageParts, isVisionModel, DeepSeekError, errorKindLabel } from '../api/deepseek'
@@ -19,10 +21,11 @@ import { DeepSeekFilesError } from '../api/deepseek-files'
  * stale-write rules so root and branch behavior cannot drift.
  */
 export interface ReplyThread {
+  acceptTitle?(title: string): void
   readonly genKey: string
   getContextMessages(): Message[] | Promise<Message[]>
   createAssistantPlaceholder(assistantId: StableId, now: number): void
-  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage): void
+  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage, native?: {serverToolCalls?: unknown[]; annotations?: unknown[]}): void
   persistCheckpoint(content: string): void
   persistFinal(): Promise<void>
   drainWrites(): Promise<void>
@@ -77,6 +80,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
 
   try {
     const contextMessages = acceptedSendContext?.logical.messages ?? buildContextMessages(await thread.getContextMessages())
+    validateDocumentContext(contextMessages.flatMap(m=>m.documents || []), settings.chatProvider==='openai-local'?'':settings.apiBaseUrl, settings.chatProvider==='openai-local'?'':settings.model)
     const hasImages = contextMessages.some((x) => x.images.length > 0)
     const supportsImages = !hasImages || (settings.chatProvider === 'openai-local'
       ? (await getLocalStatus(controller.signal, 15000)).imageModels?.includes(settings.openaiLocalModel || '') === true
@@ -110,19 +114,21 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     }
     thread.setStreaming()
     if (onStreamStart) onStreamStart(controller, assistantId)
+    const native = nativeConversationOptions(settings, reqMessages, !!thread.acceptTitle && contextMessages.filter(m=>m.role==='user').length===1)
     let webFooter = ''
-    if (settings.webSearchEnabled && settings.chatProvider !== 'openai-local') {
+    if (settings.webSearchEnabled && settings.chatProvider !== 'openai-local' && !native) {
       const question = [...contextMessages].reverse().find(message => message.role === 'user')?.content || ''
       const research = await prepareWebResearch({ baseUrl: settings.apiBaseUrl, apiKey: settings.apiKey, question, signal: controller.signal })
       if (!ownedLease.isCurrent()) throw new DeepSeekError('aborted', 'Aborted')
       reqMessages.push(research.message)
       webFooter = research.footer
     }
-    const r = await streamProviderChat(settings, { apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages, signal: controller.signal, onDelta })
+    const r = await streamProviderChat(settings, { apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages, signal: controller.signal, onDelta, ...native })
     clearTimeout(renderTimer);renderTimer=undefined
-    received = r.content + webFooter
+    received = r.content + webFooter + citationFooter(r.annotations)
     update(received, true)
-    if (r.usage) thread.updateAssistantContent(received, r.usage)
+    thread.updateAssistantContent(received, r.usage, {serverToolCalls:r.serverToolCalls, annotations:r.annotations})
+    if (typeof r.title==='string') thread.acceptTitle?.(r.title)
     if (!(await thread.exists())) throw new DeepSeekError('aborted', '目标已删除')
     await thread.persistFinal()
     await thread.drainWrites()

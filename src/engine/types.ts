@@ -76,6 +76,9 @@ export type PdfContext = {
 export type Attachment = { id: StableId; name: string; mimeType: string; size: number; createdAt: number; updatedAt: number; source?: PdfAttachmentSource }
 /** Message holds only stable attachment id references, never objectURL/base64. */
 export type Message = {
+  serverToolCalls?: unknown[]
+  annotations?: unknown[]
+  documents?: import('../api/deepseek-documents').DeepSeekDocument[]
   tokenUsage?: import('./token-usage').TokenUsage
   id: StableId
   role: MessageRole
@@ -139,6 +142,6 @@ export function normalizeMessagePdfContexts(message: Message): Message {
 export function normalizeConversationPdfContexts<T extends { messages: Message[] }>(conversation: T): T {
   return { ...conversation, messages: conversation.messages.map(normalizeMessagePdfContexts) }
 }
-export type Conversation = { id: StableId; title: string; createdAt: number; updatedAt: number; messages: Message[]; promptTransitions?: PromptTransition[] }
+export type Conversation = { id: StableId; title: string; titleManuallySet?: boolean; createdAt: number; updatedAt: number; messages: Message[]; promptTransitions?: PromptTransition[] }
 export const NEW_TITLE = '新会话'
 export function newStableId(): StableId { return globalThis.crypto.randomUUID() }

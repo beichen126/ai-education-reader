@@ -66,6 +66,7 @@ export function presentRejectedSend(target: SendTarget, outcome: RejectedSend, i
 
 export type SendUserMessageOptions = {
   quickFollowUp?: QuickFollowUpMetadata
+  documents?: import('../api/deepseek-documents').DeepSeekDocument[]
   draftDisposition?: DraftDisposition
 }
 
@@ -180,7 +181,7 @@ export const sessionsActions = {
         const providerRejection = await providerPreflight(settings, controller.signal)
         if (!lease.isCurrent()) { acceptingRef.current = null; lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
         if (providerRejection) { acceptingRef.current = null; lease.release(); return { outcome: Promise.resolve(rejectSend(target, providerRejection, intent)) } }
-        const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
+        const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, ...(options.documents?.length ? { documents: options.documents.map(d=>({...d})) } : {}), images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
         const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
         const candidate: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
         upsertState(candidate, { status: 'sending', sendError: undefined, sendErrorTarget: undefined })
@@ -224,7 +225,7 @@ export const sessionsActions = {
     const clean = sanitizeTitle(title)
     // Never store an empty / whitespace-only title; a no-op rename just returns.
     if (!clean) return
-    const updated: Conversation = { ...conv, title: clean, updatedAt: Date.now() }
+    const updated: Conversation = { ...conv, title: clean, titleManuallySet: true, updatedAt: Date.now() }
     upsertState(updated); await saveConversationRenameAndSyncCards(updated)
   },
   async remove(id: string) {
@@ -274,6 +275,11 @@ class RootReplyThread implements ReplyThread {
   readonly genKey: string
   private assistantId: StableId = ''
   constructor(private id: string) { this.genKey = genRootKey(id) }
+  acceptTitle(title: string): void {
+    const cur = state.byId[this.id]
+    if (!cur || cur.titleManuallySet || cur.messages.filter(m=>m.role==='user').length!==1) return
+    const clean = sanitizeTitle(title); if (clean) upsertState({...cur,title:clean})
+  }
   getContextMessages(): Message[] { return state.byId[this.id]?.messages ?? [] }
   createAssistantPlaceholder(assistantId: StableId, now: number): void {
     this.assistantId = assistantId
@@ -281,12 +287,12 @@ class RootReplyThread implements ReplyThread {
     const placeholder: Message = { id: assistantId, role: 'assistant', content: '', images: [], createdAt: now, updatedAt: now }
     upsertState({ ...cur, updatedAt: now, messages: [...cur.messages, placeholder] }, { status: 'streaming', sendError: undefined })
   }
-  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage): void {
+  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage, native?: {serverToolCalls?: unknown[]; annotations?: unknown[]}): void {
     const cur = state.byId[this.id]; if (!cur) return
     const last = cur.messages[cur.messages.length - 1]
     if (!last || last.id !== this.assistantId) return
-    if (last.content === content && !usage) return
-    const updatedMsg: Message = { ...last, content, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }
+    if (last.content === content && !usage && !native) return
+    const updatedMsg: Message = { ...last, content, ...native, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }
     upsertState({ ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] }, { status: 'streaming', sendError: undefined })
   }
   persistCheckpoint(content: string): void {
