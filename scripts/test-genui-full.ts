@@ -46,7 +46,7 @@ const unified=normalizeGenuiInput({items:[{type:'choices',mode:'multi',items:[{l
 assert.ok(isRenderableProcess(processGenuiSpec(unified)))
 assert.equal(unified.items[0].action,'reader-choices:1')
 assert.ok(unified.items[0].answer.startsWith('__reader_multi__:'))
-assert.throws(()=>normalizeGenuiInput({items:[{type:'choices',items:[{label:'A'},{label:'A'}]}]}),/唯一/)
-assert.throws(()=>normalizeGenuiInput({items:[{type:'choices',items:[{label:'A'}],answer:'B'}]}),/对应/)
+assert.equal(normalizeGenuiInput({items:[{type:'choices',items:[{label:'A'},{label:'A'}]}]}).items[0].items.length,1)
+assert.equal(normalizeGenuiInput({items:[{type:'choices',items:[{label:'A'}],answer:'B'}]}).items[0].answer,undefined)
 
 assert.deepEqual(normalizeGenuiInput(unified),unified,"unified choices survives JSON export/reimport")

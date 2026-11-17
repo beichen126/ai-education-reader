@@ -1,4 +1,5 @@
 import 'fake-indexeddb/auto'
+import { prepareOcrPages } from '../src/pdf/pdf-ocr-pages'
 import assert from 'node:assert/strict'
 import { idbClearAll } from '../src/storage/idb'
 import { createDocument, listDocumentRecords } from '../src/documents/document-service'
@@ -50,3 +51,15 @@ await restoreBackup(backup)
 assert.equal((await readPageOcr(doc.id,1))?.text,a.text)
 await ensurePageOcr(doc.id,1,render);assert.equal(calls,count)
 console.log('PASS PDF OCR official key isolation, in-flight dedup, persisted per-page cache, atomic text attachment, backup restore and HTTP 200 errors')
+
+const prepared = await prepareOcrPages(doc.id, { ranges:[{startPage:1,endPage:3}], pageCount:3, renderPage:async()=>{throw new Error('Cached OCR must not render')} })
+assert.equal(prepared.pages.length,3)
+assert.ok(prepared.pages.every(p=>p.previewDeferred&&p.ocr&&p.blob.size<100))
+await assert.rejects(prepareOcrPages(doc.id, { ranges:[{startPage:1,endPage:3}],pageCount:3,renderPage:async()=>{throw new Error('must not render')},isCancelled:()=>true }),/cancelled/)
+console.log('PASS cached OCR pages ready without rendering, tiny deferred previews and cancellation')
+
+const deferredCommit=await addPdfContextToDraft('chat',{documentId:doc.id,fileName:'ocr.pdf',selection:{kind:'manual',ranges:[{startPage:1,endPage:3}],contextMode:'ocr'},pages:prepared.pages})
+assert.equal(deferredCommit.ok,true)
+const deferredBackup=await buildBackup();parseAndValidate(deferredBackup)
+assert.ok(deferredBackup.attachments.some(a=>a.meta.source?.previewDeferred&&a.meta.ocr))
+console.log('PASS deferred OCR previews retain source ownership in portable backups')

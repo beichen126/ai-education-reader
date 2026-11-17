@@ -99,7 +99,7 @@ export function PdfPanel({
 
   const startGenerateRanges = (ranges: PdfRange[]) => {
     setLastRanges(ranges)
-    void generateRanges(ranges)
+    void generateRanges(ranges, contextMode)
   }
 
   const onGenerate = () => {
@@ -237,9 +237,10 @@ export function PdfPanel({
               {selError && <div className={css.error} data-testid="pdf-error">{selError}</div>}
               {error && <div className={css.error} data-testid="pdf-error">{localizedErrorText(error, 'PDF processing failed.')}</div>}
 
+              <PdfContextMode value={contextMode} onChange={value => { setContextMode(value); clearPreview() }} disabled={adding || generating} />
               <div className={css.actions}>
                 <Button variant="primary" data-testid="pdf-generate" disabled={adding || generating || (inChapterMode && selectedNodes.length === 0)} onClick={onGenerate}>
-                  {generating ? tx('正在渲染…', 'Rendering…') : tx('生成预览', 'Generate preview')}
+                  {generating ? tx('正在处理…', 'Processing…') : contextMode === 'ocr' ? tx('准备 OCR 文本', 'Prepare OCR text') : tx('生成预览', 'Generate preview')}
                 </Button>
                 <Button variant="outline" disabled={generating || adding} onClick={() => fileRef.current?.click()}>{tx('重新选择', 'Choose another')}</Button>
               </div>
@@ -263,7 +264,7 @@ export function PdfPanel({
                 <>
                   <div className={css.progress}>{tx('共生成 ' + pages.length + ' 页', 'Generated ' + pages.length + ' pages')}</div>
                   {largePreview && <div className={css.empty} data-testid="pdf-preview-note">{tx('以下仅展示部分页面预览（共 ' + pages.length + ' 页，Blob 已全部生成）。', 'Only a sample is shown below. All ' + pages.length + ' page blobs were generated.')}</div>}
-                  <PdfContextMode value={contextMode} onChange={setContextMode} disabled={adding} />
+
                   <div className={css.addBar}>
                     <span className={css.fileName}>{doc.fileName}</span>
                     <span className={css.fileMeta}>{addBarTitle}{addBarRange} · {tx('共 ' + pages.length + ' 页', pages.length + ' pages')}</span>

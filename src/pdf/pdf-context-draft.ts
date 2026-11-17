@@ -29,7 +29,7 @@ export async function addPdfContextToDraft(conversationId: string, payload: PdfA
       payload.onOcrProgress?.(0, payload.pages.length)
       for (const page of payload.pages) {
         if (payload.isCancelled?.()) return { ok: false, count: 0, error: '' }
-        ocr.set(page.pageNumber, await ensurePageOcr(payload.documentId, page.pageNumber, async () => page.blob))
+        ocr.set(page.pageNumber, page.ocr ?? await ensurePageOcr(payload.documentId, page.pageNumber, async () => page.blob))
         payload.onOcrProgress?.(ocr.size, payload.pages.length)
       }
     }
@@ -41,6 +41,7 @@ export async function addPdfContextToDraft(conversationId: string, payload: PdfA
       name: pdfPageAttachmentName(payload.fileName, p.pageNumber),
       source: {
         type: 'pdf-page' as const,
+        ...(p.previewDeferred ? { previewDeferred: true } : {}),
         groupId,
         ...(payload.documentId ? { documentId: payload.documentId } : {}),
         fileName: payload.fileName,

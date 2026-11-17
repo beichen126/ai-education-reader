@@ -7,6 +7,8 @@ export type LocalPdfDocument = {
 }
 
 export type RenderedPdfPage = {
+  ocr?: import('../api/deepseek-ocr').OcrPage
+  previewDeferred?: boolean
   pageNumber: number
   blob: Blob
   /** Only created for pages the UI actually previews (large contexts show a few). */

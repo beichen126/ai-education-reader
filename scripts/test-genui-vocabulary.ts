@@ -4,7 +4,7 @@ import {GENUI_PROMPT} from '../src/genui/schema'
 const sample={schema:'reader-vocabulary',items:[{type:'vocabulary',word:'analytics',phonetic:'/ˌænəˈlɪtɪks/',meaning:'数据分析'}]}
 assert.equal(parseVocabulary(JSON.stringify(sample)).items[0].word,'analytics')
 assert.throws(()=>parseVocabulary(JSON.stringify({...sample,items:[{...sample.items[0],word:{html:'x'}}]})))
-assert.throws(()=>parseVocabulary(JSON.stringify({...sample,items:Array(41).fill(sample.items[0])})))
+assert.equal(parseVocabulary(JSON.stringify({...sample,items:Array(100).fill(sample.items[0])})).items.length,100)
 assert.throws(()=>parseVocabulary(JSON.stringify({...sample,items:[{...sample.items[0],type:'script'}]})))
 assert.match(GENUI_PROMPT,/reader-vocabulary/)
 console.log('PASS vocabulary schema bounds and real GenUI protocol inclusion')

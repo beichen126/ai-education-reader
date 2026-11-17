@@ -1,3 +1,5 @@
+import {partialRepairGenuiSpec} from 'reader-genui-guard'
+import {GENUI_SOURCE_LIMIT,requiresReaderExport} from './limits.js'
 import {ChoiceLifetime} from './UnifiedChoices'
 import {prepareEmbeddedImages} from '../web-images/embedded'
 import {OMITTED_GENUI_TYPES} from './catalog-policy'
@@ -22,16 +24,25 @@ export default function AdvancedGenUi({source,stateKey}:{source:string;stateKey?
  const templates=useMemo(()=>[...cardTemplates,...genuiTemplates()].filter(t=>!JSON.stringify(t.demo).match(/"type"\s*:\s*"([^"]+)"/g)?.some(token=>OMITTED_GENUI_TYPES.has(JSON.parse('{'+token+'}').type))),[language]),selected=templates.find(t=>t.id===template)
  useEffect(()=>{setLocale(language==='en'?'en':'zh')},[language])
  const result=useMemo(()=>{
-  if(source.length>256000)return {error:'界面超过 256 KB 限制'}
+  if(source.length>GENUI_SOURCE_LIMIT)return {error:'这段界面内容过大，请拆成多个区块；原始源码保留在下方。'}
   try {
    let complete=true,raw:any
    try {raw=JSON.parse(source)}catch{complete=false;raw=parsePartialGenuiSpec(source)}
    if(!raw)return {error:'界面正在生成…'}
    delete raw.schema
    delete raw.scheme
-   const processed=processGenuiSpec(normalizeGenuiInput(prepareEmbeddedImages(raw)))
-   if(!isRenderableProcess(processed))return {error:processed.errors.slice(0,4).join('；')}
-   return {spec:processed.spec,complete}
+   const notices:string[]=[]
+   const processed=processGenuiSpec(normalizeGenuiInput(prepareEmbeddedImages(raw),notices))
+   let spec=processed.spec
+   if(!isRenderableProcess(processed)){
+     const repaired=spec?processGenuiSpec(spec):null
+     spec=repaired&&isRenderableProcess(repaired)?repaired.spec:partialRepairGenuiSpec(processed)
+     if(!spec)return {error:processed.errors.slice(0,3).join('；')}
+     notices.push('已修复或略过部分无效字段，其余内容继续显示。')
+   }
+   if(processed.warnings?.some((w:any)=>w.kind==='truncated')||processed.errors?.some((e:string)=>e.startsWith('spec exceeds ')))notices.push('内容较多，已显示可处理的部分；完整内容保留在源码中。')
+   return {spec,complete,notice:[...new Set(notices)].join('；')}
+
   }catch(e){return {error:e instanceof Error?e.message:'界面格式无效'}}
  },[source])
  const dispatch=send?(action:string,payload:Record<string,unknown>)=>{
@@ -47,9 +58,10 @@ export default function AdvancedGenUi({source,stateKey}:{source:string;stateKey?
  let hash=2166136261;for(let i=0;i<source.length;i++)hash=Math.imul(hash^source.charCodeAt(i),16777619)
  const durableKey=result.complete&&stateKey?'reader:'+stateKey+':'+(hash>>>0):undefined
  const ui=<div className="reader-genui-surface" data-annotatable="false" aria-label="GenUI">
-  <div className="reader-genui-tools"><button type="button" onClick={()=>setExpanded(!expanded)}>{expanded?text('收起画布','Close canvas'):text('展开画布','Expand canvas')}</button><details><summary>{text('更多','More')} ⋯</summary><button type="button" onClick={()=>setShowTemplates(!showTemplates)}>{text('模板','Templates')}</button><button type="button" disabled={!result.complete} onClick={()=>void download(false)}>{text('导出 JSON','Export JSON')}</button><button type="button" disabled={!result.complete || /reader.invalid\/web-image#|reader-choices:/.test(JSON.stringify(result.spec || {}))} title="网络配图与统一选择交互在阅读器内使用" onClick={()=>void download(true)}>{text('导出 HTML','Export HTML')}</button></details></div>
+  <div className="reader-genui-tools"><button type="button" onClick={()=>setExpanded(!expanded)}>{expanded?text('收起画布','Close canvas'):text('展开画布','Expand canvas')}</button><details><summary>{text('更多','More')} ⋯</summary><button type="button" onClick={()=>setShowTemplates(!showTemplates)}>{text('模板','Templates')}</button><button type="button" disabled={!result.complete} onClick={()=>void download(false)}>{text('导出 JSON','Export JSON')}</button><button type="button" disabled={!result.complete || (/reader.invalid\/web-image#|reader-choices:/.test(JSON.stringify(result.spec || {}))||requiresReaderExport(result.spec))} title="交互及大型界面可导出 JSON，在阅读器中使用" onClick={()=>void download(true)}>{text('导出 HTML','Export HTML')}</button></details></div>
   {showTemplates&&<section className="reader-genui-templates"><label>{text('模板预览','Template preview')}<select aria-label={text('GenUI 模板','GenUI template')} value={template} onChange={e=>setTemplate(e.target.value)}><option value="">{text('选择模板','Choose a template')}</option>{templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>{selected&&<><p>{selected.description}</p><GenuiBlock key={selected.id} spec={normalizeGenuiInput(selected.demo)} animateEntrance={false}/><button type="button" disabled={!send||busy.current} onClick={()=>{if(send)void send(selected.instruction).catch(e=>setStatus(String(e)))}}>{text('使用此模板提问','Ask with this template')}</button></>}</section>}
   <ChoiceLifetime.Provider value={durableKey}><GenuiActionContext.Provider value={dispatch}><ErrorBoundary>{result.spec?<GenuiBlock spec={result.spec} stateKey={durableKey} initialState={snapshot.current} onStateSnapshot={state=>{snapshot.current=state}} animateEntrance={false}/>:<p role="status">{result.error}</p>}</ErrorBoundary></GenuiActionContext.Provider></ChoiceLifetime.Provider>
+  {result.notice&&<details className="reader-genui-repair"><summary>显示调整</summary><p>{result.notice}</p></details>}
   {status&&<p role="status">{status}</p>}
   <details><summary>{language==='en'?'UI source':'查看 UI 源码'}</summary><pre>{source}</pre></details>
  </div>

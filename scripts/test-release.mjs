@@ -23,6 +23,7 @@ const CORE_E2E = [
   'e2e-web-images',
   'e2e-pdf-ocr',
   'e2e-genui-full',
+  'e2e-genui-capacity',
   'e2e-genui-protocol',
   'e2e-api-profiles',
   'e2e-deepseek-native',

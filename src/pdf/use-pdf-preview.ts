@@ -1,3 +1,4 @@
+import { prepareOcrPages } from './pdf-ocr-pages'
 // React-side orchestration for the PDF preview panel. Keeps PDF.js out of the
 // UI; owns the component state machine, page-range validation, objectURL and
 // document lifecycle. Also reads the document outline (same active document).
@@ -39,7 +40,7 @@ export type PdfPreviewApi = {
   /** Non-fatal warning: the PDF works temporarily but could NOT be saved locally. */
   documentSaveError: string | undefined
   selectFile: (file: File) => Promise<void>
-  generateRanges: (ranges: PdfRange[]) => Promise<void>
+  generateRanges: (ranges: PdfRange[], contextMode?: 'image' | 'ocr') => Promise<void>
   clearPreview: () => void
   reset: () => Promise<void>
 }
@@ -131,7 +132,7 @@ export function usePdfPreview(): PdfPreviewApi {
   // (renderPdfContextRanges) — the same one the Document Reader uses. This hook
   // only keeps UI orchestration: preview URL ownership (first-3/last-3), pages
   // state, progress display and user-facing error mapping.
-  const generateRanges = useCallback(async (ranges: PdfRange[]) => {
+  const generateRanges = useCallback(async (ranges: PdfRange[], contextMode: 'image' | 'ocr' = 'image') => {
     if (!doc) { setError(tx('尚未打开 PDF 文件。', 'No PDF is open.')); return }
     if (normalizePdfRanges(ranges).length === 0) { setError(tx('请先选择页面范围。', 'Select a page range first.')); return }
     genRef.current++
@@ -146,7 +147,9 @@ export function usePdfPreview(): PdfPreviewApi {
       else { for (let k = 0; k < PDF_LARGE_PREVIEW_COUNT; k++) { previewIdx.add(k); previewIdx.add(total - 1 - k) } }
     }
     try {
-      const result = await renderPdfContextRanges({
+      const run = contextMode === 'ocr' && documentId ? (options: import('./pdf-context-render').PdfContextRenderOptions) => prepareOcrPages(documentId, options) : renderPdfContextRanges
+      setProgress({ done: 0, total: 0, bytes: 0 })
+      const result = await run({
         ranges,
         pageCount: doc.pageCount,
         renderPage: renderPdfPage,
@@ -155,7 +158,7 @@ export function usePdfPreview(): PdfPreviewApi {
         onPage: (page, index, total) => {
           if (gen !== genRef.current) return
           if (built.length === 0) markPreview(total)
-          const previewUrl = previewIdx.has(index) ? URL.createObjectURL(page.blob) : undefined
+          const previewUrl = !page.previewDeferred && previewIdx.has(index) ? URL.createObjectURL(page.blob) : undefined
           if (previewUrl) urlsRef.current.push(previewUrl)
           built.push({ ...page, ...(previewUrl ? { previewUrl } : {}) })
           setPages([...built])
@@ -178,7 +181,7 @@ export function usePdfPreview(): PdfPreviewApi {
     } finally {
       if (gen === genRef.current) setProgress(undefined)
     }
-  }, [doc, revokeAll])
+  }, [doc, documentId, revokeAll])
 
   const clearPreview = useCallback(() => {
     genRef.current++

@@ -258,7 +258,7 @@ export function SettingsDialog() {
           </div>
         ))}
       </div>
-      <div className={css.settingsHint}>{tx('仅将所选上下文直接发送到配置的服务，不经过 Reader 中转。', 'Selected context goes directly to your configured provider, without a Reader relay.')}</div>
+      <div className={css.settingsHint}>{tx('请求直达所配置的服务。', 'Selected context goes directly to your configured provider, without a Reader relay.')}</div>
       <div className={css.settingsActions}>
         <Button variant="outline" onClick={onTest}>{test === tx('正在测试…', 'Testing…') ? test : tx('检查 API 配置', 'Check API configuration')}</Button>
         <Button variant="primary" onClick={onSave}>{saved ? tx('已保存', 'Saved') : tx('保存 API 设置', 'Save API settings')}</Button>
@@ -267,7 +267,7 @@ export function SettingsDialog() {
         <div className={css.testResult} data-ok="false" data-testid="settings-mutation-error">{localizedErrorText(mutation.error, 'Failed to save settings.')}</div>
       )}
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
-      <div className={css.settingsHint}>{tx('检查仅请求模型列表，不发送对话、图片或文档。', 'Checks the model list only; no chats, images or documents are sent.')}</div>
+      <div className={css.settingsHint}>{tx('仅检查模型列表。', 'Checks the model list only; no chats, images or documents are sent.')}</div>
       </>}
       <WebImageSettings saveRef={saveWebImagesRef} />
       </section>
@@ -287,7 +287,7 @@ export function SettingsDialog() {
           <button type="button" role="radio" className={css.appearanceOpt} data-testid="pdf-navigation-paged" aria-checked={pdfNavigationMode === 'paged'} aria-busy={pdfBusy || undefined} data-selected={pdfNavigationMode === 'paged'} onClick={() => choosePdfNavigation('paged')}>{tx('单页翻页', 'Single page')}</button>
           <button type="button" role="radio" className={css.appearanceOpt} data-testid="pdf-navigation-continuous" aria-checked={pdfNavigationMode === 'continuous'} aria-busy={pdfBusy || undefined} data-selected={pdfNavigationMode === 'continuous'} onClick={() => choosePdfNavigation('continuous')}>{tx('连续上下滚动', 'Continuous scroll')}</button>
         </div>
-        <div className={css.settingsHint}>{tx('选择后自动保存。连续滚动只渲染屏幕附近的页面，可随时切换并保持当前页；对消息中的静态图片没有影响。', 'Saved automatically. Continuous mode renders only nearby pages, can be switched at any time, and keeps the current page. Static message images are unaffected.')}</div>
+        <div className={css.settingsHint}>{tx('自动保存，切换时保留当前页。', 'Saved automatically. Continuous mode renders only nearby pages, can be switched at any time, and keeps the current page. Static message images are unaffected.')}</div>
         {pdfFailure && (
           <div className={css.testResult} data-ok="false" data-testid="settings-pdf-navigation-error">
             {tx('阅读方式保存失败：', 'Failed to save reading mode: ')}{pdfFailure.message}
@@ -309,7 +309,7 @@ export function SettingsDialog() {
             </Button>
           ))}
         </div>
-        <div className={css.settingsHint}>{tx('打开提示词管理后可按分类查看、编辑、复制或停用提示词；系统协议只在提示词管理的“系统协议”分类里查看。', 'Open prompt management to view, edit, duplicate, or disable prompts by category. System protocols appear only in its System protocols category.')}</div>
+        <div className={css.settingsHint}>{tx('按分类管理提示词与系统协议。', 'Open prompt management to view, edit, duplicate, or disable prompts by category. System protocols appear only in its System protocols category.')}</div>
       </div>
       <div className={css.exportSection}>
         <div className={css.exportTitle}>{tx('对话阅读位置','Conversation reading position')}</div>
@@ -317,7 +317,7 @@ export function SettingsDialog() {
           <input type="checkbox" data-testid="settings-remember-reading-position" checked={s.rememberReadingPosition===true} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({rememberReadingPosition:event.target.checked}).catch(()=>{})}} />
           <span>{tx('记住上次阅读位置','Remember last reading position')}</span>
         </label>
-        <div className={css.settingsHint}>{tx('默认开启，每 10 秒及离开页面时保存。对话与分支分别记忆，仅保存在此浏览器。','On by default. Saves every 10 seconds and when leaving. Each chat and branch is remembered in this browser.')}</div>
+        <div className={css.settingsHint}>{tx('在本机记住各会话的阅读位置。','On by default. Saves every 10 seconds and when leaving. Each chat and branch is remembered in this browser.')}</div>
         {mutation.status==='error' && mutation.error && <div className={css.testResult} data-ok="false">{localizedErrorText(mutation.error,'Unable to save this setting. Please retry.')}</div>}
       </div>
       <div className={css.exportSection} data-testid="settings-language">
@@ -326,16 +326,15 @@ export function SettingsDialog() {
           <button type="button" role="radio" className={css.appearanceOpt} data-testid="language-zh-cn" aria-checked={s.uiLanguage === 'zh-CN'} data-selected={s.uiLanguage === 'zh-CN'} onClick={() => void setUiLanguage('zh-CN')}>简体中文</button>
           <button type="button" role="radio" className={css.appearanceOpt} data-testid="language-en" aria-checked={s.uiLanguage === 'en'} data-selected={s.uiLanguage === 'en'} onClick={() => void setUiLanguage('en')}>English</button>
         </div>
-        <div className={css.settingsHint}>{tx('选择 English 后页面会同步设置 lang="en"，便于浏览器翻译工具正确识别。', 'Selecting English also sets the page language to lang="en" for browser translation tools.')}</div>
       </div>
       <div className={css.exportSection}>
         <div className={css.exportTitle}>{tx('DeepSeek 原生功能','DeepSeek native features')}</div>
-        {([['userMetadataEnabled','用户元信息标记','User metadata'],['autoTitleEnabled','自动生成会话标题','Automatic conversation titles'],['readUrlEnabled','阅读链接','Read links'],['nativeDeepSeekProxy','中转站支持 DeepSeek 原生扩展','Gateway supports DeepSeek native extensions']] as const).map(([key,zh,en])=><label key={key} className={css.speechRateRow}><span>{tx(zh,en)}</span><input type="checkbox" checked={key==='nativeDeepSeekProxy'?s[key]===true:s[key]!==false} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({[key]:e.target.checked}).catch(()=>{})}} /></label>)}
-        <label className={css.speechRateRow}><span>{tx('所在地（可选）','Location (optional)')}</span><input aria-label={tx('所在地','Location')} defaultValue={s.userLocation||''} maxLength={160} placeholder={tx('例如：中国，杭州','For example: Singapore')} onBlur={e=>{void patchSettings({userLocation:e.target.value}).catch(()=>{})}} /></label>
-        <div className={css.settingsHint}>{tx('使用 deepseek-flash 时生效。日期与语言自动填写，所在地由你填写。打开输入框的联网搜索后，使用原生深度思考搜索。中转站需支持这些扩展才能开启对应选项。','Available with deepseek-flash. Date and language are automatic; location is optional. Enable web search in the composer for native deep thinking search. Enable gateway extensions only when your gateway supports them.')}</div>
+        {([['userMetadataEnabled','用户元信息标记','User metadata'],['autoTitleEnabled','自动生成会话标题','Automatic conversation titles'],['readUrlEnabled','阅读链接','Read links'],['nativeDeepSeekProxy','中转服务原生扩展','Gateway supports DeepSeek native extensions']] as const).map(([key,zh,en])=><label key={key} className={css.speechRateRow}><span>{tx(zh,en)}</span><input type="checkbox" checked={key==='nativeDeepSeekProxy'?s[key]===true:s[key]!==false} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({[key]:e.target.checked}).catch(()=>{})}} /></label>)}
+        <label className={css.speechRateRow}><span>{tx('所在地（可选）','Location (optional)')}</span><Input className={css.fieldInput} aria-label={tx('所在地','Location')} defaultValue={s.userLocation||''} maxLength={160} placeholder={tx('例如：中国，杭州','For example: Singapore')} onBlur={e=>{void patchSettings({userLocation:e.target.value}).catch(()=>{})}} /></label>
+        <div className={css.settingsHint}>{tx('适用于 DeepSeek；中转服务需支持相应扩展。','Available with deepseek-flash. Date and language are automatic; location is optional. Enable web search in the composer for native deep thinking search. Enable gateway extensions only when your gateway supports them.')}</div>
       </div>
       <div className={css.exportSection}>
-        <div className={css.exportTitle}>{tx('朗读倍速', 'Read aloud speed')}</div>
+        <div className={css.exportTitle}>{tx('朗读', 'Read aloud speed')}</div>
         <label className={css.speechRateRow}><span>{tx('音色', 'Voice')}</span><select aria-label="朗读音色" value={s.speechVoice || 'stella'} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({speechVoice:e.target.value as 'stella'|'tide'}).catch(()=>{})}}><option value="stella">{tx('Stella · 女声','Stella · Female')}</option><option value="tide">{tx('Tide · 男声','Tide · Male')}</option></select></label>
         {(['chineseSpeechRate','englishSpeechRate'] as const).map((key,i)=><label className={css.speechRateRow} key={key}>
           <span>{i===0?tx('中文','Chinese'):tx('英文','English')}</span>
@@ -343,11 +342,10 @@ export function SettingsDialog() {
             {[0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.25,1.3,1.4,1.5,1.6,1.7,1.75,1.8,1.9,2].map(rate=><option key={rate} value={rate}>{rate}×</option>)}
           </select>
         </label>)}
-        <div className={css.settingsHint}>{tx('自动识别中英文，默认中文 1×、英文 0.9×。使用当前 API 配置的 Key，调用 DeepSeek 官方语音接口。选中朗读或回答下方的“朗读全文”会发送对应文字；重复播放复用本次音频。倍速在本地播放器调整。','Detects Chinese/English. Defaults: Chinese 1×, English 0.9×. Speech uses the current API key with the official DeepSeek endpoint. Select text or choose Read all aloud below an answer. Replays reuse audio; speed is adjusted locally.')}</div>
-        <label className={css.speechRateRow}><span>{tx('重复朗读次数','Reading repetitions')}</span><select data-testid="settings-speechRepeatCount" value={s.speechRepeatCount ?? 3} disabled={mutation.status==='pending'||s.speechLoop===true} onChange={event=>{void patchSettings({speechRepeatCount:Number(event.target.value)}).catch(()=>{})}}>{Array.from({length:10},(_,i)=>i+1).map(count=><option key={count} value={count}>{tx(count+' 次',count+' passes')}</option>)}</select></label>
-        <label className={css.speechRateRow}><span>{tx('循环播放（直到停止）','Loop until stopped')}</span><input type="checkbox" aria-label={tx('循环播放','Loop playback')} checked={s.speechLoop===true} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({speechLoop:e.target.checked}).catch(()=>{})}}/></label>
+        <div className={css.settingsHint}>{tx('中英文自动切换倍速，使用 DeepSeek 语音服务。','Automatically selects the Chinese or English speed. Uses DeepSeek speech.')}</div>
+        <label className={css.speechRateRow}><span>{tx('播放次数','Reading repetitions')}</span><select data-testid="settings-speechRepeatCount" value={s.speechRepeatCount ?? 3} disabled={mutation.status==='pending'||s.speechLoop===true} onChange={event=>{void patchSettings({speechRepeatCount:Number(event.target.value)}).catch(()=>{})}}>{Array.from({length:10},(_,i)=>i+1).map(count=><option key={count} value={count}>{tx(count+' 次',count+' passes')}</option>)}</select></label>
+        <label className={css.speechRateRow}><span>{tx('循环播放','Loop until stopped')}</span><input type="checkbox" aria-label={tx('循环播放','Loop playback')} checked={s.speechLoop===true} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({speechLoop:e.target.checked}).catch(()=>{})}}/></label>
         <SpeechCacheControl />
-        <div className={css.settingsHint}>{tx('默认完整朗读所选内容 3 遍，可随时暂停或停止。','Reads the entire selection 3 times by default. Pause or stop at any time.')}</div>
         {mutation.status==='error' && mutation.error && <div className={css.testResult} data-ok="false" data-testid="settings-general-error">{localizedErrorText(mutation.error,'Unable to save general settings. Please retry.')}</div>}
       </div>
       </section>
@@ -486,4 +484,4 @@ export function SettingsDialog() {
   )
 }
 
-function SpeechCacheControl(){const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);return <div className={css.settingsHint}><p>{tx('语音缓存在本机保存 7 天，上限 32 MiB / 128 条，超限优先清理最久未使用的音频。倍速、次数和循环不重新合成。','Audio stays on this device for 7 days, up to 32 MiB / 128 entries, evicting least recently used audio. Speed and repeats do not resynthesize.')}</p><Button variant="outline" size="sm" disabled={busy} onClick={()=>{stopReadAloud();setBusy(true);void clearSpeechCache().then(()=>setStatus(tx('语音缓存已清理','Audio cache cleared'))).catch(()=>setStatus(tx('清理失败，请重试','Unable to clear cache'))).finally(()=>setBusy(false))}}>{tx('清理语音缓存','Clear audio cache')}</Button>{status&&<span role="status">{status}</span>}</div>}
+function SpeechCacheControl(){const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);return <div className={css.settingsHint}><p>{tx('音频缓存 7 天，重复播放复用缓存。','Audio stays on this device for 7 days, up to 32 MiB / 128 entries, evicting least recently used audio. Speed and repeats do not resynthesize.')}</p><Button variant="outline" size="sm" disabled={busy} onClick={()=>{stopReadAloud();setBusy(true);void clearSpeechCache().then(()=>setStatus(tx('语音缓存已清理','Audio cache cleared'))).catch(()=>setStatus(tx('清理失败，请重试','Unable to clear cache'))).finally(()=>setBusy(false))}}>{tx('清理语音缓存','Clear audio cache')}</Button>{status&&<span role="status">{status}</span>}</div>}

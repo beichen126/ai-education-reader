@@ -2,7 +2,7 @@
 // touches IndexedDB, OPFS, Blob, objectURL, or base64 directly.
 import { newStableId, type Attachment, type PdfAttachmentSource, type StableId } from './types'
 import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, listAllAttachmentRows, listConversations, getConversation, type StoredAttachmentRow } from '../storage/storage'
-import { idbScan, idbGetAll, idbRunTxn } from '../storage/idb'
+import { idbScan, idbGetAll, idbRunTxn, idbUpdate } from '../storage/idb'
 import { allBranches, getBranch } from '../branches/branch-store'
 import { BRANCH_DRAFT_PREFIX } from '../branches/branch-types'
 import { persistBinary, readBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
@@ -22,9 +22,40 @@ export function attachmentErrorLabel(kind: AttachmentErrorKind): string {
 }
 
 const SUPPORTED_MIME = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp'])
-type PreviewUrlEntry = { url?: string; pending?: Promise<string>; refs: number }
+type PreviewUrlEntry = { url?: string; pending?: Promise<string>; refs: number; controller?: AbortController }
 const urlRegistry = new Map<string, PreviewUrlEntry>()
 const previewReads = new PreviewReadQueue(typeof navigator !== 'undefined' && navigator.hardwareConcurrency >= 8 ? 4 : 2)
+const pdfPreviewRenders = new PreviewReadQueue(1)
+
+async function previewBlobOf(id: StableId, active: () => boolean, signal?: AbortSignal): Promise<Blob> {
+  const row = await getAttachmentRow(id)
+  if (!row?.meta.source?.previewDeferred) return blobOf(id)
+  return pdfPreviewRenders.run(async () => {
+    if (!active()) throw new AttachmentError('read-failed', 'preview released')
+    const latest = await getAttachmentRow(id)
+    if (!latest) throw new AttachmentError('missing-attachment', 'attachment missing')
+    const source = latest.meta.source
+    if (!source?.previewDeferred) return blobOf(id)
+    if (!source.documentId) throw new AttachmentError('missing-attachment', 'PDF source missing')
+    const { readDocumentSourceBlob } = await import('../documents/document-service')
+    const { openPdfSession, closePdfSession, renderSessionThumbnail } = await import('../pdf/pdf-session')
+    const original = await readDocumentSourceBlob(source.documentId)
+    if (!active()) throw new AttachmentError('read-failed', 'preview released')
+    const { session } = await openPdfSession(original)
+    try {
+      if (!active()) throw new AttachmentError('read-failed', 'preview released')
+      const { blob } = await renderSessionThumbnail(session, source.pageNumber, 1280, signal)
+      if (!active()) throw new AttachmentError('read-failed', 'preview released')
+      // Atomic update of an existing row: deleting a draft while rendering cannot resurrect it.
+      await idbUpdate('attachments', id, current => ({ ...current,
+        meta: { ...current.meta, mimeType: blob.type, size: blob.size, updatedAt: Date.now(), source: { ...current.meta.source, previewDeferred: false } },
+        binary: { storage: 'idb', blob, size: blob.size, mimeType: blob.type },
+      }))
+      if (latest.binary?.storage === 'opfs') { try { await deleteBinary(latest.binary) } catch { /* cleaned by orphan collection */ } }
+      return blob
+    } finally { await closePdfSession(session) }
+  })
+}
 
 export function isSupportedImage(file: { type: string; size: number }): boolean { return SUPPORTED_MIME.has(file.type) && file.size > 0 }
 
@@ -249,11 +280,11 @@ export async function ensurePreviewUrl(id: StableId): Promise<string> {
     if (existing.url) return existing.url
     return existing.pending!
   }
-  const entry: PreviewUrlEntry = { refs: 1 }
+  const entry: PreviewUrlEntry = { refs: 1, controller: new AbortController() }
   urlRegistry.set(id, entry)
   entry.pending = previewReads.run(() => {
     if (urlRegistry.get(id) !== entry || entry.refs <= 0) throw new AttachmentError('read-failed', 'preview released')
-    return blobOf(id)
+    return previewBlobOf(id, () => urlRegistry.get(id) === entry && entry.refs > 0, entry.controller?.signal)
   }).then(blob => {
     // The last consumer may have unmounted while IndexedDB/OPFS was still being read.
     // Do not create an ownerless object URL after that happens.
@@ -270,7 +301,7 @@ export async function ensurePreviewUrl(id: StableId): Promise<string> {
 }
 export function releasePreviewUrl(id: StableId): void {
   const e = urlRegistry.get(id); if (!e) return; e.refs--;
-  if (e.refs <= 0) { urlRegistry.delete(id); if (e.url) URL.revokeObjectURL(e.url) }
+  if (e.refs <= 0) { e.controller?.abort(); urlRegistry.delete(id); if (e.url) URL.revokeObjectURL(e.url) }
 }
 
 export async function toDataUrl(id: StableId): Promise<string> {
@@ -283,12 +314,12 @@ export async function toDataUrl(id: StableId): Promise<string> {
 }
 
 export async function deleteAttachment(id: StableId): Promise<void> {
-  const e = urlRegistry.get(id); if (e) { if (e.url) URL.revokeObjectURL(e.url); urlRegistry.delete(id) }
+  const e = urlRegistry.get(id); if (e) { e.controller?.abort(); if (e.url) URL.revokeObjectURL(e.url); urlRegistry.delete(id) }
   const row = await getAttachmentRow(id);
   await deleteAttachmentRow(id);
   if (row && row.binary && row.binary.storage === 'opfs') { try { await deleteBinary(row.binary) } catch { /* orphan */ } }
 }
-export function releaseAllPreviews(): void { for (const [id, e] of urlRegistry) { if (e.url) URL.revokeObjectURL(e.url); urlRegistry.delete(id) } }
+export function releaseAllPreviews(): void { for (const [id, e] of urlRegistry) { e.controller?.abort(); if (e.url) URL.revokeObjectURL(e.url); urlRegistry.delete(id) } }
 
 /**
  * Conservative attachment graph-reachability cleanup. Live attachment references are

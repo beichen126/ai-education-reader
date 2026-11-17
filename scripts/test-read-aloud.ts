@@ -24,7 +24,7 @@ await patchSettings({apiKey:'test-key',apiBaseUrl:'https://api.deepseek.com/v1'}
 const audioBytes=new Uint8Array(100);audioBytes.set(new TextEncoder().encode('RIFF'));audioBytes.set(new TextEncoder().encode('WAVE'),8)
 let calls=0
 Object.assign(globalThis,{fetch:async(url:string,init:any)=>{calls++;assert.equal(url,'https://api.deepseek.com/v1/tools/tts');assert.equal(init.headers.Authorization,'Bearer test-key');assert.equal(JSON.parse(init.body).filter_markdown,true);return new Response(audioBytes,{headers:{'Content-Type':'audio/wav'}})}})
-const settle=()=>new Promise(r=>setTimeout(r,50))
+const settle=async (ready=()=>speechSnapshot().status!=='loading')=>{const deadline=Date.now()+3000;do{await new Promise(r=>setTimeout(r,10));if(ready())return}while(Date.now()<deadline);throw new Error('Speech state did not settle: '+speechSnapshot().status)}
 readAloud('你好。 Hello.','owner');await settle()
 assert.equal(speechSnapshot().status,'speaking')
 pauseReadAloud();assert.equal(speechSnapshot().status,'paused')
@@ -36,7 +36,7 @@ assert.equal(ttsChunks('中'.repeat(9000)).length,5)
 assert.equal(ttsEndpoint('https://api.deepseek.com/'),'https://api.deepseek.com/v1/tools/tts')
 let resolve:any
 Object.assign(globalThis,{fetch:()=>new Promise(r=>{resolve=r})})
-readAloud('cancel','old');await settle();stopReadAloud();resolve(new Response(audioBytes));await settle();assert.equal(speechSnapshot().status,'idle')
+readAloud('cancel','old');await settle(()=>typeof resolve==='function');stopReadAloud();resolve(new Response(audioBytes));await settle();assert.equal(speechSnapshot().status,'idle')
 Object.assign(globalThis,{fetch:async()=>new Response('',{status:401})})
 readAloud('error','new');await settle();assert.match(speechSnapshot().error!,/401/)
 stopReadAloud()

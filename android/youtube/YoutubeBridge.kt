@@ -1,7 +1,11 @@
 package com.example.aieducationreader.bridge
 
 import android.annotation.SuppressLint
-import android.app.Dialog
+import android.view.ViewGroup
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceError
+import android.webkit.WebResourceResponse
+import android.util.Log
 import android.content.Context
 import android.net.Uri
 import android.os.Handler
@@ -17,7 +21,10 @@ import org.json.JSONTokener
 /** Dedicated YouTube view, with no JavaScript interfaces exposed to YouTube. */
 class YoutubeBridge(private val context: Context, private val reader: () -> WebView?) {
   private val handler = Handler(Looper.getMainLooper())
-  private var dialog: Dialog? = null
+  private var pollTask: Runnable? = null
+  private var startedAt = 0L
+  private var stage = "loading"
+  private var closed = false
   private var youtube: WebView? = null
   private var activeId: String? = null
   private var generation = 0
@@ -27,13 +34,18 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
   }
   @JavascriptInterface
   fun extract(id: String, videoId: String, language: String) { handler.post {
-    if (!trusted() || !id.matches(Regex("[a-zA-Z0-9-]{1,100}")) || !videoId.matches(Regex("[a-zA-Z0-9_-]{11}")) || language !in listOf("auto","zh","en","ja","ko","es")) return@post
-    if (activeId != null) { emit(id, JSONObject().put("error", "已有字幕提取任务")); return@post }
-    open(id, videoId, language)
+    if (closed || !trusted() || !id.matches(Regex("[a-zA-Z0-9-]{1,100}")) || !videoId.matches(Regex("[a-zA-Z0-9_-]{11}")) || language !in listOf("auto","zh","en","ja","ko","es")) return@post
+    if (activeId != null) { emit(id, JSONObject().put("error", "已有字幕提取任务").put("code", "BUSY").put("stage", stage)); return@post }
+    try { open(id, videoId, language) } catch (e: Exception) { fail("INITIALIZATION_FAILED", "字幕任务初始化失败：${e.javaClass.simpleName}") }
   } }
   @JavascriptInterface
-  fun cancel() { handler.post { finish(JSONObject().put("error", "已取消")) } }
-  fun shutdown() { handler.post { finish(JSONObject().put("error", "已关闭")) } }
+  fun cancel() { handler.post { fail("CANCELLED", "已取消") } }
+  @JavascriptInterface
+  fun cancelRequest(id: String) { handler.post { if (activeId == id) fail("CANCELLED", "已取消") } }
+  fun shutdown() { handler.post { closed = true; fail("HOST_DESTROYED", "页面已关闭，请重新提取字幕") } }
+  private fun fail(code: String, message: String) {
+    finish(JSONObject().put("error", message).put("code", code).put("stage", stage).put("elapsedMs", System.currentTimeMillis() - startedAt))
+  }
   private fun emit(id: String, value: JSONObject) {
     if (!trusted()) return
     value.put("channel", "reader-youtube-response").put("id", id)
@@ -42,23 +54,39 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
   private fun finish(value: JSONObject) {
     val id = activeId ?: return
     activeId = null; generation++
-    dialog?.setOnDismissListener(null); dialog?.dismiss(); dialog = null
-    youtube?.stopLoading(); youtube?.destroy(); youtube = null
+    pollTask?.let { handler.removeCallbacks(it) }; pollTask = null
+    youtube?.let { view -> view.stopLoading(); (view.parent as? ViewGroup)?.removeView(view); view.destroy() }; youtube = null
+    if (value.has("error")) Log.w("ReaderYoutube", "request=$id code=${value.optString("code")} stage=$stage elapsed=${System.currentTimeMillis() - startedAt}ms message=${value.optString("error")}")
     emit(id, value)
   }
   @SuppressLint("SetJavaScriptEnabled")
   private fun open(id: String, videoId: String, language: String) {
     activeId = id; val token = ++generation
-    val container = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-    val hint = TextView(context).apply { text = "正在读取字幕。若出现验证，请在此完成；成功后自动返回。"; setPadding(24,24,24,24) }
-    container.addView(hint)
+    startedAt = System.currentTimeMillis(); stage = "loading"
+    val host = reader()?.rootView as? ViewGroup
+    if (host == null) { fail("HOST_UNAVAILABLE", "阅读器页面尚未准备好，请重试"); return }
     val view = WebView(context).apply {
+      alpha = 0f
+      importantForAccessibility = android.view.View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+      isFocusable = false
+      settings.mediaPlaybackRequiresUserGesture = true
+      settings.loadsImagesAutomatically = false
       settings.javaScriptEnabled = true
       settings.domStorageEnabled = true
       settings.allowFileAccess = false
       settings.allowContentAccess = false
       settings.userAgentString = settings.userAgentString.replace(Regex("\\([^)]*\\)"), "(X11; Linux x86_64)").replace("Version/4.0 ", "").replace(" Mobile", "")
       webViewClient = object : WebViewClient() {
+        override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+          if (generation == token && request?.isForMainFrame == true) fail("PAGE_NETWORK_${error?.errorCode}", "YouTube 页面加载失败：${error?.description}")
+        }
+        override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, error: WebResourceResponse?) {
+          if (generation == token && request?.isForMainFrame == true) fail("HTTP_${error?.statusCode}", "YouTube 返回 HTTP ${error?.statusCode}，请检查网络后重试")
+        }
+        override fun onRenderProcessGone(view: WebView?, detail: android.webkit.RenderProcessGoneDetail?): Boolean {
+          if (generation == token) fail("WEBVIEW_PROCESS_EXIT", "字幕页面进程已退出，请重新提取")
+          return true
+        }
         override fun shouldOverrideUrlLoading(view: WebView?, request: android.webkit.WebResourceRequest?): Boolean {
           val u = request?.url ?: return true
           return u.scheme != "https" || u.host !in listOf("www.youtube.com", "m.youtube.com", "consent.youtube.com", "accounts.google.com")
@@ -66,29 +94,31 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
       }
     }
     youtube = view
-    container.addView(view, LinearLayout.LayoutParams(-1,0,1f))
-    dialog = Dialog(context).apply { setContentView(container); setOnDismissListener { finish(JSONObject().put("error","已取消")) }; show(); window?.setLayout(-1,-1) }
+    host.addView(view, 0, ViewGroup.LayoutParams(-1, -1))
     val extractor = context.assets.open("android/youtube-extractor.js").bufferedReader().use { it.readText() }
     val deadline = System.currentTimeMillis()+80000
     fun poll() {
       if (generation != token || activeId != id) return
-      if (System.currentTimeMillis() > deadline) { finish(JSONObject().put("error","读取字幕超时，请确认视频有字幕并重试。")); return }
+      if (System.currentTimeMillis() > deadline) { fail("TIMEOUT", "字幕提取超时（阶段：$stage），请检查网络或更换视频重试"); return }
       val uri = Uri.parse(view.url ?: "")
+      if (uri.host in listOf("consent.youtube.com", "accounts.google.com")) { fail("VERIFICATION_REQUIRED", "YouTube 要求登录或验证，后台提取无法继续。请在浏览器确认视频可访问后重试"); return }
       if (uri.host == "www.youtube.com" && uri.getQueryParameter("v") == videoId) {
-        val script = extractor + "\nif(!window.__readerSubtitleRunning&&!window.__readerSubtitleResult){window.__readerSubtitleRunning=true;readerExtractYoutube("+JSONObject.quote(language)+").then(data=>{window.__readerSubtitleResult={data}}).catch(e=>{window.__readerSubtitleError=e.message}).finally(()=>{window.__readerSubtitleRunning=false})};JSON.stringify(window.__readerSubtitleResult||null)"
+        stage = "extracting"
+        val script = extractor + "\nconst player=document.querySelector('#movie_player');player?.pauseVideo?.();const ready=player?.getPlayerResponse?.()||window.ytInitialPlayerResponse;if(ready&&!window.__readerSubtitleRunning&&!window.__readerSubtitleResult){window.__readerSubtitleRunning=true;readerExtractYoutube("+JSONObject.quote(language)+").then(data=>{window.__readerSubtitleResult={data}}).catch(e=>{window.__readerSubtitleResult={error:e.message,code:'EXTRACTION_FAILED'}})};JSON.stringify(window.__readerSubtitleResult||null)"
         view.evaluateJavascript(script) { raw ->
           if (generation == token) try {
             val decoded = JSONTokener(raw).nextValue()
             if (decoded is String && decoded != "null" && decoded.length <= 2200000) {
               val value = JSONObject(decoded)
-              if (value.optJSONObject("data")?.optString("videoId") == videoId) finish(value)
+              if (value.has("error")) fail(value.optString("code", "EXTRACTION_FAILED"), value.optString("error"))
+              else if (value.optJSONObject("data")?.optString("videoId") == videoId) finish(value)
             }
           } catch (_: Exception) { /* Retry while the player loads. */ }
         }
       }
-      handler.postDelayed({ poll() }, 2500)
+      if (generation == token) { pollTask = Runnable { poll() }; handler.postDelayed(pollTask!!, 1000) }
     }
     view.loadUrl("https://www.youtube.com/watch?v=$videoId")
-    handler.postDelayed({ poll() }, 3000)
+    pollTask = Runnable { poll() }; handler.postDelayed(pollTask!!, 1500)
   }
 }

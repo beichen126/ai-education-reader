@@ -19,3 +19,5 @@ declare module 'reader-genui-diagram-original' { export const DiagramNode: impor
 declare module 'reader-genui-image-original' { export const ImageNode: import('react').ComponentType<any> }
 
 declare module 'reader-genui-choices-original' { export const ChoicesNode: import('react').ComponentType<any> }
+
+declare module 'reader-genui-guard' { export function partialRepairGenuiSpec(processed:any):any }

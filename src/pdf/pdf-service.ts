@@ -115,7 +115,7 @@ export async function renderPdfPage(pageNumber: number): Promise<RenderedPage> {
 /** Optional render tuning so callers can request a LOW-RESOLUTION thumbnail (TOC picker)
  *  without changing the正文 Reader's full-resolution policy. `maxEdge` sets a smaller
  *  long-edge target (e.g. 260 for thumbnails); the safe-budget clamps still apply. */
-export type RenderOptions = { maxEdge?: number }
+export type RenderOptions = { maxEdge?: number; signal?: AbortSignal }
 
 /** Shared render core used by BOTH the PdfPanel singleton and explicit PDF sessions.
  *  `opts.maxEdge` (optional) lowers the long-edge target for thumbnail-purpose renders;
@@ -123,6 +123,7 @@ export type RenderOptions = { maxEdge?: number }
  *  1800px body resolution. The Reader正文 path calls this with NO options (full policy). */
 export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number, opts?: RenderOptions): Promise<RenderedPage> {
   const page = await doc.getPage(pageNumber)
+  if (opts?.signal?.aborted) throw new PdfError('render-failed', 'render cancelled')
   const vp1 = page.getViewport({ scale: 1 })
   const targetEdge = opts && opts.maxEdge && opts.maxEdge > 0 ? opts.maxEdge : MAX_RENDER_EDGE
   const scale = clampRenderScaleForEdge(vp1, targetEdge)
@@ -132,13 +133,17 @@ export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumen
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
+  const task = page.render({ canvas, viewport: vp, background: '#ffffff' })
+  const cancel = () => task.cancel()
+  opts?.signal?.addEventListener('abort', cancel, { once: true })
   try {
-    await page.render({ canvas, viewport: vp, background: '#ffffff' }).promise
+    if (opts?.signal?.aborted) cancel()
+    await task.promise
   } catch {
     canvas.width = 0
     canvas.height = 0
     throw new PdfError('render-failed', 'render failed')
-  }
+  } finally { opts?.signal?.removeEventListener('abort', cancel) }
   const blob = await new Promise<Blob>((resolve, reject) => {
     canvas.toBlob(
       (b) => (b ? resolve(b) : reject(new PdfError('render-failed', 'toBlob failed'))),

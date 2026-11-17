@@ -25,13 +25,13 @@ const intro=`GenUI 生成规则（可渲染、可交互）
 - accordion：组织较多内容、展开细节；首屏保留核心结论。
 - scene3d：空间几何与旋转观察，用于理解三维关系。
 - text：正文、公式与代码讲解；属性和值用 text；普通列表和表格直接用围栏外的 Markdown。
-- svg/video：矢量示意与视频展示；视频使用真实可访问的资源 URL。
+- svg：自定义矢量示意图；适合几何、坐标和原理图。
 - reader-vocabulary：词汇学习与发音；展示单词、音标、释义，可加例句，DeepSeek 朗读由用户点播。
 输出：使用 genui 代码围栏，围栏语言 genui 就是渲染入口，根对象为 {"title":"简短标题","items":[...]}。节点有 type；布局 items 是节点数组。只使用下面字段，*=必填；嵌套字段列在 [] 中。通用字段 span:number、disabledReason:string（禁用原因）；条件 when/enableWhen:{field,op,value}，op=eq|neq|in|not-in|gt|gte|lt|lte|empty|not-empty|checked。slider.id 绑定本地数值状态，choices 在本地维护选择。
 计算规则：computed 放在根级，格式 [{id:"area",expr:"pi*radius^2"}]。数值参数优先用 slider 声明 id 与 value；字段 id 使用英文字母或下划线开头，后接字母、数字或下划线，同一界面唯一。expr 引用 slider 的 id 或其他 computed.id，字段值须为数值；计算依赖组成有向无环图。公式使用参数名、数字、+ - * / ^ 和括号；函数直接写 sin(x)、sqrt(x)、pow(x,2)，常量使用 pi/e/tau。显示结果时 text.content/stat.value 写 "{{area}}"。plot 的 x 和 series.params 属于各自曲线，根级 computed 的参数通过上述字段 id 单独声明。
 面积示例 {"computed":[{"id":"area","expr":"pi*radius^2"}],"items":[{"type":"card","title":"圆面积","items":[{"type":"slider","id":"radius","label":"半径","value":2,"min":0.1,"max":10,"step":0.1},{"type":"stat","label":"面积","value":"{{area}}"}]}]}。
 类型规则：字段后的 string/number/boolean/array/object/nodes 是 JSON 类型；可选字段按需填写，并遵循对应类型。card.accent 使用颜色字符串（如 "#5b8def"）；flat 使用布尔值。生成前检查必填项、字段类型与枚举；每个字段遵循所属组件的定义。
-提交 action 回传当前会话，回传数据当作用户输入；表单收集学习内容；计算使用安全数学表达式，展示使用组件字段。最多200节点、8层、256KB。语言跟随用户，公式可用 $...$。支持展开画布与 JSON 导出；纯展示界面支持 HTML 导出，网络配图和统一选择交互在阅读器内使用；可用能力以本目录和阅读器接入功能为准。
+提交 action 回传当前会话，回传数据当作用户输入；表单收集学习内容；计算使用安全数学表达式，展示使用组件字段。按内容需要组织条目，长内容使用分组与折叠展示。语言跟随用户，公式可用 $...$。支持展开画布与 JSON 导出；纯展示界面支持 HTML 导出，网络配图和统一选择交互在阅读器内使用；可用能力以本目录和阅读器接入功能为准。
 构建顺序：
 1. 确定回答中的核心关系：概念分组用 card/grid，依赖链用 grid/arrow，数据趋势用 chart/echart，数学函数用 plot，练习用 choices。
 2. 根对象填写 title、items；需要实时计算时添加根级 computed。每个可视节点填写 type 与对应组件字段；card/grid 的 items 是子节点数组，steps.steps 和 choices.items 则按各自记录结构填写。
@@ -42,7 +42,7 @@ const intro=`GenUI 生成规则（可渲染、可交互）
 计算细则：computed 是 [{id,expr,format?}] 数组；每项 id 是结果名，expr 是一个数学表达式字符串。例如 id="area"、expr="pi*radius^2"。数值常量直接写进 expr，交互变量对应同界面 slider 的 id。用 slider 提供数值初值。派生量可以引用另一 computed.id，例如 area=width*height、cost=area*unit_price；计算器按依赖顺序求值。每个输入和结果各有独立 id。
 算式写法：乘法用 *，除法用 /，乘方用 ^ 或 pow(a,b)，括号控制优先级；函数写 sin(x)、cos(x)、tan(x)、sqrt(x)、abs(x)、min(a,b)、max(a,b)、round(x)、ln(x)、log(x)。ln 为自然对数，log 为以10为底的对数，三角函数角度采用弧度。常量 pi、e、tau 可直接使用。为除数选取正的 min，为平方根和对数选取对应的有效参数区间。格式化通过 computed.format 设置，例如 {maximumFractionDigits:2}；结果显示使用 "{{area}} 平方米"。
 变量作用域：根级 computed 读取组件字段 id 和 computed.id。plot.series 每条曲线通过 expr 中的 x 采样，通过自身 params 数组声明可调参数；例如 expr="a*sin(x)" 与 params:[{name:"a",value:1,min:0.1,max:3,step:0.1}]。需要数值指标时，用根级字段与 computed 构建对应指标；曲线调节使用 plot 自带参数控件。分开的 dsh-ui 围栏分别构成独立界面。
-选择与题目：统一用 choices，items 为 [{label,hint?,disabled?,reason?}]，label 唯一，最多8项。mode="single" 为互斥单选，mode="multi" 为多选；max 设置多选上限。练习提供 answer：单选为正确选项的 label 字符串，多选为正确 label 数组，并填写 explanation；单选选完立即反馈，多选点击本地“检查答案”后显示反馈。配置 submit="确认选择" 时，用户点击后，阅读器把题目和已选项整理成自然语言用户消息加入当前会话，继续由模型回答。省略 submit 时在本地交互。偏好选择填写题目和选项即可；测验补 answer/explanation。单选题示例 {"type":"choices","title":"3×3等于几？","mode":"single","items":[{"label":"6"},{"label":"9"}],"answer":"9","explanation":"3+3+3=9"}。多选并发送示例 {"type":"choices","title":"关注哪些方面？","mode":"multi","max":2,"items":[{"label":"概念"},{"label":"例子"},{"label":"练习"}],"submit":"按这些方向讲解"}。多选题示例 {"type":"choices","title":"哪些是偶数？","mode":"multi","items":[{"label":"2"},{"label":"3"},{"label":"4"}],"answer":["2","4"],"explanation":"2和4都能被2整除。"}。
+选择与题目：统一用 choices，items 为 [{label,hint?,disabled?,reason?}]，label 唯一，选项按问题需要组织。mode="single" 为互斥单选，mode="multi" 为多选；max 设置多选上限。练习提供 answer：单选为正确选项的 label 字符串，多选为正确 label 数组，并填写 explanation；单选选完立即反馈，多选点击本地“检查答案”后显示反馈。配置 submit="确认选择" 时，用户点击后，阅读器把题目和已选项整理成自然语言用户消息加入当前会话，继续由模型回答。省略 submit 时在本地交互。偏好选择填写题目和选项即可；测验补 answer/explanation。单选题示例 {"type":"choices","title":"3×3等于几？","mode":"single","items":[{"label":"6"},{"label":"9"}],"answer":"9","explanation":"3+3+3=9"}。多选并发送示例 {"type":"choices","title":"关注哪些方面？","mode":"multi","max":2,"items":[{"label":"概念"},{"label":"例子"},{"label":"练习"}],"submit":"按这些方向讲解"}。多选题示例 {"type":"choices","title":"哪些是偶数？","mode":"multi","items":[{"label":"2"},{"label":"3"},{"label":"4"}],"answer":["2","4"],"explanation":"2和4都能被2整除。"}。
 条件展示：when 与 enableWhen 使用 {field,op,value}，field 对应已声明字段。例如 slider.id="level"，补充说明的 when={field:"level",op:"gte",value:2}。关键结论始终可见，补充推导放进 accordion.items:[{title,items}]。
 图形选择：chart 的 data 为 [{label,value}]，适合少量分类与趋势数据；echart 根据任务选择 preset 与对应数据，适合雷达、热力、桑基等；plot 用表达式绘制连续数学曲线。单位与来源写在图形附近。示意数据标明“示例数据”，学习计算标明假设和参数范围。普通文字列表和静态对照表使用围栏外的 Markdown。
 输出检查：核对根结构、组件类型、必填字段、枚举、输入id、计算依赖、初始结果、引用位置和布局层级。保留约定内的组件与字段，按这些规则输出完整 JSON。
@@ -51,7 +51,7 @@ const intro=`GenUI 生成规则（可渲染、可交互）
 紧凑卡片图 {"type":"grid","cols":1,"items":[{"type":"text","size":"h2","center":true,"content":"输入"},{"type":"arrow","dir":"down","length":20},{"type":"grid","cols":2,"items":[{"type":"card","title":"处理一","items":[{"type":"text","content":"简短说明"}]},{"type":"card","title":"处理二","items":[{"type":"text","content":"简短说明"}]}]},{"type":"arrow","dir":"down","length":20,"label":"汇合"},{"type":"text","center":true,"content":"输出结论"}]}。
 
 曲线 {"type":"plot","xMin":-6.28,"xMax":6.28,"yMin":-3,"yMax":3,"series":[{"expr":"a*sin(x)","label":"y=a sin(x)","params":[{"name":"a","value":1,"min":0.1,"max":3,"step":0.1}]}]}。支持 x,pi,e,trig,sqrt,log,exp,abs,pow,min,max；参数可设置 animateTo,durationMs,loop。
-单词卡使用单独的 dsh-ui 围栏：{"schema":"reader-vocabulary","items":[{"type":"vocabulary","word":"analytics","phonetic":"/ˌænəˈlɪtɪks/","meaning":"n. 数据分析；分析学","example":"We use analytics to understand learning progress."}]}。1–40词；word≤120字、phonetic≤200、meaning/example≤2000；提供准确音标，朗读由用户点击触发。此扩展使用独立围栏，与普通界面分围栏组合。
+单词卡使用单独的 dsh-ui 围栏：{"schema":"reader-vocabulary","items":[{"type":"vocabulary","word":"analytics","phonetic":"/ˌænəˈlɪtɪks/","meaning":"n. 数据分析；分析学","example":"We use analytics to understand learning progress."}]}。按需要提供词条；word≤120字、phonetic≤200、meaning/example≤2000；提供准确音标，朗读由用户点击触发。此扩展使用独立围栏，与普通界面分围栏组合。
 组件字段目录（dsh-genui 0.16.0，本应用精选 ${lines.length-1} 种；只生成目录内的类型）：
 `
 writeFileSync('src/genui/catalog-prompt.ts','// Generated from @changfenhuang/dsh-genui 0.16.0. See THIRD_PARTY_NOTICES.\nexport const FULL_GENUI_PROMPT = '+JSON.stringify(intro+lines.join('\n'))+'\n')

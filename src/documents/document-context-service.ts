@@ -1,3 +1,5 @@
+import { prepareOcrPages } from '../pdf/pdf-ocr-pages'
+import { idbGet } from '../storage/idb'
 
 // Document -> Context execution service (Stage 9.5 / v1.0.0, Part 0.7). One shared
 // implementation used by the DocumentContextPicker (Library / Composer) AND the Reader.
@@ -43,25 +45,33 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
   let tempSession: PdfSession | null = null
   let pageCount = opts.pageCount
   try {
+    const ensureSession = async () => {
     if (!session) {
       // Service-owned path (Library / Composer): read the source Blob and OPEN a session.
       let blob: Blob
       try { blob = await readDocumentSourceBlob(opts.documentId) }
-      catch { return { ok: false, count: 0, error: '这份本地文件已不存在，请重新选择。' } }
-      if (opts.isStale && opts.isStale()) return { ok: false, count: 0, error: '' }
+      catch { throw new Error('这份本地文件已不存在，请重新选择。') }
+      if (opts.isStale?.() || opts.isCancelled?.()) throw new PdfContextRenderError('cancelled', '已取消')
       const opened = await openPdfSession(blob)
       session = opened.session
       tempSession = session
       ownsSession = true
       pageCount = opened.doc.pageCount
     }
+    }
+    if (opts.selection.contextMode === 'ocr') {
+      const doc = await idbGet('documents', opts.documentId)
+      if (!doc) throw new Error('这份本地文件已不存在，请重新选择。')
+      pageCount = doc.pageCount
+    } else await ensureSession()
     const ranges = opts.selection.ranges
-    const res = await renderPdfContextRanges({
+    const renderOptions = {
       ranges, pageCount,
-      renderPage: (n) => renderSessionPage(session as PdfSession, n),
+      renderPage: async (n: number) => { await ensureSession(); return renderSessionPage(session as PdfSession, n) },
       onProgress: opts.onProgress,
-      isCancelled: opts.isCancelled,
-    })
+      isCancelled: () => !!(opts.isCancelled?.() || opts.isStale?.()),
+    }
+    const res = opts.selection.contextMode === 'ocr' ? await prepareOcrPages(opts.documentId, renderOptions) : await renderPdfContextRanges(renderOptions)
     // Ownership gate: after a possibly-long render, NEVER write into a target that is
     // no longer the caller's active conversation (blocker 0.4).
     if (opts.isStale && opts.isStale()) return { ok: false, count: 0, error: '' }
@@ -76,7 +86,7 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
       if (e.kind === 'cancelled') return { ok: false, count: 0, error: '' }
       return { ok: false, count: 0, error: e.message }
     }
-    return { ok: false, count: 0, error: '无法生成上下文。' }
+    return { ok: false, count: 0, error: e instanceof Error ? e.message : '无法生成上下文。' }
   } finally {
     if (ownsSession && tempSession) { try { await closePdfSession(tempSession) } catch { /* ignore */ } }
   }

@@ -42,8 +42,8 @@ export async function renderSessionPage(session: PdfSession, pageNumber: number)
 
 /** Render a low-resolution thumbnail of one page (TOC picker). Keeps the shared render
  *  core; only lowers the long-edge target — the Reader正文 render never changes. */
-export async function renderSessionThumbnail(session: PdfSession, pageNumber: number, maxEdge: number): Promise<RenderedPage> {
-  return renderPageForDocument(session.documentProxy, pageNumber, { maxEdge })
+export async function renderSessionThumbnail(session: PdfSession, pageNumber: number, maxEdge: number, signal?: AbortSignal): Promise<RenderedPage> {
+  return renderPageForDocument(session.documentProxy, pageNumber, { maxEdge, signal })
 }
 
 /** Read a page's viewport at scale 1 — anchor for viewport-aware display scaling. */
