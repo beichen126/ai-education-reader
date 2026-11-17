@@ -100,9 +100,11 @@ export async function commitAcceptedUserMessage(conv: any, lastConversationId: s
  * failure can no longer leave a mixed configuration after reload (e.g. apiKey committed
  * but model not). Values commit first, then the caller publishes them as saved state.
  */
-export async function saveSettingsAtomic(values: { apiProfiles?: string; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: string; autoTitleEnabled?: string; readUrlEnabled?: string; nativeDeepSeekProxy?: string;  speechVoice?: string; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string; pdfNavigationMode: string; uiLanguage: string; webSearchEnabled?: string; chineseSpeechRate?: string; englishSpeechRate?: string; speechRepeatCount?: string; speechLoop?: string; rememberReadingPosition?: string; chatProvider?: string; openaiLocalModel?: string }): Promise<void> {
+export async function saveSettingsAtomic(values: { firecrawlApiKey?: string; firecrawlKeys?: {name: string; key: string}[]; apiProfiles?: string; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: string; autoTitleEnabled?: string; readUrlEnabled?: string; nativeDeepSeekProxy?: string;  speechVoice?: string; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string; pdfNavigationMode: string; uiLanguage: string; webSearchEnabled?: string; chineseSpeechRate?: string; englishSpeechRate?: string; speechRepeatCount?: string; speechLoop?: string; rememberReadingPosition?: string; chatProvider?: string; openaiLocalModel?: string }): Promise<void> {
   await idbRunTxn(['settings'], (txn) => {
     const os = txn.objectStore('settings')
+    os.put({key: 'firecrawlApiKey', value: values.firecrawlApiKey || ''})
+    os.put({key: 'firecrawlKeys', value: values.firecrawlKeys || []})
     os.put({ key: 'apiBaseUrl', value: values.apiBaseUrl })
     os.put({ key: 'apiKey', value: values.apiKey })
     os.put({ key: 'model', value: values.model })

@@ -9,7 +9,7 @@ import { DEFAULT_MODEL, resolveStoredModel } from '../api/model-defaults'
 
 export type { VisionCapability }
 export type { PdfNavigationMode }
-export type Settings = { apiProfiles?: ApiProfile[]; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: boolean; autoTitleEnabled?: boolean; readUrlEnabled?: boolean; nativeDeepSeekProxy?: boolean;  speechVoice?: 'stella' | 'tide'; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number; speechLoop?: boolean; rememberReadingPosition?: boolean; chatProvider?: 'deepseek' | 'openai-local'; openaiLocalModel?: string }
+export type Settings = { firecrawlApiKey?: string; firecrawlKeys?: {name: string; key: string}[]; apiProfiles?: ApiProfile[]; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: boolean; autoTitleEnabled?: boolean; readUrlEnabled?: boolean; nativeDeepSeekProxy?: boolean;  speechVoice?: 'stella' | 'tide'; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number; speechLoop?: boolean; rememberReadingPosition?: boolean; chatProvider?: 'deepseek' | 'openai-local'; openaiLocalModel?: string }
 export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: DEFAULT_MODEL, customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN', chineseSpeechRate: 1, englishSpeechRate: 0.9, speechRepeatCount: 3, speechLoop: false, rememberReadingPosition: true }
 
 /** A partial settings change. Every mutation goes through {@link patchSettings}. */
@@ -47,6 +47,8 @@ export function normalizeSettings(input: Settings): Settings {
   const appearance: AppearanceMode = (input.appearance === 'light' || input.appearance === 'dark') ? input.appearance : DEFAULT_APPEARANCE
   const visionCapability: VisionCapability = (input.visionCapability === 'supports-image' || input.visionCapability === 'text-only') ? input.visionCapability : 'auto'
   return {
+    firecrawlKeys: Array.isArray(input.firecrawlKeys) ? input.firecrawlKeys.filter(p => p && typeof p.key === 'string').slice(0, 10).map((p,i) => ({name: String(p.name || ('配置 '+(i+1))).slice(0,60), key: p.key.trim()})) : [],
+    firecrawlApiKey: typeof input.firecrawlApiKey === 'string' ? input.firecrawlApiKey.trim() : '',
     apiProfiles: parseProfiles(input.apiProfiles), activeApiProfileId: typeof input.activeApiProfileId==='string'?input.activeApiProfileId:'',
     userLocation: typeof input.userLocation==='string' ? input.userLocation.slice(0,160) : '',
     userMetadataEnabled: input.userMetadataEnabled !== false,
@@ -90,7 +92,7 @@ export async function initSettings(): Promise<void> {
   const storedReadingPosition: unknown = await getSetting('rememberReadingPosition')
   const rememberReadingPosition = storedReadingPosition !== false && storedReadingPosition !== 'false'
   const [chatProvider, openaiLocalModel] = await Promise.all([getSetting('chatProvider'), getSetting('openaiLocalModel')])
-  set(normalizeSettings({ apiProfiles:parseProfiles(await getSetting('apiProfiles')), activeApiProfileId:await getSetting('activeApiProfileId') || '', userLocation: await getSetting('userLocation') || '', userMetadataEnabled: await getSetting('userMetadataEnabled') !== 'false', autoTitleEnabled: await getSetting('autoTitleEnabled') !== 'false', readUrlEnabled: await getSetting('readUrlEnabled') !== 'false', nativeDeepSeekProxy: await getSetting('nativeDeepSeekProxy') === 'true', speechVoice, speechApiUrl, speechApiKey, apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)), speechLoop: await getSetting('speechLoop') === 'true', rememberReadingPosition, chatProvider, openaiLocalModel }))
+  set(normalizeSettings({ firecrawlKeys: await getSetting('firecrawlKeys') || [], firecrawlApiKey: await getSetting('firecrawlApiKey') || '', apiProfiles:parseProfiles(await getSetting('apiProfiles')), activeApiProfileId:await getSetting('activeApiProfileId') || '', userLocation: await getSetting('userLocation') || '', userMetadataEnabled: await getSetting('userMetadataEnabled') !== 'false', autoTitleEnabled: await getSetting('autoTitleEnabled') !== 'false', readUrlEnabled: await getSetting('readUrlEnabled') !== 'false', nativeDeepSeekProxy: await getSetting('nativeDeepSeekProxy') === 'true', speechVoice, speechApiUrl, speechApiKey, apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)), speechLoop: await getSetting('speechLoop') === 'true', rememberReadingPosition, chatProvider, openaiLocalModel }))
   writeAppearanceHint(resolvedAppearance)
 }
 
@@ -116,6 +118,7 @@ async function commitPatch(patch: SettingsPatch): Promise<Settings> {
   setMutation('pending', null)
   try {
     await saveSettingsAtomic({
+      firecrawlKeys: next.firecrawlKeys || [], firecrawlApiKey: next.firecrawlApiKey || '',
       chatProvider: next.chatProvider || 'deepseek', openaiLocalModel: next.openaiLocalModel || '',
       apiBaseUrl: next.apiBaseUrl, apiKey: next.apiKey, model: next.model,
       customSystemPrompt: next.customSystemPrompt, customSystemPromptEnabled: String(next.customSystemPromptEnabled),

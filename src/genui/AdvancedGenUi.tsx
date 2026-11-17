@@ -1,3 +1,4 @@
+import {prepareEmbeddedImages} from '../web-images/embedded'
 import {OMITTED_GENUI_TYPES} from './catalog-policy'
 import {cardTemplates} from './card-templates'
 import {normalizeGenuiInput} from './normalize-input'
@@ -26,7 +27,8 @@ export default function AdvancedGenUi({source,stateKey}:{source:string;stateKey?
    try {raw=JSON.parse(source)}catch{complete=false;raw=parsePartialGenuiSpec(source)}
    if(!raw)return {error:'界面正在生成…'}
    delete raw.schema
-   const processed=processGenuiSpec(normalizeGenuiInput(raw))
+   delete raw.scheme
+   const processed=processGenuiSpec(normalizeGenuiInput(prepareEmbeddedImages(raw)))
    if(!isRenderableProcess(processed))return {error:processed.errors.slice(0,4).join('；')}
    return {spec:processed.spec,complete}
   }catch(e){return {error:e instanceof Error?e.message:'界面格式无效'}}
@@ -44,7 +46,7 @@ export default function AdvancedGenUi({source,stateKey}:{source:string;stateKey?
  let hash=2166136261;for(let i=0;i<source.length;i++)hash=Math.imul(hash^source.charCodeAt(i),16777619)
  const durableKey=result.complete&&stateKey?'reader:'+stateKey+':'+(hash>>>0):undefined
  const ui=<div className="reader-genui-surface" data-annotatable="false" aria-label="GenUI">
-  <div className="reader-genui-tools"><button type="button" onClick={()=>setExpanded(!expanded)}>{expanded?text('收起画布','Close canvas'):text('展开画布','Expand canvas')}</button><details><summary>{text('更多','More')} ⋯</summary><button type="button" onClick={()=>setShowTemplates(!showTemplates)}>{text('模板','Templates')}</button><button type="button" disabled={!result.complete} onClick={()=>void download(false)}>{text('导出 JSON','Export JSON')}</button><button type="button" disabled={!result.complete} onClick={()=>void download(true)}>{text('导出 HTML','Export HTML')}</button></details></div>
+  <div className="reader-genui-tools"><button type="button" onClick={()=>setExpanded(!expanded)}>{expanded?text('收起画布','Close canvas'):text('展开画布','Expand canvas')}</button><details><summary>{text('更多','More')} ⋯</summary><button type="button" onClick={()=>setShowTemplates(!showTemplates)}>{text('模板','Templates')}</button><button type="button" disabled={!result.complete} onClick={()=>void download(false)}>{text('导出 JSON','Export JSON')}</button><button type="button" disabled={!result.complete || JSON.stringify(result.spec || {}).includes('reader.invalid/web-image#')} title="网络配图在阅读器内加载" onClick={()=>void download(true)}>{text('导出 HTML','Export HTML')}</button></details></div>
   {showTemplates&&<section className="reader-genui-templates"><label>{text('模板预览','Template preview')}<select aria-label={text('GenUI 模板','GenUI template')} value={template} onChange={e=>setTemplate(e.target.value)}><option value="">{text('选择模板','Choose a template')}</option>{templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>{selected&&<><p>{selected.description}</p><GenuiBlock key={selected.id} spec={normalizeGenuiInput(selected.demo)} animateEntrance={false}/><button type="button" disabled={!send||busy.current} onClick={()=>{if(send)void send(selected.instruction).catch(e=>setStatus(String(e)))}}>{text('使用此模板提问','Ask with this template')}</button></>}</section>}
   <GenuiActionContext.Provider value={dispatch}><ErrorBoundary>{result.spec?<GenuiBlock spec={result.spec} stateKey={durableKey} initialState={snapshot.current} onStateSnapshot={state=>{snapshot.current=state}} animateEntrance={false}/>:<p role="status">{result.error}</p>}</ErrorBoundary></GenuiActionContext.Provider>
   {status&&<p role="status">{status}</p>}

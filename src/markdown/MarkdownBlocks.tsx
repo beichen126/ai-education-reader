@@ -1,3 +1,4 @@
+import {WebImageBlock} from '../web-images/WebImageBlock'
 import { GenUiBlock } from '../genui/GenUiBlock'
 import { createElement, Fragment, useLayoutEffect, useMemo, useRef } from 'react'
 import { registerMarkdownSource } from './source-copy'
@@ -119,7 +120,8 @@ function blockEl(node: any, ctx: RenderCtx, onTableAction?: (tableId: string) =>
   }
   if (t === 'code') {
     const value = node.value || ''
-    if ((node.lang === 'dsh-ui' || node.lang === 'genui' || (node.lang === 'json' && node.meta === 'dsh-ui')) && ctx.annotations !== undefined) return <GenUiBlock source={value} stateKey={messageId+':'+startOf(node)} />
+    if (node.lang === 'web-image' && ctx.annotations !== undefined) return <WebImageBlock source={value} />
+    if ((node.lang === 'dsh-ui' || node.lang === 'genui' || (node.lang === 'json' && node.meta === 'dsh-ui')) && ctx.annotations !== undefined) return <GenUiBlock source={value} modern={node.lang === 'genui'} stateKey={messageId+':'+startOf(node)} />
     const st = cur.v
     cur.v += value.length
     // Code is ordinary canonical text. Keeping the complete value in one leaf

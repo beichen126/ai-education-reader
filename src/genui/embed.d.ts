@@ -15,3 +15,5 @@ declare module 'reader-genui-locale' {export function setLocale(locale:string):v
 declare module 'reader-genui-templates' {export function genuiTemplates():Array<{id:string;name:string;description:string;instruction:string;demo:any}>}
 
 declare module 'reader-genui-diagram-original' { export const DiagramNode: import('react').ComponentType<any> }
+
+declare module 'reader-genui-image-original' { export const ImageNode: import('react').ComponentType<any> }

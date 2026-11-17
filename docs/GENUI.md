@@ -82,3 +82,15 @@ DSH 专属的 slash command、宿主侧边栏插件及 Flutter SDK 的 transport
 ## 计算字段
 
 数值滑块声明唯一 id 和 value，根级 computed 通过该 id 计算，text.content 或 stat.value 用 `{{结果id}}` 展示。圆面积示例：slider.id 为 radius，computed 为 `{id:"area",expr:"pi*radius^2"}`，stat.value 为 `{{area}}`。曲线 x 和 series.params 属于各自 plot；根级计算的参数使用 slider/select/textarea 字段声明。表达式使用安全数学语法，如 `sqrt(x)`、`pow(x,2)`、`pi`。
+
+
+## 网络配图与简化入口（4.0.5）
+
+普通界面使用 `genui` JSON 围栏，根对象为 `{"title":"标题","items":[...]}`。围栏确定渲染器，组件字段沿用目录。已有 dsh-ui 内容保持兼容。
+
+Firecrawl 配置位于设置 → API 配置 → 网络配图。保存至少一个 Key 后，发送时动态附加 `web-image` 能力；清除全部 Key 后停止附加并隐藏配图。
+单图 `{"type":"image","query":"神经元结构 中文标注 示意图","alt":"神经元"}`；双图 `{"type":"image-group","items":[{"query":"动物细胞结构"},{"query":"植物细胞结构"}]}`，可独立使用 web-image 围栏，也可嵌入 genui 的 card.items、col.items、grid.items，图片与说明共用卡片。每个位置 limit=1，首张图片由接口提供，来源可点击，手机端双图纵向排列。
+
+多 Key 按列表顺序循环：HTTP 402 连续三次才认定本次额度耗尽并切换，HTTP 401/403、429、网络失败单独标记后切换。每次搜索最多一轮，末项之后回到首项，下次继续。成功的 Key 保持为当前起点。相同账号的 Key 可能共享额度。
+
+Key 和轮换状态仅保存在设备本地，备份白名单不包含 Key。已选图片引用缓存在本地 settings 存储中，刷新复用；清空本地数据同步移除引用缓存。图片文件使用原站外链，加载失败保留来源入口。

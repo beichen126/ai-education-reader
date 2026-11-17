@@ -1,3 +1,4 @@
+import {WebImageSettings} from '../web-images/WebImageSettings'
 import {clearSpeechCache} from '../speech/audio-cache'
 import {stopReadAloud} from '../speech/read-aloud'
 import {ApiProfiles} from './ApiProfiles'
@@ -266,6 +267,7 @@ export function SettingsDialog() {
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
       <div className={css.settingsHint}>{tx('检查仅请求模型列表，不发送对话、图片或文档。', 'Checks the model list only; no chats, images or documents are sent.')}</div>
       </>}
+      <WebImageSettings />
       </section>
       <section id="settings-section-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={section!=='general'} className={css.settingsSection}>
       <div className={css.exportSection}>

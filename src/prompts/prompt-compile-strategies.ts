@@ -1,3 +1,6 @@
+import {configuredImageKeys} from '../web-images/key-pool'
+import {getSettingsSnapshot} from '../engine/settings-store'
+import {WEB_IMAGE_PROMPT} from '../web-images/protocol'
 import { GENUI_PROMPT } from '../genui/schema'
 import { buildApiMessages, type ApiChatMessage } from '../api/deepseek'
 import type { ChatThreadRef } from '../branches/branch-types'
@@ -145,7 +148,7 @@ export function appendGenUiGuidance(messages: ApiChatMessage[], prompt = GENUI_P
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]
     if (message.role !== 'user') continue
-    const guidance = '\n\n[Reader rendering capabilities]\n' + prompt
+    const guidance = '\n\n[Reader rendering capabilities]\n' + prompt + (configuredImageKeys(getSettingsSnapshot()).length ? '\n\n' + WEB_IMAGE_PROMPT : '')
     messages[index] = { ...message, content: typeof message.content === 'string'
       ? message.content + guidance
       : [...message.content, { type: 'text', text: guidance }] }
