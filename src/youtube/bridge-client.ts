@@ -3,7 +3,7 @@ import {validTranscript,type YoutubeTranscript} from './transcript'
 function request(type:string,data:Record<string,string>,signal?:AbortSignal):Promise<any>{return new Promise((resolve,reject)=>{
  const id=crypto.randomUUID();let timer:ReturnType<typeof setTimeout>;
  const cleanup=()=>{clearTimeout(timer);window.removeEventListener('message',receive);signal?.removeEventListener('abort',cancel)};
- const receive=(e:MessageEvent)=>{if(e.source!==window||e.origin!==location.origin||e.data?.channel!=='reader-youtube-response'||e.data.id!==id)return;cleanup();e.data.error?reject(new Error(e.data.error + (e.data.code ? ` [${e.data.code} · ${e.data.stage || 'request'} · ${Math.round((e.data.elapsedMs || 0)/1000)}s · ${id.slice(0,8)}]` : ''))):resolve(e.data)};
+ const receive=(e:MessageEvent)=>{if(e.source!==window||e.origin!==location.origin||e.data?.channel!=='reader-youtube-response'||e.data.id!==id)return;cleanup();e.data.error?reject(new Error(e.data.error + (e.data.code ? ` [${e.data.code} · ${e.data.stage || 'request'} · ${Math.round((e.data.elapsedMs || 0)/1000)}s · ${id.slice(0,8)}${e.data.nativeFailure ? ' · native: ' + String(e.data.nativeFailure).slice(0,120) : ''}]` : ''))):resolve(e.data)};
  const native=(window as any).AndroidYoutube;
  const stop=()=>{if(type==='ping')return;if(native){if(native.cancelRequest)native.cancelRequest(id);else native.cancel()}else window.postMessage({channel:'reader-youtube-request',id:crypto.randomUUID(),type:'cancel'},location.origin)};
  const cancel=()=>{cleanup();stop();reject(new Error('已取消'))};

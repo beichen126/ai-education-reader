@@ -1,3 +1,4 @@
+import { renderAndroidPdf, closeAndroidPdf } from './android-pdf'
 // PDF.js integration boundary. UI never touches PDF.js directly.
 // Responsibilities: document open/close, page render (Canvas -> Blob), worker config.
 //
@@ -60,6 +61,7 @@ export async function closePdf(): Promise<void> {
   const task = activeLoadingTask
   activeOpenToken = null
   activeLoadingTask = null
+  closeAndroidPdf(activeDoc)
   activeDoc = null
   // Destroying the loading task also tears down the underlying document + worker
   // (the .d.ts exposes destroy() on the loading task, not on PDFDocumentProxy).
@@ -122,6 +124,8 @@ export type RenderOptions = { maxEdge?: number; signal?: AbortSignal }
  *  the hard pixel-budget clamps always apply, so a thumbnail is NEVER upscaled to the
  *  1800px body resolution. The Reader正文 path calls this with NO options (full policy). */
 export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number, opts?: RenderOptions): Promise<RenderedPage> {
+  const native = await renderAndroidPdf(doc, pageNumber, opts?.maxEdge ?? MAX_RENDER_EDGE, opts?.signal)
+  if (native) return native
   const page = await doc.getPage(pageNumber)
   if (opts?.signal?.aborted) throw new PdfError('render-failed', 'render cancelled')
   const vp1 = page.getViewport({ scale: 1 })
@@ -202,7 +206,7 @@ export class PdfCancellationError extends Error {
 export function isRenderCancellation(e: unknown): boolean {
   if (!e || typeof e !== 'object') return false
   const name = (e as { name?: unknown }).name
-  if (name === 'PdfCancellationError' || name === 'RenderingCancelledException') return true
+  if (name === 'PdfCancellationError' || name === 'RenderingCancelledException' || name === 'AbortError') return true
   return /RenderingCancelled/i.test(String((e as { message?: unknown }).message ?? ''))
 }
 
@@ -238,12 +242,22 @@ export async function readPageViewport1(doc: import('pdfjs-dist').PDFDocumentPro
 export function startPageSurfaceRender(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number, scale: number): PageSurfaceRender {
   let task: { cancel(): void } | null = null
   let cancelled = false
+  const controller = new AbortController()
   const promise = (async (): Promise<PageSurface> => {
     const page = await doc.getPage(pageNumber)
     if (cancelled) throw new PdfCancellationError()
     const vp = page.getViewport({ scale })
     const width = Math.max(1, Math.floor(vp.width))
     const height = Math.max(1, Math.floor(vp.height))
+    const native = await renderAndroidPdf(doc, pageNumber, Math.max(width, height), controller.signal)
+    if (cancelled) throw new PdfCancellationError()
+    if (native) {
+      const bitmap = typeof createImageBitmap === 'function' ? await createImageBitmap(native.blob).catch(() => null) : null
+      if (bitmap) {
+        if (cancelled) { bitmap.close(); throw new PdfCancellationError() }
+        return { surface: bitmap, width: native.width, height: native.height, scale: native.width / page.getViewport({ scale: 1 }).width, pageNumber }
+      }
+    }
     const canvas = document.createElement('canvas')
     canvas.width = width
     canvas.height = height
@@ -272,6 +286,7 @@ export function startPageSurfaceRender(doc: import('pdfjs-dist').PDFDocumentProx
     promise,
     cancel() {
       cancelled = true
+      controller.abort()
       try { task?.cancel() } catch { /* ignore */ }
     },
   }

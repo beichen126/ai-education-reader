@@ -21,6 +21,10 @@ import org.json.JSONTokener
 /** Dedicated YouTube view, with no JavaScript interfaces exposed to YouTube. */
 class YoutubeBridge(private val context: Context, private val reader: () -> WebView?) {
   private val handler = Handler(Looper.getMainLooper())
+  private val network = java.util.concurrent.Executors.newSingleThreadExecutor()
+  private var nativeRequest: NativeYoutube? = null
+  private var nativeFuture: java.util.concurrent.Future<*>? = null
+  private var nativeFailure: String? = null
   private var pollTask: Runnable? = null
   private var startedAt = 0L
   private var stage = "loading"
@@ -36,15 +40,15 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
   fun extract(id: String, videoId: String, language: String) { handler.post {
     if (closed || !trusted() || !id.matches(Regex("[a-zA-Z0-9-]{1,100}")) || !videoId.matches(Regex("[a-zA-Z0-9_-]{11}")) || language !in listOf("auto","zh","en","ja","ko","es")) return@post
     if (activeId != null) { emit(id, JSONObject().put("error", "已有字幕提取任务").put("code", "BUSY").put("stage", stage)); return@post }
-    try { open(id, videoId, language) } catch (e: Exception) { fail("INITIALIZATION_FAILED", "字幕任务初始化失败：${e.javaClass.simpleName}") }
+    try { start(id, videoId, language) } catch (e: Exception) { fail("INITIALIZATION_FAILED", "字幕任务初始化失败：${e.javaClass.simpleName}") }
   } }
   @JavascriptInterface
   fun cancel() { handler.post { fail("CANCELLED", "已取消") } }
   @JavascriptInterface
   fun cancelRequest(id: String) { handler.post { if (activeId == id) fail("CANCELLED", "已取消") } }
-  fun shutdown() { handler.post { closed = true; fail("HOST_DESTROYED", "页面已关闭，请重新提取字幕") } }
+  fun shutdown() { handler.post { closed = true; fail("HOST_DESTROYED", "页面已关闭，请重新提取字幕"); network.shutdownNow() } }
   private fun fail(code: String, message: String) {
-    finish(JSONObject().put("error", message).put("code", code).put("stage", stage).put("elapsedMs", System.currentTimeMillis() - startedAt))
+    finish(JSONObject().put("error", message).put("code", code).put("stage", stage).put("elapsedMs", System.currentTimeMillis() - startedAt).put("nativeFailure", nativeFailure))
   }
   private fun emit(id: String, value: JSONObject) {
     if (!trusted()) return
@@ -54,15 +58,37 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
   private fun finish(value: JSONObject) {
     val id = activeId ?: return
     activeId = null; generation++
+    nativeRequest?.cancel(); nativeRequest = null
+    nativeFuture?.cancel(true); nativeFuture = null
     pollTask?.let { handler.removeCallbacks(it) }; pollTask = null
     youtube?.let { view -> view.stopLoading(); (view.parent as? ViewGroup)?.removeView(view); view.destroy() }; youtube = null
     if (value.has("error")) Log.w("ReaderYoutube", "request=$id code=${value.optString("code")} stage=$stage elapsed=${System.currentTimeMillis() - startedAt}ms message=${value.optString("error")}")
     emit(id, value)
   }
+  private fun start(id: String, videoId: String, language: String) {
+    activeId = id; val token = ++generation
+    startedAt = System.currentTimeMillis(); stage = "native-http"; nativeFailure = null
+    val request = NativeYoutube(); nativeRequest = request
+    nativeFuture = network.submit {
+      try {
+        val data = request.extract(videoId, language)
+        handler.post { if (generation == token && activeId == id && !closed) finish(JSONObject().put("data", data)) }
+      } catch (error: Exception) {
+        handler.post {
+          if (generation == token && activeId == id && !closed) {
+            nativeFailure = error.message?.take(120) ?: error.javaClass.simpleName
+            Log.i("ReaderYoutube", "request=$id native fallback=$nativeFailure")
+            nativeRequest = null; nativeFuture = null
+            try { open(id, videoId, language) } catch (_: Exception) { fail("INITIALIZATION_FAILED", "字幕兼容模式启动失败") }
+          }
+        }
+      }
+    }
+  }
   @SuppressLint("SetJavaScriptEnabled")
   private fun open(id: String, videoId: String, language: String) {
     activeId = id; val token = ++generation
-    startedAt = System.currentTimeMillis(); stage = "loading"
+    stage = "webview-loading"
     val host = reader()?.rootView as? ViewGroup
     if (host == null) { fail("HOST_UNAVAILABLE", "阅读器页面尚未准备好，请重试"); return }
     val view = WebView(context).apply {
@@ -96,7 +122,7 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
     youtube = view
     host.addView(view, 0, ViewGroup.LayoutParams(-1, -1))
     val extractor = context.assets.open("android/youtube-extractor.js").bufferedReader().use { it.readText() }
-    val deadline = System.currentTimeMillis()+80000
+    val deadline = startedAt+80000
     fun poll() {
       if (generation != token || activeId != id) return
       if (System.currentTimeMillis() > deadline) { fail("TIMEOUT", "字幕提取超时（阶段：$stage），请检查网络或更换视频重试"); return }

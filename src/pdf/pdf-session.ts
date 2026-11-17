@@ -1,3 +1,4 @@
+import { closeAndroidPdf } from './android-pdf'
 // Explicit PDF session runtime (Stage 9.2B1). The full Reader must NOT depend on
 // pdf-service's single activeDoc/activeLoadingTask singleton (which the PdfPanel
 // owns): one Reader instance owns its own PdfSession, so opening/closing the
@@ -80,6 +81,7 @@ export async function readSessionPageLabels(session: PdfSession): Promise<string
 
 /** Destroy the session and release its worker. IDEMPOTENT (see pdf-session-core). */
 export async function closePdfSession(session: PdfSession | null): Promise<void> {
+  closeAndroidPdf(session?.documentProxy ?? null)
   return closeSessionCore(session)
 }
 export { pdfErrorMessage }

@@ -1,7 +1,7 @@
 {
   "name": "ai-education-reader",
   "private": true,
-  "version": "4.0.9",
+  "version": "4.0.10",
   "type": "module",
   "engines": {
     "node": ">=20.0.0 <26"
@@ -264,7 +264,7 @@
     "test:e2e-post-v1": "node scripts/e2e-branching.mjs && node scripts/e2e-branching-graph.mjs && node scripts/e2e-artifacts.mjs && node scripts/e2e-branch-stream.mjs && node scripts/e2e-branch-stop.mjs && node scripts/e2e-root-stop.mjs && node scripts/e2e-backup.mjs",
     "test:release": "node scripts/test-release.mjs",
     "test:pdf-ocr": "npx tsx scripts/test-pdf-ocr.ts",
-    "test:youtube": "tsx scripts/test-youtube.ts",
+    "test:youtube": "tsx scripts/test-youtube.ts && tsx scripts/test-android-pdf.ts",
     "test:speech-cache": "tsx scripts/test-speech-cache.ts && tsx scripts/test-read-aloud.ts",
     "test:e2e-web-images": "node scripts/e2e-web-images.mjs"
   },
