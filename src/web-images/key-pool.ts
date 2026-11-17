@@ -15,8 +15,9 @@ export async function imageKeyState(key: string): Promise<KeyState | undefined> 
 export async function resetImageKey(key: string) {await deleteSetting(await stateId(key)); await setSetting('firecrawl-cursor',await stateId(key))}
 let queue: Promise<unknown> = Promise.resolve()
 /** Serialize rotation across concurrent image positions. Three explicit quota failures advance a key; one full cycle bounds each search. */
-export function requestWithImageKeys<T>(keys: ImageKey[], request: (key: string) => Promise<T>): Promise<T> {
+export function requestWithImageKeys<T>(keys: ImageKey[], request: (key: string) => Promise<T>, signal?: AbortSignal): Promise<T> {
   const run = queue.then(async () => {
+    signal?.throwIfAborted()
     if (!keys.length) throw new Error('请先配置 Firecrawl API Key')
     const ids = await Promise.all(keys.map(k => stateId(k.key)))
     const cursor = await getSetting('firecrawl-cursor')
@@ -27,21 +28,25 @@ export function requestWithImageKeys<T>(keys: ImageKey[], request: (key: string)
       let quotaFailures = 0
       for (let attempt=0; attempt<3; attempt++) {
         try {
+          signal?.throwIfAborted()
           const result = await request(entry.key)
-          await deleteSetting(id)
-          await setSetting('firecrawl-cursor',id)
-          await setSetting('firecrawl-current',entry.name)
+          signal?.throwIfAborted()
+          await deleteSetting(id).catch(()=>undefined)
+          await setSetting('firecrawl-cursor',id).catch(()=>undefined)
+          await setSetting('firecrawl-current',entry.name).catch(()=>undefined)
           return result
         } catch (error) {
+          signal?.throwIfAborted()
+          if ((error as {terminal?: boolean})?.terminal) throw error
           const status = (error as {status?: number})?.status
           if (status === 402) {quotaFailures++; if (quotaFailures<3) continue}
           const reason = quotaFailures===3 ? '连续 3 次额度耗尽，已轮换' : status===401 || status===403 ? '密钥验证失败，已轮换' : status===429 ? '请求频繁，已轮换' : '请求失败，已轮换（非额度判定）'
-          await setSetting(id,{reason,until:Number.MAX_SAFE_INTEGER})
+          await setSetting(id,{reason,until:Number.MAX_SAFE_INTEGER}).catch(()=>undefined)
           failures.push(entry.name+'：'+reason)
           break
         }
       }
-      await setSetting('firecrawl-cursor',ids[(index+1)%keys.length])
+      await setSetting('firecrawl-cursor',ids[(index+1)%keys.length]).catch(()=>undefined)
     }
     throw new Error('本轮配置均未成功。'+failures.join('；'))
   })

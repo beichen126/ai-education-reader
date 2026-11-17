@@ -9,17 +9,25 @@ function Picture({item, keys}: {item: ImageQuery; keys: ImageKey[]}) {
   const [image, setImage] = useState<WebImage>()
   const [error, setError] = useState('')
   const [failed, setFailed] = useState(false)
+  const [loaded, setLoaded] = useState(false)
+  const [loadAttempt, setLoadAttempt] = useState(0)
   const [retry, setRetry] = useState(0)
   useEffect(() => {
     let active = true
-    setImage(undefined); setError(''); setFailed(false)
-    void searchFirstImage(item.query, keys).then(result => {if (active) setImage(result)}).catch(() => {if (active) setError('图片搜索失败，可重试或检查 Firecrawl 配置。')})
-    return () => {active = false}
+    const controller = new AbortController()
+    setImage(undefined); setError(''); setFailed(false); setLoaded(false)
+    void searchFirstImage(item.query, keys, controller.signal).then(result => {if (active) setImage(result)}).catch(() => {if (active) setError('图片搜索失败，可重试或检查 Firecrawl 配置。')})
+    return () => {active = false; controller.abort()}
   }, [item.query, keys, retry])
-  return <figure className="reader-web-image">
+  useEffect(()=>{
+    if(!image || loaded || failed)return
+    const timer=setTimeout(()=>setFailed(true),20000)
+    return ()=>clearTimeout(timer)
+  },[image,loaded,failed,loadAttempt])
+  return <figure className={'reader-web-image' + (failed ? ' reader-web-image-failed' : '')}>
     {image ? <>
-      {!failed ? <a href={image.imageUrl} target="_blank" rel="noopener noreferrer" aria-label="打开完整图片"><img src={image.imageUrl} alt={item.alt} referrerPolicy="no-referrer" onError={() => setFailed(true)} /></a> : <p>图片暂时无法加载，可访问来源网页。</p>}
-      <figcaption><a href={image.sourceUrl} target="_blank" rel="noopener noreferrer">{new URL(image.sourceUrl).hostname}</a>{failed && <button onClick={() => setFailed(false)}>重试加载</button>}</figcaption>
+      {!failed ? <a href={image.imageUrl} target="_blank" rel="noopener noreferrer" aria-label="打开完整图片"><img key={loadAttempt} onLoad={()=>setLoaded(true)} src={image.imageUrl} alt={item.alt} referrerPolicy="no-referrer" onError={() => setFailed(true)} /></a> : <p>图片暂时无法加载，可访问来源网页。</p>}
+      <figcaption><a href={image.sourceUrl} target="_blank" rel="noopener noreferrer">{new URL(image.sourceUrl).hostname}</a>{failed && <button onClick={() => {setLoaded(false);setFailed(false);setLoadAttempt(n=>n+1)}}>重试加载</button>}</figcaption>
     </> : error ? <p role="status">{error}<button onClick={() => setRetry(n => n + 1)}>重试搜索</button></p> : <p role="status">正在查找图片…</p>}
   </figure>
 }

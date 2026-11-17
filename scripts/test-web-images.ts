@@ -6,7 +6,7 @@ import {patchSettings, initSettings, getSettingsSnapshot} from '../src/engine/se
 import {deleteSetting} from '../src/storage/storage'
 import assert from 'node:assert/strict'
 import {parseImageQueries, WEB_IMAGE_PROMPT, withWebImageCapabilities} from '../src/web-images/protocol'
-import {requestFirstImage} from '../src/web-images/search'
+import {requestFirstImage, searchFirstImage, clearImageSearchRuntime} from '../src/web-images/search'
 import {appendGenUiGuidance} from '../src/prompts/prompt-compile-strategies'
 import {FULL_GENUI_PROMPT} from '../src/genui/catalog-prompt'
 assert.equal(parseImageQueries('{"type":"image","query":"神经元"}').length,1)
@@ -65,3 +65,42 @@ console.log('PASS nested image nodes use safe host renderer inside native cards'
 
 assert.ok(withWebImageCapabilities(FULL_GENUI_PROMPT).includes('image: query*:string'))
 assert.ok(withWebImageCapabilities('自定义协议').includes('当前阅读器运行时能力'))
+
+// Shared search ownership: one subscriber leaving must not cancel another.
+const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms))
+let started=0,aborted=0
+try {
+ globalThis.fetch=async(_url,init)=>new Promise<Response>((resolve,reject)=>{
+   started++
+   const timer=setTimeout(()=>resolve(Response.json({success:true,data:{images:[{imageUrl:'https://images.example/lifecycle.png',url:'https://example.org/source'}]}})),250)
+   init?.signal?.addEventListener('abort',()=>{aborted++;clearTimeout(timer);reject(init.signal!.reason)},{once:true})
+ })
+ const first=new AbortController(),second=new AbortController()
+ const a=searchFirstImage('shared lifecycle',pool,first.signal)
+ const rejected=assert.rejects(a,{name:'AbortError'})
+ const b=searchFirstImage('shared lifecycle',pool,second.signal)
+ await pause(40);first.abort();await rejected;await b
+ assert.equal(started,1);assert.equal(aborted,0)
+ await searchFirstImage('shared lifecycle',pool)
+ assert.equal(started,1,'success is reused')
+ const leaving=new AbortController()
+ const c=searchFirstImage('cancel lifecycle',pool,leaving.signal)
+ const canceled=assert.rejects(c,{name:'AbortError'})
+ await pause(40);leaving.abort();await canceled;await pause(200)
+ assert.equal(aborted,1,'last subscriber leaving cancels request')
+ await searchFirstImage('cancel lifecycle',pool)
+ assert.equal(started,3,'canceled query can be requested again')
+ const clearing=searchFirstImage('clear lifecycle',pool)
+ const cleared=assert.rejects(clearing,{name:'AbortError'})
+ await pause(40);await clearImageSearchRuntime();await cleared
+ assert.equal(aborted,2,'clearing data stops active work before clearing storage')
+ const controller=new AbortController();controller.abort()
+ let touched=false
+ await assert.rejects(requestWithImageKeys(pool,async()=>{touched=true},controller.signal),{name:'AbortError'})
+ assert.equal(touched,false,'canceled queued request never invokes provider')
+ let emptyCalls=0
+ globalThis.fetch=async()=>{emptyCalls++;return Response.json({success:true,data:{images:[]}})}
+ await assert.rejects(searchFirstImage('no results lifecycle',pool),/没有图片/)
+ assert.equal(emptyCalls,1,'empty result does not burn through other keys')
+}finally{globalThis.fetch=original}
+console.log('PASS shared ownership, cancellation, cache reuse, reentry and empty-result lifecycle')

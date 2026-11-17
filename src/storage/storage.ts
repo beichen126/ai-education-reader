@@ -18,6 +18,7 @@ import { clearOpfsAppRoot } from './binary-store'
 export async function clearAllLocalData(): Promise<{ partialCleanup: boolean; failedPaths: string[] }> {
   const {stopReadAloud}=await import('../speech/read-aloud');stopReadAloud()
   const {clearSpeechCache}=await import('../speech/audio-cache');await clearSpeechCache()
+  const {clearImageSearchRuntime}=await import('../web-images/search');await clearImageSearchRuntime()
   await idbClearAll()
   clearReadingPositions()
   try { if(typeof localStorage!=='undefined') for(const key of Object.keys(localStorage)) if(key.startsWith('dsh.genui.')) localStorage.removeItem(key) } catch { /* Storage may be unavailable in private mode. */ }
