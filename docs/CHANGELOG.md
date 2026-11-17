@@ -4,6 +4,12 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。正式发布的改动按版本记录，未发布改动再单独进入 `Unreleased`。
 
+## [4.0.6] - 2026-11-17
+
+- 保存 API 设置同步保存 Firecrawl 配置；配置后的新请求即时包含当前图片能力与完整 image/image-group 字段目录。
+- 明确模型输出搜索节点、阅读器执行联网的分工，补充原会话先未配置后配置的浏览器回归测试。
+- Android 2.0.6 同步。
+
 ## [4.0.5] - 2026-11-17
 
 - GenUI 使用 genui 围栏和 title/items 根结构，保留原有围栏兼容，兼容 schema/scheme 元字段。

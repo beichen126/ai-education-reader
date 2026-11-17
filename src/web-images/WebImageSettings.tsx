@@ -5,7 +5,7 @@ import {configuredImageKeys, imageKeyState, resetImageKey, type ImageKey} from '
 import {Button, Input} from '../dsh/primitives'
 import css from '../cockpit/cockpit.module.css'
 
-export function WebImageSettings() {
+export function WebImageSettings({saveRef}: {saveRef?: {current: (() => Promise<void>) | null}}) {
   const settings = useSettings(s => s)
   const [rows, setRows] = useState<ImageKey[]>(() => configuredImageKeys(settings).length ? configuredImageKeys(settings) : [{name:'配置 1',key:''}])
   const [visible, setVisible] = useState(false)
@@ -27,8 +27,9 @@ export function WebImageSettings() {
       if (clear) setRows([{name:'配置 1',key:''}])
       setStatus(keys.length ? '已保存，单图与双图配图能力已开启' : '已清除，模型配图能力已关闭')
       await refresh()
-    } catch {setStatus('保存失败，请重试')} finally {setBusy(false)}
+    } catch (error) {setStatus('保存失败，请重试'); throw error} finally {setBusy(false)}
   }
+  if (saveRef) saveRef.current = () => save()
   return <div className={css.byokBlock} data-testid="firecrawl-settings">
     <div className={css.byokTitle}>网络配图 · Firecrawl</div>
     <p className={css.settingsHint}>按列表顺序使用 Key，连续 3 次额度耗尽后切换下一项，末项之后回到首项。每个图片位置直接取首张；调用由 Firecrawl 计费。配置独立于对话模型，Key 仅保存在当前设备。</p>
@@ -45,8 +46,8 @@ export function WebImageSettings() {
     <div className={css.keyControls} style={{flexWrap:'wrap'}}>
       <Button variant="outline" disabled={rows.length>=10} onClick={()=>setRows(old=>[...old,{name:'配置 '+(old.length+1),key:''}])}>添加 Key</Button>
       <Button variant="outline" onClick={()=>setVisible(v=>!v)}>{visible?'隐藏':'显示'}</Button>
-      <Button disabled={busy} onClick={()=>void save()}>保存配图配置</Button>
-      <Button variant="outline" disabled={busy} onClick={()=>void save(true)}>清除</Button>
+      <Button disabled={busy} onClick={()=>void save().catch(()=>{})}>保存配图配置</Button>
+      <Button variant="outline" disabled={busy} onClick={()=>void save(true).catch(()=>{})}>清除</Button>
     </div>
     <p className={css.settingsHint}>{configuredImageKeys(settings).length ? '状态：单图与双图已开启' : '状态：待配置，模型能力目录中隐藏配图'}{current && ' · 最近使用：'+current}</p>
     <p className={css.settingsHint}>每次请求最多轮换一圈；网络错误单独处理。下次从保存的位置继续，也可指定起点。相同账号的 Key 可能共享额度。</p>

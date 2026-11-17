@@ -5,7 +5,7 @@ import {requestWithImageKeys, configuredImageKeys} from '../src/web-images/key-p
 import {patchSettings, initSettings, getSettingsSnapshot} from '../src/engine/settings-store'
 import {deleteSetting} from '../src/storage/storage'
 import assert from 'node:assert/strict'
-import {parseImageQueries, WEB_IMAGE_PROMPT} from '../src/web-images/protocol'
+import {parseImageQueries, WEB_IMAGE_PROMPT, withWebImageCapabilities} from '../src/web-images/protocol'
 import {requestFirstImage} from '../src/web-images/search'
 import {appendGenUiGuidance} from '../src/prompts/prompt-compile-strategies'
 import {FULL_GENUI_PROMPT} from '../src/genui/catalog-prompt'
@@ -62,3 +62,6 @@ const embedded = prepareEmbeddedImages({items:[{type:'card',title:'神经系统'
 assert.ok(isRenderableProcess(processGenuiSpec(embedded)))
 assert.equal(JSON.parse(embeddedImagePayload(embedded.items[0].items[0].src)!).query,'人体神经系统 示意图')
 console.log('PASS nested image nodes use safe host renderer inside native cards')
+
+assert.ok(withWebImageCapabilities(FULL_GENUI_PROMPT).includes('image: query*:string'))
+assert.ok(withWebImageCapabilities('自定义协议').includes('当前阅读器运行时能力'))

@@ -11,3 +11,14 @@ export function parseImageQueries(source: string): ImageQuery[] {
     return {query: item.query.trim(), alt: typeof item.alt === 'string' ? item.alt.slice(0, 200) : item.query.trim()}
   })
 }
+
+
+export function withWebImageCapabilities(prompt: string): string {
+  const runtime = '当前阅读器运行时能力：Firecrawl 已配置，image 与 image-group 已启用。当前请求以本段能力清单为准。用户请求配图、搜图或测试图片时，直接输出带 query 的图片节点；阅读器收到节点后自动调用 Firecrawl 并显示首张。模型负责生成节点，阅读器负责联网请求、图片加载及来源展示。'
+  const catalog = '\nimage: query*:string（2–200字搜索词）,alt:string；用途：搜索并显示首张图片，可作为 card/grid/col 子节点。\nimage-group: items*:[{query*:string,alt:string},{query*:string,alt:string}]；用途：两个位置各搜索首张并排展示。'
+  const marker = '组件字段目录'
+  const index = prompt.indexOf(marker)
+  const lineEnd = index < 0 ? -1 : prompt.indexOf('\n',index)
+  const integrated = lineEnd < 0 ? prompt + catalog : prompt.slice(0,lineEnd) + catalog + prompt.slice(lineEnd)
+  return runtime + '\n\n' + integrated + '\n\n' + WEB_IMAGE_PROMPT
+}

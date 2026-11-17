@@ -45,6 +45,7 @@ function ShowHideLabel(props: { visible: boolean; onToggle: () => void; onClear:
 
 export function SettingsDialog() {
   const s = useSettings(x => x)
+  const saveWebImagesRef = useRef<(() => Promise<void>) | null>(null)
   const initialSection = useUi(state => state.settingsInitialSection)
   type Section = 'api' | 'general' | 'security' | 'help'
   const [section, setSection] = useState<Section>(initialSection ?? 'api')
@@ -116,6 +117,7 @@ export function SettingsDialog() {
     setSaved(false)
     try {
       await patchSettings({ apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), visionCapability })
+      await saveWebImagesRef.current?.()
       setSaved(true); setTimeout(() => setSaved(false), 1500)
     } catch { /* mutation state carries the visible failure */ }
   }
@@ -267,7 +269,7 @@ export function SettingsDialog() {
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
       <div className={css.settingsHint}>{tx('检查仅请求模型列表，不发送对话、图片或文档。', 'Checks the model list only; no chats, images or documents are sent.')}</div>
       </>}
-      <WebImageSettings />
+      <WebImageSettings saveRef={saveWebImagesRef} />
       </section>
       <section id="settings-section-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={section!=='general'} className={css.settingsSection}>
       <div className={css.exportSection}>
