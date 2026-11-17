@@ -23,6 +23,8 @@ const CORE_E2E = [
   'e2e-web-images',
   'e2e-pdf-ocr',
   'e2e-android-pdf',
+  'e2e-background-chat',
+  'e2e-context-cancellation',
   'e2e-genui-full',
   'e2e-genui-capacity',
   'e2e-genui-protocol',

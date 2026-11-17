@@ -40,6 +40,9 @@ export type DocumentContextExecuteResult = { ok: boolean; count: number; error: 
  *    - otherwise the service OPENS its own temp session from the source Blob, uses it,
  *      and ALWAYS closes it in `finally`. */
 export async function executeDocumentContext(opts: DocumentContextExecuteOptions): Promise<DocumentContextExecuteResult> {
+  const controller = new AbortController()
+  const cancelled = () => !!(opts.isCancelled?.() || opts.isStale?.())
+  const cancellationWatch = setInterval(() => { if (cancelled()) controller.abort() }, 100)
   let session = opts.existingSession
   let ownsSession = false
   let tempSession: PdfSession | null = null
@@ -67,7 +70,7 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
     const ranges = opts.selection.ranges
     const renderOptions = {
       ranges, pageCount,
-      renderPage: async (n: number) => { await ensureSession(); return renderSessionPage(session as PdfSession, n) },
+      renderPage: async (n: number) => { await ensureSession(); return renderSessionPage(session as PdfSession, n, controller.signal) },
       onProgress: opts.onProgress,
       isCancelled: () => !!(opts.isCancelled?.() || opts.isStale?.()),
     }
@@ -80,6 +83,7 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
     })
     return { ok: draft.ok, count: draft.count, error: draft.error }
   } catch (e) {
+    if (cancelled()) return { ok: false, count: 0, error: '' }
     if (e && typeof e === 'object' && (e as { name?: string }).name === 'DocumentBinaryMissingError') return { ok: false, count: 0, error: '这份本地文件已不存在，请重新选择。' }
     if (e instanceof PdfContextRenderError) {
       // A cancellation / stale guard is a SILENT stop (the caller shows its own state).
@@ -88,6 +92,7 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
     }
     return { ok: false, count: 0, error: e instanceof Error ? e.message : '无法生成上下文。' }
   } finally {
+    clearInterval(cancellationWatch); controller.abort()
     if (ownsSession && tempSession) { try { await closePdfSession(tempSession) } catch { /* ignore */ } }
   }
 }

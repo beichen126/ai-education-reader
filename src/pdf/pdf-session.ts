@@ -37,8 +37,8 @@ export async function openPdfSession(blob: Blob): Promise<{ session: PdfSession;
 }
 
 /** Render one page of a session (shared core with the PdfPanel singleton). */
-export async function renderSessionPage(session: PdfSession, pageNumber: number): Promise<RenderedPage> {
-  return renderPageForDocument(session.documentProxy, pageNumber)
+export async function renderSessionPage(session: PdfSession, pageNumber: number, signal?: AbortSignal): Promise<RenderedPage> {
+  return renderPageForDocument(session.documentProxy, pageNumber, { signal })
 }
 
 /** Render a low-resolution thumbnail of one page (TOC picker). Keeps the shared render

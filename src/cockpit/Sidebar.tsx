@@ -1,3 +1,4 @@
+import { generationRegistry } from '../engine/generation-registry'
 import { useEffect, useRef, useState } from 'react'
 import { useSessions, sessionsActions, type ChatSession } from '../engine/sessions-store'
 import { localizedConversationTitle, t, tx } from '../engine/locale'
@@ -95,7 +96,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
       <div className={css.sidebarSection}>{tx('会话', 'Chats')}</div>
       <div className={css.sidebarSearch}><Input icon={<IconSearchOutline16 />} value={q} onChange={e => setQ(e.target.value)} placeholder={t('sidebar.search')} /></div>
       <div className={css.sidebarList}>
-        {filtered.map(s => <SessionRow key={s.id} session={s} active={s.id === current} busy={busy} narrow={narrow} />)}
+        {filtered.map(s => <SessionRow key={s.id} session={s} active={s.id === current} busy={busy && generationRegistry.getKey()?.split(':')[1] === s.id} narrow={narrow} />)}
         {filtered.length === 0 && <div className={css.sidebarEmpty}>{tx('暂无会话', 'No chats')}</div>}
       </div>
       <div className={css.sidebarFoot}>
@@ -111,7 +112,7 @@ function SessionRow({ session, active, busy, narrow }: { session: ChatSession; a
   const [renaming, setRenaming] = useState(false)
   const [renameVal, setRenameVal] = useState('')
   const [confirming, setConfirming] = useState(false)
-  const onOpen = () => { if (busy) { window.alert(tx('正在生成，请先停止生成', 'A response is being generated. Stop it first.')); return } sessionsActions.open(session.id); if (narrow) layoutStore.actions.closeNarrowSidebar() }
+  const onOpen = () => { sessionsActions.open(session.id); if (narrow) layoutStore.actions.closeNarrowSidebar() }
   const startRename = () => { setMenuOpen(false); setConfirming(false); setRenameVal(localizedSessionTitle(session)); setRenaming(true) }
   const commitRename = () => {
     const v = sanitizeTitle(renameVal)
@@ -141,7 +142,7 @@ function SessionRow({ session, active, busy, narrow }: { session: ChatSession; a
       <button className={css.sessionRow} data-testid="history-session" onClick={onOpen}>
         <span className={css.sessionDot} data-state={active ? 'done' : 'idle'} />
         <span className={css.sessionTitle}>{localizedSessionTitle(session)}</span>
-        <span className={css.sessionCount}>{session.messages.length}</span>
+        <span className={css.sessionCount}>{busy ? tx('生成中', 'Generating') : session.messages.length}</span>
       </button>
       <button className={css.rowMenu} title={tx('操作', 'Actions')} onClick={() => setMenuOpen(o => !o)}><span className={css.rowMenuDots}>⋯</span></button>
       {menuOpen && (

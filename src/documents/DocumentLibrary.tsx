@@ -15,7 +15,7 @@ import { useBackTarget } from '../engine/back-navigation'
 import { documentImportError } from './document-import-error'
 import { pdfErrorMessage } from '../pdf/pdf-session'
 import { PdfError } from '../pdf/pdf-service'
-import { getSessionsCurrent } from '../engine/sessions-store'
+import { getSessionsCurrent, useSessions } from '../engine/sessions-store'
 import { DocumentContextPicker } from './DocumentContextPicker'
 import { executeDocumentContext } from './document-context-service'
 import type { PdfSelection } from '../pdf/pdf-types'
@@ -64,6 +64,11 @@ export function DocumentLibrary() {
   const ctxCancelledRef = useRef(false)
   const ctxOpRef = useRef<{ targetConversationId: string; documentId: string } | null>(null)
   const open = ui.view === 'library'
+  const currentConversationId = useSessions(s => s.current)
+  useEffect(() => {
+    cancelCtx()
+    return () => { ctxCancelledRef.current = true; ctxGenRef.current++ }
+  }, [currentConversationId, open])
 
   async function addFromPicker(selection: PdfSelection) {
     if (!ctxDocId) return
@@ -75,6 +80,7 @@ export function DocumentLibrary() {
     ctxOpRef.current = { targetConversationId, documentId: docId }
     let fileName = 'document.pdf'
     try { fileName = (await getDocumentContextDescriptor(docId))?.fileName || 'document.pdf' } catch { /* fallback */ }
+    if (gen !== ctxGenRef.current || getSessionsCurrent() !== targetConversationId) return
     setCtxDocId(null)
     setCtxBusy({ done: 0, total: 1 }); setCtxMsg(null)
     const isCancelled = () => ctxCancelledRef.current || gen !== ctxGenRef.current
@@ -88,7 +94,7 @@ export function DocumentLibrary() {
     } catch { if (gen === ctxGenRef.current) setCtxMsg(tx('无法生成上下文。', 'Unable to build context.')) }
     finally { if (gen === ctxGenRef.current) { setCtxBusy(null); setCtxDocId(null); ctxOpRef.current = null } }
   }
-  function cancelCtx() { ctxCancelledRef.current = true; ctxGenRef.current++ }
+  function cancelCtx() { ctxCancelledRef.current = true; ctxGenRef.current++; setCtxBusy(null); setCtxMsg(null); setCtxDocId(null); ctxOpRef.current = null }
 
   const refresh = useCallback(async () => {
     try { setSummaries(await listDocumentSummaries()) } catch { setSummaries([]) }

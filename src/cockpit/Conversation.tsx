@@ -1,3 +1,4 @@
+import { generationRegistry, genRootKey, genBranchKey } from '../engine/generation-registry'
 import {YoutubePicker} from '../youtube/YoutubePicker'
 import {transcriptPreview} from '../youtube/preview'
 import type {YoutubeTranscript} from '../youtube/transcript'
@@ -146,9 +147,12 @@ export function Conversation() {
     sessionsActions.clearMessageFocus()
   }, [session, focusMessage, branchChat.branches, branchChat.ready, branchChat.activeBranchId, branchChat.switchBranch, messages.length])
   const busy = status === 'sending' || status === 'streaming'
+  const generationKey = generationRegistry.getKey()
+  const generatingConversationId = generationKey?.startsWith('root:') || generationKey?.startsWith('branch:') ? generationKey.split(':')[1] : undefined
+  const viewingGeneration = generationKey === (branchChat.activeBranchId ? genBranchKey(session?.id || '', branchChat.activeBranchId) : genRootKey(session?.id || ''))
   const promptManagerOpen = useUi(s => s.promptManagerOpen)
   const lastMsg0 = lastMsg
-  const activeStreamingId = busy && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
+  const activeStreamingId = busy && viewingGeneration && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
   const [menuMsgId, setMenuMsgId] = useState<string | null>(null)
   const [creating, setCreating] = useState<{ kind: CreateArtifactKind; messageId: string; customEntry?: boolean } | null>(null)
   const [creatingBusy, setCreatingBusy] = useState(false)
@@ -289,6 +293,10 @@ export function Conversation() {
           <a className={css.noKeyLink} href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">{tx('获取 DeepSeek API Key', 'Get a DeepSeek API key')}</a>
         </div>
       )}
+      {busy && generatingConversationId && !viewingGeneration && <div className={css.noKeyBanner} data-testid="background-generation">
+        <span>{tx('其他会话正在生成', 'Another chat is generating')}</span>
+        <button className={css.noKeyBtn} onClick={() => void sessionsActions.open(generatingConversationId)}>{tx('返回查看', 'View response')}</button>
+      </div>}
       {visibleSendError && !busy && <div className={css.errorBanner} role="alert" aria-live="assertive">{localizedErrorText(visibleSendError, 'Unable to send the message. Try again.')}</div>}
       {session && promptPath && (<BranchBar
         leadingControl={mobileNavigation}
@@ -335,7 +343,7 @@ export function Conversation() {
           </>}
         </div>
         <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" data-testid="conversation-learning-center" onClick={openLibrary}>{tx('学习中心', 'Learning center')}</Button></div>
-        <Composer sessionId={session?.id} busy={busy} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
+        <Composer key={`${session?.id}:${branchChat.activeBranchId || "root"}`} sessionId={session?.id} busy={busy} backgroundBusy={busy && !viewingGeneration} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
       </div>
       {turns.length > 1 && <ConversationTurnRail turns={turns} activeId={activeTurnId} onSelect={(turn) => {
         const el = listRef.current
@@ -565,10 +573,11 @@ function ContextSummary({ messages }: { messages: readonly TMessage[] }) {
   </div>
 }
 
-function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string | undefined; busy: boolean; thread?: { type: 'root' | 'branch'; conversationId: string; branchId?: string }; onBranchSent?: () => void }) {
+function Composer({ sessionId, busy, backgroundBusy, thread, onBranchSent }: { sessionId: string | undefined; busy: boolean; backgroundBusy?: boolean; thread?: { type: 'root' | 'branch'; conversationId: string; branchId?: string }; onBranchSent?: () => void }) {
   // Draft is keyed by thread (root conversation or branch), so switching A<->B shows each one's own text/images.
   const isBranch = thread?.type === 'branch'
   const key = isBranch ? branchThreadKey(thread!.branchId!) : (sessionId ?? '__none__')
+  const composerAliveRef = useRef(true)
   const composerKeyRef = useRef(key); composerKeyRef.current = key
   const [documentPicker,setDocumentPicker]=useState(false)
   const [youtubePicker,setYoutubePicker]=useState(false)
@@ -615,14 +624,15 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
   const attachBtnRef = useRef<HTMLButtonElement | null>(null)
   const attachMenuRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
+    composerAliveRef.current = true
     setComposerTriggers({ openImages: () => imageInputRef.current?.click(), openPdf: () => pdfInputRef.current?.click(), openMaterials: () => materialsInputRef.current?.click() })
-    return () => { setComposerTriggers(null); libCancelledRef.current = true; libGenRef.current++ }
+    return () => { composerAliveRef.current = false; setComposerTriggers(null); libCancelledRef.current = true; libGenRef.current++ }
   }, [])
   const addPdfToDraft = async (payload: PdfAddPayload): Promise<PdfAddResult> => {
     // Shared implementation (also used by the Document Reader): one
     // groupId -> saveGeneratedImages -> addDraftImages with full rollback.
     if (!sessionId) return { ok: false, count: 0, error: tx('没有当前会话，无法加入。', 'There is no active chat to add this to.') }
-    return addPdfContextToDraft(sessionId, { ...payload, branchId: isBranch ? thread?.branchId : undefined, isCancelled: () => composerKeyRef.current !== key || !!payload.isCancelled?.() })
+    return addPdfContextToDraft(sessionId, { ...payload, branchId: isBranch ? thread?.branchId : undefined, isCancelled: () => !composerAliveRef.current || composerKeyRef.current !== key || !!payload.isCancelled?.() })
   }
   // Block 0.4: operation ownership + cancellation. Snapshot the operation identity at
   // start; a stale / cancelled op NEVER writes into a conversation that is no longer the
@@ -647,7 +657,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
     } catch { if (gen === libGenRef.current) setLibMsg(tx('无法生成上下文。', 'Unable to build context.')) }
     finally { if (gen === libGenRef.current) setLibBusy(null) }
   }
-  const cancelLib = () => { libCancelledRef.current = true; libGenRef.current++ }
+  const cancelLib = () => { libCancelledRef.current = true; libGenRef.current++; setLibBusy(null); setLibMsg(null) }
 
   // Reset ephemeral view state (lightbox / error banner) when the active conversation changes.
   const prevSession = useRef(sessionId)
@@ -802,7 +812,7 @@ function Composer({ sessionId, busy, thread, onBranchSent }: { sessionId: string
           onChange={e => setDraftText(key, e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }} />
       <VoiceInput key={key} draftKey={key} disabled={busy || settingsPending} />
-        <button className={css.sendBtn} data-testid="composer-send-stop" aria-busy={busy} onClick={event => { if (event.detail > 1) return; if (busy) sessionsActions.stopGenerating(); else void send() }}>{preparing ? tx('准备中…', 'Preparing…') : busy ? tx('停止生成', 'Stop') : tx('发送', 'Send')}</button>
+        <button className={css.sendBtn} data-testid="composer-send-stop" aria-busy={busy} onClick={event => { if (event.detail > 1) return; if (busy) sessionsActions.stopGenerating(); else void send() }}>{backgroundBusy ? tx('停止后台生成', 'Stop background response') : preparing ? tx('准备中…', 'Preparing…') : busy ? tx('停止生成', 'Stop') : tx('发送', 'Send')}</button>
       </div>
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}
       <Suspense fallback={null}>

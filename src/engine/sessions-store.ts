@@ -94,7 +94,7 @@ function rejectSend(target: SendTarget, outcome: RejectedOutcome, intent: SendIn
 
 /** An explicitly-tracked active reply generation. Prevents the accidental mixture of
  *  'a naked global AbortController' + a stale snapshot. One generation globally.
- *  `controller` is the AbortController; a deletion/switch aborts it; a NEW generation
+ *  `controller` is the AbortController; a deletion aborts it; view switches keep it alive; a NEW generation
  *  replaces it (aborting the previous). */
 type ActiveGeneration = { conversationId: string; assistantId: string; controller: AbortController }
 let activeGeneration: ActiveGeneration | null = null
@@ -124,7 +124,7 @@ export const sessionsActions = {
     return c.id
   },
   async open(id: string) {
-    if (state.status === 'sending' || state.status === 'streaming') return // freeze: don't switch while generating
+    if (!state.byId[id]) return
     setState({ ...toState(state.list, id, state.ready, state.status, state.sendError), focusMessage: undefined })
     await setSetting(LAST_CONV, id)
   },
@@ -135,7 +135,6 @@ export const sessionsActions = {
   },
   /** Open a conversation and request a post-render scroll to one concrete message. */
   async openAtMessage(id: string, messageId: string, branchId?: string): Promise<boolean> {
-    if (state.status === 'sending' || state.status === 'streaming') return false
     const conversation = state.byId[id]
     if (!conversation) { if (state.focusMessage) setState({ ...state, focusMessage: undefined }); return false }
     if (branchId) {
@@ -197,6 +196,7 @@ export const sessionsActions = {
         afterUser = { ...candidate, promptTransitions: prepared.nextLocalTransitions }
         upsertState(afterUser, { status: 'sending', sendError: undefined, sendErrorTarget: undefined })
         await commitAcceptedUserMessage(afterUser, id, draftSettingKey(id), options.draftDisposition ?? 'clear')
+        if (state.current && state.current !== id) await setSetting(LAST_CONV, state.current)
       } catch (e) {
         const rejected: RejectedOutcome = { kind: 'rejected', code: 'acceptance-failed', message: '消息发送失败，请重试。' }
         acceptingRef.current = null

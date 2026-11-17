@@ -25,6 +25,7 @@ export function useBranchChat(conversation: Conversation | undefined): {
   const [branches, setBranches] = useState<ConversationBranch[]>([])
   const [activeBranchId, setActiveBranchId] = useState<StableId | undefined>(undefined)
   const [loadedConversationId, setLoadedConversationId] = useState<StableId | undefined>(undefined)
+  const currentConversation = useRef(conversation?.id); currentConversation.current = conversation?.id
   const refreshGeneration = useRef(0)
   const changeVersion=useRef(0)
   const recentChanges=useRef(new Map<string,{version:number;change:BranchChange}>())
@@ -48,7 +49,7 @@ export function useBranchChat(conversation: Conversation | undefined): {
     setLoadedConversationId(undefined)
     const bs = await listBranchesByConversation(conversationId)
     const active = await getActiveBranch(conversationId)
-    if (generation !== refreshGeneration.current) return
+    if (generation !== refreshGeneration.current || currentConversation.current !== conversationId) return
     // A read started before a committed stream delta must not overwrite that
     // newer notification when its slower snapshot finally resolves.
     let merged=bs
@@ -61,18 +62,21 @@ export function useBranchChat(conversation: Conversation | undefined): {
 
   useEffect(() => { void refresh() }, [refresh])
 
-  const effectiveMessages = conversation ? buildEffectiveConversationPath(conversation, branches, activeBranchId) : []
-  const diagnostics = conversation ? validateBranchGraph(conversation, branches).map((d) => d.code) : []
+  const visibleBranches = branches.filter(branch => branch.conversationId === conversation?.id)
+  const visibleActiveBranchId = visibleBranches.some(branch => branch.id === activeBranchId) ? activeBranchId : undefined
+  const effectiveMessages = conversation ? buildEffectiveConversationPath(conversation, visibleBranches, visibleActiveBranchId) : []
+  const diagnostics = conversation ? validateBranchGraph(conversation, visibleBranches).map((d) => d.code) : []
 
   const switchBranch = useCallback(async (branchId: StableId | undefined) => {
     if (conversation) await setActiveBranch(conversation.id, branchId)
-    setActiveBranchId(branchId)
+    if (currentConversation.current === conversation?.id) setActiveBranchId(branchId)
   }, [conversation?.id])
   const branchFrom = useCallback(async (messageId: StableId) => {
     if (!conversation) return undefined
     const b = await createBranchFromMessage(conversation.id, messageId)
     // Spec: creating a branch switches the active view to it (its inherited history stays visible,
     // the composer starts empty, the original path is unchanged).
+    if (currentConversation.current !== conversation.id) return b
     setActiveBranchId(b.id)
     await refresh()
     return b
@@ -81,5 +85,5 @@ export function useBranchChat(conversation: Conversation | undefined): {
   const removeBranch = useCallback(async (branchId: StableId) => { await deleteBranchSubtree(branchId); await refresh(); setActiveBranchId(undefined) }, [refresh])
 
   const ready = !!conversation?.id && loadedConversationId === conversation.id
-  return { branches, ready, activeBranchId, effectiveMessages, diagnostics, switchBranch, branchFrom, rename, removeBranch, refresh }
+  return { branches: visibleBranches, ready, activeBranchId: visibleActiveBranchId, effectiveMessages, diagnostics, switchBranch, branchFrom, rename, removeBranch, refresh }
 }

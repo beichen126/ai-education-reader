@@ -176,6 +176,11 @@ export function DocumentReader() {
   const [contextMode, setContextMode] = useState<'image' | 'ocr'>('image')
   const [ctxPending, setCtxPending] = useState<ReaderContextRequest | null>(null)
   const ctxGenRef = useRef(0)
+  useEffect(() => {
+    ctxGenRef.current++
+    setCtxBusy(false); setCtxProgress(null); setCtxRunning(null); setCtxMsg(null); setCtxPickerOpen(false); setCtxMenuOpen(false); setCtxPending(null)
+    return () => { ctxGenRef.current++ }
+  }, [conv?.id])
   const ctxMenuOpenRef = useRef(false); ctxMenuOpenRef.current = ctxMenuOpen
   // ---- Manual Chapter Builder (Stage 9.4A) ----
   const [builderOpen, setBuilderOpen] = useState(false)
@@ -303,7 +308,7 @@ export function DocumentReader() {
       void progressRef.current?.release('close')
       genRef.current++ // any in-flight render of the old document becomes stale
       ctxGenRef.current++ // any in-flight Reader Context generation becomes cancelled
-      setCtxBusy(false); setCtxProgress(null); setCtxMsg(null)
+      setCtxBusy(false); setCtxProgress(null); setCtxRunning(null); setCtxMsg(null)
       setCtxPending(null); setCtxMenuOpen(false); setCtxMode('menu'); setManualError(null)
       setBuilderOpen(false)
       sessionRef.current = null
@@ -432,7 +437,7 @@ export function DocumentReader() {
       }
       genRef.current++ // invalidate pending renders of THIS document immediately
       ctxGenRef.current++ // cancel any in-flight Reader Context generation (silent)
-      setCtxBusy(false); setCtxProgress(null); setCtxMsg(null)
+      setCtxBusy(false); setCtxProgress(null); setCtxRunning(null); setCtxMsg(null)
       setCtxPending(null); setCtxMenuOpen(false)
       // Release the controller session owned by this document effect. The controller
       // keeps the closure-bound owner and serializes any pending write.
