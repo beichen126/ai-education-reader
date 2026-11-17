@@ -756,7 +756,7 @@ function Composer({ sessionId, busy, backgroundBusy, thread, onBranchSent }: { s
   }
   async function attachTranscript(data:YoutubeTranscript){
     const targetKey=key,blob=await transcriptPreview(data);
-    if(composerKeyRef.current!==targetKey)throw new Error('会话已切换，请重新加入。');
+    if(!composerAliveRef.current||composerKeyRef.current!==targetKey)throw new Error('会话已切换，请重新加入。');
     const current=getDraft(targetKey),inputs=[{blob,name:data.title+'.png',transcript:data}];
     const metas=isBranch&&thread?.branchId?await saveGeneratedImagesAndBranchDraft(inputs,{branchId:thread.branchId,text:current.text,existingImageIds:current.imageIds}):sessionId?await saveGeneratedImagesAndDraft(inputs,{conversationId:sessionId,text:current.text,existingImageIds:current.imageIds}):[];
     if(!metas.length)throw new Error('请先新建会话。');

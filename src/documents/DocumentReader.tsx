@@ -180,7 +180,7 @@ export function DocumentReader() {
     ctxGenRef.current++
     setCtxBusy(false); setCtxProgress(null); setCtxRunning(null); setCtxMsg(null); setCtxPickerOpen(false); setCtxMenuOpen(false); setCtxPending(null)
     return () => { ctxGenRef.current++ }
-  }, [conv?.id])
+  }, [conv?.id, docId])
   const ctxMenuOpenRef = useRef(false); ctxMenuOpenRef.current = ctxMenuOpen
   // ---- Manual Chapter Builder (Stage 9.4A) ----
   const [builderOpen, setBuilderOpen] = useState(false)
