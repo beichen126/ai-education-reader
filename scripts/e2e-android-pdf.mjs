@@ -3,11 +3,14 @@ import { launchBrowser } from './e2e-browser.mjs'
 import { seedAndBoot } from './e2e-fixture.mjs'
 const browser = await launchBrowser()
 try {
-  for (const fail of [false, true]) {
+  for (const mode of ['native', 'failure', 'old-webview']) {
+    const fail = mode !== 'native'
+    const oldWebview = mode === 'old-webview'
     const page = await browser.newPage({ viewport: { width: 1100, height: 850 } })
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
-    await page.addInitScript(({ fail }) => {
+    await page.addInitScript(({ fail, oldWebview }) => {
+      if (oldWebview) window.createImageBitmap = undefined
       window.nativePdfCalls = []
       const fetchOriginal = window.fetch.bind(window)
       window.fetch = async (input, init) => {
@@ -26,13 +29,13 @@ try {
           setTimeout(() => window.postMessage({ channel: 'reader-pdf-response', id, ...result }, location.origin), 0)
         }, cancel() {},
       }
-    }, { fail })
+    }, { fail, oldWebview })
     await seedAndBoot(page, {})
     await page.locator('[data-testid="sidebar-entry-files"], [data-testid="rail-files"]').first().click()
     await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/outline-sample.pdf')
     await page.locator('[data-testid="document-reader"]').waitFor()
     await page.setViewportSize({ width: 412, height: 850 })
-    await page.waitForFunction(() => window.nativePdfCalls.includes('render'))
+    if (!oldWebview) await page.waitForFunction(() => window.nativePdfCalls.includes('render'))
     await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="document-reader"] canvas')].some(c => c.width > 10 && c.height > 10))
     await page.waitForFunction(fail => [...document.querySelectorAll('[data-testid="document-reader"] canvas')].some(c => {
       const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data
@@ -44,5 +47,5 @@ try {
     assert.deepEqual(errors, [])
     await page.close()
   }
-  console.log('PASS Android PDF bridge: native surface and automatic PDF.js fallback at mobile width')
+  console.log('PASS Android PDF bridge: native surface and automatic PDF.js fallback and old WebView canvas at mobile width')
 } finally { await browser.close() }

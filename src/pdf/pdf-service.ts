@@ -249,7 +249,7 @@ export function startPageSurfaceRender(doc: import('pdfjs-dist').PDFDocumentProx
     const vp = page.getViewport({ scale })
     const width = Math.max(1, Math.floor(vp.width))
     const height = Math.max(1, Math.floor(vp.height))
-    const native = await renderAndroidPdf(doc, pageNumber, Math.max(width, height), controller.signal)
+    const native = typeof createImageBitmap === 'function' ? await renderAndroidPdf(doc, pageNumber, Math.max(width, height), controller.signal) : null
     if (cancelled) throw new PdfCancellationError()
     if (native) {
       const bitmap = typeof createImageBitmap === 'function' ? await createImageBitmap(native.blob).catch(() => null) : null
