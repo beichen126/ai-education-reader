@@ -6,7 +6,7 @@ AI Education Reader 的用户可感知更新记录。
 
 ## [4.0.8] - 2026-11-17
 
-- GenUI 当前生成目录精简为 18 种：移除 textarea、select、checkbox、radio、video、code、blocks、quiz、submit、col、row、progress。
+- GenUI 当前生成目录精简为 17 种：移除 textarea、select、checkbox、radio、video、code、blocks、quiz、submit、col、row、progress、hero。
 - 选择统一使用 choices，提示词明确单选、多选、数量上限、本地答题反馈及自然语言提交。
 - 图片首张失败依次换第二、第三张，全部失败显示小尺寸裂图占位，成功引用继续缓存复用。
 - 更新模板筛选、组件说明和选择交互回归测试。Android 2.0.8 同步。
