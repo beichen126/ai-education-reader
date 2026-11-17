@@ -16,7 +16,7 @@ import { patchSettings, useSettings, useSettingsMutation } from '../engine/setti
 import { formatTokenCount } from '../engine/token-usage'
 import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel } from '../engine/attachment-service'
-import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, clearDraftMemory, updateDraftMemory } from '../engine/draft-store'
+import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, updateDraftMemory } from '../engine/draft-store'
 import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
 import { localizedErrorText, localizedStudyCardTitle, t, tx, useUiLanguage } from '../engine/locale'
 import { IconCloseOutline16, IconFolderOpenOutline16, Button } from '../dsh/primitives'
@@ -745,14 +745,14 @@ function Composer({ sessionId, busy, backgroundBusy, thread, onBranchSent }: { s
     }
     if (isBranch && thread) {
       const outcome = await runBranchReply(thread.conversationId, thread.branchId!, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), picIds, {documents})
-      if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { clearDraftMemory(key); setDocumentDraft({key,docs:[]}); setPhotoError(undefined); setOpenId(null); if (onBranchSent) onBranchSent() }
+      if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { if (composerAliveRef.current) { setDocumentDraft(current => current === documentDraft ? {key,docs:[]} : current); onBranchSent?.() } }
       return
     }
     if (!sessionId) return
     const outcome = await sessionsActions.sendUserMessage(sessionId, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), picIds, {documents})
     // Only clear the draft once the user message is ACCEPTED & persisted; the image ids
     // then belong to the message (ownership transfer), so we must NOT delete them here.
-    if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { clearDraftMemory(key); setDocumentDraft({key,docs:[]}); setPhotoError(undefined); setOpenId(null) }
+    if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { if (composerAliveRef.current) setDocumentDraft(current => current === documentDraft ? {key,docs:[]} : current) }
   }
   async function attachTranscript(data:YoutubeTranscript){
     const targetKey=key,blob=await transcriptPreview(data);

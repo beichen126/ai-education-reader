@@ -37,6 +37,7 @@ try {
     await page.getByRole('button',{name:'返回查看',exact:true}).click()
     await page.getByText('FIRST_TOKEN',{exact:true}).waitFor()
     assert.equal(pending.size,1,'switching keeps the original stream alive')
+    await page.getByRole('textbox',{name:'输入消息',exact:true}).fill('Next Alpha draft')
     await switchTo('Chat Beta')
     assert.equal(await page.getByRole('textbox',{name:'输入消息',exact:true}).inputValue(),'Keep my draft')
     if(branch)await page.getByRole('button',{name:'停止后台生成',exact:true}).click()
@@ -57,6 +58,7 @@ try {
         read.onerror=()=>{db.close();resolve(false)}
       }
     }))
+    assert.equal(await page.getByRole('textbox',{name:'输入消息',exact:true}).inputValue(),'Next Alpha draft','settled background sends preserve newly edited owner drafts')
     await page.reload({waitUntil:'networkidle'})
     await page.getByText(branch?'FIRST_TOKEN':'FIRST_TOKEN_FINAL',{exact:true}).waitFor()
     await page.close();for(const res of pending)res.destroy()

@@ -43,6 +43,7 @@ export function useBranchChat(conversation: Conversation | undefined): {
 
   const refresh = useCallback(async () => {
     const conversationId = conversation?.id
+    if (currentConversation.current !== conversationId) return
     const generation = ++refreshGeneration.current
     const version=changeVersion.current
     if (!conversationId) { setBranches([]); setActiveBranchId(undefined); setLoadedConversationId(undefined); return }
