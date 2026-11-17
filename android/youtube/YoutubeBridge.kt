@@ -25,6 +25,7 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
   private var nativeRequest: NativeYoutube? = null
   private var nativeFuture: java.util.concurrent.Future<*>? = null
   private var nativeFailure: String? = null
+  private var nativeTimeout: Runnable? = null
   private var pollTask: Runnable? = null
   private var startedAt = 0L
   private var stage = "loading"
@@ -58,6 +59,7 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
   private fun finish(value: JSONObject) {
     val id = activeId ?: return
     activeId = null; generation++
+    nativeTimeout?.let { handler.removeCallbacks(it) }; nativeTimeout = null
     nativeRequest?.cancel(); nativeRequest = null
     nativeFuture?.cancel(true); nativeFuture = null
     pollTask?.let { handler.removeCallbacks(it) }; pollTask = null
@@ -69,6 +71,15 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
     activeId = id; val token = ++generation
     startedAt = System.currentTimeMillis(); stage = "native-http"; nativeFailure = null
     val request = NativeYoutube(); nativeRequest = request
+    nativeTimeout = Runnable {
+      if (generation == token && activeId == id && !closed) {
+        request.cancel(); nativeFuture?.cancel(true)
+        nativeRequest = null; nativeFuture = null; nativeTimeout = null
+        nativeFailure = "NATIVE_TIMEOUT"
+        try { open(id, videoId, language) } catch (_: Exception) { fail("INITIALIZATION_FAILED", "字幕兼容模式启动失败") }
+      }
+    }
+    handler.postDelayed(nativeTimeout!!, 16000)
     nativeFuture = network.submit {
       try {
         val data = request.extract(videoId, language)
@@ -76,6 +87,7 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
       } catch (error: Exception) {
         handler.post {
           if (generation == token && activeId == id && !closed) {
+            nativeTimeout?.let { handler.removeCallbacks(it) }; nativeTimeout = null
             nativeFailure = error.message?.take(120) ?: error.javaClass.simpleName
             Log.i("ReaderYoutube", "request=$id native fallback=$nativeFailure")
             nativeRequest = null; nativeFuture = null
