@@ -75,7 +75,7 @@ type ProtocolAdapter = {
 
 /** Adapters point at production constants/functions; they intentionally contain no copied prompt text. */
 export const PROTOCOL_METADATA_ADAPTERS: readonly ProtocolAdapter[] = [
-  {id:BUILTIN_PROMPT_IDS.protocolGenUi,name:'GenUI · 交互界面',description:'按用途选择图表、架构、卡片、模拟、测验、媒体与单词朗读；明确请求时直接生成。自动用于普通对话，可复制自定义。',domain:'genui',getSystemPrompt:()=>GENUI_PROMPT,outputContract:'dsh-ui JSON: dsh-genui native schema, reader-vocabulary extension, or legacy schema',validator:{name:'parseGenUi',description:'校验允许的组件、结构和大小；普通文字回答不强制生成界面。'}},
+  {id:BUILTIN_PROMPT_IDS.protocolGenUi,name:'GenUI · 交互界面',description:'紧凑卡片、图表、计算、选择测验与单词朗读。按用途组合，自动用于普通对话，可复制自定义。',domain:'genui',getSystemPrompt:()=>GENUI_PROMPT,outputContract:'genui 围栏：完整 JSON 根对象与 items 节点数组；词汇使用独立 reader-vocabulary 协议。',validator:{name:'parseGenUi',description:'校验组件字段、结构与计算引用。'}},
   {
     id: BUILTIN_PROMPT_IDS.protocolAiTocTranscription,
     name: 'AI 目录 · 文字转录',

@@ -9,6 +9,24 @@ import {GENUI_NATIVE_TYPES} from '../node_modules/@changfenhuang/dsh-genui/src/c
 import {fixtures} from './genui-full-fixtures.mjs'
 import {FULL_GENUI_PROMPT} from '../src/genui/catalog-prompt.ts'
 import {normalizeGenuiInput} from '../src/genui/normalize-input.ts'
+import {GENUI_PROMPT_EXAMPLES} from '../src/genui/prompt-examples.ts'
+import {parseVocabulary} from '../src/genui/vocabulary-schema.ts'
+import {ICONS} from '../node_modules/@changfenhuang/dsh-genui/src/client/icons/icon-data.ts'
+const exampleFences=[...FULL_GENUI_PROMPT.matchAll(/```genui\n([\s\S]*?)\n```/g)]
+assert.equal(exampleFences.length,GENUI_PROMPT_EXAMPLES.length)
+for(const [index,match] of exampleFences.entries()){
+ const spec=JSON.parse(match[1])
+ assert.deepEqual(spec,GENUI_PROMPT_EXAMPLES[index].spec,'published example matches tested fixture')
+ if(spec.schema==='reader-vocabulary')parseVocabulary(match[1])
+ else {
+  const result=processGenuiSpec(normalizeGenuiInput(spec))
+  assert.ok(isRenderableProcess(result),GENUI_PROMPT_EXAMPLES[index].name+': '+result.errors.join(';'))
+  assert.equal(result.errors.length,0,'prompt examples pass without guard repairs')
+  assert.equal(Object.keys(evaluateComputed(spec,{}).errors).length,0)
+ }
+}
+assert.ok(!FULL_GENUI_PROMPT.includes('dsh-ui'),'one canonical fence language')
+for(const name of ['BookOpen','Lightbulb','Brain','Search','Globe','Chart','Cube','Atom','CheckCircle','Warning','InfoCircle','ArrowDown'])assert.ok(ICONS[name],name+' is an implemented icon')
 const brokenCard = {items:[{type:'card',title:'Luna · Gemini 3.8 Flash',accent:true,items:[{type:'keyvalue',pairs:[{key:'模型',value:'Gemini'}]}]}]}
 assert.equal(isRenderableProcess(processGenuiSpec(brokenCard)),false)
 assert.ok(isRenderableProcess(processGenuiSpec(normalizeGenuiInput(brokenCard))))

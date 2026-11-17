@@ -28,6 +28,7 @@ const CORE_E2E = [
   'e2e-genui-full',
   'e2e-genui-capacity',
   'e2e-genui-protocol',
+  'e2e-genui-prompt-examples',
   'e2e-api-profiles',
   'e2e-deepseek-native',
   'e2e-branch-live-view',

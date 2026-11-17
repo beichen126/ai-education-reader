@@ -1,101 +1,48 @@
 # GenUI 交互回答
 
-阅读器直接嵌入 [dsh-genui](https://github.com/omdsh-dev/dsh-genui) 的官方 React renderer（`@changfenhuang/dsh-genui@0.16.0`），不再局限于旧版简易条形图。参考 [Flutter GenUI](https://github.com/flutter/genui) 的组件目录、数据绑定和动作回传设计；本项目仍是 React 网页及 Android WebView，没有改写成 Flutter，也不宣称实现 Flutter/A2UI 的独立传输协议。
+当前生成目录包含 17 种基础组件，采用 @changfenhuang/dsh-genui 0.16.0 渲染。网页和 Android 使用同一份生成协议。
 
-## 已实现能力
+## 当前组件
 
-| 类别 | 实现 |
-| --- | --- |
-| 连续函数 | `plot`：多条函数曲线、line/area/scatter、参数滑杆、局部重绘、缩放/平移、参数动画 |
-| 统计图表 | `chart` 与 `echart`：折线、面积、柱状、环形/饼图、散点、雷达、仪表、漏斗、热力图、树图、桑基图、关系图、词云，以及数据型 ECharts option |
-| 图解 | Mermaid 流程/时序图；`diagram` 的架构、状态、ER、组织、泳道、数据流等 27 类布局与节点选择 |
-| 三维与地图 | Three.js 基础几何、拖动旋转和缩放；MapLibre 点位地图默认使用无网络底图模式，不会假装提供真实地图瓦片 |
-| 表单与绑定 | 输入框、多行文本、复选/单选、开关、下拉、滑块、日期区间、分段选择、文本编辑；computed 安全公式、条件显隐与条件启用 |
-| 学习 | 单题即时反馈、多题本地判分、解释与重做 |
-| 展示与媒体 | 卡片、指标、进度/环形、时间线、文件树、表格排序筛选/CSV、代码、差异、JSON 树、SVG、图片灯箱、轮播、音视频、KaTeX |
-| 状态与回传 | 分消息与内容指纹保存表单状态，刷新恢复；action 回传回答所属会话/分支；流式完整组件逐步出现 |
-| 画布与复用 | 展开画布、精选内置模板预览/提问、JSON 导出和包含本地引擎的独立交互 HTML 导出 |
+- 布局：card、grid、arrow。
+- 文字与重点：text、badge、stat、callout。
+- 内容组织：steps、accordion。
+- 数据与数学：chart、echart、plot、slider。
+- 选择与测验：choices。
+- 图形：icon、svg、scene3d。
 
-模型协议从该版本 60 种组件中精选 **17 种生成组件**，保留完整渲染器以兼容历史消息；移除清单见 `src/genui/catalog-policy.ts`。协议从运行时定义自动生成，维护脚本为 `scripts/generate-genui-catalog.ts`。功能不是仅写在提示词中：渲染使用同一版本的官方组件与结构校验。
+单词卡使用独立 reader-vocabulary 协议。保存 Firecrawl Key 后，当前请求额外开放 image、image-group，可嵌入 card/grid。图片由 query 检索，优先首张，加载失败依次尝试第二、第三张；全部失败显示紧凑占位与来源。
 
-## 使用
+## 输出格式
 
-直接对模型说：
+普通界面使用 genui 围栏，根对象填写 title 和 items：
 
-> 画 y=a sin(x) 和 cos(x) 的连续曲线，让我拖动 a 调整振幅，再给一张可排序的实验数据表。
-
-或：
-
-> 给我一个可以输入单价和数量、实时计算总价的表单，高级选项展开补充说明，最后提交计划。
-
-在「设置 → 通用 → 提示词管理 → 系统协议 → GenUI · 交互界面」查看实际协议。可复制、修改并启用自己的版本；普通对话请求使用当前启用的协议。模型仍可选择纯文字，并遵守用户要求的严格 JSON 输出。AI 目录和其他结构化输出不被该协议干扰。
-
-新界面使用 `dsh-ui` 围栏及根标记 `"schema":"dsh-genui"`。完整组件字段在生成的模型协议中，旧版简易围栏仍保留兼容渲染。
-
-```dsh-ui
-{"schema":"dsh-genui","title":"正弦函数","items":[{"type":"plot","xMin":-6.28,"xMax":6.28,"yMin":-4,"yMax":4,"series":[{"expr":"a*sin(x)","label":"y=a sin(x)","params":[{"name":"a","value":1,"min":0.1,"max":3,"step":0.1}]}]}]}
+```genui
+{"title":"正弦函数","items":[{"type":"plot","xMin":-6.28,"xMax":6.28,"yMin":-3,"yMax":3,"series":[{"expr":"a*sin(x)","label":"y=a sin(x)","params":[{"name":"a","value":1,"min":0.1,"max":3,"step":0.1}]}]}]}
 ```
 
-连续函数用受限数学解释器求值，不执行模型生成的 JavaScript。节点白名单、数值范围、深度及预算由上游 guard 校验；最多 200 个节点、8 层嵌套，本宿主围栏上限 256 KB。无法渲染时显示原因和原始源码。
+根级 computed 读取 slider.id 和其他 computed.id；plot.params 是曲线自身参数。choices 的 answer 支持单选标签和多选标签数组，submit 把选择整理成消息发送到所属会话。卡片默认紧凑，grid.cols 控制列数和自动换行。
 
-## 资源与状态
+## 提示词维护
 
-ECharts、Mermaid、Three.js、MapLibre、图标和独立导出 runtime 随本地构建发布，遇到对应组件才加载，不依赖 CDN。网页、GitHub Pages 和 APK 使用相同资源。远端图片、音视频需要可访问的真实 URL；地图默认没有外部瓦片。WebGL 仍取决于设备支持。
+- `src/genui/generation-rules.md`：人工维护的用途、布局、字段与交互说明。
+- `src/genui/prompt-examples.ts`：8 个完整、可独立渲染的 JSON 示例。
+- `scripts/generate-genui-catalog.ts`：结合规则、示例及运行时字段生成目录。
+- `src/genui/catalog-prompt.ts`：实际内置提示词，修改源文件后运行 `npx tsx scripts/generate-genui-catalog.ts`。
+- `src/web-images/protocol.ts`：按当前 Firecrawl 配置注入网络配图扩展。
 
-完整组件的输入/答案在本机 localStorage 保存，按消息位置和内容指纹隔离，最多保留 200 块。完整应用备份保留消息源码；交互状态可随 GenUI JSON/HTML 单独导出。清除全部本地数据同时清除 GenUI 状态。独立 HTML 保留本地交互，但没有阅读器宿主时不能继续向模型发送动作。
+设置中的提示词管理 → 系统协议 → GenUI · 交互界面，可查看内置规则。普通对话在请求编译时追加到最后一条用户消息，保持各供应商提示词策略兼容；原始消息持久化内容保持不变。自定义启用的协议继续按用户选择使用，内置更新保留用户自定义内容。
 
-DSH 专属的 slash command、宿主侧边栏插件及 Flutter SDK 的 transport 不属于本应用运行时；`panel` 内容在阅读器中内联显示并可展开画布，不调用不存在的 DSH 服务。
+## 容错与资源
+
+渲染器对常见字段类型做归一化，并尽量保留可渲染部分；生成规则仍以准确字段为目标。当前宿主预算见 `src/genui/limits.js`：源码 4 MiB、节点 5000、深度 32。长内容可分组、折叠或使用多个独立界面。
+
+图形引擎随构建分包加载。数学表达式使用受限解释器。网络配图依赖服务与原图站点可用性；3D 依赖设备 WebGL。展开画布与 JSON 导出可用；HTML 导出适用于支持独立运行的展示内容，网络配图、统一选择及大型界面在阅读器内使用。
 
 ## 验证
 
-- `npm run test:genui`：60 种组件提示词覆盖、15 个模板、功能样例、受限数学表达式与未知节点防护、旧围栏兼容。
-- 发布浏览器测试 `e2e-genui-full`：曲线滑杆改变 SVG 点列、计算绑定、条件显隐、刷新恢复、ECharts canvas、Mermaid SVG、WebGL 3D、画布、JSON/HTML 导出、独立 HTML 曲线交互和 action 请求。
-- `e2e-genui-protocol`：桌面/手机提示词布局，以及修改后的协议确实进入实际请求。
-- CI 六路浏览器测试、typecheck、完整单元测试；Android release 单元测试、lint、签名构建。
+- `npm run test:genui`：字段目录政策、示例完整性、计算变量、模板、图片能力与生命周期。
+- `node scripts/e2e-genui-prompt-examples.mjs`：桌面/手机完整示例渲染、面积实时计算与多选反馈。
+- `node scripts/e2e-genui-protocol.mjs`：提示词管理与实际 API 请求注入。
 
-## 4.0.0 单词朗读与生成指导
-
-用途指南涵盖分类卡片、步骤、流程与架构、统计图、连续函数、状态对比、指标、输入与计算、测验、分组展开、3D/地图、结构化内容、媒体、词汇学习。字段目录压缩公共字段，整份默认协议约 8.5K 字符。已有自定义启用版本不会被覆盖；要使用新版默认规则，可切回内置协议或重新复制。
-
-宿主扩展 `reader-vocabulary` 在独立 dsh-ui 围栏中呈现单词、IPA、释义和可选例句。播放只朗读单词，固定使用 DeepSeek 官方 TTS，并复用已保存的 DeepSeek 官方配置；可以切换 Stella/Tide、0.5–2× 倍速、1–10 遍或循环、停止和复制，音色/倍速/次数与设置同步。更改播放倍速在本地生效，不重新请求音频。不会自动播放，不把凭证放进模型生成的 JSON。
-
-```dsh-ui
-{"schema":"reader-vocabulary","items":[{"type":"vocabulary","word":"analytics","phonetic":"/ˌænəˈlɪtɪks/","meaning":"n. 数据分析；分析学","example":"We use analytics to understand learning progress."}]}
-```
-
-该扩展与原生 60 种组件并列，通过独立围栏组合；不嵌入原生布局，也不宣称上游独立 HTML 导出支持 DeepSeek 朗读宿主功能。
-
-额外浏览器验证：分叉汇合架构图、表格红绿状态标签、单词 API/音色/实时倍速/停止和手机宽度。示例架构图表达概念，不代表已经实现按区域裁切与图片检索业务。
-
-流程/架构等无环依赖图在宿主中采用 HTML 大卡片 + SVG 连线，按依赖自动分层，保留节点选择与字段绑定。默认标题 18px、说明 14px，不缩成固定高度的缩略图；桌面撑满回答区，手机可横向滚动，支持 100–200% 放大。循环图、时序图、有分区约束等仍使用原生图解，采用保留尺寸的滚动展示。导出/模板/源码位于辅助菜单，默认工具栏只保留展开和更多。
-
-讲解型流程优先原生紧凑卡片组合：单一外框、居中文字段、等宽并行卡片和短箭头，不固定卡片高度、不缩小整图。新增三个模板覆盖分支汇合、跨列分组和参数联动；accordion/tabs/slider 均可直接操作。卡片内间距6px、布局间距8–12px，窄屏分支堆叠，保留内容字号。精确网络连线再使用 diagram/Mermaid。
-
-朗读音频按接口、凭证隔离、文本、音色与格式生成哈希键，持久化在独立 IndexedDB 中（不保存 API Key 或原文）。7 天 TTL，32 MiB / 128 条 LRU；停止和组件卸载释放播放器与 Object URL，但保留可复用 Blob。重复请求合并，失败不缓存，设置内可清理；全量清除本地数据也清除此缓存。播放速度与遍数仅在本地作用，不参与合成请求。
-
-### 字段类型与兼容
-
-提示词目录由运行时 Schema 生成，包含字段类型和枚举。`card.accent` 使用颜色字符串，`flat` 使用布尔值；`keyvalue.pairs` 中的 key/value 为字符串。已有消息的布尔 accent 在布局节点中转换为默认强调色或省略，不改写原始源码、数据对象，也不绕过组件安全校验。
-
-网格可以多次使用与嵌套。`grid.cols=3` 放 3 个节点是三列一行，放 6 个是三列两行；三路汇合结构使用 `col.items=[grid, arrow, card]`。手机自动堆叠，顺序保持不变。模板中心仅展示精选目录内的模板。
-
-## 计算字段
-
-数值滑块声明唯一 id 和 value，根级 computed 通过该 id 计算，text.content 或 stat.value 用 `{{结果id}}` 展示。圆面积示例：slider.id 为 radius，computed 为 `{id:"area",expr:"pi*radius^2"}`，stat.value 为 `{{area}}`。曲线 x 和 series.params 属于各自 plot；根级计算的参数使用 slider 字段声明。表达式使用安全数学语法，如 `sqrt(x)`、`pow(x,2)`、`pi`。
-
-
-## 网络配图与简化入口（4.0.5）
-
-普通界面使用 `genui` JSON 围栏，根对象为 `{"title":"标题","items":[...]}`。围栏确定渲染器，组件字段沿用目录。已有 dsh-ui 内容保持兼容。
-
-Firecrawl 配置位于设置 → API 配置 → 网络配图。保存至少一个 Key 后，发送时动态附加 `web-image` 能力；清除全部 Key 后停止附加并隐藏配图。
-单图 `{"type":"image","query":"神经元结构 中文标注 示意图","alt":"神经元"}`；双图 `{"type":"image-group","items":[{"query":"动物细胞结构"},{"query":"植物细胞结构"}]}`，可独立使用 web-image 围栏，也可嵌入 genui 的 card.items、col.items、grid.items，图片与说明共用卡片。每个位置 limit=1，首张图片由接口提供，来源可点击，手机端双图纵向排列。
-
-多 Key 按列表顺序循环：HTTP 402 连续三次才认定本次额度耗尽并切换，HTTP 401/403、429、网络失败单独标记后切换。每次搜索最多一轮，末项之后回到首项，下次继续。成功的 Key 保持为当前起点。相同账号的 Key 可能共享额度。
-
-Key 和轮换状态仅保存在设备本地，备份白名单不包含 Key。已选图片引用缓存在本地 settings 存储中，刷新复用；清空本地数据同步移除引用缓存。图片文件使用原站外链，加载失败保留来源入口。
-
-
-选择交互统一使用 choices：mode=single 为互斥单选，mode=multi 为多选，max 控制最多选择数。answer 为正确选项文字（单选）或文字数组（多选），explanation 提供解析。submit 为可选按钮文字；点击后把题目和选择整理为自然语言用户消息加入会话。省略 submit 时只在本地选择与反馈。统一选择交互在阅读器内运行，可导出 JSON。
-
-配图默认显示首张，首张加载失败依次尝试第二、第三张。每次搜索取三条候选，备用不展示；成功图片引用缓存复用。旧缓存只有一条时，失败后补查一次。全部失败显示小尺寸裂图占位。
+解析校验与浏览器测试验证协议可执行；不同模型的生成正确率仍取决于模型及任务，测试结果不等同于生成成功率保证。

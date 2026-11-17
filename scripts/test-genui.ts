@@ -9,7 +9,7 @@ assert.throws(() => parseGenUi(JSON.stringify({items:Array.from({length:161},()=
 let node: any = { type: 'text' }
 for(let i=0;i<10;i++) node={type:'card',items:[node]}
 assert.throws(() => parseGenUi(JSON.stringify({items:[node]})))
-assert.match(GENUI_PROMPT, /dsh-ui/)
+assert.match(GENUI_PROMPT, /```genui/)
 console.log('GenUI schema: valid, malformed, unsafe types, budgets and nesting passed')
 
 const { appendGenUiGuidance, projectLogicalPromptContext } = await import('../src/prompts/prompt-compile-strategies')

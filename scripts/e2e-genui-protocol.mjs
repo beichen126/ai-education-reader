@@ -21,7 +21,7 @@ try {
  }
  await page.setViewportSize({width:1280,height:850})
  await page.getByTestId('prompt-row').filter({hasText:'GenUI · 交互界面'}).click()
- assert.match(await page.getByTestId('prompt-editor-content').inputValue(),/dsh-ui/)
+ assert.match(await page.getByTestId('prompt-editor-content').inputValue(),/```genui/)
  await page.screenshot({path:'tmp/genui-protocol-layout.png'})
  await page.getByTestId('prompt-copy').click()
  await page.getByTestId('prompt-editor-content').fill('GENUI_CUSTOM_MARKER: Use dsh-ui interactive learning cards when helpful.')
