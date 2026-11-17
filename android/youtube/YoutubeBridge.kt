@@ -104,7 +104,7 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
       if (uri.host in listOf("consent.youtube.com", "accounts.google.com")) { fail("VERIFICATION_REQUIRED", "YouTube 要求登录或验证，后台提取无法继续。请在浏览器确认视频可访问后重试"); return }
       if (uri.host == "www.youtube.com" && uri.getQueryParameter("v") == videoId) {
         stage = "extracting"
-        val script = extractor + "\nconst player=document.querySelector('#movie_player');player?.pauseVideo?.();const ready=player?.getPlayerResponse?.()||window.ytInitialPlayerResponse;if(ready&&!window.__readerSubtitleRunning&&!window.__readerSubtitleResult){window.__readerSubtitleRunning=true;readerExtractYoutube("+JSONObject.quote(language)+").then(data=>{window.__readerSubtitleResult={data}}).catch(e=>{window.__readerSubtitleResult={error:e.message,code:'EXTRACTION_FAILED'}})};JSON.stringify(window.__readerSubtitleResult||null)"
+        val script = extractor + "\n(()=>{const player=document.querySelector('#movie_player');player?.pauseVideo?.();const ready=player?.getPlayerResponse?.()||window.ytInitialPlayerResponse;if(ready&&!window.__readerSubtitleRunning&&!window.__readerSubtitleResult){window.__readerSubtitleRunning=true;readerExtractYoutube("+JSONObject.quote(language)+").then(data=>{window.__readerSubtitleResult={data}}).catch(e=>{window.__readerSubtitleResult={error:e.message,code:'EXTRACTION_FAILED'}})};return JSON.stringify(window.__readerSubtitleResult||null)})()"
         view.evaluateJavascript(script) { raw ->
           if (generation == token) try {
             val decoded = JSONTokener(raw).nextValue()
