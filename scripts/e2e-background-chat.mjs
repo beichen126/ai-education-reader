@@ -45,6 +45,18 @@ try {
     assert.equal(await page.getByText('FIRST_TOKEN_FINAL',{exact:true}).count(),0)
     await switchTo('Chat Alpha')
     await page.getByText(branch?'FIRST_TOKEN':'FIRST_TOKEN_FINAL',{exact:true}).waitFor()
+    // Navigation renders immediately; wait for its separate IndexedDB selection
+    // write before deliberately destroying the page to test durable restoration.
+    await page.waitForFunction(() => new Promise(resolve => {
+      const request=indexedDB.open('ai-education-reader')
+      request.onerror=()=>resolve(false)
+      request.onsuccess=()=>{
+        const db=request.result
+        const read=db.transaction('settings','readonly').objectStore('settings').get('lastConversationId')
+        read.onsuccess=()=>{const ready=read.result?.value==='chat-a';db.close();resolve(ready)}
+        read.onerror=()=>{db.close();resolve(false)}
+      }
+    }))
     await page.reload({waitUntil:'networkidle'})
     await page.getByText(branch?'FIRST_TOKEN':'FIRST_TOKEN_FINAL',{exact:true}).waitFor()
     await page.close();for(const res of pending)res.destroy()
