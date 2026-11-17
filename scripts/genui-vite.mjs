@@ -2,6 +2,8 @@ import {readFileSync,readdirSync} from 'node:fs'
 import path from 'node:path'
 const root=path.resolve('node_modules/@changfenhuang/dsh-genui')
 export const genuiAliases={
+ 'reader-genui-choices-original':path.join(root,'src/client/blocks/choices.tsx'),
+ 'reader-genui-unified-choices':path.resolve('src/genui/UnifiedChoices.tsx'),
  'reader-genui-image-original':path.join(root,'src/client/blocks/image.tsx'),
  'reader-genui-search-image':path.resolve('src/web-images/EmbeddedImageNode.tsx'),
  'reader-genui-diagram-original':path.join(root,'src/client/blocks/diagram/index.tsx'),
@@ -14,7 +16,7 @@ export const genuiAliases={
 export function genuiAssetsPlugin(){
  const dir=path.join(root,'lib/assets'),prefix='genui-assets/0.16.0/'
  return {name:'reader-genui-assets', enforce:'pre',
-  transform(code,id){if(id.replaceAll('\\','/').endsWith('/dsh-genui/src/client/blocks/render-node.tsx')) return {code:code.replace("from './image.tsx'","from 'reader-genui-search-image'").replace("from './diagram/index.tsx'","from 'reader-genui-readable-diagram'").replace('className={css.row +', 'data-reader-layout="row" className={css.row +').replace('className={css.col}', 'data-reader-layout="col" className={css.col}').replace('className={css.grid}', 'data-reader-layout="grid" className={css.grid}').replace('className={`${css.card}${toneClass}', 'data-reader-card="" className={`${css.card}${toneClass}').replace('className={css.cardTitle}', 'data-reader-card-title="" className={css.cardTitle}'),map:null}},
+  transform(code,id){if(id.replaceAll('\\','/').endsWith('/dsh-genui/src/client/blocks/render-node.tsx')) return {code:code.replace("from './choices.tsx'","from 'reader-genui-unified-choices'").replace("from './image.tsx'","from 'reader-genui-search-image'").replace("from './diagram/index.tsx'","from 'reader-genui-readable-diagram'").replace('className={css.row +', 'data-reader-layout="row" className={css.row +').replace('className={css.col}', 'data-reader-layout="col" className={css.col}').replace('className={css.grid}', 'data-reader-layout="grid" className={css.grid}').replace('className={`${css.card}${toneClass}', 'data-reader-card="" className={`${css.card}${toneClass}').replace('className={css.cardTitle}', 'data-reader-card-title="" className={css.cardTitle}'),map:null}},
   generateBundle(){for(const file of ['LICENSE','THIRD_PARTY_NOTICES.md'])this.emitFile({type:'asset',fileName:prefix+file,source:readFileSync(path.join(root,file))});for(const file of readdirSync(dir).filter(f=>f.endsWith('.js')))this.emitFile({type:'asset',fileName:prefix+file,source:readFileSync(path.join(dir,file))})},
   configureServer(server){server.middlewares.use((req,res,next)=>{
    const url=(req.url||'').split('?')[0],index=url.indexOf('/'+prefix)

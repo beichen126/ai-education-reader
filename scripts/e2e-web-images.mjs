@@ -7,10 +7,13 @@ try {
  page.on('pageerror',e=>errors.push(e.message))
  await page.route('https://api.firecrawl.dev/v2/search',async route=>{
   const body=route.request().postDataJSON();requests.push(body)
-  assert.equal(body.limit,1);assert.deepEqual(body.sources,['images'])
-  await route.fulfill({json:{success:true,data:{images:[{imageUrl:'https://image.example/figure.svg',url:'https://source.example/lesson',title:'图示'}]},creditsUsed:2}})
+  assert.equal(body.limit,3);assert.deepEqual(body.sources,['images'])
+  const images=body.query==='neuron diagram'||body.query==='plant cell'
+    ? ['broken.svg','broken-second.svg',body.query==='plant cell'?'broken-third.svg':'third.svg']
+    : ['figure.svg','backup.svg','third.svg']
+  await route.fulfill({json:{success:true,data:{images:images.map((name,i)=>({imageUrl:'https://image.example/'+name,url:'https://source.example/lesson-'+i,title:'图示'}))},creditsUsed:2}})
  })
- await page.route('https://image.example/**',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="600" height="320"><rect width="600" height="320" fill="#b8d6fa"/><text x="80" y="160" font-size="32">Learning diagram</text></svg>'}))
+ await page.route('https://image.example/**',route=>route.request().url().includes('/broken')?route.fulfill({status:404,body:''}):route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="600" height="320"><rect width="600" height="320" fill="#b8d6fa"/><text x="80" y="160" font-size="32">Learning diagram</text></svg>'}))
  const fence=(lang,spec)=>'```'+lang+'\n'+JSON.stringify(spec)+'\n```'
  const answer=fence('genui',{title:'简洁入口',items:[{type:'card',title:'无需 schema',items:[{type:'text',content:'结构正常'},{type:'image',query:'neuron diagram'}]}]})+'\n'+fence('web-image',{type:'image',query:'neuron diagram'})+'\n'+fence('web-image',{type:'image-group',items:[{query:'animal cell'},{query:'plant cell'}]})
  await seedAndBoot(page,{convs:[{id:'images',title:'图片测试',createdAt:1,updatedAt:1,messages:[msg('answer','assistant',answer)]}],settings:{lastConversationId:'images',appearance:'dark',apiKey:'chat-test',model:'deepseek-flash'}})
@@ -27,12 +30,15 @@ try {
  assert.ok(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth))
  await page.setViewportSize({width:1280,height:900})
  await page.keyboard.press('Escape')
- await page.waitForFunction(()=>document.querySelectorAll('.reader-web-image img').length===4 && [...document.querySelectorAll('.reader-web-image img')].every(i=>i.naturalWidth>0)).catch(async e=>{console.log({requests,errors,body:(await page.locator('body').innerText()).slice(-5000)});throw e})
+ await page.waitForFunction(()=>document.querySelectorAll('.reader-web-image img').length===3 && [...document.querySelectorAll('.reader-web-image img')].every(i=>i.naturalWidth>0)).catch(async e=>{console.log({requests,errors,body:(await page.locator('body').innerText()).slice(-5000)});throw e})
  assert.equal(requests.length,3)
+ await page.getByRole('img',{name:'图片加载失败',exact:true}).waitFor()
+ assert.ok((await page.locator('.reader-web-image-failed').boundingBox()).height<80,'three failures leave a compact broken-image placeholder')
+ assert.equal(await page.locator('.reader-web-image img[src$="third.svg"]').count(),2,'failed first image swaps to cached third without another search')
  assert.equal(await page.locator('[data-reader-card] .reader-web-image img').count(),1)
  await page.screenshot({path:'tmp/web-images-card.png'})
  await page.reload({waitUntil:'networkidle'})
- await page.waitForFunction(()=>document.querySelectorAll('.reader-web-image img').length===4)
+ await page.waitForFunction(()=>document.querySelectorAll('.reader-web-image img').length===3)
  assert.equal(requests.length,3,'reload reuses selected references')
  await page.setViewportSize({width:390,height:844})
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))

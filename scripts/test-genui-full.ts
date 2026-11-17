@@ -41,3 +41,12 @@ const costSpec:any={computed:[{id:'area',expr:'width*height'},{id:'cost',expr:'a
 assert.ok(isRenderableProcess(processGenuiSpec(costSpec)))
 assert.equal(evaluateComputed(costSpec,{}).values.cost,30)
 assert.equal(evaluateComputed(costSpec,{width:'4'}).values.cost,60)
+
+const unified=normalizeGenuiInput({items:[{type:'choices',mode:'multi',items:[{label:'A'},{label:'B'}],answer:['A','B'],submit:'提交选择'}]})
+assert.ok(isRenderableProcess(processGenuiSpec(unified)))
+assert.equal(unified.items[0].action,'reader-choices:1')
+assert.ok(unified.items[0].answer.startsWith('__reader_multi__:'))
+assert.throws(()=>normalizeGenuiInput({items:[{type:'choices',items:[{label:'A'},{label:'A'}]}]}),/唯一/)
+assert.throws(()=>normalizeGenuiInput({items:[{type:'choices',items:[{label:'A'}],answer:'B'}]}),/对应/)
+
+assert.deepEqual(normalizeGenuiInput(unified),unified,"unified choices survives JSON export/reimport")

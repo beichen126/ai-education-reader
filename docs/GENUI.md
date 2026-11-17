@@ -16,7 +16,7 @@
 | 状态与回传 | 分消息与内容指纹保存表单状态，刷新恢复；action 回传回答所属会话/分支；流式完整组件逐步出现 |
 | 画布与复用 | 展开画布、精选内置模板预览/提问、JSON 导出和包含本地引擎的独立交互 HTML 导出 |
 
-模型协议从该版本 60 种组件中精选 **30 种生成组件**，保留完整渲染器以兼容历史消息；移除清单见 `src/genui/catalog-policy.ts`。协议从运行时定义自动生成，维护脚本为 `scripts/generate-genui-catalog.ts`。功能不是仅写在提示词中：渲染使用同一版本的官方组件与结构校验。
+模型协议从该版本 60 种组件中精选 **18 种生成组件**，保留完整渲染器以兼容历史消息；移除清单见 `src/genui/catalog-policy.ts`。协议从运行时定义自动生成，维护脚本为 `scripts/generate-genui-catalog.ts`。功能不是仅写在提示词中：渲染使用同一版本的官方组件与结构校验。
 
 ## 使用
 
@@ -81,7 +81,7 @@ DSH 专属的 slash command、宿主侧边栏插件及 Flutter SDK 的 transport
 
 ## 计算字段
 
-数值滑块声明唯一 id 和 value，根级 computed 通过该 id 计算，text.content 或 stat.value 用 `{{结果id}}` 展示。圆面积示例：slider.id 为 radius，computed 为 `{id:"area",expr:"pi*radius^2"}`，stat.value 为 `{{area}}`。曲线 x 和 series.params 属于各自 plot；根级计算的参数使用 slider/select/textarea 字段声明。表达式使用安全数学语法，如 `sqrt(x)`、`pow(x,2)`、`pi`。
+数值滑块声明唯一 id 和 value，根级 computed 通过该 id 计算，text.content 或 stat.value 用 `{{结果id}}` 展示。圆面积示例：slider.id 为 radius，computed 为 `{id:"area",expr:"pi*radius^2"}`，stat.value 为 `{{area}}`。曲线 x 和 series.params 属于各自 plot；根级计算的参数使用 slider 字段声明。表达式使用安全数学语法，如 `sqrt(x)`、`pow(x,2)`、`pi`。
 
 
 ## 网络配图与简化入口（4.0.5）
@@ -94,3 +94,8 @@ Firecrawl 配置位于设置 → API 配置 → 网络配图。保存至少一�
 多 Key 按列表顺序循环：HTTP 402 连续三次才认定本次额度耗尽并切换，HTTP 401/403、429、网络失败单独标记后切换。每次搜索最多一轮，末项之后回到首项，下次继续。成功的 Key 保持为当前起点。相同账号的 Key 可能共享额度。
 
 Key 和轮换状态仅保存在设备本地，备份白名单不包含 Key。已选图片引用缓存在本地 settings 存储中，刷新复用；清空本地数据同步移除引用缓存。图片文件使用原站外链，加载失败保留来源入口。
+
+
+选择交互统一使用 choices：mode=single 为互斥单选，mode=multi 为多选，max 控制最多选择数。answer 为正确选项文字（单选）或文字数组（多选），explanation 提供解析。submit 为可选按钮文字；点击后把题目和选择整理为自然语言用户消息加入会话。省略 submit 时只在本地选择与反馈。统一选择交互在阅读器内运行，可导出 JSON。
+
+配图默认显示首张，首张加载失败依次尝试第二、第三张。每次搜索取三条候选，备用不展示；成功图片引用缓存复用。旧缓存只有一条时，失败后补查一次。全部失败显示小尺寸裂图占位。

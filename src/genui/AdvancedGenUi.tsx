@@ -1,3 +1,4 @@
+import {ChoiceLifetime} from './UnifiedChoices'
 import {prepareEmbeddedImages} from '../web-images/embedded'
 import {OMITTED_GENUI_TYPES} from './catalog-policy'
 import {cardTemplates} from './card-templates'
@@ -34,9 +35,9 @@ export default function AdvancedGenUi({source,stateKey}:{source:string;stateKey?
   }catch(e){return {error:e instanceof Error?e.message:'界面格式无效'}}
  },[source])
  const dispatch=send?(action:string,payload:Record<string,unknown>)=>{
-  if(busy.current)return
+  if(busy.current){if(action==='reader-choice-submit')return Promise.reject(new Error('正在处理上一项选择'));return}
   busy.current=true;setStatus(language==='en'?'Sending…':'正在发送…')
-  void send('[genui-action]\n'+JSON.stringify({...payload,action})).then(()=>setStatus(language==='en'?'Sent':'已发送')).catch(e=>setStatus(e instanceof Error?e.message:'发送失败')).finally(()=>{busy.current=false})
+  return send(action==='reader-choice-submit'&&typeof payload.text==='string'?payload.text:'[genui-action]\n'+JSON.stringify({...payload,action})).then(()=>setStatus(language==='en'?'Sent':'已发送')).catch(e=>{setStatus(e instanceof Error?e.message:'发送失败');if(action==='reader-choice-submit')throw e}).finally(()=>{busy.current=false})
  }:undefined
  useEffect(()=>{if(!expanded)return;const previous=document.activeElement as HTMLElement|null;canvasRef.current?.querySelector<HTMLButtonElement>('button')?.focus();const close=(e:KeyboardEvent)=>{if(e.key==='Escape')setExpanded(false)};document.addEventListener('keydown',close);return()=>{document.removeEventListener('keydown',close);previous?.focus()}},[expanded])
  async function download(html:boolean){
@@ -46,9 +47,9 @@ export default function AdvancedGenUi({source,stateKey}:{source:string;stateKey?
  let hash=2166136261;for(let i=0;i<source.length;i++)hash=Math.imul(hash^source.charCodeAt(i),16777619)
  const durableKey=result.complete&&stateKey?'reader:'+stateKey+':'+(hash>>>0):undefined
  const ui=<div className="reader-genui-surface" data-annotatable="false" aria-label="GenUI">
-  <div className="reader-genui-tools"><button type="button" onClick={()=>setExpanded(!expanded)}>{expanded?text('收起画布','Close canvas'):text('展开画布','Expand canvas')}</button><details><summary>{text('更多','More')} ⋯</summary><button type="button" onClick={()=>setShowTemplates(!showTemplates)}>{text('模板','Templates')}</button><button type="button" disabled={!result.complete} onClick={()=>void download(false)}>{text('导出 JSON','Export JSON')}</button><button type="button" disabled={!result.complete || JSON.stringify(result.spec || {}).includes('reader.invalid/web-image#')} title="网络配图在阅读器内加载" onClick={()=>void download(true)}>{text('导出 HTML','Export HTML')}</button></details></div>
+  <div className="reader-genui-tools"><button type="button" onClick={()=>setExpanded(!expanded)}>{expanded?text('收起画布','Close canvas'):text('展开画布','Expand canvas')}</button><details><summary>{text('更多','More')} ⋯</summary><button type="button" onClick={()=>setShowTemplates(!showTemplates)}>{text('模板','Templates')}</button><button type="button" disabled={!result.complete} onClick={()=>void download(false)}>{text('导出 JSON','Export JSON')}</button><button type="button" disabled={!result.complete || /reader.invalid\/web-image#|reader-choices:/.test(JSON.stringify(result.spec || {}))} title="网络配图与统一选择交互在阅读器内使用" onClick={()=>void download(true)}>{text('导出 HTML','Export HTML')}</button></details></div>
   {showTemplates&&<section className="reader-genui-templates"><label>{text('模板预览','Template preview')}<select aria-label={text('GenUI 模板','GenUI template')} value={template} onChange={e=>setTemplate(e.target.value)}><option value="">{text('选择模板','Choose a template')}</option>{templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>{selected&&<><p>{selected.description}</p><GenuiBlock key={selected.id} spec={normalizeGenuiInput(selected.demo)} animateEntrance={false}/><button type="button" disabled={!send||busy.current} onClick={()=>{if(send)void send(selected.instruction).catch(e=>setStatus(String(e)))}}>{text('使用此模板提问','Ask with this template')}</button></>}</section>}
-  <GenuiActionContext.Provider value={dispatch}><ErrorBoundary>{result.spec?<GenuiBlock spec={result.spec} stateKey={durableKey} initialState={snapshot.current} onStateSnapshot={state=>{snapshot.current=state}} animateEntrance={false}/>:<p role="status">{result.error}</p>}</ErrorBoundary></GenuiActionContext.Provider>
+  <ChoiceLifetime.Provider value={durableKey}><GenuiActionContext.Provider value={dispatch}><ErrorBoundary>{result.spec?<GenuiBlock spec={result.spec} stateKey={durableKey} initialState={snapshot.current} onStateSnapshot={state=>{snapshot.current=state}} animateEntrance={false}/>:<p role="status">{result.error}</p>}</ErrorBoundary></GenuiActionContext.Provider></ChoiceLifetime.Provider>
   {status&&<p role="status">{status}</p>}
   <details><summary>{language==='en'?'UI source':'查看 UI 源码'}</summary><pre>{source}</pre></details>
  </div>

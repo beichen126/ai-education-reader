@@ -17,3 +17,5 @@ declare module 'reader-genui-templates' {export function genuiTemplates():Array<
 declare module 'reader-genui-diagram-original' { export const DiagramNode: import('react').ComponentType<any> }
 
 declare module 'reader-genui-image-original' { export const ImageNode: import('react').ComponentType<any> }
+
+declare module 'reader-genui-choices-original' { export const ChoicesNode: import('react').ComponentType<any> }

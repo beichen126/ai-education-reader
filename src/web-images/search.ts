@@ -1,7 +1,7 @@
 import {requestWithImageKeys, type ImageKey} from './key-pool'
 import {getSetting, setSetting} from '../storage/storage'
 
-export type WebImage = {imageUrl: string; sourceUrl: string; title: string; creditsUsed?: number}
+export type WebImage = {imageUrl: string; sourceUrl: string; title: string; creditsUsed?: number; backup?: WebImage}
 type Job = {promise: Promise<WebImage>; controller: AbortController; users: number; timer?: ReturnType<typeof setTimeout>}
 const pending = new Map<string, Job>()
 const memory = new Map<string, WebImage>()
@@ -24,24 +24,28 @@ export async function requestFirstImage(query: string, apiKey: string, signal?: 
   if (!apiKey.trim()) throw new Error('请先配置 Firecrawl API Key')
   const response = await fetch('https://api.firecrawl.dev/v2/search', {
     method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey.trim()},
-    body: JSON.stringify({query, sources: ['images'], limit: 1}), signal,
+    body: JSON.stringify({query, sources: ['images'], limit: 3}), signal,
   })
   if (!response.ok) throw Object.assign(new Error(response.status === 401 ? 'Key 验证失败' : response.status === 402 ? '额度不足' : `请求失败（HTTP ${response.status}）`), {status: response.status})
   const data = await response.json()
   const first = data?.data?.images?.[0]
   if (!data.success || !first) throw Object.assign(new Error('本次搜索没有图片结果，请调整搜索描述。'),{terminal:true})
-  return {imageUrl: safeUrl(first.imageUrl), sourceUrl: safeUrl(first.url), title: String(first.title || query).slice(0, 300), ...(typeof data.creditsUsed === 'number' ? {creditsUsed: data.creditsUsed} : {})}
+  let backup:WebImage|undefined
+  for(const candidate of (data?.data?.images||[]).slice(1,3).reverse()){
+    try{backup={imageUrl:safeUrl(candidate.imageUrl),sourceUrl:safeUrl(candidate.url),title:String(candidate.title||query).slice(0,300),...(backup?{backup}:{})}}catch{}
+  }
+  return {...(backup?{backup}:{}),imageUrl: safeUrl(first.imageUrl), sourceUrl: safeUrl(first.url), title: String(first.title || query).slice(0, 300), ...(typeof data.creditsUsed === 'number' ? {creditsUsed: data.creditsUsed} : {})}
 }
 /** Persist selected references with the reader data, without storing provider keys in cache IDs. */
-export async function searchFirstImage(query: string, keys: ImageKey[], signal?: AbortSignal): Promise<WebImage> {
+export async function searchFirstImage(query: string, keys: ImageKey[], signal?: AbortSignal, refresh=false): Promise<WebImage> {
   const epoch=generation
   signal?.throwIfAborted()
   if (!keys.length) throw new Error('请先配置 Firecrawl API Key')
   const id = 'web-image:' + await hash(query.trim())
-  const jobId = id + ':' + await hash(JSON.stringify(keys.map(k=>k.key)))
+  const jobId = id + ':' + await hash(JSON.stringify(keys.map(k=>k.key))) + (refresh?':refresh':'')
   signal?.throwIfAborted()
-  if (memory.has(id)) return memory.get(id)!
-  const cached = await getSetting(id).catch(()=>undefined)
+  if (!refresh && memory.has(id)) return memory.get(id)!
+  const cached = refresh ? undefined : await getSetting(id).catch(()=>undefined)
   signal?.throwIfAborted()
   if (cached?.imageUrl && cached?.sourceUrl) {
     try {return {...cached,imageUrl:safeUrl(cached.imageUrl),sourceUrl:safeUrl(cached.sourceUrl)}} catch { /* Replace invalid cached references through a fresh search. */ }
@@ -81,4 +85,12 @@ export async function searchFirstImage(query: string, keys: ImageKey[], signal?:
     if(signal?.aborted)abort()
     current.promise.then(value=>finish(null,value),error=>finish(error))
   })
+}
+
+export async function rememberLoadedImage(query:string,image:WebImage){
+ const epoch=generation
+ const id='web-image:'+await hash(query.trim())
+ if(epoch!==generation)return
+ memory.set(id,image)
+ await setSetting(id,image).catch(()=>undefined)
 }

@@ -22,7 +22,7 @@ const original=globalThis.fetch
 try {
   globalThis.fetch=async(url,init)=>{
     assert.equal(url,'https://api.firecrawl.dev/v2/search')
-    assert.deepEqual(JSON.parse(init!.body as string),{query:'neuron diagram',sources:['images'],limit:1})
+    assert.deepEqual(JSON.parse(init!.body as string),{query:'neuron diagram',sources:['images'],limit:3})
     return Response.json({success:true,data:{images:[{imageUrl:'https://images.example/a.png',url:'https://example.org/source',title:'Neuron'},{imageUrl:'https://images.example/b.png'}]},creditsUsed:2})
   }
   assert.equal((await requestFirstImage('neuron diagram','test')).imageUrl,'https://images.example/a.png')
