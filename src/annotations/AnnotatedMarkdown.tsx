@@ -18,6 +18,9 @@ import { registerSelectionOwner } from './selection-events'
 import { selectMarkdownBlock } from '../markdown/select-block'
 import { markdownSourceForRange } from '../markdown/source-copy'
 
+type PendingSelection = Exclude<SelectionMapping, { kind: 'text' }> |
+  (Extract<SelectionMapping, { kind: 'text' }> & { range: Range })
+
 export function AnnotatedMarkdown({ content, messageId, conversationId, branchId, focusAnnotation }: { content: string; messageId: string; conversationId: string; branchId?: string; focusAnnotation?: Annotation }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const lastTap = useRef<{time: number; x: number; y: number; target: EventTarget | null} | null>(null)
@@ -25,7 +28,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   const [copyStatus, setCopyStatus] = useState('')
   const highlightOwnerId = messageId + ':' + useId()
   const speakSelection = useSpokenSelection(wrapRef, highlightOwnerId, content)
-  const [pending, setPending] = useState<SelectionMapping | null>(null)
+  const [pending, setPending] = useState<PendingSelection | null>(null)
   const [toolbarPosition, setToolbarPosition] = useState<{ left: number; top: number } | null>(null)
   const annotations = useMessageAnnotations(conversationId, messageId)
   const parsedRoot = useMemo(() => parseMarkdown(content), [content])
@@ -150,14 +153,13 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
         // atomic math unit keeps text offsets aligned, so the passage (including a
         // formula) is markable as one text annotation instead of the bar vanishing.
         const result = mapSelection(msgEl, messageId, range, (b) => blocks.get(b))
-        if (result.kind === 'text' && result.segments.length) { setPending(result) }
-        else if (result.kind === 'table-cross-cell') { setPending(result) }
+        if (result.kind === 'text') { setPending(result.segments.length ? { ...result, range: range.cloneRange() } : null) }
         else { setPending(result) }
       } catch { setPending(null) }
     }
     const element = wrapRef.current
     if (!element) return
-    const unregister = registerSelectionOwner(highlightOwnerId, { dismiss: () => setPending(null), selectionEnd: onSelChange })
+    const unregister = registerSelectionOwner(highlightOwnerId, { dismiss: () => setPending(null), selectionEnd: onSelChange, trackTouchSelection: true })
     return () => {
       stopReadAloud(highlightOwnerId)
       unregister()
@@ -234,7 +236,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
         <div className={css.annotBar} onPointerDown={event=>{event.preventDefault();event.stopPropagation()}} onPointerUp={event=>event.stopPropagation()} onTouchEnd={event=>event.stopPropagation()}>
           <button type="button" className={css.annotBtn} data-testid="selection-copy" onClick={()=>void copySelection()}>{copyStatus || tx('复制', 'Copy')}</button>
           <button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{fullyCovered ? tx('取消标记', 'Unmark') : tx('标记', 'Mark')}</button>
-          <button type="button" className={css.annotBtn} data-testid="selection-read-aloud" title={tx('使用 DeepSeek API 朗读所选文字；倍速及重复次数可在通用设置调整','Read selected text using the DeepSeek API. Adjust speed and repetitions in General settings.')} onPointerDown={e=>{e.preventDefault();e.stopPropagation()}} onPointerUp={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} onClick={()=>{speakSelection(pending.segments.map(segment=>segment.exact).join('\n').replaceAll('\uFFFF',' '));setPending(null)}}>{tx('朗读','Read aloud')}</button>
+          <button type="button" className={css.annotBtn} data-testid="selection-read-aloud" title={tx('使用 DeepSeek API 朗读所选文字；倍速及重复次数可在通用设置调整','Read selected text using the DeepSeek API. Adjust speed and repetitions in General settings.')} onPointerDown={e=>{e.preventDefault();e.stopPropagation()}} onPointerUp={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} onClick={()=>{speakSelection(pending.segments.map(segment=>segment.exact).join('\n').replaceAll('\uFFFF',' '), pending.range);setPending(null)}}>{tx('朗读','Read aloud')}</button>
         </div>
       )}
       {pending && pending.kind === 'table-cross-cell' && (

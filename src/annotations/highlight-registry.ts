@@ -10,8 +10,11 @@ function rebuild() {
   if (all.length) CSS.highlights.set('study-highlight', new (window as any).Highlight(...all))
   else CSS.highlights.delete('study-highlight')
   const spoken = [...spokenSelections.values()].flat()
-  if (spoken.length) CSS.highlights.set('spoken-selection', new (window as any).Highlight(...spoken))
-  else CSS.highlights.delete('spoken-selection')
+  if (spoken.length) {
+    const highlight = new Highlight(...spoken)
+    highlight.priority = 1
+    CSS.highlights.set('spoken-selection', highlight)
+  } else CSS.highlights.delete('spoken-selection')
 }
 function queueRebuild(): void {
   if (rebuildQueued) return
