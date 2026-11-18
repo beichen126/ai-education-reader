@@ -41,6 +41,8 @@ assert(shards.flat().length === shardInput.length && new Set(shards.flat()).size
 assert(shards[0].join(',') === 'a,d,g' && shards[2].join(',') === 'c,f', 'shard assignment is deterministic')
 const sixShards = [1, 2, 3, 4, 5, 6].map(index => shardE2EList(shardInput, index, 6))
 assert(sixShards.flat().length === shardInput.length && new Set(sixShards.flat()).size === shardInput.length && sixShards.every(shard => shard.length > 0), 'six parallel shards cover all suites exactly once with no empty gate')
+const weightedShards = [1, 2, 3].map(index => shardE2EList(shardInput, index, 3, { a: 80, d: 40, g: 30 }))
+assert(JSON.stringify(weightedShards) === JSON.stringify([['a'], ['d', 'e'], ['b', 'c', 'f', 'g']]), 'slow suites start in separate shards and short suites fill the lightest shard')
 assert(shardE2EList(shardInput) === shardInput, 'local default retains the complete gate')
 for (const [index, total] of [[0, 3], [4, 3], [1, 0], [1, 8], [undefined, 3], [1, undefined]]) {
   let rejected = false

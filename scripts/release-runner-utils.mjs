@@ -7,11 +7,19 @@ export function uniqueStable(values) {
 }
 
 /** One-based deterministic shards. Invalid/empty shards fail closed, never skip the gate. */
-export function shardE2EList(names, index, total) {
+export function shardE2EList(names, index, total, suiteSeconds = {}) {
   if (index == null && total == null) return names
   const shard = Number(index), count = Number(total)
   if (!Number.isInteger(shard) || !Number.isInteger(count) || count < 1 || shard < 1 || shard > count || count > names.length) throw new Error('Invalid RELEASE_SHARD_INDEX / RELEASE_SHARD_TOTAL')
-  return names.filter((_, position) => position % count === shard - 1)
+  const duration = name => suiteSeconds[name] ?? 5
+  const assigned = new Set()
+  const loads = Array(count).fill(0)
+  for (const name of [...names].sort((a, b) => duration(b) - duration(a))) {
+    const lightest = loads.indexOf(Math.min(...loads))
+    loads[lightest] += duration(name)
+    if (lightest === shard - 1) assigned.add(name)
+  }
+  return names.filter(name => assigned.has(name))
 }
 
 export function resolveE2EList({ releaseE2E, extraE2E, core, optional }) {

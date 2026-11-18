@@ -107,7 +107,39 @@ const OPTIONAL_E2E = [
   'e2e-custom-actions',
   'e2e-toc-review-layout',
 ]
-const E2E = shardE2EList(resolveE2EList({ releaseE2E: process.env.RELEASE_E2E, extraE2E: EXTRA_E2E, core: CORE_E2E, optional: OPTIONAL_E2E }), process.env.RELEASE_SHARD_INDEX, process.env.RELEASE_SHARD_TOTAL)
+// Approximate seconds for suites that took at least ten seconds on the Pages
+// runners (run 44262934622). Short and newly added suites use the default.
+const SUITE_SECONDS = {
+  'e2e-selection-speech': 10,
+  'e2e-responsive-surfaces': 20,
+  'e2e-reading-position': 37,
+  'e2e-v300': 12,
+  'e2e-artifacts': 16,
+  'e2e-document-reader': 73,
+  'e2e-document-context': 10,
+  'e2e-bookmark-range': 25,
+  'e2e-document-notes': 13,
+  'e2e-ai-toc': 30,
+  'e2e-toc-review-mobile': 11,
+  'e2e-ai-toc-navigation': 33,
+  'e2e-branching': 27,
+  'e2e-prompt-manager': 18,
+  'e2e-product-guide': 15,
+  'e2e-continuous-scroll': 15,
+  'e2e-pdf-renderer-ownership': 32,
+  'e2e-study-cards': 69,
+  'e2e-learning-center': 16,
+  'e2e-card-backlinks': 13,
+  'e2e-v201-regressions': 18,
+  'e2e-branch-stream': 36,
+  'e2e-chapter-delete-versions': 35,
+}
+const E2E = shardE2EList(
+  resolveE2EList({ releaseE2E: process.env.RELEASE_E2E, extraE2E: EXTRA_E2E, core: CORE_E2E, optional: OPTIONAL_E2E }),
+  process.env.RELEASE_SHARD_INDEX,
+  process.env.RELEASE_SHARD_TOTAL,
+  SUITE_SECONDS,
+)
 
 function run(cmd, args, opts = {}) {
   const invocation = cmd === 'npm'
