@@ -4,19 +4,21 @@ import {transcriptPreview} from '../youtube/preview'
 import type {YoutubeTranscript} from '../youtube/transcript'
 import { DeepSeekDocumentPicker } from './DeepSeekDocumentPicker'
 import { isOfficialDeepSeek } from '../api/deepseek-files'
+import { DOCUMENT_ACCEPT } from '../api/deepseek-documents'
 import { VoiceInput } from '../speech/VoiceInput'
 import { readAloud } from '../speech/read-aloud'
 import { GenUiActions } from '../genui/GenUiBlock'
 
 import { Fragment, lazy, memo, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import type { CSSProperties } from 'react'
+import type { CSSProperties, RefObject } from 'react'
 import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/sessions-store'
 import { patchSettings, useSettings, useSettingsMutation } from '../engine/settings-store'
 import { formatTokenCount } from '../engine/token-usage'
 import { uiActions, useUi } from '../engine/ui-store'
-import { saveImagesAndDraft, saveGeneratedImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel } from '../engine/attachment-service'
+import { saveImagesAndDraft, saveGeneratedImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, isSupportedImage } from '../engine/attachment-service'
 import { useDraftDocuments, setDraftDocuments, useDraftImageIds, getDraft, removeDraftImage, updateDraftMemory } from '../engine/draft-store'
 import { ComposerInput } from './ComposerInput'
+import { typedLocalFile, useComposerFileDrop } from './composer-file-input'
 import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
 import { localizedErrorText, localizedStudyCardTitle, t, tx, useUiLanguage } from '../engine/locale'
 import { IconCloseOutline16, IconFolderOpenOutline16, Button } from '../dsh/primitives'
@@ -348,7 +350,7 @@ export function Conversation() {
           </>}
         </div>
         <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" data-testid="conversation-learning-center" onClick={openLibrary}>{tx('学习中心', 'Learning center')}</Button></div>
-        <Composer key={generationKey} sessionId={session?.id} busy={busy} generationKey={generationKey} status={status} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
+        <Composer key={generationKey} dropTargetRef={listRef} sessionId={session?.id} busy={busy} generationKey={generationKey} status={status} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
       </div>
       {turns.length > 1 && <ConversationTurnRail turns={turns} activeId={activeTurnId} onSelect={(turn) => {
         const el = listRef.current
@@ -579,13 +581,13 @@ function ContextSummary({ messages }: { messages: readonly TMessage[] }) {
   </div>
 }
 
-function Composer({ sessionId, busy, generationKey, status, thread, onBranchSent }: { sessionId: string | undefined; busy: boolean; generationKey: string; status: 'idle' | 'sending' | 'streaming'; thread?: { type: 'root' | 'branch'; conversationId: string; branchId?: string }; onBranchSent?: () => void }) {
+function Composer({ dropTargetRef, sessionId, busy, generationKey, status, thread, onBranchSent }: { dropTargetRef: RefObject<HTMLDivElement | null>; sessionId: string | undefined; busy: boolean; generationKey: string; status: 'idle' | 'sending' | 'streaming'; thread?: { type: 'root' | 'branch'; conversationId: string; branchId?: string }; onBranchSent?: () => void }) {
   // Draft is keyed by thread (root conversation or branch), so switching A<->B shows each one's own text/images.
   const isBranch = thread?.type === 'branch'
   const key = isBranch ? branchThreadKey(thread!.branchId!) : (sessionId ?? '__none__')
   const composerAliveRef = useRef(true)
   const composerKeyRef = useRef(key); composerKeyRef.current = key
-  const [documentPicker,setDocumentPicker]=useState(false)
+  const [documentPicker,setDocumentPicker]=useState<File[] | null>(null)
   const [youtubePicker,setYoutubePicker]=useState(false)
   const documents = useDraftDocuments(key)
   const supportsDocuments=useSettings(s=>s.chatProvider!=='openai-local'&&isOfficialDeepSeek(s.apiBaseUrl)&&s.model==='deepseek-flash')
@@ -674,19 +676,24 @@ function Composer({ sessionId, busy, generationKey, status, thread, onBranchSent
   const removeGroup = (item: Extract<AttachmentDisplayItem, { type: 'pdf-group' }>) => {
     for (const id of item.attachmentIds) { removeDraftImage(key, id); void deleteAttachment(id) }
   }
-  const onFiles = async (files: FileList) => {
+  const onFiles = async (files: FileList | File[]) => {
     // ATOMIC ordinary-image upload (P0): stage OPFS binaries, then ONE IndexedDB txn commits
     // the attachment metadata rows AND the draft:<conversationId> row together. On failure
     // neither commits, staged OPFS binaries are cleaned, and no durability window exists where
     // attachment metadata is durable but the Draft reference is missing.
+    const images = Array.from(files, typedLocalFile)
+    if (images.some(file => !isSupportedImage(file))) {
+      setPhotoError(localizedErrorText(attachmentErrorLabel('unsupported-format'), 'Use a JPEG, PNG, GIF, or WebP image.'))
+      return
+    }
     try {
       const draftNow = getDraft(key)
       const draftCommit = { getCurrentDraft: () => getDraft(key) }
       let atts
       if (isBranch && thread) {
-        atts = await saveGeneratedImagesAndBranchDraft([...files].map((f) => ({ blob: f, name: f.name })), { branchId: thread.branchId!, text: draftNow.text, existingImageIds: draftNow.imageIds }, draftCommit)
+        atts = await saveGeneratedImagesAndBranchDraft(images.map((f) => ({ blob: f, name: f.name })), { branchId: thread.branchId!, text: draftNow.text, existingImageIds: draftNow.imageIds }, draftCommit)
       } else {
-        atts = await saveImagesAndDraft([...files], { conversationId: key, text: draftNow.text, existingImageIds: draftNow.imageIds }, draftCommit)
+        atts = await saveImagesAndDraft(images, { conversationId: key, text: draftNow.text, existingImageIds: draftNow.imageIds }, draftCommit)
       }
       // The durable draft row was already committed in the same txn; update memory WITHOUT a
       // second DB mutation (no duplicate persist).
@@ -700,16 +707,28 @@ function Composer({ sessionId, busy, generationKey, status, thread, onBranchSent
   // Unified "添加资料" picker: images batch into the ordinary image pipeline; a single PDF
   // opens the real PdfPanel flow. A mixed batch / multiple PDFs never silently half-succeeds
   // (no "images added then a PDF pops then user cancels" partial state) — it shows clear guidance.
-  const onMaterialsSelected = (files: FileList) => {
-    const all = Array.from(files)
+  const onMaterialsSelected = (files: FileList | File[]) => {
+    const all = Array.from(files, typedLocalFile)
     if (all.length === 0) return
     const isPdf = (f: File) => /.pdf$/i.test(f.name) || f.type === 'application/pdf'
     const pdfs = all.filter(isPdf)
     const imgs = all.filter(f => !isPdf(f))
     if (pdfs.length === 0) { onFiles(files); return }
-    if (pdfs.length === 1 && imgs.length === 0) { setPdfPanel({ open: true, file: pdfs[0] }); return }
+    if (pdfs.length === 1 && imgs.length === 0) { setPhotoError(undefined); setPdfPanel({ open: true, file: pdfs[0] }); return }
     setPhotoError(tx('一次请选择一个 PDF，或选择一组图片。', 'Select one PDF or a group of images at a time.'))
   }
+  const draggingFiles = useComposerFileDrop(dropTargetRef, !pdfPanel.open && !libPickerOpen && !libBusy && !documentPicker && !youtubePicker && !openId, files => {
+    if (!files.length) {
+      setPhotoError(tx('请拖入文件。', 'Drag in one or more files.'))
+    } else if (files.every(file => isSupportedImage(file)) || (files.length === 1 && files[0].type === 'application/pdf')) {
+      onMaterialsSelected(files)
+    } else if (files.every(file => DOCUMENT_ACCEPT.split(',').some(ext => file.name.toLowerCase().endsWith(ext)))) {
+      if (supportsDocuments) { setPhotoError(undefined); setDocumentPicker(files) }
+      else setPhotoError(tx('这批文档需要使用 DeepSeek 官方文件解析。也可以单独拖入一个 PDF。', 'These documents require official DeepSeek file parsing. You can also drop a single PDF.'))
+    } else {
+      setPhotoError(tx('请拖入一组图片、单个 PDF，或一批 DeepSeek 支持的文档。', 'Drop images, one PDF, or a batch of documents supported by DeepSeek.'))
+    }
+  })
   // User removes a pending draft image explicitly -> the attachment is gone for good.
   const removePic = (id: string) => { removeDraftImage(key, id); void deleteAttachment(id) }
   const send = async () => {
@@ -740,11 +759,16 @@ function Composer({ sessionId, busy, generationKey, status, thread, onBranchSent
     const latest=getDraft(targetKey);updateDraftMemory(targetKey,{text:latest.text,imageIds:[...new Set([...latest.imageIds,...metas.map(m=>m.id)])]});
   }
   return (
-    <div className={css.composer} data-testid="composer">
+    <div className={css.composer} data-testid="composer" data-file-drag={draggingFiles || undefined}>
+      {draggingFiles && <div className={css.composerDropHint} role="status">{tx('松开鼠标添加文件','Drop to add files')}</div>}
       {youtubePicker && <YoutubePicker key={key} onClose={()=>setYoutubePicker(false)} onSelect={attachTranscript} />}
-      {documentPicker && <DeepSeekDocumentPicker onClose={()=>setDocumentPicker(false)} onSelect={docs=>setDraftDocuments(key,docs)} />}
+      {documentPicker && <DeepSeekDocumentPicker pendingFiles={documentPicker} onClose={()=>setDocumentPicker(null)} onSelect={docs=>{
+        const next = documentPicker.length ? [...new Map([...documents, ...docs].map(doc => [doc.id, doc])).values()] : docs
+        if (next.length > 20) { setPhotoError(tx('一次最多加入 20 份文档，请移除部分附件后重试。', 'Attach up to 20 documents at once. Remove some attachments and try again.')); return }
+        setDraftDocuments(key,next)
+      }} />}
       {documents.length>0 && <div>{documents.map(d=><span key={d.id}>{d.name} <button type="button" aria-label={tx('移除文件','Remove file')} onClick={()=>setDraftDocuments(key,documents.filter(x=>x.id!==d.id))}>×</button> </span>)}</div>}
-      {photoError && <div className={css.errorBanner}>{photoError}</div>}
+      {photoError && <div className={css.errorBanner} role="alert">{photoError}</div>}
       {picIds.length > 0 && (
         <div className={css.composerPics}>
           {composerItems.map((item, idx) => item.type === 'image' ? (
@@ -769,7 +793,7 @@ function Composer({ sessionId, busy, generationKey, status, thread, onBranchSent
               <button type="button" className={css.menuItem} data-testid="composer-add-local" onClick={() => { setAttachMenuOpen(false); materialsInputRef.current?.click() }}><IconDocument16 /><span>{tx('本地文件', 'Local files')}<small>{tx('图片或单个 PDF', 'Images or one PDF')}</small></span></button>
               <button type="button" className={css.menuItem} data-testid="composer-from-library" onClick={() => { setAttachMenuOpen(false); setLibPickerOpen(true) }}><IconFolderOpenOutline16 /><span>{tx('资料库', 'Library')}<small>{tx('选择已保存的资料', 'Choose saved materials')}</small></span></button>
               <button type="button" className={css.menuItem} data-testid="composer-youtube" onClick={()=>{setAttachMenuOpen(false);setYoutubePicker(true)}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="4"/><path d="m10 9 5 3-5 3Z"/></svg><span>{tx('YouTube 视频解析','YouTube video')}<small>{tx('提取字幕作为上下文','Add captions as context')}</small></span></button>
-              <button type="button" className={css.menuItem} data-testid="composer-deepseek-files" disabled={!supportsDocuments} title={!supportsDocuments?tx('请切换到 DeepSeek 官方 deepseek-flash 配置','Switch to official DeepSeek deepseek-flash'):undefined} onClick={()=>{setAttachMenuOpen(false);setDocumentPicker(true)}}><IconDocument16/><span>{tx('DeepSeek 文件解析','DeepSeek files')}<small>{supportsDocuments?tx('整份文件 · 批量上传','Whole files · batch upload'):tx('需 DeepSeek 官方配置','Official DeepSeek required')}</small></span></button>
+              <button type="button" className={css.menuItem} data-testid="composer-deepseek-files" disabled={!supportsDocuments} title={!supportsDocuments?tx('请切换到 DeepSeek 官方 deepseek-flash 配置','Switch to official DeepSeek deepseek-flash'):undefined} onClick={()=>{setAttachMenuOpen(false);setDocumentPicker([])}}><IconDocument16/><span>{tx('DeepSeek 文件解析','DeepSeek files')}<small>{supportsDocuments?tx('整份文件 · 批量上传','Whole files · batch upload'):tx('需 DeepSeek 官方配置','Official DeepSeek required')}</small></span></button>
             </div>
             {androidCamera && <button type="button" className={css.menuItem} data-testid="composer-camera" onClick={() => { setAttachMenuOpen(false); cameraInputRef.current?.click() }}><IconDocument16 /><span>{tx('拍照', 'Take photo')}<small>{tx('拍摄后加入草稿', 'Add captured photo to draft')}</small></span></button>}
             {openaiWebSearch ? <>
@@ -785,7 +809,7 @@ function Composer({ sessionId, busy, generationKey, status, thread, onBranchSent
         {androidCamera && <input ref={cameraInputRef} data-testid="composer-camera-input" type="file" accept=".jpg" capture="environment" hidden onChange={e => { if (e.target.files?.length) onFiles(e.target.files); e.target.value = '' }} />}
         <input ref={pdfInputRef} data-testid="composer-pdf-input" type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
         <input ref={materialsInputRef} data-testid="composer-materials-input" type="file" accept=".pdf,application/pdf,.jpg,.jpeg,.png,.gif,.webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onMaterialsSelected(e.target.files); e.target.value = '' }} />
-        <ComposerInput draftKey={key} onSend={send} />
+        <ComposerInput draftKey={key} onSend={send} onPasteImages={onFiles} />
       <VoiceInput key={key} draftKey={key} disabled={busy || settingsPending} />
         <button className={css.sendBtn} data-testid="composer-send-stop" aria-busy={status !== 'idle'} disabled={busy && status === 'idle'} onClick={event => { if (event.detail > 1) return; if (status !== 'idle') sessionsActions.stopGenerating(generationKey); else void send() }}>{status === 'sending' ? tx('准备中…', 'Preparing…') : status === 'streaming' ? tx('停止生成', 'Stop') : tx('发送', 'Send')}</button>
       </div>

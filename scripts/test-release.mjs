@@ -27,6 +27,7 @@ const CORE_E2E = [
   'e2e-background-chat',
   'e2e-chat-organization',
   'e2e-composer-typing',
+  'e2e-composer-files',
   'e2e-context-cancellation',
   'e2e-genui-full',
   'e2e-genui-capacity',

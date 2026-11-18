@@ -2,8 +2,9 @@ import { useLayoutEffect, useRef } from 'react'
 import { setDraftText, useDraftText } from '../engine/draft-store'
 import { t, tx } from '../engine/locale'
 import css from './cockpit.module.css'
+import { pastedImages } from './composer-file-input'
 
-export function ComposerInput({ draftKey, onSend }: { draftKey: string; onSend: () => void }) {
+export function ComposerInput({ draftKey, onSend, onPasteImages }: { draftKey: string; onSend: () => void; onPasteImages: (files: File[]) => void }) {
   const text = useDraftText(draftKey)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const composing = useRef(false)
@@ -72,6 +73,12 @@ export function ComposerInput({ draftKey, onSend }: { draftKey: string; onSend: 
     onCompositionStart={() => { composing.current = true }}
     onCompositionEnd={() => { composing.current = false }}
     onChange={event => setDraftText(draftKey, event.target.value)}
+    onPaste={event => {
+      const files = pastedImages(event.clipboardData)
+      if (!files.length) return
+      event.preventDefault()
+      onPasteImages(files)
+    }}
     onKeyDown={event => {
       if (event.key !== 'Enter' || event.shiftKey || composing.current || event.nativeEvent.isComposing || event.keyCode === 229) return
       event.preventDefault()

@@ -6,8 +6,9 @@ import {DOCUMENT_ACCEPT,uploadDeepSeekDocument,type DeepSeekDocument} from '../a
 import {getSettingsSnapshot,useSettings} from '../engine/settings-store'
 import {getSetting,setSetting} from '../storage/storage'
 import {tx} from '../engine/locale'
-export function DeepSeekDocumentPicker({onSelect,onClose}:{onSelect:(docs:DeepSeekDocument[])=>void;onClose:()=>void}){
+export function DeepSeekDocumentPicker({onSelect,onClose,pendingFiles}:{onSelect:(docs:DeepSeekDocument[])=>void;onClose:()=>void;pendingFiles:File[]}){
  const [docs,setDocs]=useState<DeepSeekDocument[]>([]),[selected,setSelected]=useState<string[]>([]),[rich,setRich]=useState(true),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[ready,setReady]=useState(false)
+ const [droppedFiles,setDroppedFiles]=useState(pendingFiles)
  const abort=useRef<AbortController|null>(null),alive=useRef(true)
  const apiKey=useSettings(s=>s.apiKey)
  const storageKey=useRef(''),fileInput=useRef<HTMLInputElement>(null)
@@ -38,6 +39,10 @@ export function DeepSeekDocumentPicker({onSelect,onClose}:{onSelect:(docs:DeepSe
  <p className={css.hint}>{tx('整份文件上传到 DeepSeek，解析可能计费；保存 30 天。一次上下文最多 20 份、文本合计 8 MiB。','Whole files are uploaded to DeepSeek; parsing may be billed. Stored for 30 days. Up to 20 documents and 8 MiB parsed text per context.')}</p>
  <div className={css.upload}><Button variant="outline" disabled={busy||!ready} onClick={()=>fileInput.current?.click()}>{tx('选择文件','Choose files')}</Button><small className={css.hint}>{tx('支持多文件批量上传','Upload multiple files at once')}</small><input ref={fileInput} hidden aria-label={tx('批量上传文件','Upload multiple files')} type="file" multiple accept={DOCUMENT_ACCEPT} disabled={busy||!ready} onChange={e=>{const files=Array.from(e.target.files||[]);e.target.value='';void upload(files)}}/></div>
  <label className={css.check}><input type="checkbox" checked={rich} disabled={busy} onChange={e=>setRich(e.target.checked)}/>{tx('保留图表和插图','Include charts and figures')}</label>
+ {droppedFiles.length>0 && <div className={css.upload}>
+  <small className={css.hint}>{tx('已拖入 '+droppedFiles.length+' 份文档','Dropped '+droppedFiles.length+' document(s)')}</small>
+  <Button variant="primary" disabled={busy||!ready||!apiKey} onClick={()=>{void upload(droppedFiles);setDroppedFiles([])}}>{tx('上传拖入的文档','Upload dropped documents')}</Button>
+ </div>}
  {busy&&<Button onClick={()=>abort.current?.abort()}>{tx('取消上传','Cancel uploads')}</Button>}
  {notice&&<p role="status" className={css.hint}>{notice}</p>}
  <div className={css.files}>{docs.map(d=><label key={d.id} className={css.check}><input type="checkbox" checked={selected.includes(d.id)} disabled={busy||(!selected.includes(d.id)&&selected.length>=20)} onChange={e=>setSelected(e.target.checked?[...selected,d.id]:selected.filter(id=>id!==d.id))}/>{d.name}</label>)}</div>
