@@ -12,6 +12,7 @@ import {GenuiBlock,GenuiActionContext,ErrorBoundary,processGenuiSpec,isRenderabl
 import {parsePartialGenuiSpec} from 'reader-genui-partial'
 import {setLocale} from 'reader-genui-locale'
 import {GenUiActions} from './LegacyGenUiBlock'
+import {GenUiSelection} from './GenUiSelection'
 import {useSettings} from '../engine/settings-store'
 import './advanced.css'
 setGenuiAssetBase(import.meta.env.BASE_URL+'genui-assets/0.16.0/')
@@ -57,13 +58,13 @@ export default function AdvancedGenUi({source,stateKey}:{source:string;stateKey?
  }
  let hash=2166136261;for(let i=0;i<source.length;i++)hash=Math.imul(hash^source.charCodeAt(i),16777619)
  const durableKey=result.complete&&stateKey?'reader:'+stateKey+':'+(hash>>>0):undefined
- const ui=<div className="reader-genui-surface" data-annotatable="false" aria-label="GenUI">
-  <div className="reader-genui-tools"><button type="button" onClick={()=>setExpanded(!expanded)}>{expanded?text('收起画布','Close canvas'):text('展开画布','Expand canvas')}</button><details><summary>{text('更多','More')} ⋯</summary><button type="button" onClick={()=>setShowTemplates(!showTemplates)}>{text('模板','Templates')}</button><button type="button" disabled={!result.complete} onClick={()=>void download(false)}>{text('导出 JSON','Export JSON')}</button><button type="button" disabled={!result.complete || (/reader.invalid\/web-image#|reader-choices:/.test(JSON.stringify(result.spec || {}))||requiresReaderExport(result.spec))} title="交互及大型界面可导出 JSON，在阅读器中使用" onClick={()=>void download(true)}>{text('导出 HTML','Export HTML')}</button></details></div>
+ const ui=<GenUiSelection className="reader-genui-surface" source={source} label="GenUI">
+  <div className="reader-genui-tools" data-genui-selection-ignore><button type="button" onClick={()=>setExpanded(!expanded)}>{expanded?text('收起画布','Close canvas'):text('展开画布','Expand canvas')}</button><details><summary>{text('更多','More')} ⋯</summary><button type="button" onClick={()=>setShowTemplates(!showTemplates)}>{text('模板','Templates')}</button><button type="button" disabled={!result.complete} onClick={()=>void download(false)}>{text('导出 JSON','Export JSON')}</button><button type="button" disabled={!result.complete || (/reader.invalid\/web-image#|reader-choices:/.test(JSON.stringify(result.spec || {}))||requiresReaderExport(result.spec))} title="交互及大型界面可导出 JSON，在阅读器中使用" onClick={()=>void download(true)}>{text('导出 HTML','Export HTML')}</button></details></div>
   {showTemplates&&<section className="reader-genui-templates"><label>{text('模板预览','Template preview')}<select aria-label={text('GenUI 模板','GenUI template')} value={template} onChange={e=>setTemplate(e.target.value)}><option value="">{text('选择模板','Choose a template')}</option>{templates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></label>{selected&&<><p>{selected.description}</p><GenuiBlock key={selected.id} spec={normalizeGenuiInput(selected.demo)} animateEntrance={false}/><button type="button" disabled={!send||busy.current} onClick={()=>{if(send)void send(selected.instruction).catch(e=>setStatus(String(e)))}}>{text('使用此模板提问','Ask with this template')}</button></>}</section>}
   <ChoiceLifetime.Provider value={durableKey}><GenuiActionContext.Provider value={dispatch}><ErrorBoundary>{result.spec?<GenuiBlock spec={result.spec} stateKey={durableKey} initialState={snapshot.current} onStateSnapshot={state=>{snapshot.current=state}} animateEntrance={false}/>:<p role="status">{result.error}</p>}</ErrorBoundary></GenuiActionContext.Provider></ChoiceLifetime.Provider>
   {result.notice&&<details className="reader-genui-repair"><summary>显示调整</summary><p>{result.notice}</p></details>}
   {status&&<p role="status">{status}</p>}
-  <details><summary>{language==='en'?'UI source':'查看 UI 源码'}</summary><pre>{source}</pre></details>
- </div>
+  <details data-genui-selection-ignore><summary>{language==='en'?'UI source':'查看 UI 源码'}</summary><pre>{source}</pre></details>
+ </GenUiSelection>
  return expanded?createPortal(<div ref={canvasRef} className="reader-genui-canvas" onKeyDown={e=>{if(e.key!=='Tab')return;const list=Array.from(e.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled),textarea:not(:disabled),a[href],summary,[tabindex="0"]')).filter(el=>el.getClientRects().length);const first=list[0],last=list.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus()}}} role="dialog" aria-modal="true" aria-label="GenUI 画布">{ui}</div>,document.body):ui
 }

@@ -4,19 +4,20 @@ import { readAloud, stopReadAloud, useReadAloud } from '../speech/read-aloud'
 import { selectedDeepSeekServiceProfile } from '../engine/deepseek-service-profile'
 import { useSettings } from '../engine/settings-store'
 import { tx } from '../engine/locale'
+import { GenUiSelection } from './GenUiSelection'
 import css from './vocabulary.module.css'
 
 export default function VocabularyBlock({ source }: { source: string }) {
   const [visible,setVisible]=useState(100)
   const parsed = useMemo(() => { try { return { spec: parseVocabulary(source) } } catch (e) { return { error: e instanceof SyntaxError ? tx('词条数据尚未完整。', 'The word entry is incomplete.') : String(e) } } }, [source])
-  return <section className={css.list} aria-label={tx('GenUI 单词朗读卡', 'GenUI vocabulary cards')} data-annotatable="false">
+  return <GenUiSelection className={css.list} source={source} label={tx('GenUI 单词朗读卡', 'GenUI vocabulary cards')}>
     {parsed.spec?.title && <h3>{parsed.spec.title}</h3>}
     {parsed.spec?.items.slice(0,visible).map((item, index) => <WordCard key={index + ':' + item.word} item={item} />)}
     {parsed.spec&&parsed.spec.items.length>visible&&<button type="button" onClick={()=>setVisible(n=>n+100)}>{tx('显示更多单词','Show more words')}（{visible}/{parsed.spec.items.length}）</button>}
     {parsed.spec?.partial && <p role="status">{tx('已显示完整词条，末尾数据尚未完整。','Showing complete entries. The last entry is incomplete.')}</p>}
     {parsed.error && <p role="status">{parsed.error}</p>}
-    <details className={css.source}><summary>{tx('查看 UI 源码', 'UI source')}</summary><pre>{source}</pre></details>
-  </section>
+    <details className={css.source} data-genui-selection-ignore><summary>{tx('查看 UI 源码', 'UI source')}</summary><pre>{source}</pre></details>
+  </GenUiSelection>
 }
 
 function WordCard({ item }: { item: VocabularyWord }) {

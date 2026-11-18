@@ -12,78 +12,11 @@ import type { SelectionMapping } from './selection-types'
 import type { Annotation } from './annotation-types'
 import css from './annotate.module.css'
 import { tx } from '../engine/locale'
-import { readAloud, stopReadAloud } from '../speech/read-aloud'
+import { stopReadAloud } from '../speech/read-aloud'
+import { useSpokenSelection } from '../speech/use-spoken-selection'
+import { registerSelectionOwner } from './selection-events'
 import { selectMarkdownBlock } from '../markdown/select-block'
 import { markdownSourceForRange } from '../markdown/source-copy'
-
-type AnnotationEventOwner = {
-  element: HTMLElement
-  pointerDown(event: Event): void
-  selectionEnd(): void
-}
-
-const eventOwners = new Map<string, AnnotationEventOwner>()
-let activeEventOwner: string | null = null
-let annotationEventsInstalled = false
-let draggingSelection = false
-
-function eventOwnerForNode(node: Node | null): [string, AnnotationEventOwner] | null {
-  const element = node instanceof Element ? node : node?.parentElement
-  const root = element?.closest<HTMLElement>('[data-annotation-owner]')
-  if (!root) return null
-  const id = root.dataset.annotationOwner
-  const owner = id ? eventOwners.get(id) : undefined
-  return id && owner ? [id, owner] : null
-}
-
-function eventOwnerForSelection(): [string, AnnotationEventOwner] | null {
-  const selection = window.getSelection()
-  if (!selection || selection.rangeCount === 0) return null
-  const range = selection.getRangeAt(0)
-  const start = eventOwnerForNode(range.startContainer)
-  const end = eventOwnerForNode(range.endContainer)
-  return start && end && start[0] === end[0] ? start : null
-}
-
-const delegatedPointerDown = (event: Event) => {
-  draggingSelection = true
-  const previous = activeEventOwner ? eventOwners.get(activeEventOwner) : undefined
-  if (previous && !containsNode(previous.element, event.target as Node | null)) previous.pointerDown(event)
-  const found = eventOwnerForNode(event.target as Node | null)
-  activeEventOwner = found?.[0] ?? null
-  found?.[1].pointerDown(event)
-}
-const delegatedSelectionEnd = (event?: Event) => {
-  if (event?.type === 'pointerup' || event?.type === 'pointercancel' || event?.type === 'touchend' || event?.type === 'blur') draggingSelection = false
-  if (draggingSelection) return
-  const found = eventOwnerForSelection()
-  if (found) { activeEventOwner = found[0]; found[1].selectionEnd(); return }
-  if (activeEventOwner) eventOwners.get(activeEventOwner)?.selectionEnd()
-}
-
-function installAnnotationEvents(): void {
-  if (annotationEventsInstalled || typeof document === 'undefined') return
-  annotationEventsInstalled = true
-  document.addEventListener('selectionchange', delegatedSelectionEnd)
-  document.addEventListener('pointerdown', delegatedPointerDown)
-  document.addEventListener('pointerup', delegatedSelectionEnd)
-  document.addEventListener('pointercancel', delegatedSelectionEnd)
-  window.addEventListener('blur', delegatedSelectionEnd)
-  document.addEventListener('touchend', delegatedSelectionEnd)
-}
-
-function uninstallAnnotationEventsIfIdle(): void {
-  if (!annotationEventsInstalled || eventOwners.size > 0 || typeof document === 'undefined') return
-  annotationEventsInstalled = false
-  activeEventOwner = null
-  draggingSelection = false
-  document.removeEventListener('selectionchange', delegatedSelectionEnd)
-  document.removeEventListener('pointerdown', delegatedPointerDown)
-  document.removeEventListener('pointerup', delegatedSelectionEnd)
-  document.removeEventListener('pointercancel', delegatedSelectionEnd)
-  window.removeEventListener('blur', delegatedSelectionEnd)
-  document.removeEventListener('touchend', delegatedSelectionEnd)
-}
 
 export function AnnotatedMarkdown({ content, messageId, conversationId, branchId, focusAnnotation }: { content: string; messageId: string; conversationId: string; branchId?: string; focusAnnotation?: Annotation }) {
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -91,6 +24,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   const touchStart = useRef<{x: number; y: number} | null>(null)
   const [copyStatus, setCopyStatus] = useState('')
   const highlightOwnerId = messageId + ':' + useId()
+  const speakSelection = useSpokenSelection(wrapRef, highlightOwnerId, content)
   const [pending, setPending] = useState<SelectionMapping | null>(null)
   const [toolbarPosition, setToolbarPosition] = useState<{ left: number; top: number } | null>(null)
   const annotations = useMessageAnnotations(conversationId, messageId)
@@ -192,12 +126,6 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
   }, [annotations, messageId, content, hasHl, highlightOwnerId])
 
   useEffect(() => {
-    function onPointerDown(e: Event) {
-      setPending(null)
-      // Ownership guard: only the instance whose wrapper contains the target may
-      // register a math press. A formula in ANOTHER message must never put this
-      // instance into pending-math.
-    }
     function onSelChange() {
       const sel = window.getSelection()
       // Math click: pointerup landed on a formula inside THIS message (guarded by
@@ -229,13 +157,10 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
     }
     const element = wrapRef.current
     if (!element) return
-    eventOwners.set(highlightOwnerId, { element, pointerDown: onPointerDown, selectionEnd: onSelChange })
-    installAnnotationEvents()
+    const unregister = registerSelectionOwner(highlightOwnerId, { dismiss: () => setPending(null), selectionEnd: onSelChange })
     return () => {
       stopReadAloud(highlightOwnerId)
-      eventOwners.delete(highlightOwnerId)
-      if (activeEventOwner === highlightOwnerId) activeEventOwner = null
-      uninstallAnnotationEventsIfIdle()
+      unregister()
     }
   }, [messageId, content, canonicalOf, highlightOwnerId])
 
@@ -309,7 +234,7 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
         <div className={css.annotBar} onPointerDown={event=>{event.preventDefault();event.stopPropagation()}} onPointerUp={event=>event.stopPropagation()} onTouchEnd={event=>event.stopPropagation()}>
           <button type="button" className={css.annotBtn} data-testid="selection-copy" onClick={()=>void copySelection()}>{copyStatus || tx('复制', 'Copy')}</button>
           <button className={css.annotBtn} onPointerUp={(e: any) => e.stopPropagation()} onTouchEnd={(e: any) => e.stopPropagation()} onPointerDown={(e: any) => e.stopPropagation()} onClick={doToggle}>{fullyCovered ? tx('取消标记', 'Unmark') : tx('标记', 'Mark')}</button>
-          <button type="button" className={css.annotBtn} data-testid="selection-read-aloud" title={tx('使用 DeepSeek API 朗读所选文字；倍速及重复次数可在通用设置调整','Read selected text using the DeepSeek API. Adjust speed and repetitions in General settings.')} onPointerDown={e=>{e.preventDefault();e.stopPropagation()}} onPointerUp={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} onClick={()=>{readAloud(pending.segments.map(segment=>segment.exact).join('\n').replaceAll('\uFFFF',' '),highlightOwnerId);setPending(null)}}>{tx('朗读','Read aloud')}</button>
+          <button type="button" className={css.annotBtn} data-testid="selection-read-aloud" title={tx('使用 DeepSeek API 朗读所选文字；倍速及重复次数可在通用设置调整','Read selected text using the DeepSeek API. Adjust speed and repetitions in General settings.')} onPointerDown={e=>{e.preventDefault();e.stopPropagation()}} onPointerUp={e=>e.stopPropagation()} onTouchEnd={e=>e.stopPropagation()} onClick={()=>{speakSelection(pending.segments.map(segment=>segment.exact).join('\n').replaceAll('\uFFFF',' '));setPending(null)}}>{tx('朗读','Read aloud')}</button>
         </div>
       )}
       {pending && pending.kind === 'table-cross-cell' && (

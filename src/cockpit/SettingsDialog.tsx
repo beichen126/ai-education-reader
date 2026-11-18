@@ -347,6 +347,8 @@ export function SettingsDialog() {
         <div className={css.settingsHint}>{tx('中英文自动切换倍速，使用 DeepSeek 语音服务。','Automatically selects the Chinese or English speed. Uses DeepSeek speech.')}</div>
         <label className={css.speechRateRow}><span>{tx('播放次数','Reading repetitions')}</span><select data-testid="settings-speechRepeatCount" value={s.speechRepeatCount ?? 3} disabled={mutation.status==='pending'||s.speechLoop===true} onChange={event=>{void patchSettings({speechRepeatCount:Number(event.target.value)}).catch(()=>{})}}>{Array.from({length:10},(_,i)=>i+1).map(count=><option key={count} value={count}>{tx(count+' 次',count+' passes')}</option>)}</select></label>
         <label className={css.speechRateRow}><span>{tx('循环播放','Loop until stopped')}</span><input type="checkbox" aria-label={tx('循环播放','Loop playback')} checked={s.speechLoop===true} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({speechLoop:e.target.checked}).catch(()=>{})}}/></label>
+        <label className={css.speechRateRow}><span>{tx('高亮已朗读的文字', 'Highlight read-aloud selections')}</span><input type="checkbox" checked={s.highlightSpokenSelection===true} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({highlightSpokenSelection:event.target.checked}).catch(()=>{})}} /></label>
+        <div className={css.settingsHint}>{tx('双击或双点高亮文字即可重播。', 'Double-click or double-tap highlighted text to replay it.')}</div>
         <SpeechCacheControl />
         {mutation.status==='error' && mutation.error && <div className={css.testResult} data-ok="false" data-testid="settings-general-error">{localizedErrorText(mutation.error,'Unable to save general settings. Please retry.')}</div>}
       </div>

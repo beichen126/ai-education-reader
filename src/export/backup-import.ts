@@ -292,6 +292,7 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
   for (const key of ['userMetadataEnabled', 'autoTitleEnabled', 'readUrlEnabled', 'nativeDeepSeekProxy'] as const) if (settings[key] !== undefined && typeof settings[key] !== 'boolean') throw new BackupError('invalid '+key)
   if (settings.speechVoice !== undefined && !['stella','tide'].includes(settings.speechVoice)) throw new BackupError('invalid speechVoice')
   if (settings.speechApiUrl !== undefined && typeof settings.speechApiUrl !== 'string') throw new BackupError('invalid speechApiUrl')
+  if (settings.highlightSpokenSelection !== undefined && typeof settings.highlightSpokenSelection !== 'boolean') throw new BackupError('invalid highlightSpokenSelection')
   if (settings.speechLoop !== undefined && typeof settings.speechLoop !== 'boolean') throw new BackupError('invalid speechLoop')
   if (settings.speechRepeatCount !== undefined && (!isInt(settings.speechRepeatCount) || settings.speechRepeatCount<1 || settings.speechRepeatCount>10)) throw new BackupError('settings.speechRepeatCount must be an integer between 1 and 10')
   if (settings.rememberReadingPosition !== undefined && typeof settings.rememberReadingPosition !== 'boolean') throw new BackupError('settings.rememberReadingPosition must be boolean')
@@ -624,6 +625,7 @@ export async function restoreBackup(backup: Backup, binaries?: {
       { key: 'webSearchEnabled', value: backup.settings?.webSearchEnabled === true ? 'true' : 'false' },
       { key: 'chineseSpeechRate', value: String(backup.settings?.chineseSpeechRate ?? 1) },
       { key: 'englishSpeechRate', value: String(backup.settings?.englishSpeechRate ?? 0.9) },
+      { key: 'highlightSpokenSelection', value: String(backup.settings?.highlightSpokenSelection === true) },
       { key: 'speechLoop', value: String(backup.settings?.speechLoop === true) },
       { key: 'speechRepeatCount', value: String(backup.settings?.speechRepeatCount ?? 3) },
       { key: 'rememberReadingPosition', value: backup.settings?.rememberReadingPosition === false ? 'false' : 'true' },

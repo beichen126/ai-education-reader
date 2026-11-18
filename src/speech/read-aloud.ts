@@ -72,7 +72,7 @@ export function setReadAloudRate(owner: string, rate: number) {
   if (audio) audio.playbackRate = rate
   publish({ ...state, rate })
 }
-export function readAloud(text: string, owner: string, options: { rate?: number; repeats?: number; loop?:boolean; voice?: 'stella' | 'tide'; apiKey?: string } = {}) {
+export function readAloud(text: string, owner: string, options: { rate?: number; repeats?: number; loop?:boolean; voice?: 'stella' | 'tide'; apiKey?: string; onStarted?: () => void } = {}) {
   stopReadAloud()
   const chunks=ttsChunks(text)
   if(!chunks.length)return
@@ -105,7 +105,10 @@ export function readAloud(text: string, owner: string, options: { rate?: number;
       player.onended=()=>{void next()}
       player.onerror=()=>{void evictSpeechAudio(ttsEndpoint('https://api.deepseek.com'),apiKey!,chunks[current],voice).catch(()=>{});fail(new Error('音频无法播放或数据不完整，请重试。'))}
       await player.play()
-      if(token===generation)publish({status:'speaking',owner,voice:voiceName,lang,rate:player.playbackRate,repeat,repeats,loop})
+      if(token===generation) {
+        publish({status:'speaking',owner,voice:voiceName,lang,rate:player.playbackRate,repeat,repeats,loop})
+        if (current === 0 && repeat === 1) options.onStarted?.()
+      }
     } catch(error){fail(error)}
   }
   void next()

@@ -20,6 +20,7 @@ const EXTRA_E2E = process.env.RELEASE_EXTRA_E2E === '1'
 const CORE_E2E = [
   'e2e-youtube',
   'e2e-genui-vocabulary',
+  'e2e-selection-speech',
   'e2e-web-images',
   'e2e-pdf-ocr',
   'e2e-android-pdf',

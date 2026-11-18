@@ -7,3 +7,10 @@
   background-color: var(--dsw-specific-study-highlight, #d9d9d9);
   color: inherit;
 }
+::highlight(spoken-selection) {
+  background-color: rgba(97, 135, 226, 0.18);
+  background-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 17%, transparent);
+  text-decoration: underline dotted var(--dsw-alias-brand-primary);
+}
+.spoken-selection-underlines { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.spoken-selection-underlines > span { position: absolute; border-bottom: 2px dotted var(--dsw-alias-brand-primary); }

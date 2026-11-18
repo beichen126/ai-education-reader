@@ -1,11 +1,12 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { parseGenUi, type UiNode } from './schema'
+import { GenUiSelection } from './GenUiSelection'
 import './genui.css'
 export const GenUiActions = createContext<((text: string) => Promise<void>) | null>(null)
 const str = (v: unknown) => typeof v === 'string' || typeof v === 'number' ? String(v) : ''
 export function LegacyGenUiBlock({ source }: { source: string }) {
   const result = useMemo(() => { try { return { nodes: parseGenUi(source) } } catch (e) { return { error: String(e) } } }, [source])
-  return <section className="genui" data-annotatable="false" aria-label="GenUI"><GenUiContent key={source} source={source} nodes={result.nodes} error={result.error} /></section>
+  return <GenUiSelection className="genui" source={source} label="GenUI"><GenUiContent key={source} source={source} nodes={result.nodes} error={result.error} /></GenUiSelection>
 }
 function GenUiContent({ source, nodes, error }: { source: string; nodes?: UiNode[]; error?: string }) {
   const send = useContext(GenUiActions)
@@ -50,7 +51,7 @@ function GenUiContent({ source, nodes, error }: { source: string; nodes?: UiNode
       default: return null
     }
   }
-  return <>{error ? <p role="status">UI 尚未完成或格式不受支持，可查看源码。</p> : nodes?.map(render)}{status && <p role="status">{status}</p>}<details className="genui-source"><summary>查看 UI 源码</summary><pre>{source}</pre></details></>
+  return <>{error ? <p role="status">UI 尚未完成或格式不受支持，可查看源码。</p> : nodes?.map(render)}{status && <p role="status">{status}</p>}<details className="genui-source" data-genui-selection-ignore><summary>查看 UI 源码</summary><pre>{source}</pre></details></>
 }
 function Quiz({ node: n }: { node: UiNode }) {
   const [answer, setAnswer] = useState<number | null>(null)
