@@ -22,7 +22,7 @@ export function ApiConfigTransfer({ hasImageDraft }: { hasImageDraft: () => bool
     setStatus('')
     setExportOpen(false)
     if (hasImageDraft()) {
-      setError(tx('请先保存配图配置，再导入 JSON。', 'Save your image search settings before importing.'))
+      setError(tx('请先保存 Firecrawl 配置，再导入 JSON。', 'Save your Firecrawl settings before importing.'))
       return
     }
     if (file.size > MAX_API_PROFILE_FILE_BYTES) {
