@@ -27,7 +27,10 @@ export async function requestFirstImage(query: string, apiKey: string, signal?: 
     method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey.trim()},
     body: JSON.stringify({query, sources: ['images'], limit: 3}), signal,
   })
-  if (!response.ok) throw Object.assign(new ImageSearchError(`Firecrawl 图片请求失败（HTTP ${response.status}）`), {status: response.status, terminal: response.status === 400 || response.status === 422})
+  if (!response.ok) {
+    const reason = response.status === 401 ? 'Firecrawl Key 验证失败' : response.status === 402 ? 'Firecrawl 额度不足' : 'Firecrawl 图片请求失败'
+    throw Object.assign(new ImageSearchError(`${reason}（HTTP ${response.status}）`), {status: response.status, terminal: response.status === 400 || response.status === 422})
+  }
   const data = await response.json()
   let selected: WebImage | undefined
   const seen = new Set<string>()
