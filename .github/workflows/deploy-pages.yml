@@ -77,7 +77,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Install Chromium for Playwright
-        run: npx playwright-core install --with-deps chromium
+        run: |
+          npx playwright-core install chromium --only-shell
+          smoke_test() {
+            node --input-type=module -e 'import { chromium } from "playwright-core"; const browser = await chromium.launch({headless: true}); await browser.close();'
+          }
+          if ! smoke_test; then
+            npx playwright-core install-deps chromium
+            smoke_test
+          fi
       - name: Download the exact release build
         uses: actions/download-artifact@v4
         with:

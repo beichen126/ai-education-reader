@@ -33,7 +33,7 @@ await manager.waitFor({ state: 'visible', timeout: 10000 })
 assert(await manager.getAttribute('aria-label') === '提示词管理', 'Prompt Manager exposes a named dialog')
 assert(await page.locator('[data-testid="prompt-category-all"]').count() === 1, 'category: all is available')
 assert(await page.locator('[data-testid="prompt-category-conversation-mode"]').count() === 1, 'category: conversation modes is available')
-assert(await page.locator('[data-testid="prompt-row"]').count() >= 3, 'catalog loads the visible default, artifact and quick-follow-up definitions without protocols')
+assert(await waitFor(async () => await page.locator('[data-testid="prompt-row"]').count() >= 3), 'catalog loads the visible default, artifact and quick-follow-up definitions without protocols')
 assert(!(await page.locator('[data-testid="prompt-row"]').allTextContents()).join(' ').includes('协议'), 'default all catalog does not render protocol definitions')
 
 let externalRequests = 0
