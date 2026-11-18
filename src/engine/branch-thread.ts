@@ -1,7 +1,7 @@
 import { newStableId, type DraftDisposition, type Message, type QuickFollowUpMetadata, type StableId } from './types'
 import { getSettingsSnapshot } from './settings-store'
 import { providerPreflight } from '../api/chat-provider'
-import { runThreadReply, type ReplyThread } from './stream-reply'
+import { runThreadReply, type ReplyMetadata, type ReplyThread } from './stream-reply'
 import { generationRegistry, genBranchKey } from './generation-registry'
 import { getConversation } from '../storage/storage'
 import { getBranch, saveBranch, listBranchesByConversation } from '../branches/branch-store'
@@ -46,12 +46,12 @@ export class BranchReplyThread implements ReplyThread {
     const placeholder: Message = { id: assistantId, role: 'assistant', content: '', images: [], createdAt: now, updatedAt: now }
     this.mutate((b) => ({ ...b, updatedAt: now, messages: [...b.messages, placeholder] }))
   }
-  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage, native?: {serverToolCalls?: unknown[]; annotations?: unknown[]}): void {
+  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage, metadata?: ReplyMetadata): void {
     this.mutate((b) => {
       const last = b.messages[b.messages.length - 1]
       if (!last || last.id !== this.assistantId) return b
-      if (last.content === content && !usage && !native) return b
-      return { ...b, updatedAt: Date.now(), messages: [...b.messages.slice(0, -1), { ...last, content, ...native, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }] }
+      if (last.content === content && !usage && !metadata) return b
+      return { ...b, updatedAt: Date.now(), messages: [...b.messages.slice(0, -1), { ...last, content, ...metadata, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }] }
     })
   }
   persistCheckpoint(content: string): void {
@@ -70,7 +70,7 @@ export class BranchReplyThread implements ReplyThread {
     this.mutate((b) => {
       const last = b.messages[b.messages.length - 1]
       if (!last || last.id !== this.assistantId) return b
-      if (!last.content) return { ...b, updatedAt: Date.now(), messages: b.messages.slice(0, -1) }
+      if (!last.content && !last.reasoning) return { ...b, updatedAt: Date.now(), messages: b.messages.slice(0, -1) }
       return { ...b, updatedAt: Date.now(), messages: [...b.messages.slice(0, -1), { ...last, status, error: message, updatedAt: Date.now() }] }
     })
   }

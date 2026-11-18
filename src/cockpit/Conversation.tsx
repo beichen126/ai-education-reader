@@ -385,6 +385,7 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
   const isStreaming = m.id === streamingId
   const stable = isStableBranchPoint(m, { streaming: isStreaming })
   const canCopySource = !isStreaming && m.content.length > 0
+  const canCopyReasoning = !isStreaming && typeof m.reasoning === 'string' && !!m.reasoning.trim()
   return (
     <div className={css.msg + ' ' + css.msgAssistant} data-message-id={m.id}>
       {isStreaming && !m.content.trim() && <div className={css.thinkingHint} role="status" data-testid="assistant-thinking"><span className={css.thinkingSpinner} aria-hidden="true" />{tx('正在思考…', 'Thinking…')}</div>}
@@ -398,8 +399,8 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
           {m.content.trim() && !isStreaming && <button type="button" className={css.messageToolButton} data-testid="message-read-aloud" onClick={()=>readAloud(m.content,m.id)}>{tx('朗读全文','Read all aloud')}</button>}
           {canCopySource && <MessageSourceCopyButton source={m.content} />}
           <MessageTimestamp createdAt={m.createdAt} />
-          {stable && onToggleMenu && onBranch && onArtifact && <div className={css.messageMenuAnchor}>
-            <button type="button" className={css.messageToolButton} aria-label={tx('消息操作', 'Message actions')} data-testid="message-actions" title={tx('从这里分支 / 特殊分支 / 学习卡片', 'Branch / study output / study card')} aria-haspopup="menu" aria-expanded={!!menuOpen} onClick={() => onToggleMenu(!menuOpen)}>⋯</button>
+          {(stable || canCopyReasoning) && onToggleMenu && onBranch && onArtifact && <div className={css.messageMenuAnchor}>
+            <button type="button" className={css.messageToolButton} aria-label={tx('消息操作', 'Message actions')} data-testid="message-actions" aria-haspopup="menu" aria-expanded={!!menuOpen} onClick={() => onToggleMenu(!menuOpen)}>⋯</button>
             {menuOpen && <MessageActionMenu
               conversationId={convId || ''}
               branchId={branchId}

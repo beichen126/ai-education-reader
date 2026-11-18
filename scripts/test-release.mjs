@@ -34,6 +34,7 @@ const CORE_E2E = [
   'e2e-branch-live-view',
   'e2e-responsive-surfaces',
   'e2e-token-usage',
+  'e2e-copy-reasoning',
   'e2e-back-navigation',
   'e2e-math-actions',
   'e2e-android-login-entry',

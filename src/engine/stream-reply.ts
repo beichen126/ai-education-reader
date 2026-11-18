@@ -23,12 +23,14 @@ import { DeepSeekFilesError } from '../api/deepseek-files'
  * status, and deletion guard. This is the single source of the stream/checkpoint/abort/
  * stale-write rules so root and branch behavior cannot drift.
  */
+export type ReplyMetadata = Pick<Message, 'serverToolCalls' | 'annotations' | 'reasoning'>
+
 export interface ReplyThread {
   acceptTitle?(title: string): void
   readonly genKey: string
   getContextMessages(): Message[] | Promise<Message[]>
   createAssistantPlaceholder(assistantId: StableId, now: number): void
-  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage, native?: {serverToolCalls?: unknown[]; annotations?: unknown[]}): void
+  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage, metadata?: ReplyMetadata): void
   persistCheckpoint(content: string): void
   persistFinal(): Promise<void>
   drainWrites(): Promise<void>
@@ -57,6 +59,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
   const assistantId = newStableId()
   let placeholderCreated = false
   let received = ''
+  let reasoning = ''
   let lastRender = 0
   let lastDurable = 0
   let renderTimer: ReturnType<typeof setTimeout> | undefined
@@ -129,11 +132,14 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       reqMessages.push(research.message)
       webFooter = research.footer
     }
-    const r = await streamProviderChat(settings, { apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages, signal: controller.signal, onDelta, ...native })
+    const r = await streamProviderChat(settings, {
+      apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages,
+      signal: controller.signal, onDelta, onReasoningDelta: delta => { reasoning += delta }, ...native,
+    })
     clearTimeout(renderTimer);renderTimer=undefined
     received = r.content + webFooter + citationFooter(r.annotations)
     update(received, true)
-    thread.updateAssistantContent(received, r.usage, {serverToolCalls:r.serverToolCalls, annotations:r.annotations})
+    thread.updateAssistantContent(received, r.usage, { serverToolCalls: r.serverToolCalls, annotations: r.annotations, reasoning: r.reasoning })
     if (typeof r.title==='string') thread.acceptTitle?.(r.title)
     if (!(await thread.exists())) throw new DeepSeekError('aborted', '目标已删除')
     await thread.persistFinal()
@@ -143,6 +149,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
   } catch (e) {
     clearTimeout(renderTimer);renderTimer=undefined
     update(received, true)
+    if (placeholderCreated && reasoning.trim()) thread.updateAssistantContent(received, undefined, { reasoning })
     if (e instanceof AttachmentError) {
       const failure: SendFailure = { kind: 'failed', code: 'attachment-' + e.kind, message: attachmentErrorLabel(e.kind), ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
       if (placeholderCreated) thread.settleAssistant('failed', failure.message)

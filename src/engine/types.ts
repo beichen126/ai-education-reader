@@ -77,6 +77,8 @@ export type PdfContext = {
 export type Attachment = { id: StableId; name: string; mimeType: string; size: number; createdAt: number; updatedAt: number; source?: PdfAttachmentSource; ocr?: import('../api/deepseek-ocr').OcrPage; transcript?: import('../youtube/transcript').YoutubeTranscript }
 /** Message holds only stable attachment id references, never objectURL/base64. */
 export type Message = {
+  /** Provider-returned diagnostic text, separate from the answer and model context. */
+  reasoning?: string
   serverToolCalls?: unknown[]
   annotations?: unknown[]
   documents?: import('../api/deepseek-documents').DeepSeekDocument[]

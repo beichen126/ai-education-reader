@@ -8,7 +8,7 @@ import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildC
 import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError } from './attachment-service'
 import { deleteConvAnnotations } from '../annotations/annotation-store'
 import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
-import { runThreadReply, type ReplyThread } from './stream-reply'
+import { runThreadReply, type ReplyMetadata, type ReplyThread } from './stream-reply'
 import { generationRegistry, genRootKey, type GenerationLease } from './generation-registry'
 import { attachPdfContexts } from '../pdf/pdf-message-context'
 import { getBranch } from '../branches/branch-store'
@@ -287,12 +287,12 @@ class RootReplyThread implements ReplyThread {
     const placeholder: Message = { id: assistantId, role: 'assistant', content: '', images: [], createdAt: now, updatedAt: now }
     upsertState({ ...cur, updatedAt: now, messages: [...cur.messages, placeholder] }, { status: 'streaming', sendError: undefined })
   }
-  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage, native?: {serverToolCalls?: unknown[]; annotations?: unknown[]}): void {
+  updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage, metadata?: ReplyMetadata): void {
     const cur = state.byId[this.id]; if (!cur) return
     const last = cur.messages[cur.messages.length - 1]
     if (!last || last.id !== this.assistantId) return
-    if (last.content === content && !usage && !native) return
-    const updatedMsg: Message = { ...last, content, ...native, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }
+    if (last.content === content && !usage && !metadata) return
+    const updatedMsg: Message = { ...last, content, ...metadata, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }
     upsertState({ ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] }, { status: 'streaming', sendError: undefined })
   }
   persistCheckpoint(content: string): void {
@@ -307,7 +307,7 @@ class RootReplyThread implements ReplyThread {
     const cur = state.byId[this.id]; if (!cur) return
     const last = cur.messages[cur.messages.length - 1]
     if (!last || last.id !== this.assistantId) return
-    if (!last.content) {
+    if (!last.content && !last.reasoning) {
       upsertState({ ...cur, updatedAt: Date.now(), messages: cur.messages.slice(0, -1) })
       return
     }

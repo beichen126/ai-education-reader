@@ -3,11 +3,12 @@ import { hasMeaningfulAssistantContent } from '../engine/types'
 import { tx } from '../engine/locale'
 import { parseTokenUsage, type TokenUsage } from '../engine/token-usage'
 import { prepareDeepSeekFiles } from './deepseek-files'
+import { isTeamoGemini, readGeminiReply, teamoGeminiRequest } from './teamo-gemini'
 
 export type ChatContentPart = { type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } } | { type: 'file'; file_id: string }
 export type ApiChatMessage = { role: 'user' | 'assistant' | 'system' | 'latest_reminder'; server_tool_calls?: unknown[]; content: string | ChatContentPart[] }
 export type SendTextChatArgs = { apiKey: string; baseUrl: string; model: string; messages: ApiChatMessage[]; signal?: AbortSignal; reasoningEffort?: DeepSeekReasoningEffort; thinking?: 'enabled' | 'disabled'; jsonObject?: boolean; maxTokens?: number; nativeTools?: string[]; generateTitle?: boolean }
-export type SendTextChatResult = { content: string; finishReason?: string }
+export type SendTextChatResult = { content: string; finishReason?: string; reasoning?: string }
 
 /** DeepSeek vision API limit: max images in ONE chat request (API limit, not product). */
 export const MAX_VISION_IMAGES_PER_REQUEST = 600
@@ -81,15 +82,16 @@ export function sendTextChat(args: SendTextChatArgs): Promise<SendTextChatResult
 }
 
 async function sendTextChatInline(args: SendTextChatArgs): Promise<SendTextChatResult> {
-  const { apiKey, baseUrl, model, messages, signal } = args
+  const { apiKey, baseUrl, model, signal } = args
   if (!apiKey) throw new DeepSeekError('no-api-key', 'missing api key')
-  const endpoint = (baseUrl || DEFAULT_BASE).replace(/\/+$/, '') + '/chat/completions'
+  const gemini = isTeamoGemini(baseUrl, model)
+  const { endpoint, body } = chatRequest(args, false, gemini)
   let res: Response
   try {
     res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify(chatRequestBody(args, false)),
+      body: JSON.stringify(body),
       signal,
     })
   } catch {
@@ -111,10 +113,9 @@ async function sendTextChatInline(args: SendTextChatArgs): Promise<SendTextChatR
   }
   let json: any
   try { json = await res.json() } catch { throw new DeepSeekError('bad-json', 'response is not JSON') }
-  const content = json && json.choices && json.choices[0] && json.choices[0].message ? json.choices[0].message.content : undefined
-  if (typeof content !== 'string' || !hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content in response')
-  const finishReason = json?.choices?.[0]?.finish_reason
-  return { content, ...(typeof finishReason === 'string' ? { finishReason } : {}) }
+  const { content, reasoning, finishReason } = readChatReply(json, gemini, false)
+  if (!hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content in response')
+  return { content, ...(reasoning ? { reasoning } : {}), ...(finishReason ? { finishReason } : {}) }
 }
 
 /** Connection test: GET {baseUrl}/models (OpenAI-compatible). Sends NO chat history,
@@ -253,18 +254,34 @@ export class SSEParser {
   }
 }
 
-export interface StreamTextChatArgs extends SendTextChatArgs { signal?: AbortSignal; onDelta: (delta: string) => void }
-export interface StreamTextChatResult { title?: string; serverToolCalls?: unknown[]; annotations?: unknown[]; content: string; finishReason?: string; usage?: TokenUsage }
+export interface StreamTextChatArgs extends SendTextChatArgs { onDelta: (delta: string) => void; onReasoningDelta?: (delta: string) => void }
+export interface StreamTextChatResult extends SendTextChatResult { title?: string; serverToolCalls?: unknown[]; annotations?: unknown[]; usage?: TokenUsage }
 
-/** Extract the content delta from one SSE event payload (DeepSeek / OpenAI shape). */
-function deltaOf(data: string): Omit<StreamTextChatResult, 'content'> & { delta: string } {
-  let evt: any
-  try { evt = JSON.parse(data) } catch { throw new DeepSeekError('bad-json', 'stream chunk is not valid JSON') }
-  const ch = evt && evt.choices && evt.choices[0] ? evt.choices[0] : undefined
-  const d = ch && ch.delta && typeof ch.delta.content === 'string' ? ch.delta.content : ''
-  const fr = ch && ch.finish_reason ? ch.finish_reason : undefined
-  if (evt.error) throw new DeepSeekError('server', 'Server stream failed')
-  return { title: ch?.delta?.title, serverToolCalls: ch?.delta?.server_tool_calls, annotations: ch?.delta?.annotations, delta: d, finishReason: fr, usage: parseTokenUsage(evt?.usage) }
+function chatRequest(args: SendTextChatArgs, stream: boolean, gemini: boolean) {
+  args = { ...args, messages: args.messages.filter(hasApiMessageContent) }
+  if (gemini) {
+    try { return teamoGeminiRequest(args, stream) }
+    catch (error) { throw new DeepSeekError('bad-request', String(error)) }
+  }
+  return { endpoint: (args.baseUrl || DEFAULT_BASE).replace(/\/+$/, '') + '/chat/completions', body: chatRequestBody(args, stream) }
+}
+
+export function hasApiMessageContent(message: ApiChatMessage): boolean {
+  return message.role !== 'assistant' || typeof message.content !== 'string' || !!message.content.trim()
+}
+
+function readChatReply(payload: any, gemini: boolean, delta: boolean): StreamTextChatResult {
+  if (payload?.error) throw new DeepSeekError('server', 'Server response failed')
+  if (gemini) return readGeminiReply(payload)
+  const choice = payload?.choices?.[0]
+  const part = delta ? choice?.delta : choice?.message
+  return {
+    content: typeof part?.content === 'string' ? part.content : '',
+    reasoning: typeof part?.reasoning_content === 'string' ? part.reasoning_content : undefined,
+    title: part?.title, serverToolCalls: part?.server_tool_calls, annotations: part?.annotations,
+    finishReason: typeof choice?.finish_reason === 'string' ? choice.finish_reason : undefined,
+    usage: parseTokenUsage(payload?.usage),
+  }
 }
 
 export function streamTextChat(args: StreamTextChatArgs): Promise<StreamTextChatResult> {
@@ -272,15 +289,16 @@ export function streamTextChat(args: StreamTextChatArgs): Promise<StreamTextChat
 }
 
 async function streamTextChatInline(args: StreamTextChatArgs): Promise<StreamTextChatResult> {
-  const { apiKey, baseUrl, model, messages, signal, onDelta } = args
+  const { apiKey, baseUrl, model, signal, onDelta, onReasoningDelta } = args
   if (!apiKey) throw new DeepSeekError('no-api-key', 'missing api key')
-  const endpoint = (baseUrl || DEFAULT_BASE).replace(/\/+$/, '') + '/chat/completions'
+  const gemini = isTeamoGemini(baseUrl, model)
+  const { endpoint, body } = chatRequest(args, true, gemini)
   let res: Response
   try {
     res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + apiKey },
-      body: JSON.stringify(chatRequestBody(args, true)),
+      body: JSON.stringify(body),
       signal,
     })
   } catch (e) {
@@ -302,49 +320,46 @@ async function streamTextChatInline(args: StreamTextChatArgs): Promise<StreamTex
   if (res.headers.get('content-type')?.includes('application/json')) {
     let payload: any
     try { payload = await res.json() } catch { throw new DeepSeekError('bad-json', 'response is not JSON') }
-    const choice = payload?.choices?.[0], content = choice?.message?.content
-    if (typeof content !== 'string' || !hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content')
-    onDelta(content)
-    return { title: choice.message.title, serverToolCalls: choice.message.server_tool_calls, annotations: choice.message.annotations, content, finishReason: choice.finish_reason, usage: parseTokenUsage(payload?.usage) }
+    const reply = readChatReply(payload, gemini, false)
+    if (reply.reasoning) onReasoningDelta?.(reply.reasoning)
+    if (!hasMeaningfulAssistantContent(reply.content)) throw new DeepSeekError('no-content', 'no meaningful assistant content')
+    onDelta(reply.content)
+    return reply
   }
   if (!res.body) throw new DeepSeekError('bad-json', 'no response body')
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   const parser = new SSEParser()
   let content = ''
+  let reasoning = ''
   let title: string | undefined
   let serverToolCalls: unknown[] | undefined
   let annotations: unknown[] | undefined
   let finishReason: string | undefined
   let usage: TokenUsage | undefined
-  let done = false
+  const consume = (data: string) => {
+    if (data === '[DONE]') return false
+    let payload: any
+    try { payload = JSON.parse(data) } catch { throw new DeepSeekError('bad-json', 'stream chunk is not valid JSON') }
+    const reply = readChatReply(payload, gemini, true)
+    if (typeof reply.title === 'string') title = reply.title
+    if (Array.isArray(reply.serverToolCalls)) serverToolCalls = reply.serverToolCalls
+    if (Array.isArray(reply.annotations)) annotations = reply.annotations
+    if (reply.usage) usage = reply.usage
+    if (reply.reasoning) { reasoning += reply.reasoning; onReasoningDelta?.(reply.reasoning) }
+    if (reply.content) { content += reply.content; onDelta(reply.content) }
+    if (reply.finishReason) finishReason = reply.finishReason
+    return true
+  }
   try {
+    let done = false
     for (;;) {
       const { value, done: readDone } = await reader.read()
       if (readDone) break
-      const text = decoder.decode(value, { stream: true })
-      for (const data of parser.feed(text)) {
-        if (data === '[DONE]') { done = true; break }
-        const d = deltaOf(data)
-        if (typeof d.title === 'string') title = d.title
-      if (Array.isArray(d.serverToolCalls)) serverToolCalls = d.serverToolCalls
-      if (Array.isArray(d.annotations)) annotations = d.annotations
-      if (d.usage) usage = d.usage
-        if (d.delta) { content += d.delta; onDelta(d.delta) }
-        if (d.finishReason) finishReason = d.finishReason
-      }
+      done = !parser.feed(decoder.decode(value, { stream: true })).every(consume)
       if (done) break
     }
-    for (const data of parser.finish()) {
-      if (data === '[DONE]') { done = true; continue }
-      const d = deltaOf(data)
-      if (typeof d.title === 'string') title = d.title
-      if (Array.isArray(d.serverToolCalls)) serverToolCalls = d.serverToolCalls
-      if (Array.isArray(d.annotations)) annotations = d.annotations
-      if (d.usage) usage = d.usage
-      if (d.delta) { content += d.delta; onDelta(d.delta) }
-      if (d.finishReason) finishReason = d.finishReason
-    }
+    if (!done && parser.feed(decoder.decode()).every(consume)) parser.finish().every(consume)
   } catch (e) {
     if (signal && signal.aborted) throw new DeepSeekError('aborted', 'stream aborted')
     if (e instanceof DeepSeekError) throw e
@@ -354,7 +369,7 @@ async function streamTextChatInline(args: StreamTextChatArgs): Promise<StreamTex
     reader.releaseLock()
   }
   if (!hasMeaningfulAssistantContent(content)) throw new DeepSeekError('no-content', 'no meaningful assistant content in stream')
-  return { content, finishReason, usage, title, serverToolCalls, annotations }
+  return { content, ...(reasoning ? { reasoning } : {}), finishReason, usage, title, serverToolCalls, annotations }
 }
 // ---- multimodal helpers (used by the store's message conversion; UI never builds this) ----
 export type VisionCapability = 'auto' | 'supports-image' | 'text-only'
@@ -366,7 +381,7 @@ export type VisionCapability = 'auto' | 'supports-image' | 'text-only'
 export function isVisionModel(model: string, capability?: VisionCapability): boolean {
   if (capability === 'supports-image') return true
   if (capability === 'text-only') return false
-  return /vision/i.test(model) || /^deepseek-flash$/i.test(model.trim())
+  return /vision/i.test(model) || /^(deepseek-flash|gemini-3\.8-flash)$/i.test(model.trim())
 }
 export async function buildApiMessages(msgs: import('../engine/types').Message[], toDataUrl: (id: string) => Promise<string | { text: string }>): Promise<ApiChatMessage[]> {
   const out: ApiChatMessage[] = []

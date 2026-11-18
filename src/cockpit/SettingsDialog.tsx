@@ -5,6 +5,7 @@ import {ApiProfiles} from './ApiProfiles'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useSettings, patchSettings, DEFAULT_SETTINGS, useSettingsMutation } from '../engine/settings-store'
 import { testConnection, type VisionCapability } from '../api/deepseek'
+import { isTeamoGemini } from '../api/teamo-gemini'
 import { uiActions, useUi } from '../engine/ui-store'
 import { useSessions } from '../engine/sessions-store'
 import { exportBackupZip, exportConversationMd, exportMarkedOnlyMd, exportConversationBundle, importBackupFile, BackupError } from '../export'
@@ -236,6 +237,7 @@ export function SettingsDialog() {
         </span>
       </div>
       <div className={css.field}><label>Model</label><Input className={css.fieldInput} value={model} onChange={e => setModel(e.target.value)} placeholder="deepseek-flash" /></div>
+      {isTeamoGemini(base, model) && <div className={css.settingsHint}>{tx('使用 Gemini 原生接口。思考摘要可从回复菜单复制。', 'Uses the Gemini native API. Copy thought summaries from the reply menu.')}</div>}
       <div className={css.field}>
         <label>{tx('模型图片能力（Vision）', 'Model image capability (Vision)')}</label>
         <div className={css.appearanceRow} data-testid="settings-vision">

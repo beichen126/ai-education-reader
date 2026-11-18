@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Message } from '../engine/types'
+import { isStableBranchPoint, type Message } from '../engine/types'
 import type { CreateArtifactKind } from '../artifacts/artifact-types'
 import type { StudyCardRating } from '../study-cards/study-card-types'
 import css from './branch.module.css'
 import { tx } from '../engine/locale'
+import { useCopyFeedback } from '../dsh/primitives/use-copy-feedback'
 
 export type CardSaveState = 'idle' | 'saving' | 'saved' | 'failed'
 
@@ -24,18 +25,13 @@ export type MessageActionMenuProps = {
 
 type MenuItem = { testId: string; label: string; action: () => void; disabled?: boolean }
 
-/**
- * v2.2.0 §1.2 message menu. Three first-level entries, and the special-branch group as a
- * real submenu — never a flat list of three unrelated actions:
- *
- *   从这里分支
- *   开启特殊分支  ›   整理成笔记 / 生成题目 / 自定义提示词…
- *   保存本轮回复为学习卡片
- */
 export function MessageActionMenu(props: MessageActionMenuProps) {
   const { message, isStreaming, cardState, cardRating, onCreateBranch, onCreateArtifact, onCreateCustomArtifact, onSaveCard, onViewSavedCard, onClose } = props
   const ref = useRef<HTMLDivElement | null>(null)
   const [specialOpen, setSpecialOpen] = useState(false)
+  const canBranch = isStableBranchPoint(message, { streaming: isStreaming })
+  const reasoning = typeof message.reasoning === 'string' ? message.reasoning : ''
+  const copy = useCopyFeedback(reasoning)
   // Only a completed, non-empty, non-streaming assistant reply can become a card.
   const canSaveCard = message.role === 'assistant' && !isStreaming && message.status === undefined && message.content.trim().length > 0
   const saved = cardState === 'saved'
@@ -66,7 +62,7 @@ export function MessageActionMenu(props: MessageActionMenuProps) {
   const onMenuKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'ArrowDown') { event.preventDefault(); moveFocus(1) }
     else if (event.key === 'ArrowUp') { event.preventDefault(); moveFocus(-1) }
-    else if (event.key === 'ArrowRight') { event.preventDefault(); setSpecialOpen(true); window.requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>('[data-testid="message-action-note"]')?.focus({ preventScroll: true })) }
+    else if (event.key === 'ArrowRight' && canBranch) { event.preventDefault(); setSpecialOpen(true); window.requestAnimationFrame(() => ref.current?.querySelector<HTMLElement>('[data-testid="message-action-note"]')?.focus({ preventScroll: true })) }
     else if (event.key === 'ArrowLeft' && specialOpen) { event.preventDefault(); setSpecialOpen(false); ref.current?.querySelector<HTMLElement>('[data-testid="message-action-special"]')?.focus({ preventScroll: true }) }
   }
 
@@ -80,6 +76,10 @@ export function MessageActionMenu(props: MessageActionMenuProps) {
 
   return (
     <div ref={ref} className={css.menu} role="menu" aria-label={tx('消息操作', 'Message actions')} data-testid="message-action-menu" style={{ position: 'absolute', top: '100%', left: 0, right: 'auto', zIndex: 30 }} onKeyDown={onMenuKeyDown}>
+      {!isStreaming && reasoning.trim() && <button type="button" className={css.menuItem} role="menuitem" data-testid="message-action-copy-reasoning" onClick={copy.onCopy}>
+        {copy.copied ? tx('已复制思维链', 'Reasoning copied') : copy.failed ? tx('复制失败，重试', 'Copy failed, retry') : tx('复制思维链', 'Copy reasoning')}
+      </button>}
+      {canBranch && <>
       <button type="button" className={css.menuItem} role="menuitem" data-testid="message-action-branch" onClick={() => { onCreateBranch(); onClose() }}>{tx('从这里分支', 'Branch from here')}</button>
       <button
         type="button"
@@ -132,6 +132,7 @@ export function MessageActionMenu(props: MessageActionMenuProps) {
           </span>
         </div>
       )}
+      </>}
     </div>
   )
 }

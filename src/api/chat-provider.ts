@@ -1,10 +1,9 @@
 import type { Settings } from '../engine/settings-store'
 import type { RejectedSend } from '../engine/send-outcome'
-import { errorKindLabel, streamTextChat, type StreamTextChatArgs } from './deepseek'
+import { errorKindLabel, hasApiMessageContent, streamTextChat, type StreamTextChatArgs } from './deepseek'
 import { getLocalStatus, LocalProviderError, streamLocalChat } from './openai-local'
 import { tx } from '../engine/locale'
 
-// Existing configurations remain on the original transport; no model-name inference.
 export async function providerPreflight(settings: Settings, signal?: AbortSignal): Promise<RejectedSend | undefined> {
   if (settings.chatProvider !== 'openai-local') return settings.apiKey ? undefined : { kind: 'rejected', code: 'no-api-key', message: errorKindLabel('no-api-key') }
   try {
@@ -18,6 +17,6 @@ export async function providerPreflight(settings: Settings, signal?: AbortSignal
 }
 export function streamProviderChat(settings: Settings, args: StreamTextChatArgs): Promise<import('./deepseek').StreamTextChatResult> {
   return settings.chatProvider === 'openai-local'
-    ? streamLocalChat({ ...args, model: settings.openaiLocalModel || '' })
+    ? streamLocalChat({ ...args, messages: args.messages.filter(hasApiMessageContent), model: settings.openaiLocalModel || '' })
     : streamTextChat(args)
 }
