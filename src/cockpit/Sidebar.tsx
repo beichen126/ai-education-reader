@@ -1,5 +1,5 @@
 import { generationRegistry } from '../engine/generation-registry'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useSessions, sessionsActions, type ChatSession } from '../engine/sessions-store'
 import { localizedConversationTitle, t, tx } from '../engine/locale'
 import { uiActions } from '../engine/ui-store'
@@ -23,8 +23,6 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   const sessions = useSessions(s => s.list)
   const current = useSessions(s => s.current)
   const currentConv = useSessions(s => s.byId[s.current || ''])
-  const status = useSessions(s => s.status)
-  const busy = status === 'sending' || status === 'streaming'
   const [q, setQ] = useState('')
   const { fs, toggle } = useFullscreen()
   // Search the same text the user sees (displayTitle), so auto/manual titles are findable.
@@ -96,7 +94,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
       <div className={css.sidebarSection}>{tx('会话', 'Chats')}</div>
       <div className={css.sidebarSearch}><Input icon={<IconSearchOutline16 />} value={q} onChange={e => setQ(e.target.value)} placeholder={t('sidebar.search')} /></div>
       <div className={css.sidebarList}>
-        {filtered.map(s => <SessionRow key={s.id} session={s} active={s.id === current} busy={busy && generationRegistry.getKey()?.split(':')[1] === s.id} narrow={narrow} />)}
+        {filtered.map(s => <SessionRow key={s.id} session={s} active={s.id === current} narrow={narrow} />)}
         {filtered.length === 0 && <div className={css.sidebarEmpty}>{tx('暂无会话', 'No chats')}</div>}
       </div>
       <div className={css.sidebarFoot}>
@@ -107,7 +105,8 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   )
 }
 
-function SessionRow({ session, active, busy, narrow }: { session: ChatSession; active: boolean; busy: boolean; narrow: boolean }) {
+function SessionRow({ session, active, narrow }: { session: ChatSession; active: boolean; narrow: boolean }) {
+  const busy = useSyncExternalStore(generationRegistry.subscribe, () => !!generationRegistry.keyForConversation(session.id))
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renameVal, setRenameVal] = useState('')

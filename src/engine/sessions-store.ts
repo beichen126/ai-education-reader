@@ -9,7 +9,7 @@ import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError } fr
 import { deleteConvAnnotations } from '../annotations/annotation-store'
 import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
 import { runThreadReply, type ReplyMetadata, type ReplyThread } from './stream-reply'
-import { generationRegistry, genRootKey, type GenerationLease } from './generation-registry'
+import { generationRegistry, genBranchKey, genRootKey, type GenerationLease } from './generation-registry'
 import { attachPdfContexts } from '../pdf/pdf-message-context'
 import { getBranch } from '../branches/branch-store'
 import { prepareAcceptedSendContext, type AcceptedSendContext } from '../prompts/prompt-send'
@@ -30,17 +30,19 @@ export function makeSession(title: string = NEW_TITLE): Conversation {
 export type SessionsState = {
   list: Conversation[]; byId: Record<string, Conversation>; current: string | undefined; ready: boolean
   status: RequestStatus; sendError: string | undefined; sendErrorTarget?: SendTarget; focusMessage?: MessageFocusTarget
+  sendErrors: ReadonlyMap<string, string>
 }
 
-let state: SessionsState = { list: [], byId: {}, current: undefined, ready: false, status: 'idle', sendError: undefined }
+let state: SessionsState = { list: [], byId: {}, current: undefined, ready: false, status: 'idle', sendError: undefined, sendErrors: new Map() }
 const subs = new Set<() => void>()
 function setState(next: SessionsState) { state = next; subs.forEach(f => f()) }
 const subscribe = (fn: () => void) => { subs.add(fn); return () => { subs.delete(fn) } }
-// The generation registry is the single source of the global busy/stream status. A subscription
-// keeps the sessions store's `state.status` in sync so the top status bar + 停止生成 button
-// reflect BOTH root and branch generations. Error/idle transitions set by the stream handlers
-// run AFTER this (registry.end -> idle, then setError -> error), so error state is preserved.
-generationRegistry.subscribe(() => { setState({ ...state, status: generationRegistry.getStatus() }) })
+// Legacy observers use an aggregate status. The composer subscribes to its own
+// generation key so another conversation cannot change its controls.
+generationRegistry.subscribe(() => {
+  const status = generationRegistry.getStatus()
+  setState({ ...state, status: status === 'idle' && state.sendErrorTarget?.conversationId === state.current && state.sendError ? 'error' : status })
+})
 const getSnapshot = () => state
 export function useSessions<T>(sel: (s: SessionsState) => T): T { return useSyncExternalStore(subscribe, () => sel(state)) }
 export function getSessionsStatus(): RequestStatus { return state.status }
@@ -48,13 +50,20 @@ export function getSessionsSendError(): string | undefined { return state.sendEr
 export function getSessionsSendErrorTarget(): SendTarget | undefined { return state.sendErrorTarget }
 export function getSessionsCurrent(): string | undefined { return state.current }
 export function getSessionsFocusTarget(): MessageFocusTarget | undefined { return state.focusMessage }
+function sendErrorKey({ conversationId, branchId }: SendTarget): string {
+  return branchId ? genBranchKey(conversationId, branchId) : genRootKey(conversationId)
+}
 export function setSessionsSendError(error: SendErrorState): void {
-  setState({ ...state, status: 'error', sendError: error.message, sendErrorTarget: { conversationId: error.conversationId, ...(error.branchId ? { branchId: error.branchId } : {}) } })
+  setState({ ...state, status: 'error', sendError: error.message, sendErrorTarget: { conversationId: error.conversationId, ...(error.branchId ? { branchId: error.branchId } : {}) }, sendErrors: new Map(state.sendErrors).set(sendErrorKey(error), error.message) })
 }
 export function clearSessionsSendError(target?: SendTarget): void {
-  if (target && (!state.sendErrorTarget || state.sendErrorTarget.conversationId !== target.conversationId || state.sendErrorTarget.branchId !== target.branchId)) return
-  if (!state.sendError && state.status !== 'error') return
-  setState({ ...state, status: generationRegistry.getStatus(), sendError: undefined, sendErrorTarget: undefined })
+  const key = target && sendErrorKey(target)
+  if (key ? !state.sendErrors.has(key) : !state.sendErrors.size && state.status !== 'error') return
+  const sendErrors = new Map(state.sendErrors)
+  if (key) sendErrors.delete(key)
+  else sendErrors.clear()
+  const clearLatest = !key || (state.sendErrorTarget && sendErrorKey(state.sendErrorTarget) === key)
+  setState({ ...state, sendErrors, ...(clearLatest ? { status: generationRegistry.getStatus(), sendError: undefined, sendErrorTarget: undefined } : {}) })
 }
 
 /** Present every rejected outcome through one policy/state transition. */
@@ -76,15 +85,12 @@ function index(list: Conversation[]): Record<string, Conversation> {
 function sortList(list: Conversation[]): Conversation[] { return [...list].sort((a, b) => b.updatedAt - a.updatedAt) }
 function toState(list: Conversation[], current?: string, ready = state.ready, status = state.status, sendError = state.sendError, sendErrorTarget = state.sendErrorTarget): SessionsState {
   const sorted = sortList(list)
-  return { list: sorted, byId: index(sorted), current: current ?? sorted[0]?.id, ready, status, sendError, sendErrorTarget, focusMessage: state.focusMessage }
+  return { list: sorted, byId: index(sorted), current: current ?? sorted[0]?.id, ready, status, sendError, sendErrorTarget, sendErrors: state.sendErrors, focusMessage: state.focusMessage }
 }
-function upsertState(conv: Conversation, extra?: Partial<SessionsState>) {
-  setState({ ...toState(state.list.map(c => c.id === conv.id ? conv : c), state.current), ...(extra || {}) })
+function upsertState(conv: Conversation) {
+  setState(toState(state.list.map(c => c.id === conv.id ? conv : c), state.current))
 }
 const LAST_CONV = 'lastConversationId'
-let abortControllerRef: AbortController | null = null
-/** Id of a conversation whose user-message acceptance transaction is in flight. */
-const acceptingRef = { current: null as string | null }
 
 type PendingSend = { outcome: Promise<SendOutcome> }
 type RejectedOutcome = Extract<SendOutcome, { kind: 'rejected' }>
@@ -92,12 +98,6 @@ function rejectSend(target: SendTarget, outcome: RejectedOutcome, intent: SendIn
   return presentRejectedSend(target, outcome, intent)
 }
 
-/** An explicitly-tracked active reply generation. Prevents the accidental mixture of
- *  'a naked global AbortController' + a stale snapshot. One generation globally.
- *  `controller` is the AbortController; a deletion aborts it; view switches keep it alive; a NEW generation
- *  replaces it (aborting the previous). */
-type ActiveGeneration = { conversationId: string; assistantId: string; controller: AbortController }
-let activeGeneration: ActiveGeneration | null = null
 
 /** Per-conversation serialized durable-write queue. Every persistence of a conversation's
  *  streaming assistant content is chained AFTER the previous durable write, so a stale
@@ -120,7 +120,8 @@ export const sessionsActions = {
   async newChat(): Promise<string> {
     const c = makeSession()
     setState({ ...toState([c, ...state.list], c.id), focusMessage: undefined })
-    await saveConversation(c); await setSetting(LAST_CONV, c.id)
+    await saveConversation(c)
+    if (state.current === c.id) await setSetting(LAST_CONV, c.id)
     return c.id
   },
   async open(id: string) {
@@ -151,7 +152,7 @@ export const sessionsActions = {
   clearMessageFocus() {
     if (state.focusMessage) setState({ ...state, focusMessage: undefined })
   },
-  stopGenerating() { generationRegistry.cancel() },
+  stopGenerating(key?: string) { if (key) generationRegistry.stop(key); else generationRegistry.cancel() },
   /**
    * Send a user message and resolve with the terminal outcome. Acceptance still happens
    * before streaming, but the mutation lock is released before the model request runs.
@@ -160,10 +161,7 @@ export const sessionsActions = {
     const target: SendTarget = { conversationId: id }
     const intent: SendIntent = options.quickFollowUp ? 'quick-follow-up' : 'composer'
     clearSessionsSendError(target)
-    if (state.status === 'sending' || state.status === 'streaming') return rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, intent)
     const locked = await tryWithConversationMutationLock<PendingSend>(id, async () => {
-      if (state.status === 'sending' || state.status === 'streaming') return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, intent)) }
-      if (acceptingRef.current === id) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '消息正在提交，请稍候。' }, intent)) }
       const conv = state.byId[id]
       if (!conv) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'conversation-not-found', message: '当前会话不存在。' }, intent)) }
       const invalidInput = validateSendInput(content, imageIds, options.quickFollowUp)
@@ -171,19 +169,19 @@ export const sessionsActions = {
       const settings = getSettingsSnapshot()
       const now = Date.now()
       const controller = new AbortController()
-      const lease = generationRegistry.acquire(genRootKey(id), controller, 'sending')
+      const lease = generationRegistry.acquireChat(genRootKey(id), id, controller)
       if (!lease) return { outcome: Promise.resolve(rejectSend(target, { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }, intent)) }
-      acceptingRef.current = id
       let acceptedSend: AcceptedSendContext
       let afterUser: Conversation
       try {
         const providerRejection = await providerPreflight(settings, controller.signal)
-        if (!lease.isCurrent()) { acceptingRef.current = null; lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
-        if (providerRejection) { acceptingRef.current = null; lease.release(); return { outcome: Promise.resolve(rejectSend(target, providerRejection, intent)) } }
+        if (!lease.isCurrent()) { lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
+        if (providerRejection) { lease.release(); return { outcome: Promise.resolve(rejectSend(target, providerRejection, intent)) } }
         const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, ...(options.documents?.length ? { documents: options.documents.map(d=>({...d})) } : {}), images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
         const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
         const candidate: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
-        upsertState(candidate, { status: 'sending', sendError: undefined, sendErrorTarget: undefined })
+        if (!lease.isCurrent()) { lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
+        upsertState(candidate)
         const prepared = await prepareAcceptedSendContext({
           threadRef: { type: 'root', conversationId: id },
           messagesBeforeAcceptance: conv.messages,
@@ -194,18 +192,22 @@ export const sessionsActions = {
         })
         acceptedSend = prepared.context
         afterUser = { ...candidate, promptTransitions: prepared.nextLocalTransitions }
-        upsertState(afterUser, { status: 'sending', sendError: undefined, sendErrorTarget: undefined })
-        await commitAcceptedUserMessage(afterUser, id, draftSettingKey(id), options.draftDisposition ?? 'clear')
-        if (state.current && state.current !== id) await setSetting(LAST_CONV, state.current)
+        if (!lease.isCurrent()) {
+          lease.release()
+          if (state.byId[id]) upsertState(conv)
+          return { outcome: Promise.resolve({ kind: 'aborted' } as const) }
+        }
+        upsertState(afterUser)
+        const viewed = state.current ?? id
+        await commitAcceptedUserMessage(afterUser, viewed, draftSettingKey(id), options.draftDisposition ?? 'clear')
+        if (state.current && state.current !== viewed) void setSetting(LAST_CONV, state.current).catch(() => {})
       } catch (e) {
         const rejected: RejectedOutcome = { kind: 'rejected', code: 'acceptance-failed', message: '消息发送失败，请重试。' }
-        acceptingRef.current = null
         lease.release()
-        upsertState(conv, { status: 'idle', sendError: undefined, sendErrorTarget: undefined })
+        if (state.byId[id]) upsertState(conv)
         presentRejectedSend(target, rejected, intent)
         return { outcome: Promise.resolve(rejected) }
       }
-      acceptingRef.current = null
       if ((options.draftDisposition ?? 'clear') === 'clear') clearDraftMemory(id)
       const outcome = runReplyStream(id, settings, acceptedSend, lease)
       return { outcome }
@@ -231,7 +233,6 @@ export const sessionsActions = {
   async remove(id: string) {
     // If a reply stream is actively generating for THIS conversation, abort it. It must
     // never resurrect a deleted conversation or recreate deleted attachments/messages.
-    if (activeGeneration && activeGeneration.conversationId === id) { activeGeneration.controller.abort(); activeGeneration = null; abortControllerRef = null }
     generationRegistry.cancelForConversation(id)
     // Invalidate any pending durable write for this conversation so a late checkpoint cannot
     // recreate the deleted row (P0-2).
@@ -254,7 +255,7 @@ export const sessionsActions = {
     for (const img of draft.imageIds) { if (!referenced.has(img)) { try { await deleteAttachment(img) } catch {} } }
     await deleteDraft(id)
     // Persist the REAL current session (not the top-of-list one) so reloads reopen it.
-    await setSetting(LAST_CONV, next.current ?? '')
+    await setSetting(LAST_CONV, state.current ?? '')
   },
 }
 
@@ -285,7 +286,7 @@ class RootReplyThread implements ReplyThread {
     this.assistantId = assistantId
     const cur = state.byId[this.id]; if (!cur) return
     const placeholder: Message = { id: assistantId, role: 'assistant', content: '', images: [], createdAt: now, updatedAt: now }
-    upsertState({ ...cur, updatedAt: now, messages: [...cur.messages, placeholder] }, { status: 'streaming', sendError: undefined })
+    upsertState({ ...cur, updatedAt: now, messages: [...cur.messages, placeholder] })
   }
   updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage, metadata?: ReplyMetadata): void {
     const cur = state.byId[this.id]; if (!cur) return
@@ -293,7 +294,7 @@ class RootReplyThread implements ReplyThread {
     if (!last || last.id !== this.assistantId) return
     if (last.content === content && !usage && !metadata) return
     const updatedMsg: Message = { ...last, content, ...metadata, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }
-    upsertState({ ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] }, { status: 'streaming', sendError: undefined })
+    upsertState({ ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] })
   }
   persistCheckpoint(content: string): void {
     const cur = state.byId[this.id]; if (!cur) return
@@ -317,8 +318,8 @@ class RootReplyThread implements ReplyThread {
   async persistFinal(): Promise<void> { const cur = state.byId[this.id]; if (cur) await persistConversation(cur) }
   async drainWrites(): Promise<void> { await drainWrites(this.id) }
   exists(): boolean { return !!state.byId[this.id] }
-  setStreaming(): void { setState({ ...state, status: 'streaming', sendError: undefined, sendErrorTarget: undefined }) }
-  setIdle(): void { setState({ ...state, status: 'idle', sendError: undefined, sendErrorTarget: undefined }) }
+  setStreaming(): void { /* the generation lease publishes status */ }
+  setIdle(): void { /* the generation lease publishes status */ }
   setError(error: SendFailure): void { setSessionsSendError({ ...error, conversationId: this.id }) }
 }
 
@@ -330,16 +331,7 @@ async function runReplyStream(id: string, settings: ReturnType<typeof getSetting
     setSessionsSendError({ ...failure, conversationId: id })
     return failure
   }
-  const controller = lease.controller
-  const thread = new RootReplyThread(id)
-  const outcome = await runThreadReply(thread, settings, controller, (c, assistantId) => {
-    abortControllerRef = c
-    activeGeneration = { conversationId: id, assistantId, controller: c }
-  }, acceptedSend, lease)
-  // The engine already flushed + drained + set status; clear ownership deterministically.
-  activeGeneration = null
-  abortControllerRef = null
-  return outcome
+  return runThreadReply(new RootReplyThread(id), settings, lease.controller, undefined, acceptedSend, lease)
 }
 export async function initStore(): Promise<void> {
   const convs = await listConversations()

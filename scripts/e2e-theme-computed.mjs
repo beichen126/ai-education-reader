@@ -58,8 +58,8 @@ assert(D.foreground === 'rgb(255, 255, 255)', 'DARK: foreground on primary is wh
 // --- study-highlight semantic token: single canonical rule, dark differs from light, low-glare ---
 assert(D.highlight !== '' , 'DARK: --dsw-specific-study-highlight defined (got ' + D.highlight + ')')
 assert(D.highlight !== L.highlight, 'DARK: study-highlight token differs from light (got ' + D.highlight + ')')
-assert(L.highlight === 'rgb(217, 217, 217)', 'LIGHT: study-highlight keeps the classic light value (got ' + L.highlight + ')')
-assert(D.highlight === 'rgb(66, 84, 106)', 'DARK: study-highlight is low-glare slate, NOT near-white (got ' + D.highlight + ')')
+assert(L.highlight === 'rgb(203, 220, 255)', 'LIGHT: study-highlight uses the shared light blue (got ' + L.highlight + ')')
+assert(D.highlight === 'rgb(52, 84, 132)', 'DARK: study-highlight uses the shared dark blue (got ' + D.highlight + ')')
 
 // Exactly one canonical global ::highlight(study-highlight) paint rule (annotations.css).
 const ruleCount = await page.evaluate(() => {

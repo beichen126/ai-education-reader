@@ -9,14 +9,15 @@ import { VoiceInput } from '../speech/VoiceInput'
 import { readAloud } from '../speech/read-aloud'
 import { GenUiActions } from '../genui/GenUiBlock'
 
-import { Fragment, lazy, memo, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, lazy, memo, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties } from 'react'
 import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/sessions-store'
 import { patchSettings, useSettings, useSettingsMutation } from '../engine/settings-store'
 import { formatTokenCount } from '../engine/token-usage'
 import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel } from '../engine/attachment-service'
-import { useDraft, getDraft, setDraftText, addDraftImages, removeDraftImage, updateDraftMemory } from '../engine/draft-store'
+import { useDraftImageIds, getDraft, removeDraftImage, updateDraftMemory } from '../engine/draft-store'
+import { ComposerInput } from './ComposerInput'
 import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
 import { localizedErrorText, localizedStudyCardTitle, t, tx, useUiLanguage } from '../engine/locale'
 import { IconCloseOutline16, IconFolderOpenOutline16, Button } from '../dsh/primitives'
@@ -50,6 +51,7 @@ import { generateArtifact, ArtifactGenerationError } from '../artifacts/artifact
 import { runBranchReply } from '../engine/branch-thread'
 import { branchThreadKey, getBranchDraft, setBranchDraftText, addBranchDraftImages, removeBranchDraftImage, clearBranchDraftMemory } from '../engine/draft-store'
 import { useBranchChat } from './use-branch-chat'
+import { setActiveBranch } from '../branches/branch-store'
 import { buildEffectivePromptPath } from '../prompts/effective-prompt-path'
 import { ConversationPromptInspector } from '../prompts/ConversationPromptInspector'
 import { resolveMessageNavigation } from './message-navigation'
@@ -74,9 +76,6 @@ export function Conversation() {
   useUiLanguage()
   const session = useSessions(s => s.byId[s.current || ''])
   const focusMessage = useSessions(s => s.focusMessage)
-  const status = useSessions(s => s.status)
-  const sendError = useSessions(s => s.sendError)
-  const sendErrorTarget = useSessions(s => s.sendErrorTarget)
   // Local subscription access never requires a browser API key; readiness is
   // checked before accepting a message, not inferred from the DeepSeek key.
   const hasKey = useSettings(s => s.chatProvider === 'openai-local' || !!s.apiKey)
@@ -146,13 +145,19 @@ export function Conversation() {
     target.scrollIntoView({ behavior: 'smooth', block: 'center' })
     sessionsActions.clearMessageFocus()
   }, [session, focusMessage, branchChat.branches, branchChat.ready, branchChat.activeBranchId, branchChat.switchBranch, messages.length])
-  const busy = status === 'sending' || status === 'streaming'
-  const generationKey = generationRegistry.getKey()
-  const generatingConversationId = generationKey?.startsWith('root:') || generationKey?.startsWith('branch:') ? generationKey.split(':')[1] : undefined
-  const viewingGeneration = generationKey === (branchChat.activeBranchId ? genBranchKey(session?.id || '', branchChat.activeBranchId) : genRootKey(session?.id || ''))
+  const conversationId = session?.id ?? ''
+  const generationKey = branchChat.activeBranchId ? genBranchKey(conversationId, branchChat.activeBranchId) : genRootKey(conversationId)
+  const status = useSyncExternalStore(generationRegistry.subscribe, () => generationRegistry.getStatus(generationKey))
+  const ownerKey = useSyncExternalStore(generationRegistry.subscribe, () => generationRegistry.keyForConversation(conversationId))
+  const exclusive = useSyncExternalStore(generationRegistry.subscribe, generationRegistry.exclusiveStatus) !== 'idle'
+  const otherKey = useSyncExternalStore(generationRegistry.subscribe, () => generationRegistry.otherChatKey(generationKey))
+  const backgroundKey = (ownerKey && ownerKey !== generationKey ? ownerKey : otherKey)
+  const [, backgroundConversationId, backgroundBranchId] = backgroundKey?.split(':') ?? []
+  const busy = !!ownerKey || exclusive
+  const visibleSendError = useSessions(s => s.sendErrors.get(generationKey))
   const promptManagerOpen = useUi(s => s.promptManagerOpen)
   const lastMsg0 = lastMsg
-  const activeStreamingId = busy && viewingGeneration && lastMsg0 && lastMsg0.role === 'assistant' ? lastMsg0.id : undefined
+  const activeStreamingId = status === 'streaming' && lastMsg0?.role === 'assistant' ? lastMsg0.id : undefined
   const [menuMsgId, setMenuMsgId] = useState<string | null>(null)
   const [creating, setCreating] = useState<{ kind: CreateArtifactKind; messageId: string; customEntry?: boolean } | null>(null)
   const [creatingBusy, setCreatingBusy] = useState(false)
@@ -174,11 +179,6 @@ export function Conversation() {
   }, [promptPath])
   const initialTransition = messages.length > 0 ? transitionByBoundary.get(null) : undefined
   const activeThread = session ? (branchChat.activeBranchId ? { type: 'branch' as const, conversationId: session.id, branchId: branchChat.activeBranchId } : { type: 'root' as const, conversationId: session.id }) : undefined
-  const visibleSendError = sendError
-    && sendErrorTarget?.conversationId === session?.id
-    && (sendErrorTarget.branchId ?? undefined) === (branchChat.activeBranchId ?? undefined)
-    ? sendError
-    : undefined
   useEffect(() => {
     if (promptManagerOpen) return
     let cancelled = false
@@ -234,7 +234,10 @@ export function Conversation() {
    * service, so an unmount mid-flight still completes; only the UI update is guarded.
    */
   const mountedRef = useRef(true)
-  useEffect(() => () => { mountedRef.current = false }, [])
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
   const saveCard = async (messageId: string, rating?: StudyCardRating) => {
     const conversationId = session?.id
     if (!conversationId || !activeThread) return
@@ -293,9 +296,12 @@ export function Conversation() {
           <a className={css.noKeyLink} href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer">{tx('获取 DeepSeek API Key', 'Get a DeepSeek API key')}</a>
         </div>
       )}
-      {busy && generatingConversationId && !viewingGeneration && <div className={css.noKeyBanner} data-testid="background-generation">
-        <span>{tx('其他会话正在生成', 'Another chat is generating')}</span>
-        <button className={css.noKeyBtn} onClick={() => void sessionsActions.open(generatingConversationId)}>{tx('返回查看', 'View response')}</button>
+      {backgroundConversationId && <div className={css.noKeyBanner} data-testid="background-generation">
+        <span>{backgroundConversationId === conversationId ? tx('其他路线正在生成', 'Another branch is generating') : tx('其他会话正在生成', 'Another chat is generating')}</span>
+        <button className={css.noKeyBtn} onClick={() => {
+          if (backgroundConversationId === conversationId) void branchChat.switchBranch(backgroundBranchId)
+          else void setActiveBranch(backgroundConversationId, backgroundBranchId).then(() => sessionsActions.open(backgroundConversationId))
+        }}>{tx('返回查看', 'View response')}</button>
       </div>}
       {visibleSendError && !busy && <div className={css.errorBanner} role="alert" aria-live="assertive">{localizedErrorText(visibleSendError, 'Unable to send the message. Try again.')}</div>}
       {session && promptPath && (<BranchBar
@@ -343,7 +349,7 @@ export function Conversation() {
           </>}
         </div>
         <div style={{ padding: '0.25rem 0.75rem', display: 'flex', gap: '0.5rem' }}><Button size="sm" variant="ghost" data-testid="conversation-learning-center" onClick={openLibrary}>{tx('学习中心', 'Learning center')}</Button></div>
-        <Composer key={`${session?.id}:${branchChat.activeBranchId || "root"}`} sessionId={session?.id} busy={busy} backgroundBusy={busy && !viewingGeneration} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
+        <Composer key={generationKey} sessionId={session?.id} busy={busy} generationKey={generationKey} status={status} thread={activeThread} onBranchSent={() => void branchChat.refresh()} />
       </div>
       {turns.length > 1 && <ConversationTurnRail turns={turns} activeId={activeTurnId} onSelect={(turn) => {
         const el = listRef.current
@@ -574,7 +580,7 @@ function ContextSummary({ messages }: { messages: readonly TMessage[] }) {
   </div>
 }
 
-function Composer({ sessionId, busy, backgroundBusy, thread, onBranchSent }: { sessionId: string | undefined; busy: boolean; backgroundBusy?: boolean; thread?: { type: 'root' | 'branch'; conversationId: string; branchId?: string }; onBranchSent?: () => void }) {
+function Composer({ sessionId, busy, generationKey, status, thread, onBranchSent }: { sessionId: string | undefined; busy: boolean; generationKey: string; status: 'idle' | 'sending' | 'streaming'; thread?: { type: 'root' | 'branch'; conversationId: string; branchId?: string }; onBranchSent?: () => void }) {
   // Draft is keyed by thread (root conversation or branch), so switching A<->B shows each one's own text/images.
   const isBranch = thread?.type === 'branch'
   const key = isBranch ? branchThreadKey(thread!.branchId!) : (sessionId ?? '__none__')
@@ -585,29 +591,10 @@ function Composer({ sessionId, busy, backgroundBusy, thread, onBranchSent }: { s
   const [documentDraft,setDocumentDraft]=useState<{key:string;docs:DeepSeekDocument[]}>({key:'',docs:[]})
   const documents=documentDraft.key===key?documentDraft.docs:[]
   const supportsDocuments=useSettings(s=>s.chatProvider!=='openai-local'&&isOfficialDeepSeek(s.apiBaseUrl)&&s.model==='deepseek-flash')
-  const draft = useDraft(key)
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const picIds = useDraftImageIds(key)
   const webSearchEnabled = useSettings(s => s.webSearchEnabled === true)
   const openaiWebSearch = useSettings(s => s.chatProvider === 'openai-local')
-  const preparing = useSessions(s => s.status === 'sending')
   const settingsPending = useSettingsMutation().status === 'pending'
-  useLayoutEffect(() => {
-    const element = textareaRef.current
-    if (!element) return
-    const resize = () => {
-      const maxHeight = Math.max(44, (window.visualViewport?.height ?? window.innerHeight) / 4)
-      element.style.height = 'auto'
-      element.style.height = Math.min(element.scrollHeight + 2, maxHeight) + 'px'
-      element.style.overflowY = element.scrollHeight + 2 > maxHeight ? 'auto' : 'hidden'
-    }
-    resize()
-    let width = element.parentElement?.clientWidth
-    const observer = new ResizeObserver(() => { const next = element.parentElement?.clientWidth; if (next !== width) { width = next; resize() } })
-    if (element.parentElement) observer.observe(element.parentElement)
-    window.addEventListener('resize', resize)
-    window.visualViewport?.addEventListener('resize', resize)
-    return () => { observer.disconnect(); window.removeEventListener('resize', resize); window.visualViewport?.removeEventListener('resize', resize) }
-  }, [draft.text, key])
   const [openId, setOpenId] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | undefined>(undefined)
   const [pdfPanel, setPdfPanel] = useState<{ open: boolean; file?: File }>({ open: false })
@@ -684,10 +671,8 @@ function Composer({ sessionId, busy, backgroundBusy, thread, onBranchSent }: { s
     window.addEventListener('mousedown', onDown)
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mousedown', onDown) }
   }, [attachMenuOpen])
-  const text = draft.text
-  const picIds = draft.imageIds
   const metas = useAttachmentMetas(picIds)
-  const composerItems = buildAttachmentDisplayItems(picIds, metas)
+  const composerItems = useMemo(() => buildAttachmentDisplayItems(picIds, metas), [picIds, metas])
   const removeGroup = (item: Extract<AttachmentDisplayItem, { type: 'pdf-group' }>) => {
     for (const id of item.attachmentIds) { removeDraftImage(key, id); void deleteAttachment(id) }
   }
@@ -698,15 +683,17 @@ function Composer({ sessionId, busy, backgroundBusy, thread, onBranchSent }: { s
     // attachment metadata is durable but the Draft reference is missing.
     try {
       const draftNow = getDraft(key)
+      const draftCommit = { getCurrentDraft: () => getDraft(key) }
       let atts
       if (isBranch && thread) {
-        atts = await saveGeneratedImagesAndBranchDraft([...files].map((f) => ({ blob: f, name: f.name })), { branchId: thread.branchId!, text: draftNow.text, existingImageIds: draftNow.imageIds })
+        atts = await saveGeneratedImagesAndBranchDraft([...files].map((f) => ({ blob: f, name: f.name })), { branchId: thread.branchId!, text: draftNow.text, existingImageIds: draftNow.imageIds }, draftCommit)
       } else {
-        atts = await saveImagesAndDraft([...files], { conversationId: key, text: draftNow.text, existingImageIds: draftNow.imageIds })
+        atts = await saveImagesAndDraft([...files], { conversationId: key, text: draftNow.text, existingImageIds: draftNow.imageIds }, draftCommit)
       }
       // The durable draft row was already committed in the same txn; update memory WITHOUT a
       // second DB mutation (no duplicate persist).
-      updateDraftMemory(key, { text: draftNow.text, imageIds: [...new Set([...draftNow.imageIds, ...atts.map(a => a.id)])] })
+      const latest = getDraft(key)
+      updateDraftMemory(key, { text: latest.text, imageIds: [...new Set([...latest.imageIds, ...atts.map(a => a.id)])] })
       setPhotoError(undefined)
     } catch (e: any) {
       setPhotoError(attachmentErrorLabel(e?.kind || 'read-failed'))
@@ -727,30 +714,23 @@ function Composer({ sessionId, busy, backgroundBusy, thread, onBranchSent }: { s
   }
   // User removes a pending draft image explicitly -> the attachment is gone for good.
   const removePic = (id: string) => { removeDraftImage(key, id); void deleteAttachment(id) }
-  // Focus drives an immediate jump above the on-screen keyboard (measured once, no polling).
-  const onFocusJump = (e: any) => {
-    try { e.currentTarget.scrollIntoView({ block: 'nearest', behavior: 'auto' }) } catch {}
-    const vv = window.visualViewport
-    const inset = vv ? Math.max(0, window.innerHeight - vv.height) : 0
-    if (inset > 0) document.documentElement.style.setProperty('--dsw-keyboard-inset', inset + 'px')
-  }
-  const onBlurReset = () => { document.documentElement.style.setProperty('--dsw-keyboard-inset', '0px') }
   const send = async () => {
     if (busy) return
+    const { text, imageIds } = getDraft(key)
     const sendTarget = isBranch && thread
       ? { conversationId: thread.conversationId, branchId: thread.branchId }
       : sessionId ? { conversationId: sessionId } : undefined
-    if (!text.trim() && picIds.length === 0 && !documents.length) {
+    if (!text.trim() && imageIds.length === 0 && !documents.length) {
       if (sendTarget) clearSessionsSendError(sendTarget)
       return
     }
     if (isBranch && thread) {
-      const outcome = await runBranchReply(thread.conversationId, thread.branchId!, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), picIds, {documents})
+      const outcome = await runBranchReply(thread.conversationId, thread.branchId!, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), imageIds, {documents})
       if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { if (composerAliveRef.current) { setDocumentDraft(current => current === documentDraft ? {key,docs:[]} : current); onBranchSent?.() } }
       return
     }
     if (!sessionId) return
-    const outcome = await sessionsActions.sendUserMessage(sessionId, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), picIds, {documents})
+    const outcome = await sessionsActions.sendUserMessage(sessionId, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), imageIds, {documents})
     // Only clear the draft once the user message is ACCEPTED & persisted; the image ids
     // then belong to the message (ownership transfer), so we must NOT delete them here.
     if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { if (composerAliveRef.current) setDocumentDraft(current => current === documentDraft ? {key,docs:[]} : current) }
@@ -759,7 +739,8 @@ function Composer({ sessionId, busy, backgroundBusy, thread, onBranchSent }: { s
     const targetKey=key,blob=await transcriptPreview(data);
     if(!composerAliveRef.current||composerKeyRef.current!==targetKey)throw new Error('会话已切换，请重新加入。');
     const current=getDraft(targetKey),inputs=[{blob,name:data.title+'.png',transcript:data}];
-    const metas=isBranch&&thread?.branchId?await saveGeneratedImagesAndBranchDraft(inputs,{branchId:thread.branchId,text:current.text,existingImageIds:current.imageIds}):sessionId?await saveGeneratedImagesAndDraft(inputs,{conversationId:sessionId,text:current.text,existingImageIds:current.imageIds}):[];
+    const draftCommit = { getCurrentDraft: () => getDraft(targetKey) }
+    const metas=isBranch&&thread?.branchId?await saveGeneratedImagesAndBranchDraft(inputs,{branchId:thread.branchId,text:current.text,existingImageIds:current.imageIds}, draftCommit):sessionId?await saveGeneratedImagesAndDraft(inputs,{conversationId:sessionId,text:current.text,existingImageIds:current.imageIds}, draftCommit):[];
     if(!metas.length)throw new Error('请先新建会话。');
     const latest=getDraft(targetKey);updateDraftMemory(targetKey,{text:latest.text,imageIds:[...new Set([...latest.imageIds,...metas.map(m=>m.id)])]});
   }
@@ -809,11 +790,9 @@ function Composer({ sessionId, busy, backgroundBusy, thread, onBranchSent }: { s
         {androidCamera && <input ref={cameraInputRef} data-testid="composer-camera-input" type="file" accept=".jpg" capture="environment" hidden onChange={e => { if (e.target.files?.length) onFiles(e.target.files); e.target.value = '' }} />}
         <input ref={pdfInputRef} data-testid="composer-pdf-input" type="file" accept=".pdf,application/pdf" hidden onChange={e => { const f = e.target.files?.[0]; if (f) setPdfPanel({ open: true, file: f }); e.target.value = '' }} />
         <input ref={materialsInputRef} data-testid="composer-materials-input" type="file" accept=".pdf,application/pdf,.jpg,.jpeg,.png,.gif,.webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onMaterialsSelected(e.target.files); e.target.value = '' }} />
-        <textarea ref={textareaRef} rows={1} className={css.composerText} value={text} aria-label={tx('输入消息', 'Message')} placeholder={t('composer.placeholder')} onFocus={onFocusJump} onBlur={onBlurReset}
-          onChange={e => setDraftText(key, e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }} />
+        <ComposerInput draftKey={key} onSend={send} />
       <VoiceInput key={key} draftKey={key} disabled={busy || settingsPending} />
-        <button className={css.sendBtn} data-testid="composer-send-stop" aria-busy={busy} onClick={event => { if (event.detail > 1) return; if (busy) sessionsActions.stopGenerating(); else void send() }}>{backgroundBusy ? tx('停止后台生成', 'Stop background response') : preparing ? tx('准备中…', 'Preparing…') : busy ? tx('停止生成', 'Stop') : tx('发送', 'Send')}</button>
+        <button className={css.sendBtn} data-testid="composer-send-stop" aria-busy={status !== 'idle'} disabled={busy && status === 'idle'} onClick={event => { if (event.detail > 1) return; if (status !== 'idle') sessionsActions.stopGenerating(generationKey); else void send() }}>{status === 'sending' ? tx('准备中…', 'Preparing…') : status === 'streaming' ? tx('停止生成', 'Stop') : tx('发送', 'Send')}</button>
       </div>
       {openId && <Lightbox id={openId} onClose={() => setOpenId(null)} />}
       <Suspense fallback={null}>

@@ -5,7 +5,7 @@ import { seedAndBoot } from './e2e-fixture.mjs'
 const browser = await launchBrowser()
 const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'POST, OPTIONS' }
 try {
-  for (const scenario of ['truncation', 'unsupported-json', 'length-error']) {
+  for (const scenario of ['truncation', 'unsupported-json', 'length-error', 'missing-deepseek-key']) {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
     const page = await context.newPage()
     const requests = [], errors = []
@@ -13,7 +13,10 @@ try {
     let transcriptionCalls = 0
     await page.route('**/chat/completions', route => {
       if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+      assert.equal(new URL(route.request().url()).hostname, 'api.deepseek.com')
+      assert.equal(route.request().headers().authorization, 'Bearer deepseek-test-key')
       const body = route.request().postDataJSON()
+      assert.equal(body.model, 'deepseek-flash')
       requests.push(body)
       const images = body.messages.flatMap(message => Array.isArray(message.content) ? message.content.filter(part => part.type === 'image_url') : [])
       if (!images.length) return route.fulfill({ headers: cors, json: { choices: [{ message: { content: JSON.stringify({ levels: Array(250).fill(1) }) }, finish_reason: 'stop' }] } })
@@ -24,14 +27,26 @@ try {
       const content = truncated ? rows.map(row => JSON.stringify(row)).join('\n') + '\n{"title":"unfinished' : JSON.stringify({ rows })
       return route.fulfill({ headers: cors, json: { choices: [{ message: { content }, finish_reason: truncated ? 'length' : 'stop' }] } })
     })
-    await seedAndBoot(page, { settings: { apiKey: 'sk-test', model: 'deepseek-chat', uiLanguage: 'en', visionCapability: 'supports-image' } })
+    const apiProfiles = scenario === 'missing-deepseek-key' ? [] : [{ id: 'official', name: 'DeepSeek',
+      config: { apiBaseUrl: 'https://api.deepseek.com/v1', apiKey: 'deepseek-test-key', model: 'deepseek-v4-pro', visionCapability: 'text-only' } }]
+    await seedAndBoot(page, { settings: { apiKey: 'gateway-test-key', model: 'gemini-3.8-flash',
+      apiBaseUrl: 'https://api.teamorouter.com/v1', uiLanguage: 'en', visionCapability: 'text-only', apiProfiles } })
     await page.locator('[data-testid="sidebar-entry-files"]').click()
     await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/no-outline.pdf')
     await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
     await page.locator('[data-testid="reader-toc-ai"]').click()
     await page.locator('[data-testid="toc-thumb-7"]').click()
-    if (scenario !== 'length-error') await page.locator('[data-testid="toc-thumb-8"]').click()
+    if (scenario !== 'length-error' && scenario !== 'missing-deepseek-key') await page.locator('[data-testid="toc-thumb-8"]').click()
     await page.locator('[data-testid="toc-picker-start"]').click()
+    if (scenario === 'missing-deepseek-key') {
+      const notice = page.locator('[data-testid="ai-toc-progress-error"]')
+      await notice.waitFor({ state: 'visible' })
+      assert.match(await notice.textContent(), /official DeepSeek API key/i)
+      assert.equal(requests.length, 0)
+      console.log('PASS outline detection requests an official DeepSeek key before sending')
+      await context.close()
+      continue
+    }
     if (scenario === 'length-error') {
       const notice = page.locator('[data-testid="ai-toc-progress-error"]')
       await notice.waitFor({ state: 'visible', timeout: 30000 })
@@ -47,7 +62,7 @@ try {
         assert.equal(requests.at(-1).thinking.type, 'enabled')
       } else {
         assert.equal(transcriptionCalls, 2)
-        assert.equal(requests[1].response_format, undefined, 'compatible endpoint can decline JSON mode without blocking extraction')
+        assert.equal(requests[1].response_format, undefined, 'the response format can be retried without JSON mode')
       }
     }
     assert.equal(requests[0].response_format.type, 'json_object')

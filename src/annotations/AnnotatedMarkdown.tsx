@@ -196,15 +196,20 @@ export function AnnotatedMarkdown({ content, messageId, conversationId, branchId
     if (!root || !selection?.rangeCount || selection.isCollapsed) return
     const range = selection.getRangeAt(0)
     const text = markdownSourceForRange(root, content, range) ?? selection.toString()
+    const stillSelected = () => selection.rangeCount > 0 && selection.getRangeAt(0) === range
     try {
       if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text)
       else if (!document.execCommand('copy')) throw new Error('copy_failed')
-      setCopyStatus(tx('已复制', 'Copied'))
     } catch {
       // Some Android WebViews expose Clipboard but reject writeText. Preserve
       // the native range and let the existing source-aware copy handler run.
-      try { if (!document.execCommand('copy')) throw new Error();setCopyStatus(tx('已复制','Copied')) }
-      catch {setCopyStatus(tx('请用系统复制', 'Use system copy'))}
+      if (!stillSelected()) return
+      try { if (!document.execCommand('copy')) throw new Error('copy_failed') }
+      catch { setCopyStatus(tx('请用系统复制', 'Use system copy')); return }
+    }
+    if (stillSelected() || selection.isCollapsed) {
+      selection.removeAllRanges()
+      setPending(null)
     }
   }
   // Updating the selection toolbar must not rebuild KaTeX's nested DOM while

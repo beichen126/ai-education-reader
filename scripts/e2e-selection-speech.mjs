@@ -95,13 +95,17 @@ try {
   const prosePoint = await select(bodyText, '说明正文')
   await play(4)
   assert.deepEqual((await highlighted()).sort(), ['Retaliatory', '说明正文'].sort())
+  await select(bodyText, '说明正文')
+  await page.getByRole('button', { name: '标记', exact: true }).click()
+  await page.waitForFunction(() => Array.from(CSS.highlights.get('study-highlight') ?? []).some(range => range.toString() === '说明正文'))
   for (const [mode, fill] of [['light', 'rgb(203, 220, 255)'], ['dark', 'rgb(52, 84, 132)']]) {
     await openSettings(page, 'general')
     await page.getByTestId('appearance-' + mode).click()
     await page.waitForFunction(mode => document.documentElement.dataset.theme === mode, mode)
     await page.keyboard.press('Escape')
     for (const text of [bodyText, cardTitle]) {
-      assert.equal(await text.evaluate(el => getComputedStyle(el, '::highlight(spoken-selection)').backgroundColor), fill)
+      assert.deepEqual(await text.evaluate(el => ['study-highlight', 'spoken-selection'].map(name =>
+        getComputedStyle(el, '::highlight(' + name + ')').backgroundColor)), [fill, fill])
     }
   }
   await page.mouse.dblclick(prosePoint.x, prosePoint.y)

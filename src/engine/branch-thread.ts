@@ -117,7 +117,7 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
     const settings = getSettingsSnapshot()
     const controller = new AbortController()
     const key = genBranchKey(conversationId, branchId)
-    const lease = generationRegistry.acquire(key, controller, 'sending')
+    const lease = generationRegistry.acquireChat(key, conversationId, controller)
     if (!lease) return pendingRejected({ kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' })
     try {
       const providerRejection = await providerPreflight(settings, controller.signal)
@@ -145,6 +145,7 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
         localTransitions: branch.promptTransitions ?? [],
         acceptedMessageId: msg.id,
       })
+      if (!lease.isCurrent()) { lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
       if (!(await acceptBranchUserMessage(branchId, msg, prepared.nextLocalTransitions, options.draftDisposition ?? 'clear'))) {
         lease.release()
         return pendingRejected({ kind: 'rejected', code: 'branch-acceptance-failed', message: '分支消息未能保存，请重试。' })

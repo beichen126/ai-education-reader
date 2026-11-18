@@ -5,6 +5,11 @@ import {launchBrowser} from './e2e-browser.mjs'
 import {seedAndBoot,msg,createBranchFromMessage} from './e2e-fixture.mjs'
 const pending=new Set()
 const delta=text=>'data: '+JSON.stringify({choices:[{delta:{content:text},finish_reason:null}]})+'\n\n'
+async function waitForStreams(count) {
+  const until = Date.now() + 10000
+  while (pending.size !== count && Date.now() < until) await new Promise(resolve => setTimeout(resolve, 20))
+  assert.equal(pending.size, count)
+}
 const server=createServer((req,res)=>{
   res.setHeader('Access-Control-Allow-Origin','*')
   if(req.method==='OPTIONS'){res.writeHead(204,{'Access-Control-Allow-Headers':'Content-Type, Authorization','Access-Control-Allow-Methods':'POST, GET, OPTIONS'});res.end();return}
@@ -29,20 +34,36 @@ try {
     await switchTo('Chat Beta')
     await page.getByText('Other answer',{exact:true}).waitFor()
     await page.locator('[data-testid="background-generation"]').waitFor()
-    await page.getByRole('textbox',{name:'输入消息',exact:true}).fill('Keep my draft')
-    while(!pending.size)await new Promise(r=>setTimeout(r,20))
-    for(const res of pending)res.write(delta('FIRST_TOKEN'))
-    await page.waitForTimeout(300)
+    const composer = page.getByRole('textbox',{name:'输入消息',exact:true})
+    await waitForStreams(1)
+    const [alpha] = pending
+    await composer.fill('Start Beta while Alpha is generating')
+    await page.getByRole('button',{name:'发送',exact:true}).click()
+    await waitForStreams(2)
+    const beta = [...pending].find(response => response !== alpha)
+    alpha.write(delta('FIRST_TOKEN'))
+    beta.write(delta('BETA_TOKEN'))
+    await page.getByText('BETA_TOKEN',{exact:true}).waitFor()
     assert.equal(await page.getByText('FIRST_TOKEN',{exact:true}).count(),0)
     await page.getByRole('button',{name:'返回查看',exact:true}).click()
     await page.getByText('FIRST_TOKEN',{exact:true}).waitFor()
-    assert.equal(pending.size,1,'switching keeps the original stream alive')
-    await page.getByRole('textbox',{name:'输入消息',exact:true}).fill('Next Alpha draft')
+    assert.equal(pending.size,2,'switching keeps both streams alive')
+    assert.equal(await page.getByText('BETA_TOKEN',{exact:true}).count(),0)
+    await composer.fill('Next Alpha draft')
     await switchTo('Chat Beta')
-    assert.equal(await page.getByRole('textbox',{name:'输入消息',exact:true}).inputValue(),'Keep my draft')
-    if(branch)await page.getByRole('button',{name:'停止后台生成',exact:true}).click()
-    else for(const res of pending)res.end(delta('_FINAL')+'data: [DONE]\n\n')
+    await composer.fill('Next Beta draft')
+    await page.getByRole('button',{name:'停止生成',exact:true}).click()
+    await waitForStreams(1)
+    assert.ok(pending.has(alpha),'stopping Beta leaves Alpha running')
+    if (branch) {
+      await page.getByRole('button',{name:'返回查看',exact:true}).click()
+      await page.getByRole('button',{name:'停止生成',exact:true}).click()
+      await switchTo('Chat Beta')
+    } else {
+      alpha.end(delta('_FINAL')+'data: [DONE]\n\n')
+    }
     await page.locator('[data-testid="background-generation"]').waitFor({state:'hidden'})
+    assert.equal(await composer.inputValue(),'Next Beta draft')
     assert.equal(await page.getByText('FIRST_TOKEN_FINAL',{exact:true}).count(),0)
     await switchTo('Chat Alpha')
     await page.getByText(branch?'FIRST_TOKEN':'FIRST_TOKEN_FINAL',{exact:true}).waitFor()
@@ -58,7 +79,7 @@ try {
         read.onerror=()=>{db.close();resolve(false)}
       }
     }))
-    assert.equal(await page.getByRole('textbox',{name:'输入消息',exact:true}).inputValue(),'Next Alpha draft','settled background sends preserve newly edited owner drafts')
+    assert.equal(await composer.inputValue(),'Next Alpha draft','settled background sends preserve newly edited owner drafts')
     await page.reload({waitUntil:'networkidle'})
     await page.getByText(branch?'FIRST_TOKEN':'FIRST_TOKEN_FINAL',{exact:true}).waitFor()
     await page.close();for(const res of pending)res.destroy()

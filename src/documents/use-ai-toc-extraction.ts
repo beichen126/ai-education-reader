@@ -10,7 +10,8 @@
 // model can only report which image a row came from.
 import { renderSessionThumbnail } from '../pdf/pdf-session'
 import type { PdfSession } from '../pdf/pdf-session'
-import { DeepSeekError, errorKindLabel, isVisionModel, sendTextChat, streamTextChat, type ErrorKind, type VisionCapability } from '../api/deepseek'
+import { DeepSeekError, errorKindLabel, sendTextChat, streamTextChat, type ErrorKind } from '../api/deepseek'
+import { selectedDeepSeekServiceProfile } from '../engine/deepseek-service-profile'
 import { PreviewReadQueue } from '../engine/preview-read-queue'
 import { pipelineTocBatches } from './toc-work-queue'
 import { resolveCurrentProtocol } from '../prompts/prompt-resolution'
@@ -213,18 +214,23 @@ export async function extractAiToc(opts: {
   session: PdfSession
   pageCount: number
   selectedPages: number[]
-  apiKey: string
-  baseUrl: string
-  model: string
-  visionCapability?: VisionCapability
   getPageLabels: () => Promise<string[] | null>
   signal?: AbortSignal;
   /** Real phase progress at stage boundaries (never guessed from a timeout). */
   onProgress?: (p: AiTocProgress) => void
 }): Promise<AiTocExtractionResult> {
-  const { session, selectedPages, apiKey, baseUrl, model, visionCapability, getPageLabels, signal, onProgress } = opts;
+  const { session, selectedPages, getPageLabels, signal, onProgress } = opts;
   const totalStartMs = aiTocNowMs()
   const timing = createAiTocTiming()
+  const mock = (globalThis as any).__dshMockAiToc as ((request: AiTocMockRequest) => string | undefined) | undefined
+  const isMock = typeof mock === 'function'
+  const apiKey = selectedDeepSeekServiceProfile()?.config.apiKey.trim() ?? ''
+  const baseUrl = 'https://api.deepseek.com'
+  const model = 'deepseek-flash'
+  if (!apiKey && !isMock) {
+    return timedAiTocResult({ ok: false, error: tx('AI 目录识别需要在 API 配置中保存 DeepSeek 官方 Key。', 'Save an official DeepSeek API key in Settings to detect the outline.') }, timing, totalStartMs)
+  }
+  if (selectedPages.length === 0) return timedAiTocResult({ ok: false, error: '请至少选择一页目录。' }, timing, totalStartMs)
 
   // Freeze both machine protocols before rendering or making the first model
   // request. Every window and retry reuses these detached snapshots.
@@ -233,15 +239,6 @@ export async function extractAiToc(opts: {
     resolveCurrentProtocol('ai-toc-structure', totalStartMs),
     getPageLabels(),
   ])
-
-  const mock = (globalThis as any).__dshMockAiToc as ((request: AiTocMockRequest) => string | undefined) | undefined
-  const isMock = typeof mock === 'function'
-
-  if (!apiKey && !isMock) return timedAiTocResult({ ok: false, error: 'AI 目录识别需要配置 API Key。' }, timing, totalStartMs)
-  if (!isMock && !isVisionModel(model, visionCapability)) {
-    return timedAiTocResult({ ok: false, error: '当前模型未配置为支持图片。请在设置中选择支持视觉输入的模型，或将视觉能力设为“支持图片”。' }, timing, totalStartMs)
-  }
-  if (selectedPages.length === 0) return timedAiTocResult({ ok: false, error: '请至少选择一页目录。' }, timing, totalStartMs)
 
   // Prepare continuously with three shared render slots, independently of the
   // five network slots. Merge by PDF order, never response completion order.

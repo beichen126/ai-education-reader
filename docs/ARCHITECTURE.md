@@ -52,6 +52,8 @@ Document  原始学习资料（当前为 PDF，一等对象，全局所有权）
 
 ## AI TOC（目录识别）
 
+视觉转录与层级整理均使用 DeepSeek 官方 `deepseek-flash`，读取已保存的 DeepSeek 官方 API Key。
+
 ```
 所选目录页图片
   → 视觉转录（JSONL，仅透明当前页，含图片身份标注）

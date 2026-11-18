@@ -69,7 +69,7 @@ export type SwitchConversationModeInput = {
  */
 export async function switchConversationMode(input: SwitchConversationModeInput): Promise<ModeSwitchResult> {
   const locked = await tryWithConversationMutationLock(input.conversationId, async () => {
-    if (generationRegistry.isBusy()) throw new PromptModeServiceError('generation-busy', '模型正在生成，请等待本次生成结束后再切换会话模式')
+    if (generationRegistry.keyForConversation(input.conversationId) || generationRegistry.exclusiveStatus() !== 'idle') throw new PromptModeServiceError('generation-busy', '模型正在生成，请等待本次生成结束后再切换会话模式')
     const conversation = await getConversation(input.conversationId) as Conversation | undefined
     if (!conversation) throw new PromptModeServiceError('conversation-not-found', '会话不存在')
     const branches = await listBranchesByConversation(input.conversationId)

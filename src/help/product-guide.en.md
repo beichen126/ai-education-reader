@@ -30,7 +30,7 @@ Study outputs include editable notes and quizzes. Every saved item keeps a sourc
 
 Prompt management separates chat modes, study-output templates, quick follow-ups, and system protocols. Built-in prompts are protected: copying one creates a local version that you can edit, disable, or restore without changing historical snapshots.
 
-AI outline detection uses its own prompt and model effort. It does not change the reasoning setting used for normal chat sessions.
+Outline detection uses official DeepSeek Flash for both transcription and hierarchy. Save an official DeepSeek API key in Settings and keep your preferred model for chat.
 
 ## Settings, backup, and privacy
 

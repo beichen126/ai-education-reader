@@ -14,6 +14,8 @@ try {
       assert.ok(await page.evaluate(()=>!getSelection().isCollapsed),'explicit native selection')
       await copy.click()
       assert.ok((await page.evaluate(()=>window.__copied)).includes(expected),'copies Markdown source '+selector)
+      await copy.waitFor({ state: 'hidden' })
+      assert.ok(await page.evaluate(() => getSelection().isCollapsed), 'successful copy clears the selection')
     }
     const url=page.url()
     if(width===390){

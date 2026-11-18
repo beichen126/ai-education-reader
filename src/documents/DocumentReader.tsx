@@ -43,7 +43,7 @@ import { TocReview, type TocReviewSave } from './TocReview'
 import { extractAiToc, type AiTocProgress } from './use-ai-toc-extraction'
 import { exportBookmarkedPdf, PdfOutlineError } from '../export/index'
 import { AiTocProgressDialog } from './AiTocProgressDialog'
-import { getSettingsSnapshot, useSettings } from '../engine/settings-store'
+import { useSettings } from '../engine/settings-store'
 import type { MappedTocItem } from './toc-mapping'
 import type { LearningDocument, ChapterNode } from './document-types'
 import { getUiLanguage, localizedConversationTitle, localizedErrorText, localizedStudyCardTitle, tx } from '../engine/locale'
@@ -898,10 +898,8 @@ export function DocumentReader() {
     const gen = ++aiTocGenRef.current
     const ownedDocId = doc.id
     try {
-      const s = getSettingsSnapshot()
       const res = await extractAiToc({
         session, pageCount, selectedPages,
-        apiKey: s.apiKey, baseUrl: s.apiBaseUrl, model: s.model, visionCapability: s.visionCapability,
         getPageLabels: async () => readSessionPageLabels(session),
         signal: controller.signal,
         onProgress: (p) => { if (gen === aiTocGenRef.current) setAiTocProgress(p) },

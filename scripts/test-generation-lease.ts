@@ -8,7 +8,7 @@ function assert(condition: boolean, message: string): void {
   else { fail++; console.log('  FAIL: ' + message) }
 }
 
-// Root/root and root/branch/artifact all contend for the same global lease.
+// Exclusive legacy jobs contend with every other job.
 for (const contender of ['root:second', 'branch:c:b', 'artifact:a']) {
   generationRegistry.cancel()
   const firstController = new AbortController()
@@ -27,6 +27,16 @@ const second = generationRegistry.acquire('root:reused', new AbortController(), 
 first?.release()
 assert(second !== null && second.isCurrent(), 'stale release cannot clear a newer token for the same key')
 second?.release()
+
+const alpha = generationRegistry.acquireChat('root:alpha', 'alpha', new AbortController())
+const beta = generationRegistry.acquireChat('branch:beta:child', 'beta', new AbortController())
+assert(!!alpha?.isCurrent() && !!beta?.isCurrent(), 'different chats own independent leases')
+assert(generationRegistry.acquireChat('branch:alpha:other', 'alpha', new AbortController()) === null, 'same-conversation routes share one lease')
+assert(generationRegistry.acquire('artifact:parallel', new AbortController()) === null, 'artifacts retain an exclusive lease')
+generationRegistry.stop('root:alpha')
+assert(!alpha?.isCurrent() && !!beta?.isCurrent() && generationRegistry.keyForConversation('alpha') === 'root:alpha', 'stopping one chat keeps the other alive and reserves the cancelled slot until settlement')
+alpha?.release()
+beta?.release()
 
 // Stop is authoritative in both acceptance and streaming states.
 for (const status of ['sending', 'streaming'] as const) {

@@ -25,6 +25,7 @@ const CORE_E2E = [
   'e2e-pdf-ocr',
   'e2e-android-pdf',
   'e2e-background-chat',
+  'e2e-composer-typing',
   'e2e-context-cancellation',
   'e2e-genui-full',
   'e2e-genui-capacity',

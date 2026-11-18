@@ -172,5 +172,12 @@ export function clearBranchDraftMemory(branchId: StableId): void { clearDraftMem
 export async function deleteBranchDraft(branchId: StableId): Promise<void> { await deleteDraft(branchThreadKey(branchId)) }
 export async function flushBranchDraft(branchId: StableId): Promise<void> { await flushDraft(branchThreadKey(branchId)) }
 
-export function useDraft(id: string): Draft { return useSyncExternalStore(subscribe, () => getDraft(id)) }
+export function useDraftText(id: string): string { return useSyncExternalStore(subscribe, () => getDraft(id).text) }
+export function useDraftImageIds(id: string): StableId[] { return useSyncExternalStore(subscribe, () => getDraft(id).imageIds) }
+export function useHasDraft(id: string): boolean {
+  return useSyncExternalStore(subscribe, () => {
+    const draft = getDraft(id)
+    return !!draft.text.trim() || draft.imageIds.length > 0
+  })
+}
 

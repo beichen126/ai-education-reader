@@ -130,8 +130,11 @@ export type DraftOwnership = { conversationId: string; text: string; existingIma
  * commits NEITHER; staged OPFS binaries are deleted best-effort. This is the true
  * write-first/stage/commit/cleanup shape for PDF Context / Document->Context / image uploads.
  */
-export type DraftCommitDeps = { /** Test seam: force the metadata transaction to abort (inspect IDB immediately after). */
-  failTxn?: boolean }
+export type DraftCommitDeps = {
+  failTxn?: boolean
+  /** Text and images can change while large binaries are staging. */
+  getCurrentDraft?: () => { text: string; imageIds: string[] }
+}
 export async function saveGeneratedImagesAndDraft(images: GeneratedImageInput[], draft: DraftOwnership, deps: DraftCommitDeps = {}): Promise<Attachment[]> {
   // Verify the target conversation still exists BEFORE staging/committing. Never allow
   // getDraft on a deleted conversation to create a durable orphan attachment graph.
@@ -157,9 +160,11 @@ export async function saveGeneratedImagesAndDraft(images: GeneratedImageInput[],
       for (const row of rows) aos.put(row)
       const sos = txn.objectStore('settings')
       const newIds = rows.map(r => r.id)
-      const imageIds = [...new Set([...(draft.existingImageIds || []), ...newIds])]
-      if (draft.text !== '' || imageIds.length > 0) {
-        sos.put({ key: 'draft:' + draft.conversationId, value: { version: 1, text: draft.text, imageIds } })
+      const current = deps.getCurrentDraft?.()
+      const text = current?.text ?? draft.text
+      const imageIds = [...new Set([...(current?.imageIds ?? draft.existingImageIds), ...newIds])]
+      if (text !== '' || imageIds.length > 0) {
+        sos.put({ key: 'draft:' + draft.conversationId, value: { version: 1, text, imageIds } })
       } else {
         sos.delete('draft:' + draft.conversationId)
       }
@@ -201,10 +206,12 @@ export async function saveGeneratedImagesAndBranchDraft(images: GeneratedImageIn
       for (const row of rows) aos.put(row)
       const sos = txn.objectStore('settings')
       const newIds = rows.map(r => r.id)
-      const imageIds = [...new Set([...(draft.existingImageIds || []), ...newIds])]
+      const current = deps.getCurrentDraft?.()
+      const text = current?.text ?? draft.text
+      const imageIds = [...new Set([...(current?.imageIds ?? draft.existingImageIds), ...newIds])]
       const key = BRANCH_DRAFT_PREFIX + draft.branchId
-      if (draft.text !== '' || imageIds.length > 0) {
-        sos.put({ key, value: { version: 1, text: draft.text, imageIds } })
+      if (text !== '' || imageIds.length > 0) {
+        sos.put({ key, value: { version: 1, text, imageIds } })
       } else {
         sos.delete(key)
       }

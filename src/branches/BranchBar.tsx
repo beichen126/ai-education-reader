@@ -3,7 +3,7 @@ import { Button } from '../dsh/primitives/Button'
 import { deleteBranchSubtree, renameBranch } from './branch-service'
 import { resolveBranchLineage, descendantBranchIds } from './branch-path'
 import type { ConversationBranch } from './branch-types'
-import { branchThreadKey, useDraft } from '../engine/draft-store'
+import { branchThreadKey, useHasDraft } from '../engine/draft-store'
 import { getPromptPreferences } from '../prompts/prompt-preferences'
 import { capturePromptSnapshot } from '../prompts/prompt-resolution'
 import { listConversationModeDefinitions, promptSnapshotNeedsApply, samePromptSnapshot, switchConversationMode } from '../prompts/prompt-mode-service'
@@ -45,7 +45,7 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
   const routeMenuId = 'conversation-route-menu-' + conversationId
   const modeMenuId = 'conversation-mode-menu-' + conversationId
   const initialMenuFocus = useRef<'selected' | 'first' | 'last'>('selected')
-  const draft = useDraft(activeBranchId ? branchThreadKey(activeBranchId) : conversationId)
+  const draftNonEmpty = useHasDraft(activeBranchId ? branchThreadKey(activeBranchId) : conversationId)
 
   const loadModes = () => {
     let cancelled = false
@@ -194,7 +194,6 @@ export function BranchBar({ conversationId, branches, activeBranchId, effectiveM
   const branchName = (title: string) => localizedBranchTitle(title)
   const activeModeName = legacy ? tx('模式未记录（来自 v1.x）', 'Mode not recorded (from v1.x)') : modeName(activeSnapshot?.name || selectedDefinition?.name, activeSnapshot?.profileId || selectedDefinition?.id)
   const hasNewRevision = !!activeSnapshot && !!selectedDefinition && promptSnapshotNeedsApply(activeSnapshot, selectedDefinition)
-  const draftNonEmpty = draft.text.trim().length > 0 || draft.imageIds.length > 0
   const disabledReason = busy ? tx('发送或生成中，停止后才能切换模式', 'Stop the current send or response before switching modes') : switchingId ? tx('正在应用会话模式', 'Applying chat mode') : undefined
 
   async function applyMode(definition: ConversationModePrompt) {

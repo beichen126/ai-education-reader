@@ -13,7 +13,7 @@
 [隐私与备份](#数据隐私与备份) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v4.0.17-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v4.0.18-green?style=flat-square)
 
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
@@ -143,7 +143,7 @@ PDF 页面和目录页需要先渲染成图片，才能让模型理解版式、�
 
 ### 12. AI 目录如何生成，为什么还要人工检查？
 
-AI 先读取你选择的目录页，再提出标题、层级和页码映射。扫描质量、页码标签和版式可能造成歧义，因此保存前必须检查和修正，不能把 AI 草稿当作权威目录。
+目录识别使用 DeepSeek 官方 `deepseek-flash`。在设置中保存 DeepSeek 官方 Key 后，可继续用原来的对话模型。AI 先读取所选目录页，再提出标题、层级和页码映射。保存前可检查和修正识别结果。
 
 ### 13. “标记”保存在哪里，可以如何导出？
 

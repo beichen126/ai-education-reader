@@ -107,6 +107,9 @@
 .menuItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .menuItem:focus-visible { outline: 2px solid var(--dsw-alias-brand-primary); outline-offset: -2px; background: var(--dsw-alias-interactive-bg-hover); }
 .composerText { box-sizing: border-box; flex: 1; min-width: 0; min-height: 44px; max-height: 25dvh; resize: none; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); padding: 10px 12px; font-size: 14px; line-height: 22px; font-family: inherit; }
+@supports (field-sizing: content) {
+  .composerText { field-sizing: content; max-height: var(--composer-height-limit, max(44px, 25dvh)); }
+}
 .materialActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
 .materialActions button { display: flex; align-items: center; gap: 8px; }
 .materialActions small { display: block; font-size: 11px; color: var(--dsw-alias-label-tertiary); margin-top: 4px; }

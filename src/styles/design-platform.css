@@ -215,7 +215,7 @@ body {
   --dsw-alias-markdown-inline-code: var(--dsw-static-neutral-bluish-100);
   --dsw-alias-markdown-placeholder: var(--dsw-static-neutral-bluish-60);
   --dsw-alias-markdown-tag: var(--dsw-static-neutral-bluish-75);
-  --dsw-specific-study-highlight: rgb(217, 217, 217);
+  --dsw-specific-study-highlight: #cbdcff;
   --dsw-alias-scrollbar-bg-l1: var(--dsw-static-neutral-200);
   --dsw-alias-scrollbar-bg-l2: var(--dsw-static-neutral-200);
   --dsw-alias-scrollbar-hover-l1: var(--dsw-static-neutral-300);
@@ -308,7 +308,7 @@ body[data-ds-dark-theme] {
   --dsw-alias-markdown-inline-code: var(--dsw-static-neutral-bluish-850);
   --dsw-alias-markdown-placeholder: var(--dsw-static-neutral-bluish-850);
   --dsw-alias-markdown-tag: var(--dsw-static-neutral-bluish-850);
-  --dsw-specific-study-highlight: rgb(66, 84, 106);
+  --dsw-specific-study-highlight: #345484;
   --dsw-alias-scrollbar-bg-l1: var(--dsw-static-neutral-700);
   --dsw-alias-scrollbar-bg-l2: var(--dsw-static-neutral-600);
   --dsw-alias-scrollbar-hover-l1: var(--dsw-static-neutral-600);

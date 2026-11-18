@@ -53,9 +53,10 @@ const DURABLE_CHECKPOINT_MS = 1500
  */
 export async function runThreadReply(thread: ReplyThread, settings: Settings, controller: AbortController, onStreamStart?: (controller: AbortController, assistantId: StableId) => void, acceptedSendContext?: AcceptedSendContext, lease?: GenerationLease): Promise<SendOutcome> {
   const ownedLease = lease ?? generationRegistry.acquire(thread.genKey, controller, 'sending')
-  if (!ownedLease || ownedLease.key !== thread.genKey || ownedLease.controller !== controller || !ownedLease.isCurrent()) {
+  if (!ownedLease || ownedLease.key !== thread.genKey || ownedLease.controller !== controller) {
     return { kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' }
   }
+  if (!ownedLease.isCurrent()) { ownedLease.release(); return { kind: 'aborted' } }
   const assistantId = newStableId()
   let placeholderCreated = false
   let received = ''

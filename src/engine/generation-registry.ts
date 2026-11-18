@@ -1,12 +1,8 @@
 /**
- * Generation registry — the single ownership record for ONE active model generation
- * (root chat, branch chat, or artifact).
- *
- * A lease is the only authority allowed to transition/release its generation. The
- * token matters even when a caller reuses the same logical key: a late completion
- * from an older generation can never release a newer owner.
+ * Chat generations own one slot per conversation. Root and branch routes in that
+ * conversation share the slot because they write related history. Legacy jobs
+ * such as artifact generation still take an exclusive slot.
  */
-
 export type GenerationStatus = 'idle' | 'sending' | 'streaming'
 
 export type GenerationLease = {
@@ -23,95 +19,97 @@ type ActiveGeneration = {
   token: symbol
   controller: AbortController
   status: GenerationStatus
+  conversationId?: string
 }
 
-let active: ActiveGeneration | null = null
+const active = new Map<string, ActiveGeneration>()
 const subs = new Set<() => void>()
-function emit() { for (const f of subs) f() }
+const emit = () => { for (const listener of subs) listener() }
 
-function sameOwner(key: string, controller: AbortController, token?: symbol): boolean {
-  return !!active
-    && active.key === key
-    && active.controller === controller
-    && (token === undefined || active.token === token)
+function firstActive(): ActiveGeneration | null {
+  return active.values().next().value ?? null
 }
 
-function makeLease(key: string, token: symbol, controller: AbortController): GenerationLease {
+function addGeneration(key: string, controller: AbortController, status: GenerationStatus, conversationId?: string): GenerationLease {
+  const token = Symbol('generation:' + key)
+  const job = { key, token, controller, status, conversationId }
+  active.set(key, job)
+  emit()
+  const ownsSlot = () => active.get(key) === job
+  const isCurrent = () => ownsSlot() && !controller.signal.aborted
   return {
-    key,
-    token,
-    controller,
-    setStreaming(): boolean {
-      if (!sameOwner(key, controller, token)) return false
-      if (active!.status !== 'streaming') { active!.status = 'streaming'; emit() }
+    key, token, controller, isCurrent,
+    setStreaming() {
+      if (!isCurrent()) return false
+      if (job.status !== 'streaming') { job.status = 'streaming'; emit() }
       return true
     },
-    release(): void {
-      if (!sameOwner(key, controller, token)) return
-      active = null
-      emit()
-    },
-    isCurrent(): boolean { return sameOwner(key, controller, token) },
+    release() { if (ownsSlot()) { active.delete(key); emit() } },
   }
 }
 
 export const generationRegistry = {
-  /** Atomically acquire the one global generation slot. */
   acquire(key: string, controller: AbortController, status: GenerationStatus = 'sending'): GenerationLease | null {
-    if (active) return null
-    const token = Symbol('generation:' + key)
-    active = { key, token, controller, status }
-    emit()
-    return makeLease(key, token, controller)
+    if (active.size) return null
+    return addGeneration(key, controller, status)
   },
-
-  /**
-   * Compatibility entry point for older callers. A re-entry is valid only when it
-   * names the exact same controller; a same-key different controller is rejected.
-   */
+  acquireChat(key: string, conversationId: string, controller: AbortController): GenerationLease | null {
+    if (active.has(key) || this.exclusiveStatus() !== 'idle' || this.keyForConversation(conversationId)) return null
+    return addGeneration(key, controller, 'sending', conversationId)
+  },
   begin(key: string, controller: AbortController, status: GenerationStatus): boolean {
-    if (active) {
-      if (!sameOwner(key, controller)) return false
-      if (active.status !== status) { active.status = status; emit() }
-      return true
-    }
-    return this.acquire(key, controller, status) !== null
+    const job = active.get(key)
+    if (!job) return this.acquire(key, controller, status) !== null
+    if (job.controller !== controller) return false
+    if (job.status !== status) { job.status = status; emit() }
+    return true
   },
   setStatus(status: GenerationStatus): void {
-    if (active && active.status !== status) { active.status = status; emit() }
+    const job = firstActive()
+    if (job && job.status !== status) { job.status = status; emit() }
   },
-  getStatus(): GenerationStatus { return active ? active.status : 'idle' },
-  getKey(): string | null { return active ? active.key : null },
-  isBusy(): boolean { return !!active },
-  current(): ActiveGeneration | null { return active },
-  /** Token-aware release. The optional legacy form is retained for old adapters. */
+  getStatus(key?: string): GenerationStatus { return (key === undefined ? firstActive() : active.get(key))?.status ?? 'idle' },
+  getKey(): string | null { return firstActive()?.key ?? null },
+  isBusy(): boolean { return active.size > 0 },
+  current(): ActiveGeneration | null { return firstActive() },
+  exclusiveStatus(): GenerationStatus {
+    const job = firstActive()
+    return job && job.conversationId === undefined ? job.status : 'idle'
+  },
+  keyForConversation(conversationId: string): string | null {
+    for (const job of active.values()) {
+      if (job.conversationId === conversationId || job.key === genRootKey(conversationId) || job.key.startsWith('branch:' + conversationId + ':')) return job.key
+    }
+    return null
+  },
+  otherChatKey(viewingKey: string): string | null {
+    for (const job of active.values()) if (job.conversationId && job.key !== viewingKey) return job.key
+    return null
+  },
   end(key: string, token?: symbol): void {
-    if (active && active.key === key && (token === undefined || active.token === token)) {
-      active = null
-      emit()
-    }
+    const job = active.get(key)
+    if (job && (token === undefined || token === job.token)) { active.delete(key); emit() }
   },
-  /** Abort + release ownership unconditionally (the unified stop action). */
+  /** Keep the stopped chat reserved until its accepted reply has settled. */
+  stop(key: string): void {
+    active.get(key)?.controller.abort()
+  },
   cancel(): void {
-    if (active) {
-      try { active.controller.abort() } catch { /* ignore */ }
-      active = null
-      emit()
-    }
+    const jobs = [...active.values()]
+    if (!jobs.length) return
+    active.clear()
+    for (const job of jobs) job.controller.abort()
+    emit()
   },
-  /** Abort + release the active generation belonging to a conversation. */
   cancelForConversation(conversationId: string): void {
-    if (!active) return
-    const k = active.key
-    if (k === 'root:' + conversationId || k.startsWith('branch:' + conversationId + ':')) {
-      try { active.controller.abort() } catch { /* ignore */ }
-      active = null
-      emit()
+    const key = this.keyForConversation(conversationId)
+    if (key) {
+      this.stop(key)
+      this.end(key)
     }
   },
   subscribe(fn: () => void): () => void { subs.add(fn); return () => { subs.delete(fn) } },
 }
 
-/** Stable string keys for generation ownership. */
 export function genRootKey(conversationId: string): string { return 'root:' + conversationId }
 export function genBranchKey(conversationId: string, branchId: string): string { return 'branch:' + conversationId + ':' + branchId }
