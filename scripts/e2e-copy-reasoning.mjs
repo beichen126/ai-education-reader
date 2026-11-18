@@ -55,7 +55,9 @@ try {
     await composer.fill('测试截断')
     await composer.press('Enter')
     const failedMessage = page.getByTestId('assistant-generation-error').locator('..')
-    await failedMessage.getByTestId('message-actions').click()
+    // The failed reply can still scroll into view as the composer settles.
+    // The successful reply above already covers opening the menu by pointer.
+    await failedMessage.getByTestId('message-actions').press('Enter')
     await failedMessage.getByTestId('message-action-copy-reasoning').click()
     await failedMessage.getByText('已复制思维链', { exact: true }).waitFor()
     assert.equal(await failedMessage.getByTestId('message-action-branch').count(), 0)
