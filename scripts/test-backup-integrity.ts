@@ -10,7 +10,7 @@ import { idbClearAll, idbPut, idbGet, closeDb } from '../src/storage/idb.ts'
 import { type OpfsFileSystem } from '../src/storage/binary-store.ts'
 import { buildBackup } from '../src/export/backup-export.ts'
 import { restoreBackup, parseAndValidate, BackupError } from '../src/export/backup-import.ts'
-import { saveConversation } from '../src/storage/storage.ts'
+import { getConversation, saveConversation, updateConversationOrganization } from '../src/storage/storage.ts'
 
 let pass = 0, fail = 0
 function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' + m) } else { fail++; console.log('  FAIL: ' + m) } }
@@ -32,6 +32,26 @@ function installMock() {
   return mock;
 }
 function uninstallMock() { (globalThis as any).__dshOpfsMock = undefined; readCount = 0 }
+
+// Sidebar changes survive a queued content writer and an export/import round trip.
+{
+  await idbClearAll()
+  const pinned = { id: newStableId(), title: 'Pinned', createdAt: 1, updatedAt: 1, messages: [] }
+  const archived = { ...pinned, id: newStableId(), title: 'Archived' }
+  await saveConversation(pinned)
+  await saveConversation(archived)
+  await updateConversationOrganization(pinned.id, 'pin')
+  await updateConversationOrganization(archived.id, 'pin')
+  await updateConversationOrganization(archived.id, 'archive')
+  await saveConversation({ ...archived, title: 'Archived with updated content', updatedAt: 2 })
+  const backup = parseAndValidate(await buildBackup())
+  await restoreBackup(backup)
+  const restoredPin = await getConversation(pinned.id)
+  const restoredArchive = await getConversation(archived.id)
+  assert(typeof restoredPin.pinnedAt === 'number', 'backup round trip preserves pinned chats')
+  assert(typeof restoredArchive.archivedAt === 'number' && restoredArchive.pinnedAt === undefined, 'backup round trip preserves archive and cleared pin after a stale content write')
+  assert(restoredArchive.title === 'Archived with updated content', 'archive metadata and content both survive')
+}
 
 // --- FINDING 4: N documents -> EXACTLY N binary reads (record iterator, no hydrate-all) ---
 {

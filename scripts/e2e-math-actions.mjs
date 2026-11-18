@@ -37,6 +37,8 @@ try {
     const data = new DataTransfer(); document.dispatchEvent(new ClipboardEvent('copy', { clipboardData: data, bubbles: true }))
     return data.getData('text/plain')
   }), '$$x^2+y^2=z^2$$')
+  await mark.waitFor({ state: 'hidden' })
+  await selectFormula()
   await mark.click()
   await selectFormula()
   await page.getByRole('button', { name: '取消标记', exact: true }).waitFor()

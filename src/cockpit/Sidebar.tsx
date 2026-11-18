@@ -8,7 +8,7 @@ import { documentUiActions } from '../documents/document-ui-store'
 import { layoutStore, persistSidebarLayout, useLayoutStore } from '../engine/layout-store'
 import { SIDEBAR_COMPACT_THRESHOLD } from '../dsh/layout/columns'
 import { displayTitle, sanitizeTitle, MAX_TITLE_LEN } from '../engine/session-title'
-import { IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, IconClockOutline16, IconFullscreenOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconQuestionOutline14, Input } from '../dsh/primitives'
+import { IconNewChatOutline16, IconSearchOutline16, IconSettingsOutline16, IconClockOutline16, IconFullscreenOutline16, IconFolderOpenOutline16, IconListPenOutline16, IconArchiveOutline20, Input } from '../dsh/primitives'
 import { learningUiActions } from '../study-cards/learning-ui-store'
 import { IconPhoto16 } from './composer-icons'
 import css from './cockpit.module.css'
@@ -24,9 +24,15 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   const current = useSessions(s => s.current)
   const currentConv = useSessions(s => s.byId[s.current || ''])
   const [q, setQ] = useState('')
+  const [showArchive, setShowArchive] = useState(false)
+  const [organizationError, setOrganizationError] = useState(false)
   const { fs, toggle } = useFullscreen()
-  // Search the same text the user sees (displayTitle), so auto/manual titles are findable.
-  const filtered = q ? sessions.filter(s => localizedSessionTitle(s).toLowerCase().includes(q.toLowerCase())) : sessions
+  const query = q.trim().toLowerCase()
+  const filtered = sessions.filter(session => (session.archivedAt !== undefined) === showArchive && localizedSessionTitle(session).toLowerCase().includes(query))
+  filtered.sort((a, b) => showArchive
+    ? (b.archivedAt ?? 0) - (a.archivedAt ?? 0)
+    : (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0))
+  const toggleArchive = () => { setShowArchive(value => !value); setQ(''); setOrganizationError(false) }
   const fsTitle = fs ? tx('退出全屏', 'Exit full screen') : tx('全屏', 'Full screen')
   const narrow = useLayoutStore(s => s.narrow)
   const toggleDesktopSidebar = () => {
@@ -72,7 +78,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         </div>
       </div>
       <div className={css.sidebarNew}>
-        <button type="button" className={css.newChatBtn} data-testid="sidebar-new-chat" onClick={() => sessionsActions.newChat()}>
+        <button type="button" className={css.newChatBtn} data-testid="sidebar-new-chat" onClick={() => { setShowArchive(false); setQ(''); void sessionsActions.newChat() }}>
           <IconNewChatOutline16 /> {t('sidebar.newChat')}
         </button>
       </div>
@@ -91,11 +97,17 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
           <IconListPenOutline16 /> <span>{tx('学习中心', 'Learning center')}</span>
         </button>
       </div>
-      <div className={css.sidebarSection}>{tx('会话', 'Chats')}</div>
-      <div className={css.sidebarSearch}><Input icon={<IconSearchOutline16 />} value={q} onChange={e => setQ(e.target.value)} placeholder={t('sidebar.search')} /></div>
+      <div className={css.sidebarSection + ' ' + css.historyHeading}>
+        <span>{showArchive ? tx('已归档会话', 'Archived chats') : tx('会话', 'Chats')}</span>
+        <button type="button" className={css.archiveToggle} aria-pressed={showArchive} onClick={toggleArchive}>
+          <IconArchiveOutline20 size={15} /> {tx('归档', 'Archive')}
+        </button>
+      </div>
+      <div className={css.sidebarSearch}><Input icon={<IconSearchOutline16 />} value={q} onChange={e => setQ(e.target.value)} placeholder={showArchive ? tx('搜索归档…', 'Search archive…') : t('sidebar.search')} /></div>
+      {organizationError && <div className={css.sidebarEmpty} role="alert">{tx('会话状态未能保存，请重试。', 'Could not update the chat. Try again.')}</div>}
       <div className={css.sidebarList}>
-        {filtered.map(s => <SessionRow key={s.id} session={s} active={s.id === current} narrow={narrow} />)}
-        {filtered.length === 0 && <div className={css.sidebarEmpty}>{tx('暂无会话', 'No chats')}</div>}
+        {filtered.map(s => <SessionRow key={s.id} session={s} active={s.id === current} narrow={narrow} onOrganizationError={setOrganizationError} />)}
+        {filtered.length === 0 && <div className={css.sidebarEmpty}>{query ? tx('没有匹配的会话', 'No matching chats') : showArchive ? tx('暂无归档会话', 'No archived chats') : tx('暂无会话', 'No chats')}</div>}
       </div>
       <div className={css.sidebarFoot}>
         {!isAndroidReader() && <button type="button" className={css.footBtn} data-testid="sidebar-fullscreen" onClick={toggle}><IconFullscreenOutline16 /> <span>{fsTitle}</span></button>}
@@ -105,13 +117,23 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   )
 }
 
-function SessionRow({ session, active, narrow }: { session: ChatSession; active: boolean; narrow: boolean }) {
+function SessionRow({ session, active, narrow, onOrganizationError }: { session: ChatSession; active: boolean; narrow: boolean; onOrganizationError: (error: boolean) => void }) {
   const busy = useSyncExternalStore(generationRegistry.subscribe, () => !!generationRegistry.keyForConversation(session.id))
   const [menuOpen, setMenuOpen] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renameVal, setRenameVal] = useState('')
   const [confirming, setConfirming] = useState(false)
-  const onOpen = () => { sessionsActions.open(session.id); if (narrow) layoutStore.actions.closeNarrowSidebar() }
+  const menuTrigger = useRef<HTMLButtonElement>(null)
+  const archived = session.archivedAt !== undefined
+  const pinned = session.pinnedAt !== undefined
+  const onOpen = () => { setMenuOpen(false); void sessionsActions.open(session.id); if (narrow) layoutStore.actions.closeNarrowSidebar() }
+  const organize = async (action: Parameters<typeof sessionsActions.organize>[1]) => {
+    setMenuOpen(false)
+    menuTrigger.current?.focus()
+    onOrganizationError(false)
+    try { if (!(await sessionsActions.organize(session.id, action))) onOrganizationError(true) }
+    catch { onOrganizationError(true) }
+  }
   const startRename = () => { setMenuOpen(false); setConfirming(false); setRenameVal(localizedSessionTitle(session)); setRenaming(true) }
   const commitRename = () => {
     const v = sanitizeTitle(renameVal)
@@ -137,15 +159,24 @@ function SessionRow({ session, active, narrow }: { session: ChatSession; active:
     )
   }
   return (
-    <div className={css.sessionRowWrap + (active ? ' ' + css.sessionRowWrapActive : '')}>
-      <button className={css.sessionRow} data-testid="history-session" onClick={onOpen}>
-        <span className={css.sessionDot} data-state={active ? 'done' : 'idle'} />
+    <div className={css.sessionRowWrap + (active ? ' ' + css.sessionRowWrapActive : '')} onBlur={event => {
+      if (menuOpen && event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setMenuOpen(false)
+    }} onKeyDown={event => {
+      if (!menuOpen || event.key !== 'Escape') return
+      event.preventDefault()
+      setMenuOpen(false)
+      menuTrigger.current?.focus()
+    }}>
+      <button className={css.sessionRow} data-testid="history-session" aria-current={active ? 'true' : undefined} onClick={onOpen}>
+        {pinned ? <span className={css.pinnedLabel} title={tx('已置顶', 'Pinned')}>{tx('置顶', 'Pinned')}</span> : <span className={css.sessionDot} data-state={active ? 'done' : 'idle'} />}
         <span className={css.sessionTitle}>{localizedSessionTitle(session)}</span>
         <span className={css.sessionCount}>{busy ? tx('生成中', 'Generating') : session.messages.length}</span>
       </button>
-      <button className={css.rowMenu} title={tx('操作', 'Actions')} onClick={() => setMenuOpen(o => !o)}><span className={css.rowMenuDots}>⋯</span></button>
+      <button ref={menuTrigger} className={css.rowMenu} title={tx('操作', 'Actions')} aria-label={tx('操作', 'Actions')} aria-expanded={menuOpen} onClick={() => setMenuOpen(o => !o)}><span className={css.rowMenuDots}>⋯</span></button>
       {menuOpen && (
         <div className={css.rowMenuPopup}>
+          {!archived && <button className={css.rowMenuItem} onClick={() => void organize(pinned ? 'unpin' : 'pin')}>{pinned ? tx('取消置顶', 'Unpin') : tx('置顶', 'Pin')}</button>}
+          <button className={css.rowMenuItem} onClick={() => void organize(archived ? 'restore' : 'archive')}>{archived ? tx('恢复会话', 'Restore chat') : tx('归档会话', 'Archive chat')}</button>
           <button className={css.rowMenuItem} onClick={startRename}>{tx('重命名', 'Rename')}</button>
           <button className={css.rowMenuItem} onClick={onDeleteClick} data-danger>{tx('删除', 'Delete')}</button>
         </div>

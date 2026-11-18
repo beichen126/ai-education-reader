@@ -309,6 +309,9 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
     if (!isObj(c) || !isNonEmptyStr(c.id)) throw new BackupError('conversation 缺少合法的 id')
     if (!isStr(c.title)) throw new BackupError('conversation.title 必须是字符串')
     if (!isNum(c.createdAt) || !isNum(c.updatedAt)) throw new BackupError('conversation 时间戳必须是数字')
+    for (const field of ['pinnedAt', 'archivedAt'] as const) {
+      if (c[field] !== undefined && (!isInt(c[field]) || c[field] < 0)) throw new BackupError('conversation.' + field + ' 时间戳非法')
+    }
     if (!Array.isArray(c.messages)) throw new BackupError('conversation 缺少 messages 数组')
     convIds.add(c.id)
     const mids = new Set<string>()

@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import type { StableId } from './types'
+import type { DeepSeekDocument } from '../api/deepseek-documents'
 import { getSetting, setSetting, deleteSetting } from '../storage/storage'
 import { existsAttachment } from './attachment-service'
 
@@ -27,11 +28,24 @@ const VERSION = 1
 const TEXT_DEBOUNCE_MS = 500
 
 const drafts = new Map<string, Draft>()
+// Remote file references are kept for the current app session, keyed by the same thread as text.
+const documentDrafts = new Map<string, DeepSeekDocument[]>()
+const emptyDocuments: DeepSeekDocument[] = []
 const subs = new Set<() => void>()
 const textTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 function emit() { subs.forEach(f => f()) }
 function subscribe(fn: () => void) { subs.add(fn); return () => { subs.delete(fn) } }
+
+export function setDraftDocuments(id: string, documents: DeepSeekDocument[]): void {
+  if (documents.length) documentDrafts.set(id, documents)
+  else documentDrafts.delete(id)
+  emit()
+}
+
+export function useDraftDocuments(id: string): DeepSeekDocument[] {
+  return useSyncExternalStore(subscribe, () => documentDrafts.get(id) ?? emptyDocuments)
+}
 
 /** Stable reference: materializes an empty draft on first read so useSyncExternalStore sees a constant snapshot. */
 export function getDraft(id: string): Draft {
@@ -80,13 +94,13 @@ export function removeDraftImage(id: string, img: StableId): void {
 /** Clear text + image ids WITHOUT deleting attachments (ownership moves to a Message on send).
  * Memory is updated synchronously; the persisted row is removed and awaited. */
 export async function clearDraft(id: string): Promise<void> {
-  cancelTextTimer(id)
-  put(id, { text: '', imageIds: [] })
+  clearDraftMemory(id)
   try { await deleteSetting(storageKeyFor(id)) } catch (e) { console.error('[draft] clear delete failed', id, e) }
 }
 export async function deleteDraft(id: string): Promise<void> {
   cancelTextTimer(id)
-  if (drafts.delete(id)) emit()
+  const hasDocuments = documentDrafts.delete(id)
+  if (drafts.delete(id) || hasDocuments) emit()
   try { await deleteSetting(storageKeyFor(id)) } catch (e) { console.error('[draft] delete failed', id, e) }
 }
 /** Clear ONLY the in-memory draft state (no database mutation). Used after the durable
@@ -94,6 +108,7 @@ export async function deleteDraft(id: string): Promise<void> {
  *  here must not issue an extra (duplicate) write. */
 export function clearDraftMemory(id: string): void {
   cancelTextTimer(id)
+  documentDrafts.delete(id)
   put(id, { text: '', imageIds: [] })
 }
 
@@ -115,7 +130,7 @@ function parseDraft(raw: any): Draft | null {
 /** Drop the in-memory draft cache (e.g. after a backup restore replaced all data). */
 export function resetDrafts(): void {
   for (const id of textTimers.keys()) { const t = textTimers.get(id); if (t !== undefined) clearTimeout(t) }
-  textTimers.clear(); drafts.clear(); emit()
+  textTimers.clear(); drafts.clear(); documentDrafts.clear(); emit()
 }
 
 /**

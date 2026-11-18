@@ -46,6 +46,7 @@ function copyMarkdownSelection(event: ClipboardEvent): void {
     event.clipboardData.setData('text/plain', source)
     try { event.clipboardData.setData('text/markdown', source) } catch {}
     event.preventDefault()
+    selection.removeAllRanges()
   } catch { /* Preserve native copy when clipboard access is unavailable. */ }
 }
 

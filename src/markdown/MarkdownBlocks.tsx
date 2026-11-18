@@ -1,5 +1,6 @@
 import {WebImageBlock} from '../web-images/WebImageBlock'
 import { GenUiBlock } from '../genui/GenUiBlock'
+import { isBareGenUi } from '../genui/bare-source'
 import { createElement, Fragment, useLayoutEffect, useMemo, useRef } from 'react'
 import { registerMarkdownSource } from './source-copy'
 import type { ReactNode } from 'react'
@@ -102,7 +103,13 @@ function blockEl(node: any, ctx: RenderCtx, onTableAction?: (tableId: string) =>
   const bid = blockIdOf(messageId, typeCode as any, startOf(node), endOf(node))
   const cur: Cur = { v: 0 }
   if (t === 'heading') { const level = node.depth; return createElement('h' + Math.min(6, Math.max(1, level)), { 'data-block-id': bid, 'data-block-type': 'heading', ...sourceAttrs(node, 'container') }, inlineList(node.children, cur, ctx)) }
-  if (t === 'paragraph') return <p data-block-id={bid} data-block-type='paragraph' {...sourceAttrs(node, 'container')}>{inlineList(node.children, cur, ctx)}</p>
+  if (t === 'paragraph') {
+    if (annotations !== undefined) {
+      const source = ctx.source.slice(startOf(node), endOf(node))
+      if (isBareGenUi(source)) return <GenUiBlock source={source} modern stateKey={messageId+':'+startOf(node)} />
+    }
+    return <p data-block-id={bid} data-block-type='paragraph' {...sourceAttrs(node, 'container')}>{inlineList(node.children, cur, ctx)}</p>
+  }
   if (t === 'list') { const rows = node.children || []; return node.ordered ? <ol start={node.start ?? 1}>{rows.map((li: any, i: number) => <Fragment key={i}>{blockEl(li, ctx)}</Fragment>)}</ol> : <ul>{rows.map((li: any, i: number) => <Fragment key={i}>{blockEl(li, ctx)}</Fragment>)}</ul> }
   if (t === 'listItem') return <li data-block-id={bid} data-block-type='list-item' {...sourceAttrs(node, 'container')}>{innerNodes(node.children || [], cur, ctx)}</li>
   if (t === 'blockquote') return <blockquote data-block-id={bid} data-block-type='blockquote' {...sourceAttrs(node, 'container')}>{innerNodes(node.children || [], cur, ctx)}</blockquote>

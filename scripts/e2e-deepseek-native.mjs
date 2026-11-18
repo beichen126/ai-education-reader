@@ -9,7 +9,10 @@ try {
   requests.push(route.request().postDataJSON())
   await route.fulfill({contentType:'text/event-stream',body:'data: '+JSON.stringify({choices:[{delta:{content:'文件分析完成。',title:'文件学习笔记',server_tool_calls:[{index:0,calls:[]}],annotations:[{type:'url_citation',url_citation:{url:'https://example.com/source',title:'参考资料'}}]},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n'})
  })
- await seedAndBoot(page,{convs:[{id:'native-test',title:'Native test',createdAt:1,updatedAt:1,messages:[]}],settings:{apiKey:'test-native',apiBaseUrl:'https://api.deepseek.com',model:'deepseek-flash',lastConversationId:'native-test',webSearchEnabled:'true',userLocation:'杭州'}})
+ await seedAndBoot(page,{convs:[
+  {id:'native-test',title:'Native test',createdAt:1,updatedAt:1,messages:[]},
+  {id:'other-chat',title:'Other chat',createdAt:2,updatedAt:2,messages:[]},
+ ],settings:{apiKey:'test-native',apiBaseUrl:'https://api.deepseek.com',model:'deepseek-flash',lastConversationId:'native-test',webSearchEnabled:'true',userLocation:'杭州'}})
  await page.locator('[data-testid="composer-attach"]').click()
  await page.locator('[data-testid="composer-deepseek-files"]').click()
  await page.waitForFunction(()=>document.querySelector('input[aria-label="批量上传文件"]')?.disabled===false)
@@ -18,8 +21,16 @@ try {
  await page.getByRole('dialog',{name:'DeepSeek 文件解析'}).screenshot({path:'tmp/deepseek-file-picker.png'})
  await page.getByRole('checkbox',{name:'lesson.txt'}).check()
  await page.getByRole('button',{name:/加入本次提问/}).click()
+ const removeFile = page.getByRole('button',{name:'移除文件',exact:true})
+ const switchChat = title => page.getByTestId('history-session').filter({hasText:title}).click()
+ await removeFile.waitFor()
+ await switchChat('Other chat')
+ await removeFile.waitFor({state:'hidden'})
+ await switchChat('Native test')
+ await removeFile.waitFor()
  await page.getByRole('textbox',{name:'输入消息',exact:true}).fill('总结文件')
  await page.locator('[data-testid="composer-send-stop"]').click()
+ await removeFile.waitFor({state:'hidden'})
  await page.getByText('文件学习笔记',{exact:true}).first().waitFor()
  assert.equal(requests[0].title.enabled,true)
  assert.equal(requests[0].messages.at(-2).role,'latest_reminder')
@@ -33,5 +44,5 @@ try {
  assert.ok(requests[1].messages.find(m=>m.role==='assistant')?.server_tool_calls)
  await page.setViewportSize({width:390,height:844})
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
- console.log('PASS native document selection, metadata, auto title, citations and reload continuation')
+ console.log('PASS native document draft isolation, selection, metadata, auto title, citations and reload continuation')
 } finally {await browser.close()}

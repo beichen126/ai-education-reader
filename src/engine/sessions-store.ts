@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { type Conversation, type Message, type Attachment, type StableId, type DraftDisposition, type QuickFollowUpMetadata, newStableId, NEW_TITLE } from './types'
 import { sanitizeTitle } from './session-title'
-import { getSetting, setSetting, getConversation, saveConversation, saveConversationRenameAndSyncCards, deleteConversation, listConversations, commitAcceptedUserMessage } from '../storage/storage'
+import { getSetting, setSetting, getConversation, saveConversation, saveConversationRenameAndSyncCards, deleteConversation, listConversations, commitAcceptedUserMessage, updateConversationOrganization, type ConversationOrganizationAction } from '../storage/storage'
 import { getSettingsSnapshot } from './settings-store'
 import { providerPreflight } from '../api/chat-provider'
 import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, isVisionModel, exceedsVisionImageCount } from '../api/deepseek'
@@ -85,10 +85,23 @@ function index(list: Conversation[]): Record<string, Conversation> {
 function sortList(list: Conversation[]): Conversation[] { return [...list].sort((a, b) => b.updatedAt - a.updatedAt) }
 function toState(list: Conversation[], current?: string, ready = state.ready, status = state.status, sendError = state.sendError, sendErrorTarget = state.sendErrorTarget): SessionsState {
   const sorted = sortList(list)
-  return { list: sorted, byId: index(sorted), current: current ?? sorted[0]?.id, ready, status, sendError, sendErrorTarget, sendErrors: state.sendErrors, focusMessage: state.focusMessage }
+  return { list: sorted, byId: index(sorted), current: current ?? defaultConversationId(sorted), ready, status, sendError, sendErrorTarget, sendErrors: state.sendErrors, focusMessage: state.focusMessage }
+}
+function defaultConversationId(sorted: Conversation[]): string | undefined {
+  return (sorted.find(conversation => conversation.archivedAt === undefined) ?? sorted[0])?.id
 }
 function upsertState(conv: Conversation) {
   setState(toState(state.list.map(c => c.id === conv.id ? conv : c), state.current))
+}
+function preserveConversationMetadata(conversation: Conversation): Conversation {
+  const current = state.byId[conversation.id]
+  if (!current) return conversation
+  return {
+    ...conversation,
+    pinnedAt: current.pinnedAt,
+    archivedAt: current.archivedAt,
+    ...(current.titleManuallySet ? { title: current.title, titleManuallySet: true, updatedAt: Math.max(conversation.updatedAt, current.updatedAt) } : {}),
+  }
 }
 const LAST_CONV = 'lastConversationId'
 
@@ -107,8 +120,10 @@ const writeChains = new Map<string, Promise<void>>()
 /** Exported for deterministic regression tests (P0-2 ordering). */
 export function enqueueWrite(convId: string, write: () => Promise<void>): Promise<void> {
   const prev = writeChains.get(convId) || Promise.resolve()
-  const next = prev.then(() => write()).catch((e) => { console.error('[stream] durable write failed', convId, e) })
-  writeChains.set(convId, next)
+  const next = prev.then(write)
+  const settled = next.catch((e) => { console.error('[stream] durable write failed', convId, e) })
+  writeChains.set(convId, settled)
+  void settled.then(() => { if (writeChains.get(convId) === settled) writeChains.delete(convId) })
   return next
 }
 /** Resolve when all queued durable writes for a conversation have settled (used to await the
@@ -181,7 +196,7 @@ export const sessionsActions = {
         const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
         const candidate: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
         if (!lease.isCurrent()) { lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
-        upsertState(candidate)
+        upsertState(preserveConversationMetadata(candidate))
         const prepared = await prepareAcceptedSendContext({
           threadRef: { type: 'root', conversationId: id },
           messagesBeforeAcceptance: conv.messages,
@@ -191,10 +206,10 @@ export const sessionsActions = {
           acceptedMessageId: m.id,
         })
         acceptedSend = prepared.context
-        afterUser = { ...candidate, promptTransitions: prepared.nextLocalTransitions }
+        afterUser = preserveConversationMetadata({ ...candidate, promptTransitions: prepared.nextLocalTransitions })
         if (!lease.isCurrent()) {
           lease.release()
-          if (state.byId[id]) upsertState(conv)
+          if (state.byId[id]) upsertState(preserveConversationMetadata(conv))
           return { outcome: Promise.resolve({ kind: 'aborted' } as const) }
         }
         upsertState(afterUser)
@@ -204,7 +219,7 @@ export const sessionsActions = {
       } catch (e) {
         const rejected: RejectedOutcome = { kind: 'rejected', code: 'acceptance-failed', message: '消息发送失败，请重试。' }
         lease.release()
-        if (state.byId[id]) upsertState(conv)
+        if (state.byId[id]) upsertState(preserveConversationMetadata(conv))
         presentRejectedSend(target, rejected, intent)
         return { outcome: Promise.resolve(rejected) }
       }
@@ -228,18 +243,27 @@ export const sessionsActions = {
     // Never store an empty / whitespace-only title; a no-op rename just returns.
     if (!clean) return
     const updated: Conversation = { ...conv, title: clean, titleManuallySet: true, updatedAt: Date.now() }
-    upsertState(updated); await saveConversationRenameAndSyncCards(updated)
+    upsertState(updated)
+    await enqueueWrite(id, async () => {
+      if (state.byId[id]) await saveConversationRenameAndSyncCards(id, clean, updated.updatedAt)
+    })
+  },
+  async organize(id: string, action: ConversationOrganizationAction): Promise<boolean> {
+    if (!state.byId[id]) return false
+    const organization = await updateConversationOrganization(id, action)
+    const current = state.byId[id]
+    if (!current || !organization) return false
+    upsertState({ ...current, ...organization })
+    return true
   },
   async remove(id: string) {
     // If a reply stream is actively generating for THIS conversation, abort it. It must
     // never resurrect a deleted conversation or recreate deleted attachments/messages.
     generationRegistry.cancelForConversation(id)
-    // Invalidate any pending durable write for this conversation so a late checkpoint cannot
-    // recreate the deleted row (P0-2).
-    writeChains.delete(id)
     const conv = state.byId[id]
     const next = toState(state.list.filter(c => c.id !== id), state.current === id ? undefined : state.current)
     setState({ ...next, focusMessage: state.focusMessage?.conversationId === id ? undefined : state.focusMessage })
+    await drainWrites(id)
     await deleteConversation(id)
     if (conv) {
       const ids = new Set<string>()
@@ -265,7 +289,7 @@ export const sessionsActions = {
  *  in-memory stream); the chain keeps the next queued write alive regardless. */
 export async function persistConversation(conv: Conversation): Promise<void> {
   // Guard: never resurrect a conversation that was deleted while a write was queued.
-  return enqueueWrite(conv.id, async () => { if (state.byId[conv.id]) await saveConversation(conv) })
+  await enqueueWrite(conv.id, async () => { if (state.byId[conv.id]) await saveConversation(conv) }).catch(() => {})
 }
 
 /** Root reply stream: runs AFTER the user message is accepted & persisted. */
@@ -299,7 +323,7 @@ class RootReplyThread implements ReplyThread {
   persistCheckpoint(content: string): void {
     const cur = state.byId[this.id]; if (!cur) return
     const last = cur.messages[cur.messages.length - 1]
-    if (!last || last.id !== this.assistantId || last.content === content) return
+    if (!last || last.id !== this.assistantId) return
     const updatedMsg: Message = { ...last, content, updatedAt: Date.now() }
     const updated: Conversation = { ...cur, updatedAt: Date.now(), messages: [...cur.messages.slice(0, -1), updatedMsg] }
     void persistConversation(updated)
@@ -346,7 +370,7 @@ export async function initStore(): Promise<void> {
     return
   }
   const last = await getSetting(LAST_CONV)
-  const lastOk = last && convs.some(c => c.id === last) ? last : convs[0].id
+  const lastOk = last && convs.some(c => c.id === last) ? last : defaultConversationId(convs)
   await initDrafts(convs.map(c => c.id))
   setState(toState(convs, lastOk, true))
   if (last !== lastOk) await setSetting(LAST_CONV, lastOk)

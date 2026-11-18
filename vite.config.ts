@@ -6,6 +6,8 @@ import { readerLocalProxyPlugin, LOCAL_PROXY_PATH } from './server/local-transpo
 // Single version source of truth: package.json -> build-time __APP_VERSION__ (see vite-env.d.ts).
 export default defineConfig(({mode}) => ({
   resolve: {alias:genuiAliases},
+  // These source imports need the Reader transforms in development as well as at build time.
+  optimizeDeps: {exclude: Object.keys(genuiAliases), include: ['anser']},
   plugins: [react(), genuiAssetsPlugin(), ...(mode === 'reader-local' ? [readerLocalProxyPlugin()] : [])],
   ...(mode === 'reader-local' ? { server: { proxy: { [LOCAL_PROXY_PATH]: {
     target: 'http://127.0.0.1:8091', changeOrigin: true,

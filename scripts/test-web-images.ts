@@ -16,7 +16,8 @@ assert.throws(()=>parseImageQueries('{"type":"image","query":"x"}'))
 const messages:any=[{role:'user',content:'hello'}]
 appendGenUiGuidance(messages)
 assert.ok(!messages[0].content.includes(WEB_IMAGE_PROMPT),'unconfigured model receives no image capability')
-assert.ok(FULL_GENUI_PROMPT.includes('使用 genui 代码围栏'))
+assert.ok(FULL_GENUI_PROMPT.includes('三个反引号紧接 genui 开启围栏'))
+assert.ok(FULL_GENUI_PROMPT.includes('另起一行写三个反引号关闭围栏'))
 assert.ok(!FULL_GENUI_PROMPT.includes('"schema":"dsh-genui"'))
 const original=globalThis.fetch
 try {

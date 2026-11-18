@@ -54,13 +54,6 @@ export class BranchReplyThread implements ReplyThread {
       return { ...b, updatedAt: Date.now(), messages: [...b.messages.slice(0, -1), { ...last, content, ...metadata, ...(usage ? { tokenUsage: usage } : {}), updatedAt: Date.now() }] }
     })
   }
-  persistCheckpoint(content: string): void {
-    this.mutate((b) => {
-      const last = b.messages[b.messages.length - 1]
-      if (!last || last.id !== this.assistantId || last.content === content) return b
-      return { ...b, updatedAt: Date.now(), messages: [...b.messages.slice(0, -1), { ...last, content, updatedAt: Date.now() }] }
-    })
-  }
   async persistFinal(): Promise<void> { await drainBranchWrites(this.branchId) }
   async drainWrites(): Promise<void> { await drainBranchWrites(this.branchId) }
   async exists(): Promise<boolean> { return !!(await getBranch(this.branchId)) }
@@ -83,14 +76,14 @@ export class BranchReplyThread implements ReplyThread {
       const b = await getBranch(this.branchId)
       if (!b) return
       const next = updater(b)
-      await saveBranch(next)
+      if (next !== b) await saveBranch(next)
     })
   }
 }
 
 /**
  * Send a user message into a branch and run the shared reply engine. Atomic user-message
- * acceptance happens first; only then does the stream start. One global generation lock.
+ * acceptance happens first; only then does the stream start using the conversation's slot.
  * Resolves to the terminal SendOutcome after acceptance and streaming settle.
  */
 export type BranchReplyOptions = {

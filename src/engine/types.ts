@@ -145,6 +145,6 @@ export function normalizeMessagePdfContexts(message: Message): Message {
 export function normalizeConversationPdfContexts<T extends { messages: Message[] }>(conversation: T): T {
   return { ...conversation, messages: conversation.messages.map(normalizeMessagePdfContexts) }
 }
-export type Conversation = { id: StableId; title: string; titleManuallySet?: boolean; createdAt: number; updatedAt: number; messages: Message[]; promptTransitions?: PromptTransition[] }
+export type Conversation = { id: StableId; title: string; titleManuallySet?: boolean; pinnedAt?: number; archivedAt?: number; createdAt: number; updatedAt: number; messages: Message[]; promptTransitions?: PromptTransition[] }
 export const NEW_TITLE = '新会话'
 export function newStableId(): StableId { return globalThis.crypto.randomUUID() }

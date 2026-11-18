@@ -78,6 +78,8 @@ assert(await page.evaluate(() => navigator.clipboard.readText()) === '## 源码�
 await selectRange('code', 0, 'code', -1)
 await page.keyboard.press('Control+C')
 assert(await page.evaluate(() => navigator.clipboard.readText()) === '`const x = 1`', 'a fully selected inline-code span restores its Markdown delimiters')
+await completedRow.getByTestId('selection-copy').waitFor({state:'hidden'})
+assert(await page.evaluate(() => window.getSelection().isCollapsed), 'successful native copy clears the selection')
 
 const copyButtons = page.locator('[data-testid="message-copy-source"]')
 assert(await copyButtons.count() === 3, 'every non-empty settled assistant reply also exposes one-click full-source copy')

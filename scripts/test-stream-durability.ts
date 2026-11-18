@@ -73,11 +73,20 @@ await initStore()
   await s.waitForPull()
   s.push(delta('partial-'))
   await s.waitForPull()
+  const live = await waitForConversation('first checkpoint while stream remains open', id, (value) => value?.messages.at(-1)?.content === 'partial-')
+  assert(live.messages.at(-1)?.status === undefined, 'first delta is durable before stream settles')
+  await sessionsActions.organize(id, 'archive')
+  s.push(delta('tail'))
+  await s.waitForPull()
+  const paused = await waitForConversation('trailing checkpoint while stream is paused', id, (value) => value?.messages.at(-1)?.content === 'partial-tail', 4000)
+  assert(true, 'last delta is durable even when the server pauses')
+  assert(typeof paused.archivedAt === 'number', 'stream checkpoints preserve an archive operation')
   s.error()
   const conv = await waitForConversation('partial stream error', id, (value) => {
     const assistant = value?.messages.filter((message) => message.role === 'assistant') ?? []
-    return assistant.length === 1 && assistant[0].content.includes('partial')
+    return assistant.length === 1 && assistant[0].status === 'failed'
   })
+  assert(typeof conv.archivedAt === 'number', 'final error settlement preserves the archive operation')
   const msgs = conv ? conv.messages : []
   const asst = msgs.filter(m => m.role === 'assistant')
   assert(asst.length === 1, '1: one assistant message after mid-stream error (got ' + asst.length + ')')

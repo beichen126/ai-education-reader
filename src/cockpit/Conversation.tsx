@@ -3,7 +3,6 @@ import {YoutubePicker} from '../youtube/YoutubePicker'
 import {transcriptPreview} from '../youtube/preview'
 import type {YoutubeTranscript} from '../youtube/transcript'
 import { DeepSeekDocumentPicker } from './DeepSeekDocumentPicker'
-import type { DeepSeekDocument } from '../api/deepseek-documents'
 import { isOfficialDeepSeek } from '../api/deepseek-files'
 import { VoiceInput } from '../speech/VoiceInput'
 import { readAloud } from '../speech/read-aloud'
@@ -16,7 +15,7 @@ import { patchSettings, useSettings, useSettingsMutation } from '../engine/setti
 import { formatTokenCount } from '../engine/token-usage'
 import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel } from '../engine/attachment-service'
-import { useDraftImageIds, getDraft, removeDraftImage, updateDraftMemory } from '../engine/draft-store'
+import { useDraftDocuments, setDraftDocuments, useDraftImageIds, getDraft, removeDraftImage, updateDraftMemory } from '../engine/draft-store'
 import { ComposerInput } from './ComposerInput'
 import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
 import { localizedErrorText, localizedStudyCardTitle, t, tx, useUiLanguage } from '../engine/locale'
@@ -588,8 +587,7 @@ function Composer({ sessionId, busy, generationKey, status, thread, onBranchSent
   const composerKeyRef = useRef(key); composerKeyRef.current = key
   const [documentPicker,setDocumentPicker]=useState(false)
   const [youtubePicker,setYoutubePicker]=useState(false)
-  const [documentDraft,setDocumentDraft]=useState<{key:string;docs:DeepSeekDocument[]}>({key:'',docs:[]})
-  const documents=documentDraft.key===key?documentDraft.docs:[]
+  const documents = useDraftDocuments(key)
   const supportsDocuments=useSettings(s=>s.chatProvider!=='openai-local'&&isOfficialDeepSeek(s.apiBaseUrl)&&s.model==='deepseek-flash')
   const picIds = useDraftImageIds(key)
   const webSearchEnabled = useSettings(s => s.webSearchEnabled === true)
@@ -726,14 +724,11 @@ function Composer({ sessionId, busy, generationKey, status, thread, onBranchSent
     }
     if (isBranch && thread) {
       const outcome = await runBranchReply(thread.conversationId, thread.branchId!, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), imageIds, {documents})
-      if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { if (composerAliveRef.current) { setDocumentDraft(current => current === documentDraft ? {key,docs:[]} : current); onBranchSent?.() } }
+      if (outcome.kind !== 'rejected' && composerAliveRef.current) onBranchSent?.()
       return
     }
     if (!sessionId) return
-    const outcome = await sessionsActions.sendUserMessage(sessionId, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), imageIds, {documents})
-    // Only clear the draft once the user message is ACCEPTED & persisted; the image ids
-    // then belong to the message (ownership transfer), so we must NOT delete them here.
-    if (outcome.kind !== 'rejected' && !(outcome.kind === 'aborted' && !outcome.assistantMessageId)) { if (composerAliveRef.current) setDocumentDraft(current => current === documentDraft ? {key,docs:[]} : current) }
+    await sessionsActions.sendUserMessage(sessionId, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), imageIds, {documents})
   }
   async function attachTranscript(data:YoutubeTranscript){
     const targetKey=key,blob=await transcriptPreview(data);
@@ -747,8 +742,8 @@ function Composer({ sessionId, busy, generationKey, status, thread, onBranchSent
   return (
     <div className={css.composer} data-testid="composer">
       {youtubePicker && <YoutubePicker key={key} onClose={()=>setYoutubePicker(false)} onSelect={attachTranscript} />}
-      {documentPicker && <DeepSeekDocumentPicker key={key} onClose={()=>setDocumentPicker(false)} onSelect={docs=>setDocumentDraft({key,docs})} />}
-      {documents.length>0 && <div>{documents.map(d=><span key={d.id}>{d.name} <button type="button" aria-label={tx('移除文件','Remove file')} onClick={()=>setDocumentDraft({key,docs:documents.filter(x=>x.id!==d.id)})}>×</button> </span>)}</div>}
+      {documentPicker && <DeepSeekDocumentPicker onClose={()=>setDocumentPicker(false)} onSelect={docs=>setDraftDocuments(key,docs)} />}
+      {documents.length>0 && <div>{documents.map(d=><span key={d.id}>{d.name} <button type="button" aria-label={tx('移除文件','Remove file')} onClick={()=>setDraftDocuments(key,documents.filter(x=>x.id!==d.id))}>×</button> </span>)}</div>}
       {photoError && <div className={css.errorBanner}>{photoError}</div>}
       {picIds.length > 0 && (
         <div className={css.composerPics}>

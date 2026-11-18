@@ -11,6 +11,10 @@
 .sidebarSearch { padding: 0 12px 8px; }
 .sidebarList { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 6px; }
 .sidebarEmpty { padding: 16px 12px; color: var(--dsw-alias-label-tertiary); font-size: 12px; }
+.historyHeading { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.archiveToggle { display: inline-flex; align-items: center; gap: 4px; flex: none; min-height: 28px; padding: 2px 6px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; cursor: pointer; }
+.archiveToggle:hover, .archiveToggle[aria-pressed="true"] { background: var(--dsw-alias-interactive-bg-active); color: var(--dsw-alias-label-primary); }
+.pinnedLabel { flex: none; color: var(--dsw-alias-brand-primary); font-size: 11px; }
 .sessionRow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: none; border-radius: 10px; background: transparent; cursor: pointer; color: var(--dsw-alias-label-secondary); text-align: left; }
 .sessionRow:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .sessionRowActive { background: var(--dsw-alias-button-ghost-active-fill, var(--dsw-alias-interactive-bg-active)); }
@@ -168,11 +172,11 @@
 .sessionRowWrap { position: relative; border-radius: 10px; }
 .sessionRowWrapActive { background: var(--dsw-alias-button-ghost-active-fill, var(--dsw-alias-interactive-bg-active)); }
 .sessionRowWrapActive .sessionRow { background: transparent; }
-.rowMenu { position: absolute; top: 50%; right: 4px; transform: translateY(-50%); border: none; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; width: 26px; height: 26px; border-radius: 6px; }
+.rowMenu { position: absolute; top: 3px; right: 4px; border: none; background: transparent; color: var(--dsw-alias-label-tertiary); cursor: pointer; width: 26px; height: 26px; border-radius: 6px; }
 .rowMenu:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .rowMenuDots { font-size: 14px; letter-spacing: 1px; }
 .sessionRow { width: 100%; padding-right: 30px; }
-.rowMenuPopup { position: absolute; top: 100%; right: 4px; z-index: 20; min-width: 96px; margin-top: 2px; padding: 4px; border-radius: 8px; background: var(--dsw-alias-bg-layer-2); box-shadow: 0 2px 8px rgba(0,0,0,.12); display: flex; flex-direction: column; gap: 2px; }
+.rowMenuPopup { width: max-content; max-width: calc(100% - 8px); margin: 2px 4px 6px auto; padding: 4px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-2); display: flex; flex-direction: column; gap: 2px; }
 .rowMenuItem { border: none; background: transparent; color: var(--dsw-alias-label-secondary); text-align: left; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
 .rowMenuItem:hover { background: var(--dsw-alias-interactive-bg-hover); }
 .rowMenuItem[data-danger] { color: var(--dsw-alias-state-error-primary); }

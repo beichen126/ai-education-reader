@@ -1,5 +1,5 @@
 import { idbGet, idbGetAll, idbGetAllKeys, idbPut, idbDelete, idbGetAllByIndex, idbDeleteByIndex, idbBatchPut, idbBatchDelete, idbClearAll, idbRunTxn } from './idb'
-import { normalizeConversationPdfContexts, type Attachment, type DraftDisposition } from '../engine/types'
+import { normalizeConversationPdfContexts, type Attachment, type Conversation, type DraftDisposition } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import type { StoredBinary } from './binary-store'
 import { MAX_STUDY_CARD_TITLE_LENGTH } from '../study-cards/study-card-types'
@@ -35,8 +35,39 @@ export async function setSetting(key: string, value: any): Promise<void> { await
 export async function deleteSetting(key: string): Promise<void> { await idbDelete('settings', key) }
 export async function getConversation(id: string): Promise<any> { const conv = await idbGet('conversations', id); return conv ? normalizeConversationPdfContexts(conv) : conv }
 export async function listConversations(): Promise<any[]> { const all = await idbGetAll('conversations'); return all.map(normalizeConversationPdfContexts).sort((a, b) => b.updatedAt - a.updatedAt) }
-export async function saveConversation(conv: any): Promise<void> { await idbPut('conversations', normalizeConversationPdfContexts(conv)) }
+/** Content writers preserve sidebar changes made after they loaded their conversation. */
+function putConversation(store: IDBObjectStore, conversation: Conversation): void {
+  const request = store.get(conversation.id)
+  request.onsuccess = () => {
+    const stored = request.result as Conversation | undefined
+    store.put(stored ? { ...conversation, pinnedAt: stored.pinnedAt, archivedAt: stored.archivedAt } : conversation)
+  }
+}
+export async function saveConversation(conv: Conversation): Promise<void> {
+  const normalized = normalizeConversationPdfContexts(conv)
+  await idbRunTxn(['conversations'], txn => putConversation(txn.objectStore('conversations'), normalized))
+}
 export async function deleteConversation(id: string): Promise<void> { await idbDelete('conversations', id) }
+
+export type ConversationOrganizationAction = 'pin' | 'unpin' | 'archive' | 'restore'
+export async function updateConversationOrganization(id: string, action: ConversationOrganizationAction): Promise<Pick<Conversation, 'pinnedAt' | 'archivedAt'> | undefined> {
+  let result: Pick<Conversation, 'pinnedAt' | 'archivedAt'> | undefined
+  await idbRunTxn(['conversations'], txn => {
+    const store = txn.objectStore('conversations')
+    const request = store.get(id)
+    request.onsuccess = () => {
+      const conversation = request.result as Conversation | undefined
+      if (!conversation || (action === 'pin' && conversation.archivedAt !== undefined)) return
+      const now = Date.now()
+      result = {
+        pinnedAt: action === 'pin' ? conversation.pinnedAt ?? now : action === 'unpin' || action === 'archive' ? undefined : conversation.pinnedAt,
+        archivedAt: action === 'archive' ? conversation.archivedAt ?? now : action === 'restore' ? undefined : conversation.archivedAt,
+      }
+      store.put({ ...conversation, ...result })
+    }
+  })
+  return result
+}
 
 /**
  * Persist a conversation rename and update its card metadata in the same transaction.
@@ -44,27 +75,31 @@ export async function deleteConversation(id: string): Promise<void> { await idbD
  * the user stay untouched. Every card keeps the latest conversation name as its fallback
  * snapshot in case the source conversation is deleted later.
  */
-export async function saveConversationRenameAndSyncCards(conv: any): Promise<void> {
-  const normalized = normalizeConversationPdfContexts(conv)
+export async function saveConversationRenameAndSyncCards(id: string, title: string, updatedAt: number): Promise<void> {
   await idbRunTxn(['conversations', 'studyCards'], txn => {
-    txn.objectStore('conversations').put(normalized)
+    const conversations = txn.objectStore('conversations')
+    const lookup = conversations.get(id)
+    lookup.onsuccess = () => {
+      const conversation = lookup.result
+      if (conversation) conversations.put({ ...conversation, title, titleManuallySet: true, updatedAt: Math.max(conversation.updatedAt, updatedAt) })
+    }
     const cards = txn.objectStore('studyCards')
-    const request = cards.index('by_source_conversation').openCursor(IDBKeyRange.only(normalized.id))
+    const request = cards.index('by_source_conversation').openCursor(IDBKeyRange.only(id))
     request.onsuccess = () => {
       const cursor = request.result
       if (!cursor) return
       const current = cursor.value as any
       const source = current && typeof current.source === 'object' && current.source
-        ? { ...current.source, conversationTitleSnapshot: normalized.title }
+        ? { ...current.source, conversationTitleSnapshot: title }
         : current.source
       const ordinal = current.autoTitleOrdinal
-      const title = current.titleMode === 'auto' && Number.isInteger(ordinal) && ordinal >= 1
-        ? (String(normalized.title).trim() + '-' + ordinal).slice(0, MAX_STUDY_CARD_TITLE_LENGTH)
+      const cardTitle = current.titleMode === 'auto' && Number.isInteger(ordinal) && ordinal >= 1
+        ? (title + '-' + ordinal).slice(0, MAX_STUDY_CARD_TITLE_LENGTH)
         : current.title
-      const changed = title !== current.title || source?.conversationTitleSnapshot !== current.source?.conversationTitleSnapshot
+      const changed = cardTitle !== current.title || source?.conversationTitleSnapshot !== current.source?.conversationTitleSnapshot
       if (changed) {
         const previousRevision = Number.isFinite(current.updatedAt) ? current.updatedAt : 0
-        cursor.update({ ...current, title, source, updatedAt: Math.max(Date.now(), previousRevision + 1) })
+        cursor.update({ ...current, title: cardTitle, source, updatedAt: Math.max(Date.now(), previousRevision + 1) })
       }
       cursor.continue()
     }
@@ -87,10 +122,10 @@ export const LAST_CONVERSATION_ID_KEY = 'lastConversationId'
  * durable state where only some of these three acceptance operations landed.
  * On failure nothing commits and the caller keeps its Draft intact.
  */
-export async function commitAcceptedUserMessage(conv: any, lastConversationId: string, draftKey: string | null, draftDisposition: DraftDisposition = 'clear'): Promise<void> {
+export async function commitAcceptedUserMessage(conv: Conversation, lastConversationId: string, draftKey: string | null, draftDisposition: DraftDisposition = 'clear'): Promise<void> {
   const normalized = normalizeConversationPdfContexts(conv)
   await idbRunTxn(['conversations', 'settings'], (txn) => {
-    txn.objectStore('conversations').put(normalized)
+    putConversation(txn.objectStore('conversations'), normalized)
     txn.objectStore('settings').put({ key: LAST_CONVERSATION_ID_KEY, value: lastConversationId })
     if (draftKey && draftDisposition === 'clear') txn.objectStore('settings').delete(draftKey)
   })

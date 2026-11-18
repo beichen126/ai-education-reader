@@ -29,6 +29,11 @@ export function normalizeGenuiInput(value: any, notices:string[]=[]): any {
    if(Array.isArray(next.answer))next.answer='__reader_multi__:'+JSON.stringify(next.answer)
   }
   if (next.type === 'card' && next.flat === undefined) next.flat = true
+  if (next.type === 'badge') {
+   if (next.tone === 'info') next.tone = 'accent'
+   if (next.tone === 'warning') next.tone = 'warn'
+   if (next.tone === 'error') next.tone = 'danger'
+  }
   if (next.type === 'col' && next.gap === undefined) next.gap = 8
   if (next.type === 'card' && typeof next.accent === 'boolean') {
    if (next.accent) next.accent = '#5b8def'

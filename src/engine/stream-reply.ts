@@ -31,7 +31,7 @@ export interface ReplyThread {
   getContextMessages(): Message[] | Promise<Message[]>
   createAssistantPlaceholder(assistantId: StableId, now: number): void
   updateAssistantContent(content: string, usage?: import('./token-usage').TokenUsage, metadata?: ReplyMetadata): void
-  persistCheckpoint(content: string): void
+  persistCheckpoint?(content: string): void
   persistFinal(): Promise<void>
   drainWrites(): Promise<void>
   exists(): boolean | Promise<boolean>
@@ -62,25 +62,33 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
   let received = ''
   let reasoning = ''
   let lastRender = 0
-  let lastDurable = 0
+  let lastDurable = -Infinity
   let renderTimer: ReturnType<typeof setTimeout> | undefined
-  const update = (content: string, flushDurable: boolean) => {
-    thread.updateAssistantContent(content)
-    if (flushDurable && Date.now() - lastDurable >= DURABLE_CHECKPOINT_MS) { lastDurable = Date.now(); thread.persistCheckpoint(content) }
+  let durableTimer: ReturnType<typeof setTimeout> | undefined
+  const checkpoint = () => {
+    durableTimer = undefined
+    if (!ownedLease.isCurrent()) return
+    lastDurable = Date.now()
+    thread.persistCheckpoint?.(received)
   }
   const onDelta = (d: string) => {
     received += d
+    if (thread.persistCheckpoint && durableTimer === undefined) {
+      const delay = DURABLE_CHECKPOINT_MS - (Date.now() - lastDurable)
+      if (delay <= 0) checkpoint()
+      else durableTimer = setTimeout(checkpoint, delay)
+    }
     const elapsed=Date.now()-lastRender
     if(elapsed>=STREAM_RENDER_INTERVAL_MS) {
       clearTimeout(renderTimer);renderTimer=undefined
-      lastRender=Date.now();update(received,false)
+      lastRender=Date.now();thread.updateAssistantContent(received)
     } else if(renderTimer===undefined) {
       // Flush the trailing delta even when the server pauses before its next
       // chunk. Throttling must delay rendering, never wait for completion.
       renderTimer=setTimeout(()=>{
         renderTimer=undefined
         if(!ownedLease.isCurrent() || controller.signal.aborted)return
-        lastRender=Date.now();update(received,false)
+        lastRender=Date.now();thread.updateAssistantContent(received)
       },STREAM_RENDER_INTERVAL_MS-elapsed)
     }
   }
@@ -139,7 +147,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     })
     clearTimeout(renderTimer);renderTimer=undefined
     received = r.content + webFooter + citationFooter(r.annotations)
-    update(received, true)
+    clearTimeout(durableTimer)
     thread.updateAssistantContent(received, r.usage, { serverToolCalls: r.serverToolCalls, annotations: r.annotations, reasoning: r.reasoning })
     if (typeof r.title==='string') thread.acceptTitle?.(r.title)
     if (!(await thread.exists())) throw new DeepSeekError('aborted', '目标已删除')
@@ -149,7 +157,8 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     return { kind: 'completed', assistantMessageId: assistantId }
   } catch (e) {
     clearTimeout(renderTimer);renderTimer=undefined
-    update(received, true)
+    clearTimeout(durableTimer)
+    if (placeholderCreated) thread.updateAssistantContent(received)
     if (placeholderCreated && reasoning.trim()) thread.updateAssistantContent(received, undefined, { reasoning })
     if (e instanceof AttachmentError) {
       const failure: SendFailure = { kind: 'failed', code: 'attachment-' + e.kind, message: attachmentErrorLabel(e.kind), ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
@@ -177,6 +186,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     return failure
   } finally {
     clearTimeout(renderTimer)
+    clearTimeout(durableTimer)
     ownedLease.release()
   }
 }
