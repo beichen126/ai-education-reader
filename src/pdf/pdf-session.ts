@@ -1,4 +1,4 @@
-import { closeAndroidPdf } from './android-pdf'
+import { closeAndroidPdf, setAndroidPdfSource } from './android-pdf'
 // Explicit PDF session runtime (Stage 9.2B1). The full Reader must NOT depend on
 // pdf-service's single activeDoc/activeLoadingTask singleton (which the PdfPanel
 // owns): one Reader instance owns its own PdfSession, so opening/closing the
@@ -30,6 +30,7 @@ export async function openPdfSession(blob: Blob): Promise<{ session: PdfSession;
   let proxy: import('pdfjs-dist').PDFDocumentProxy
   try { proxy = await task.promise } catch (err) { try { await task.destroy() } catch { /* ignore */ } if (isPasswordError(err)) throw new PdfError('password', 'password protected'); throw new PdfError('parse-failed', 'parse failed') }
   if (proxy.numPages < 1) { try { await task.destroy() } catch { /* ignore */ } throw new PdfError('empty', 'empty') }
+  setAndroidPdfSource(proxy, blob)
   return {
     session: { loadingTask: task, documentProxy: proxy },
     doc: { fileName: (typeof (blob as any).name === 'string' ? (blob as any).name : 'document.pdf'), fileSize: blob.size, pageCount: proxy.numPages },

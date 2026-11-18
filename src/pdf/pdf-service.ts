@@ -1,4 +1,4 @@
-import { androidDisplayReady, renderAndroidPdf, closeAndroidPdf } from './android-pdf'
+import { closeAndroidPdf, renderAndroidPdf, setAndroidPdfSource, warmAndroidPdf } from './android-pdf'
 // PDF.js integration boundary. UI never touches PDF.js directly.
 // Responsibilities: document open/close, page render (Canvas -> Blob), worker config.
 //
@@ -101,6 +101,7 @@ export async function openPdf(file: File): Promise<LocalPdfDocument> {
   }
   if (doc.numPages < 1) { try { await task.destroy() } catch { /* ignore */ } activeLoadingTask = null; if (activeOpenToken === openToken) activeOpenToken = null; throw new PdfError('empty', 'empty') }
   activeDoc = doc
+  setAndroidPdfSource(doc, file)
   // Keep the loading task so closePdf() can destroy this document later.
   return { fileName: file.name, fileSize: file.size, pageCount: doc.numPages }
 }
@@ -148,17 +149,21 @@ export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumen
     canvas.height = 0
     throw new PdfError('render-failed', 'render failed')
   } finally { opts?.signal?.removeEventListener('abort', cancel) }
-  const blob = await new Promise<Blob>((resolve, reject) => {
-    canvas.toBlob(
-      (b) => (b ? resolve(b) : reject(new PdfError('render-failed', 'toBlob failed'))),
-      OUTPUT_IMAGE_MIME,
-      JPEG_QUALITY,
-    )
-  })
-  // Release the large Canvas backing store now that the Blob is produced.
-  canvas.width = 0
-  canvas.height = 0
-  return { blob, width, height, mimeType: OUTPUT_IMAGE_MIME }
+  try {
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new PdfError('render-failed', 'toBlob failed'))),
+        OUTPUT_IMAGE_MIME,
+        JPEG_QUALITY,
+      )
+    })
+    if (opts?.signal?.aborted) throw new PdfCancellationError()
+    warmAndroidPdf(doc)
+    return { blob, width, height, mimeType: OUTPUT_IMAGE_MIME }
+  } finally {
+    canvas.width = 0
+    canvas.height = 0
+  }
 }
 
 /** Clamp the render scale for a page with a custom long-edge target (thumbnail renders).
@@ -249,7 +254,8 @@ export function startPageSurfaceRender(doc: import('pdfjs-dist').PDFDocumentProx
     const vp = page.getViewport({ scale })
     const width = Math.max(1, Math.floor(vp.width))
     const height = Math.max(1, Math.floor(vp.height))
-    const native = typeof createImageBitmap === 'function' && androidDisplayReady(doc) ? await renderAndroidPdf(doc, pageNumber, Math.max(width, height), controller.signal) : null
+    const canUseBitmap = typeof createImageBitmap === 'function'
+    const native = canUseBitmap ? await renderAndroidPdf(doc, pageNumber, Math.max(width, height), controller.signal) : null
     if (cancelled) throw new PdfCancellationError()
     if (native) {
       const bitmap = typeof createImageBitmap === 'function' ? await createImageBitmap(native.blob).catch(() => null) : null
@@ -271,16 +277,14 @@ export function startPageSurfaceRender(doc: import('pdfjs-dist').PDFDocumentProx
       if (cancelled || isRenderCancellation(e)) throw new PdfCancellationError()
       throw new PdfError('render-failed', 'render failed')
     }
-    try {
-      const bitmap = await createImageBitmap(canvas)
+    const bitmap = canUseBitmap ? await createImageBitmap(canvas).catch(() => null) : null
+    if (bitmap || cancelled) {
       canvas.width = 0
       canvas.height = 0
-      return { surface: bitmap, width, height, scale, pageNumber }
-    } catch {
-      // createImageBitmap unsupported / raced; keep the canvas itself as the surface.
-      if (cancelled) throw new PdfCancellationError()
-      return { surface: canvas, width, height, scale, pageNumber }
     }
+    if (cancelled) { bitmap?.close(); throw new PdfCancellationError() }
+    if (canUseBitmap) warmAndroidPdf(doc)
+    return { surface: bitmap ?? canvas, width, height, scale, pageNumber }
   })()
   return {
     promise,

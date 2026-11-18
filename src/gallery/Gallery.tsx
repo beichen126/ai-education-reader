@@ -3,6 +3,7 @@ import { useSessions } from '../engine/sessions-store'
 import { useGallery, galleryActions } from './gallery-store'
 import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
 import { ZoomableImageDialog } from './ZoomableImageDialog'
+import { AttachmentPageOcr } from '../documents/PdfOcrControls'
 import { clampIndex } from './zoom'
 import css from './gallery.module.css'
 import { tx } from '../engine/locale'
@@ -65,6 +66,7 @@ function GalleryViewer({ imageIds, index }: { imageIds: string[]; index: number 
       onNext={() => galleryActions.goto(clampIndex(index + 1, count))}
       onBackToList={galleryActions.showList}
       onClose={galleryActions.close}
+      headerAction={<AttachmentPageOcr key={id} attachmentId={id} />}
       labels={{ close: tx('关闭', 'Close'), prev: tx('上一张', 'Previous'), next: tx('下一张', 'Next'), backToList: tx('返回列表', 'Back to list'), dialog: tx('图片大图查看', 'Image viewer') }}
     />
   )

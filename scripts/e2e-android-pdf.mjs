@@ -3,13 +3,14 @@ import { launchBrowser } from './e2e-browser.mjs'
 import { seedAndBoot } from './e2e-fixture.mjs'
 const browser = await launchBrowser()
 try {
-  for (const mode of ['native', 'failure', 'old-webview']) {
-    const fail = mode !== 'native'
+  for (const mode of ['native', 'failure', 'old-webview', 'cold']) {
+    const fail = mode === 'failure' || mode === 'old-webview'
     const oldWebview = mode === 'old-webview'
+    const cold = mode === 'cold'
     const page = await browser.newPage({ viewport: { width: 1100, height: 850 } })
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
-    await page.addInitScript(({ fail, oldWebview }) => {
+    await page.addInitScript(({ fail, oldWebview, cold }) => {
       if (oldWebview) window.createImageBitmap = undefined
       window.nativePdfCalls = []
       const fetchOriginal = window.fetch.bind(window)
@@ -24,23 +25,44 @@ try {
       }
       window.AndroidPdf = {
         request(id, raw) {
-          const request = JSON.parse(raw); window.nativePdfCalls.push(request.op)
+          const request = JSON.parse(raw); window.nativePdfCalls.push(request)
           const result = request.op === 'render' ? fail ? { error: 'PDF_NATIVE_FAILED' } : { url: '/native-pdf/mock.jpg', width: 300, height: 400 } : {}
-          setTimeout(() => window.postMessage({ channel: 'reader-pdf-response', id, ...result }, location.origin), 0)
+          const respond = () => window.postMessage({ channel: 'reader-pdf-response', id, ...result }, location.origin)
+          if (cold && request.op === 'append' && !window.releasePdfTransfer) window.releasePdfTransfer = respond
+          else setTimeout(respond, 0)
         }, cancel() {},
       }
-    }, { fail, oldWebview })
+    }, { fail, oldWebview, cold })
     await seedAndBoot(page, {})
     await page.locator('[data-testid="sidebar-entry-files"], [data-testid="rail-files"]').first().click()
     await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/outline-sample.pdf')
     await page.locator('[data-testid="document-reader"]').waitFor()
     await page.setViewportSize({ width: 412, height: 850 })
-    // Initial display can now finish with PDF.js during native registration.
-    if (!oldWebview) {
-      await page.waitForFunction(() => window.nativePdfCalls.includes('open'))
+    if (cold) {
       await page.getByTestId('reader-page-img').waitFor()
-      await page.getByTestId('reader-next').click()
-      await page.waitForFunction(() => window.nativePdfCalls.includes('render'))
+      await page.waitForFunction(() => window.releasePdfTransfer)
+      if (await page.getByTestId('reader-toc-toggle').getAttribute('aria-expanded') !== 'true') await page.getByTestId('reader-toc-toggle').click()
+      await page.getByTestId('reader-toc-ai').click()
+      await page.getByTestId('toc-picker-privacy').getByText(/DeepSeek Flash/).waitFor()
+      await page.waitForFunction(() => [1, 2, 3].every(number => {
+        const image = document.querySelector('[data-testid="toc-thumb-' + number + '"] img')
+        return image?.complete && image.naturalWidth > 0
+      }))
+      assert.equal(await page.evaluate(() => window.nativePdfCalls.some(call => call.op === 'open')), false, 'first row paints before native registration completes')
+      await page.getByTestId('toc-picker-cancel').click()
+      await page.evaluate(() => window.releasePdfTransfer())
+      await page.waitForFunction(() => window.nativePdfCalls.some(call => call.op === 'open'))
+      assert.deepEqual(errors, [])
+      await page.close()
+      continue
+    }
+    if (!oldWebview) {
+      await page.waitForFunction(() => window.nativePdfCalls.some(call => call.op === 'open'))
+      await page.getByTestId('reader-page-img').waitFor()
+      const pageInput = page.getByTestId('reader-page-input')
+      await pageInput.fill('6')
+      await pageInput.press('Enter')
+      await page.waitForFunction(() => window.nativePdfCalls.some(call => call.op === 'render' && call.page === 6))
     }
     await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="document-reader"] canvas')].some(c => c.width > 10 && c.height > 10))
     await page.waitForFunction(fail => [...document.querySelectorAll('[data-testid="document-reader"] canvas')].some(c => {
@@ -53,5 +75,5 @@ try {
     assert.deepEqual(errors, [])
     await page.close()
   }
-  console.log('PASS Android PDF bridge: native surface and automatic PDF.js fallback and old WebView canvas at mobile width')
+  console.log('PASS Android PDF bridge: native surface, PDF.js fallback, old WebView canvas, and cold directory thumbnails')
 } finally { await browser.close() }

@@ -98,7 +98,7 @@ try {
   await select(bodyText, '说明正文')
   await page.getByRole('button', { name: '标记', exact: true }).click()
   await page.waitForFunction(() => Array.from(CSS.highlights.get('study-highlight') ?? []).some(range => range.toString() === '说明正文'))
-  for (const [mode, fill] of [['light', 'rgb(203, 220, 255)'], ['dark', 'rgb(52, 84, 132)']]) {
+  for (const [mode, fill] of [['light', 'rgb(203, 220, 255)'], ['dark', 'rgb(41, 67, 101)']]) {
     await openSettings(page, 'general')
     await page.getByTestId('appearance-' + mode).click()
     await page.waitForFunction(mode => document.documentElement.dataset.theme === mode, mode)
@@ -106,12 +106,34 @@ try {
     for (const text of [bodyText, cardTitle]) {
       assert.deepEqual(await text.evaluate(el => ['study-highlight', 'spoken-selection'].map(name =>
         getComputedStyle(el, '::highlight(' + name + ')').backgroundColor)), [fill, fill])
+      assert.equal(await text.evaluate(el => getComputedStyle(el, '::selection').backgroundColor), fill)
     }
   }
   await page.mouse.dblclick(prosePoint.x, prosePoint.y)
   await page.waitForFunction(() => window.plays === 5)
   await page.getByTestId('read-aloud-stop').click()
   assert.deepEqual(requests, ['Retaliatory', '说明正文'])
+
+  if (process.env.READER_VISUAL_DIR) {
+    await page.setViewportSize({ width: 390, height: 844 })
+    for (const mode of ['dark', 'light']) {
+      await openSettings(page, 'general')
+      await page.getByTestId('appearance-' + mode).click()
+      await page.waitForFunction(mode => document.documentElement.dataset.theme === mode, mode)
+      await page.keyboard.press('Escape')
+      if (await page.getByTestId('mobile-history-drawer').isVisible()) {
+        await page.getByTestId('sidebar-collapse').click()
+        await page.getByTestId('mobile-history-drawer').waitFor({ state: 'hidden' })
+      }
+      await cardTitle.scrollIntoViewIfNeeded()
+      await page.screenshot({ path: process.env.READER_VISUAL_DIR + '/highlights-' + mode + '.png' })
+      await select(cardTitle, '报复')
+      await page.getByTestId('selection-read-aloud').waitFor()
+      await page.screenshot({ path: process.env.READER_VISUAL_DIR + '/selection-' + mode + '.png' })
+      await page.evaluate(() => getSelection().removeAllRanges())
+    }
+    await page.setViewportSize({ width: 1100, height: 850 })
+  }
 
   await page.getByRole('button', { name: '展开画布' }).click()
   await select(page.getByRole('dialog', { name: 'GenUI 画布' }).getByText('报复 (Retaliatory)', { exact: true }), 'Retaliatory')

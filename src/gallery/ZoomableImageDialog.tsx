@@ -3,6 +3,7 @@
 // context pages. Owns short-lived transform state only (scale/tx/ty) — nothing
 // about zoom is stored in the gallery-store.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { clampScale, clampPan, zoomAtPoint, resetTransform, DOUBLE_CLICK_SCALE } from './zoom'
 import css from './zoomable-image.module.css'
@@ -20,13 +21,14 @@ export interface ZoomableImageDialogProps {
   onNext?: () => void
   onBackToList?: () => void
   onClose: () => void
+  headerAction?: ReactNode
   labels: { close: string; prev?: string; next?: string; backToList?: string; dialog: string }
 }
 
 type Nd = { x: number; y: number }
 
 export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
-  const { src, alt = '', resetKey, index, count, onPrev, onNext, onBackToList, onClose, labels } = props
+  const { src, alt = '', resetKey, index, count, onPrev, onNext, onBackToList, onClose, headerAction, labels } = props
   useBackTarget(true, onBackToList || onClose)
   const stageRef = useRef<HTMLDivElement | null>(null)
   // Two separate refs: openerRef remembers the element that opened the viewer
@@ -252,7 +254,10 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
           </div>
         </div>
       )}
-      <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>✕</button>
+      <div className={css.headerActions}>
+        {headerAction}
+        <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>✕</button>
+      </div>
     </div>,
     document.body,
   )

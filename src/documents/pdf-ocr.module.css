@@ -5,5 +5,6 @@
 .trigger{background:transparent;color:inherit;border:1px solid #8886;border-radius:7px;padding:5px 10px;cursor:pointer;font:inherit;white-space:nowrap}
 .modal{width:min(620px,94vw)}
 .result{box-sizing:border-box;width:100%;min-height:220px;max-height:55vh;background:transparent;color:inherit;border:1px solid #8886;border-radius:8px;padding:12px;resize:vertical;font:inherit;line-height:1.6}
+.resultActions{display:flex;justify-content:flex-end;margin-top:8px}
 
 .overlay{z-index:2600}

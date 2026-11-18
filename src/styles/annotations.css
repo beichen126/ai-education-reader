@@ -3,19 +3,22 @@
    the named highlight 'study-highlight' with the marked Range(s); this rule is
    what actually paints them. Must stay in a globally-loaded stylesheet (NOT a
    CSS Module) so the ::highlight pseudo-element reaches the page. */
-:root {
+body {
   --reader-spoken-line: #315aa5;
 }
 body[data-ds-dark-theme] {
   --reader-spoken-line: #a4c3ff;
 }
-::highlight(study-highlight),
-::highlight(spoken-selection) {
+:where(body, body *)::highlight(study-highlight),
+:where(body, body *)::highlight(spoken-selection) {
   background-color: var(--dsw-specific-study-highlight, #cbdcff);
-  color: inherit;
 }
-::highlight(spoken-selection) {
+:where(body, body *)::highlight(spoken-selection) {
   text-decoration: underline dotted var(--reader-spoken-line) 2px;
+}
+:where([data-message-id], [data-message-id] *, .reader-genui-canvas, .reader-genui-canvas *)::selection {
+  background-color: var(--dsw-specific-study-highlight, #cbdcff);
+  color: var(--dsw-alias-label-primary);
 }
 .spoken-selection-underlines { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .spoken-selection-underlines > span { position: absolute; border-bottom: 2px dotted var(--reader-spoken-line); }

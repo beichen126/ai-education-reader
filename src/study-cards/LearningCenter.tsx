@@ -20,6 +20,7 @@ import {
 import { documentUiActions } from '../documents/document-ui-store'
 import { learningUiActions, loadStudyCardPreferences, persistStudyCardPreferences, useLearningUi, type CardListContext } from './learning-ui-store'
 import { useBackTarget } from '../engine/back-navigation'
+import { IconCloseOutline16 } from '../dsh/primitives'
 import css from './study-card.module.css'
 import { localizedConversationTitle, localizedErrorText, localizedPdfName, localizedStudyCardTitle, tx } from '../engine/locale'
 
@@ -158,8 +159,7 @@ export function LearningCenter() {
             <button type="button" role="tab" className={css.tab} data-testid="learning-tab-marks" aria-selected={marksOnly && (state.view === 'library' ? state.tab === 'cards' : state.view === 'card')} onClick={() => {setMarksOnly(true);learningUiActions.backToLibrary('cards')}}>{tx('标记','Marks')}</button>
             <button type="button" role="tab" className={css.tab} data-testid="learning-tab-artifacts" aria-selected={state.view === 'library' ? state.tab === 'artifacts' : state.view === 'artifact'} onClick={() => learningUiActions.backToLibrary('artifacts')}>{tx('学习成果', 'Study outputs')}</button>
           </div>
-          <div className={css.spacer} />
-          <button type="button" className={css.close} data-testid="learning-center-close" aria-label={tx('关闭学习中心', 'Close learning center')} onClick={() => learningUiActions.close()}>{tx('关闭', 'Close')}</button>
+          <button type="button" className={css.close} data-testid="learning-center-close" aria-label={tx('关闭学习中心', 'Close learning center')} title={tx('关闭学习中心', 'Close learning center')} onClick={() => learningUiActions.close()}><IconCloseOutline16 size={18} /></button>
         </div>
         {state.view === 'artifact' ? (
           <ArtifactDetail artifactId={state.artifactId} onBack={() => learningUiActions.closeArtifact()} />

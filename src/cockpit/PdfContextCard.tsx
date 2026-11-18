@@ -6,6 +6,7 @@ import { useState } from 'react'
 import type { AttachmentDisplayItem } from '../attachments/attachment-display'
 import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
+import { AttachmentPageOcr } from '../documents/PdfOcrControls'
 import { IconCloseOutline16 } from '../dsh/primitives'
 import { PDF_GROUP_PREVIEW_BATCH, pdfRangesText } from '../pdf/pdf-types'
 import css from './cockpit.module.css'
@@ -101,6 +102,7 @@ function GroupViewer2({ attachmentIds, index, onClose, onPrev, onNext }: { attac
       onPrev={onPrev}
       onNext={onNext}
       onClose={onClose}
+      headerAction={<AttachmentPageOcr key={id} attachmentId={id} />}
       labels={{ close: tx('关闭', 'Close'), prev: tx('上一页', 'Previous page'), next: tx('下一页', 'Next page'), dialog: tx('PDF 页面查看', 'PDF page viewer') }}
     />
   )

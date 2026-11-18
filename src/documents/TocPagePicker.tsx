@@ -28,6 +28,7 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   const [loadedCount, setLoadedCount] = useState(INITIAL_BATCH)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [thumbs, setThumbs] = useState<Record<number, string>>({})
+  const [failedThumbs, setFailedThumbs] = useState<Set<number>>(new Set())
   // Finding 9.4D.2-0.6.15: range + drag selection, and a "连续选择" mode toggle for touch.
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
@@ -38,7 +39,7 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   // the range has moved, consume that click or it would invert the endpoint.
   const suppressClickRef = useRef(false)
   const urlOwnerRef = useRef<string[]>([])
-  const genRef = useRef(0)
+  const renderOwnerRef = useRef<AbortController | null>(null)
   const renderedRef = useRef<Set<number>>(new Set())
   const pendingRef = useRef<Set<number>>(new Set())
   const inFlightRef = useRef(0)
@@ -51,7 +52,20 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   const revoke = (url: string) => { try { URL.revokeObjectURL(url) } catch {} };
 
   // Revoke all thumbnails + invalidate the queue on unmount.
-  useEffect(() => () => { genRef.current++; observerRef.current?.disconnect(); for (const u of urlOwnerRef.current) revoke(u); urlOwnerRef.current = []; pendingRef.current.clear(); queueRef.current = []; renderedRef.current.clear() }, [])
+  useEffect(() => {
+    const owner = new AbortController()
+    renderOwnerRef.current = owner
+    return () => {
+      owner.abort()
+      renderOwnerRef.current = null
+      observerRef.current?.disconnect()
+      for (const url of urlOwnerRef.current) revoke(url)
+      urlOwnerRef.current = []
+      pendingRef.current.clear()
+      queueRef.current = []
+      renderedRef.current.clear()
+    }
+  }, [])
 
   // Releasing outside a thumbnail must end the gesture as well; otherwise merely
   // hovering cards afterwards would keep extending the old selection.
@@ -72,7 +86,8 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   const pump = useRef<() => void>(() => {});
   pump.current = () => {
     if (inFlightRef.current >= MAX_THUMB_RENDER_CONCURRENCY) return
-    const gen = genRef.current
+    const signal = renderOwnerRef.current?.signal
+    if (!signal || signal.aborted) return
     const bounds = gridRef.current?.getBoundingClientRect()
     if (bounds) {
       const next = prioritizeThumbnails(queueRef.current,bounds,n=>thumbRefs.current[n]?.getBoundingClientRect())
@@ -86,8 +101,8 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
     inFlightRef.current++;
     void (async () => {
       try {
-        const r = await renderSessionThumbnail(session, next, THUMB_EDGE);
-        if (gen !== genRef.current) { revoke(URL.createObjectURL(r.blob)); return }
+        const r = await renderSessionThumbnail(session, next, THUMB_EDGE, signal)
+        if (signal.aborted) return
         const url = URL.createObjectURL(r.blob);
         if (renderedRef.current.has(next)) { revoke(url); return }
         renderedRef.current.add(next);
@@ -96,9 +111,14 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
         // page is rendered EXACTLY once. Harmless in production (no allocation churn).
         const g = (globalThis as any).__dshThumbRenderCounts || ((globalThis as any).__dshThumbRenderCounts = {});
         g[next] = (g[next] || 0) + 1;
-        setThumbs(prev => (prev[next] ? prev : { ...prev, [next]: url }));
-      } catch { /* leave blank */ }
-      finally { inFlightRef.current--; pendingRef.current.delete(next); pump.current() }
+        setThumbs(prev => ({ ...prev, [next]: url }))
+      } catch {
+        if (!signal.aborted) setFailedThumbs(prev => new Set(prev).add(next))
+      } finally {
+        inFlightRef.current--
+        if (!signal.aborted) pendingRef.current.delete(next)
+        pump.current()
+      }
     })();
     pump.current()
   };
@@ -115,7 +135,6 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
 
   // Set up an IntersectionObserver over the visible thumb slots.
   useEffect(() => {
-    const gen = genRef.current
     const io = new IntersectionObserver((entries) => {
       for (const e of entries) {
         if (e.isIntersecting) { const n = Number((e.target as HTMLElement).dataset.page); if (n) enqueueRef.current(n) }
@@ -190,7 +209,7 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
           {rangeError && <div className={css.rangeErr} data-testid="toc-picker-range-error">{rangeError}</div>}
           <div className={css.pickCount} data-testid="toc-picker-count">{tx('已选择 ' + sorted.length + ' 页', sorted.length + ' pages selected')} · PDF {selectedText || '—'}</div>
         </div>
-        <div className={css.privacy} data-testid="toc-picker-privacy">{tx('仅你选择的目录页面图片会发送到当前配置的视觉模型；完整 PDF 不会因此上传。', 'Only the selected outline-page images are sent to the configured vision model; the full PDF is not uploaded.')}</div>
+        <div className={css.privacy} data-testid="toc-picker-privacy">{tx('DeepSeek Flash 仅接收所选目录页的图片。', 'DeepSeek Flash receives images of the selected outline pages only.')}</div>
         <div ref={gridRef} onScroll={() => pump.current()} className={css.grid} data-testid="toc-picker-grid">
           {Array.from({ length: Math.min(loadedCount, pageCount) }, (_, i) => i + 1).map(n => (
             <button key={n} type="button" ref={(el) => { thumbRefs.current[n] = el }} className={css.thumb + (selected.has(n) ? ' ' + css.selected : '')} data-testid={'toc-thumb-' + n} data-page={n} data-selected={selected.has(n) ? '1' : '0'}
@@ -199,8 +218,8 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
               onPointerEnter={(e) => { if (dragRef.current) dragOver(n) }}
               >
               <span className={css.thumbNum}>{n}</span>
-              {thumbs[n] ? <img className={css.thumbImg} src={thumbs[n]} alt={tx('第 ' + n + ' 页', 'Page ' + n)} /> : <span className={css.thumbLoad}>…</span>}
-              <span className={css.check}>{selected.has(n) ? '✓' : ''}</span>
+              {thumbs[n] ? <img className={css.thumbImg} src={thumbs[n]} alt={tx('第 ' + n + ' 页', 'Page ' + n)} /> : <span className={css.thumbLoad}>{failedThumbs.has(n) ? tx('预览失败', 'Preview failed') : '…'}</span>}
+              {selected.has(n) && <span className={css.check}>✓</span>}
             </button>
           ))}
         </div>

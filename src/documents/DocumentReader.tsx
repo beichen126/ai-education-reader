@@ -1410,6 +1410,7 @@ export function DocumentReader() {
           src={viewerUrl}
           alt={tx('PDF 第 ' + viewerPage + ' 页', 'PDF page ' + viewerPage)}
           resetKey={viewerPage}
+          headerAction={doc && sessionRef.current && <PdfPageOcrButton documentId={doc.id} page={viewerPage} startOnOpen render={async () => (await renderOcrPage(sessionRef.current!, viewerPage)).blob} />}
           onClose={() => { viewerOpenRef.current = false; setViewerUrl(null); setViewerPage(1); urlOwnerRef.current.revokeAll() }}
           labels={{ close: tx('关闭', 'Close'), dialog: tx('PDF 页面查看', 'PDF page viewer') }}
         />

@@ -67,6 +67,17 @@ const center = page.locator('[data-testid="learning-center"]')
 await center.waitFor({ state: 'visible', timeout: 10000 })
 assert(await center.getAttribute('aria-label') === '学习中心', 'the learning centre is a named dialog')
 assert(await page.locator('[data-testid="learning-tab-cards"]').getAttribute('aria-selected') === 'true', 'the centre opens on the 学习卡片 tab')
+for (const width of [320, 390]) {
+  await page.setViewportSize({ width, height: 844 })
+  const controls = center.locator('[role="tab"], [data-testid="learning-center-close"]')
+  const boxes = await Promise.all((await controls.all()).map(control => control.boundingBox()))
+  const centerLine = box => box.y + box.height / 2
+  assert(boxes.length === 4 && boxes.every(box => box && Math.abs(centerLine(box) - centerLine(boxes[0])) < 1 && box.x >= 0 && box.x + box.width <= width), 'all header controls are visible on one line at ' + width + ' px')
+  if (width === 390 && process.env.READER_VISUAL_DIR) {
+    await page.screenshot({ path: process.env.READER_VISUAL_DIR + '/learning-center.png' })
+  }
+}
+await page.setViewportSize({ width: 1440, height: 900 })
 const itemTitles = async () => page.locator('[data-testid="card-item-title"]').allTextContents()
 const waitForItems = async (count, timeout = 15000) => {
   await safe(() => page.waitForFunction(expected => document.querySelectorAll('[data-testid="card-item"]').length === expected, count, { timeout }))

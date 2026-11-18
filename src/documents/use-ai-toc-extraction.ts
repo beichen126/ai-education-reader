@@ -263,7 +263,7 @@ export async function extractAiToc(opts: {
       await Promise.all(batch.map(async n => {
           if (!signal.aborted) onProgress?.({ phase: 'transcribing', windowIndex: w, windowCount: windows.length, completedBatches, renderedPages: renderCompleted, totalPages: selectedPages.length })
           try {
-            const rendered = await renderQueue.run(async () => { if (signal.aborted) throw new DeepSeekError('aborted', 'request aborted'); return renderSessionThumbnail(session, n, AI_TOC_RENDER_EDGE) })
+            const rendered = await renderQueue.run(() => renderSessionThumbnail(session, n, AI_TOC_RENDER_EDGE, signal))
             const url = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader()
               reader.onload = () => resolve(String(reader.result))

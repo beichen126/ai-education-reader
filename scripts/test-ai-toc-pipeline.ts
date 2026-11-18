@@ -51,8 +51,8 @@ assert.match(describeTocRepairReasons([{code:'LEVEL_COUNT_MISMATCH', message:'pr
 assert.match(describeTocRepairReasons([{code:'OUTPUT_TRUNCATED', message:'private'}], true), /truncated/)
 assert.match(describeTocRepairReasons([{code:'SUSPICIOUS_FLAT', message:'private'}], false), /扁平化/)
 const measure = (page:number) => ({top:page*100,bottom:page*100+80})
-assert.deepEqual(prioritizeThumbnails([1,2,3,4,5,6,7,8,9],{top:300,bottom:700},measure),[5,4,6,3,7,2,8,1])
-assert.deepEqual(prioritizeThumbnails([1,2,3,4,5,6,7,8,9],{top:700,bottom:900},measure),[8,7,9,6,5], 'scrolling reorders around the new viewport and drops stale queued pages')
+assert.deepEqual(prioritizeThumbnails([1,2,3,4,5,6,7,8,9],{top:300,bottom:700},measure),[3,4,5,6,7,2,8,1])
+assert.deepEqual(prioritizeThumbnails([1,2,3,4,5,6,7,8,9],{top:700,bottom:900},measure),[7,8,9,6,5], 'scrolling reorders around the new viewport and drops stale queued pages')
 const controller = new AbortController(), started: number[] = []
 await assert.rejects(mapTocBatches([0, 1, 2, 3], 2, async (value, _, signal) => { started.push(value); if (value === 0) throw new Error('fatal'); await new Promise<void>(resolve => { if (signal.aborted) resolve(); else signal.addEventListener('abort', () => resolve(), { once: true }) }); return value }), /fatal/)
 assert.deepEqual(started, [0, 1], 'fatal error aborts siblings without starting queued requests')

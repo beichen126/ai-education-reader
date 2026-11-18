@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { Modal, Button } from '../dsh/primitives'
+import { useCopyFeedback } from '../dsh/primitives/use-copy-feedback'
 import { useSettings } from '../engine/settings-store'
+import { getAttachment } from '../engine/attachment-service'
+import type { Attachment } from '../engine/types'
 import { ensurePageOcr, readPageOcr } from './document-ocr'
 import { deepSeekServiceProfiles as deepSeekOcrProfiles, selectedDeepSeekServiceProfile as selectedOcrProfile, selectDeepSeekServiceProfile as selectOcrProfile } from '../engine/deepseek-service-profile'
 import type { OcrPage } from '../api/deepseek-ocr'
@@ -24,20 +27,41 @@ export function PdfContextMode({ value, onChange, disabled = false }: { value: '
   </div>
 }
 
-export function PdfPageOcrButton({ documentId, page, render }: { documentId?: string; page: number; render: () => Promise<Blob> }) {
-  const [open, setOpen] = useState(false), [result, setResult] = useState<OcrPage>(), [busy, setBusy] = useState(false), [error, setError] = useState('')
+export function AttachmentPageOcr({ attachmentId }: { attachmentId: string }) {
+  const [attachment, setAttachment] = useState<Attachment>()
+  useEffect(() => {
+    let active = true
+    void getAttachment(attachmentId).then(value => { if (active) setAttachment(value) }).catch(() => {})
+    return () => { active = false }
+  }, [attachmentId])
+  if (attachment?.id !== attachmentId || !attachment.source) return null
+  const { documentId, pageNumber } = attachment.source
+  if (!documentId && !attachment.ocr) return null
+  return <PdfPageOcrButton key={attachmentId} documentId={documentId} page={pageNumber} cached={attachment.ocr} startOnOpen render={async () => {
+    const { readDocumentSourceBlob } = await import('./document-service')
+    const { openPdfSession, closePdfSession, renderSessionPage } = await import('../pdf/pdf-session')
+    const { session } = await openPdfSession(await readDocumentSourceBlob(documentId!))
+    try { return (await renderSessionPage(session, pageNumber)).blob }
+    finally { await closePdfSession(session) }
+  }} />
+}
+
+export function PdfPageOcrButton({ documentId, page, render, cached, startOnOpen = false }: { documentId?: string; page: number; render: () => Promise<Blob>; cached?: OcrPage; startOnOpen?: boolean }) {
+  const [open, setOpen] = useState(false), [result, setResult] = useState(cached), [busy, setBusy] = useState(false), [error, setError] = useState('')
   const generation = useRef(0)
   useEffect(() => {
     const token = ++generation.current
-    setResult(undefined); setBusy(false); setError(''); setOpen(false)
-    if (documentId) void readPageOcr(documentId, page).then(r => { if (token === generation.current) setResult(r) }).catch(() => {})
+    setResult(cached); setBusy(false); setError(''); setOpen(false)
+    if (documentId) void readPageOcr(documentId, page).then(r => {
+      if (r && token === generation.current) setResult(r)
+    }).catch(() => {})
     return () => { generation.current++ }
-  }, [documentId, page])
+  }, [documentId, page, cached])
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); setOpen(false) }
-      else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') event.stopImmediatePropagation()
+      else if (['ArrowLeft', 'ArrowRight', '+', '=', '-'].includes(event.key)) event.stopImmediatePropagation()
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
@@ -51,12 +75,28 @@ export function PdfPageOcrButton({ documentId, page, render }: { documentId?: st
     finally { if (token === generation.current) setBusy(false) }
   }
   return <>
-    <button type="button" className={css.trigger} disabled={!documentId} onClick={() => setOpen(true)} data-testid="pdf-page-ocr">{result ? tx('查看 OCR', 'View OCR') : tx('OCR 识别', 'OCR')}</button>
+    <button type="button" className={css.trigger} disabled={!documentId && !result} onClick={() => {
+      setOpen(true)
+      if (startOnOpen && !result && selectedOcrProfile()) void recognize()
+    }} data-testid="pdf-page-ocr">{result ? tx('查看 OCR', 'View OCR') : tx('OCR 识别', 'OCR')}</button>
     {open && <Modal open onClose={() => setOpen(false)} title={tx('第 ' + page + ' 页 · DeepSeek OCR', 'Page ' + page + ' · DeepSeek OCR')} closeLabel={tx('关闭', 'Close')} className={css.modal} rootClassName={css.overlay}>
       {!result && <OcrProfileChoice />}
       {error && <p role="alert">{error}</p>}
-      {result ? <><p>{result.finishReason === 'length' ? tx('已保存，但服务返回的文字不完整。再次查看和加入上下文不会重复识别。', 'Saved, but the service truncated the text. Reusing it does not repeat OCR.') : tx('已保存，加入 OCR 上下文时自动复用。', 'Saved and reused when adding OCR context.')}</p><textarea readOnly aria-label={tx('OCR 结果', 'OCR result')} value={result.text || tx('本页未识别出文字', 'No text found')} className={css.result} /></> : <Button variant="primary" disabled={busy || !selectedOcrProfile()} onClick={() => void recognize()}>{busy ? tx('正在识别并保存…', 'Recognizing and saving…') : tx('识别并保存此页', 'Recognize and save page')}</Button>}
+      {result ? <OcrResult result={result} /> : <Button variant="primary" disabled={busy || !selectedOcrProfile()} onClick={() => void recognize()}>{busy ? tx('正在识别并保存…', 'Recognizing and saving…') : tx('识别并保存此页', 'Recognize and save page')}</Button>}
       {busy && <p>{tx('关闭窗口后，已开始的识别仍会完成并保存。', 'An OCR request already started will finish and save even if you close this window.')}</p>}
     </Modal>}
+  </>
+}
+
+function OcrResult({ result }: { result: OcrPage }) {
+  const copy = useCopyFeedback(result.text)
+  return <>
+    {result.finishReason === 'length' && <p>{tx('已保存，服务返回的文字不完整。', 'Saved. The service returned partial text.')}</p>}
+    <textarea readOnly aria-label={tx('OCR 结果', 'OCR result')} value={result.text || tx('本页未识别出文字', 'No text found')} className={css.result} />
+    <div className={css.resultActions}>
+      <Button variant="outline" disabled={!result.text.trim()} onClick={copy.onCopy} aria-live="polite">
+        {copy.copied ? tx('已复制', 'Copied') : copy.failed ? tx('复制失败，重试', 'Copy failed. Retry') : tx('复制 OCR 文本', 'Copy OCR text')}
+      </Button>
+    </div>
   </>
 }

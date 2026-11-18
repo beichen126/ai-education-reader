@@ -237,7 +237,9 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
           <button type="button" className={css.zoomButton} data-testid="doc-context-preview-zoom" disabled={status !== 'ready' || zoomBusy} onClick={() => openZoom()}>{tx('放大', 'Enlarge')}</button>
         </footer>
       </div>
-      {zoomUrl && <ZoomableImageDialog src={zoomUrl} alt={tx('PDF 第 ' + viewerPage + ' 页', 'PDF page ' + viewerPage)} resetKey={viewerPage} onClose={clearZoom} labels={{ close: tx('关闭', 'Close'), dialog: tx('PDF 页面预览', 'PDF page preview') }} />}
+      {zoomUrl && <ZoomableImageDialog src={zoomUrl} alt={tx('PDF 第 ' + viewerPage + ' 页', 'PDF page ' + viewerPage)} resetKey={viewerPage} onClose={clearZoom}
+        headerAction={session && <PdfPageOcrButton documentId={sourceDoc.id} page={viewerPage} startOnOpen render={async () => (await renderSessionPage(session, viewerPage)).blob} />}
+        labels={{ close: tx('关闭', 'Close'), dialog: tx('PDF 页面预览', 'PDF page preview') }} />}
     </div>
   )
 }

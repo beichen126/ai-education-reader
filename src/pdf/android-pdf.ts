@@ -1,8 +1,13 @@
 /** Optional Android accelerator. Older APKs and browsers retain the PDF.js path. */
-type Document = { getData(): Promise<Uint8Array> }
+import { readBlobBuffer } from '../engine/read-blob-buffer'
+
+type Document = object
 type Bridge = { request(id: string, payload: string): void; cancel(id: string): void }
-type Entry = { id: string; closed: boolean; registered?: boolean; ready: Promise<string | null> }
+type Entry = { id: string; controller: AbortController; ready: boolean }
+const CHUNK_BYTES = 96 * 1024
+const MAX_SOURCE_BYTES = 128 * 1024 * 1024
 const documents = new WeakMap<Document, Entry>()
+const sources = new WeakMap<Document, Blob>()
 function bridge(): Bridge | undefined {
   return typeof window !== 'undefined' ? (window as any).AndroidPdf : undefined
 }
@@ -24,70 +29,72 @@ function request(payload: object, signal?: AbortSignal): Promise<any> {
     try { native.request(id, JSON.stringify(payload)) } catch (error) { clean(); reject(error) }
   })
 }
-async function register(doc: Document): Promise<string | null> {
-  if (!bridge()) return null
-  const previous = documents.get(doc)
-  if (previous) return previous.closed ? null : previous.ready
-  const entry: Entry = { id: crypto.randomUUID(), closed: false, ready: Promise.resolve(null) }
-  documents.set(doc, entry)
-  entry.ready = (async () => {
-    try {
-      const data = await doc.getData()
-      if (entry.closed || data.length > 128 * 1024 * 1024) return null
-      await request({ op: 'begin', doc: entry.id })
-      // Small acknowledged chunks keep Binder and the JS heap bounded.
-      for (let offset = 0; offset < data.length; offset += 96 * 1024) {
-        if (entry.closed) throw aborted()
-        let binary = ''
-        const chunk = data.subarray(offset, offset + 96 * 1024)
-        for (let i = 0; i < chunk.length; i += 8192) binary += String.fromCharCode(...chunk.subarray(i, i + 8192))
-        await request({ op: 'append', doc: entry.id, data: btoa(binary) })
-      }
-      if (entry.closed) throw aborted()
-      await request({ op: 'open', doc: entry.id })
-      entry.registered = true
-      return entry.id
-    } catch {
-      void request({ op: 'close', doc: entry.id }).catch(() => {})
-      return null
-    }
-  })()
-  return entry.ready
+export function setAndroidPdfSource(doc: Document, source: Blob): void {
+  if (bridge()) sources.set(doc, source)
 }
-/** Display can use PDF.js immediately while the native copy is being prepared. */
-export function androidDisplayReady(doc: Document): boolean {
-  if (!bridge()) return false
-  const entry = documents.get(doc)
-  if (!entry) void register(doc)
-  return !!entry?.registered && !entry.closed
+
+function release(entry: Entry) {
+  void request({ op: 'close', doc: entry.id }).catch(() => {})
+}
+
+/** Prepare the accelerator after a local result, with at most one chunk in flight. */
+export function warmAndroidPdf(doc: Document): void {
+  if (!bridge() || documents.has(doc)) return
+  const source = sources.get(doc)
+  if (!source || source.size > MAX_SOURCE_BYTES) return
+  const entry: Entry = { id: crypto.randomUUID(), controller: new AbortController(), ready: false }
+  documents.set(doc, entry)
+  const { signal } = entry.controller
+  setTimeout(async () => {
+    let began = false
+    try {
+      if (signal.aborted) return
+      began = true
+      await request({ op: 'begin', doc: entry.id }, signal)
+      for (let offset = 0; offset < source.size; offset += CHUNK_BYTES) {
+        const chunk = new Uint8Array(await readBlobBuffer(source.slice(offset, offset + CHUNK_BYTES)))
+        if (signal.aborted) throw aborted()
+        let binary = ''
+        for (let i = 0; i < chunk.length; i += 8192) binary += String.fromCharCode(...chunk.subarray(i, i + 8192))
+        await request({ op: 'append', doc: entry.id, data: btoa(binary) }, signal)
+      }
+      await request({ op: 'open', doc: entry.id }, signal)
+      if (signal.aborted) throw aborted()
+      entry.ready = true
+    } catch {
+      if (began) release(entry)
+    }
+  }, 0)
 }
 export function closeAndroidPdf(doc: Document | null): void {
   if (!doc) return
   const entry = documents.get(doc)
-  if (!entry || entry.closed) return
-  entry.closed = true
-  void entry.ready.finally(() => request({ op: 'close', doc: entry.id }).catch(() => {}))
+  sources.delete(doc)
+  if (!entry || entry.controller.signal.aborted) return
+  entry.controller.abort()
+  if (entry.ready) release(entry)
+  entry.ready = false
 }
+/** Cold or unavailable native sessions return immediately so PDF.js can render. */
 export async function renderAndroidPdf(doc: Document, page: number, edge: number, signal?: AbortSignal): Promise<{ blob: Blob; width: number; height: number; mimeType: string } | null> {
-  if (!bridge()) return null
-  if (signal?.aborted) throw aborted()
-  const id = await register(doc)
-  if (signal?.aborted || documents.get(doc)?.closed) throw aborted()
-  if (!id) return null
+  const entry = documents.get(doc)
+  const isCancelled = () => signal?.aborted || entry?.controller.signal.aborted
+  if (isCancelled()) throw aborted()
+  if (!entry?.ready || !bridge()) return null
   try {
-    const result = await request({ op: 'render', doc: id, page, edge }, signal)
+    const result = await request({ op: 'render', doc: entry.id, page, edge }, signal)
     const url = new URL(result.url, location.origin)
     if (url.origin !== location.origin || !url.pathname.startsWith('/native-pdf/')) throw new Error('Invalid native image URL')
     const response = await fetch(url, { signal })
     if (!response.ok) throw new Error('Native image unavailable')
     const blob = await response.blob()
-    if (signal?.aborted || documents.get(doc)?.closed) throw aborted()
+    if (isCancelled()) throw aborted()
     if (!blob.size) throw new Error('Empty native image')
     return { blob, width: result.width, height: result.height, mimeType: 'image/jpeg' }
   } catch (error) {
-    if (signal?.aborted || documents.get(doc)?.closed) throw aborted()
-    const entry = documents.get(doc)
-    if (entry) entry.ready = Promise.resolve(null)
+    if (isCancelled()) throw aborted()
+    if (entry.ready) release(entry)
+    entry.ready = false
     console.warn('[PDF] Native rendering unavailable; using PDF.js', error instanceof Error ? error.message : '')
     return null
   }
