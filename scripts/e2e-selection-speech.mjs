@@ -76,10 +76,10 @@ try {
   assert.deepEqual(await highlighted(), [])
 
   await openSettings(page, 'general')
-  const setting = page.getByRole('checkbox', { name: '高亮已朗读的文字' })
+  const setting = page.getByRole('checkbox', { name: '高亮朗读过的选区' })
   assert.equal(await setting.isChecked(), false)
   await setting.click()
-  await page.waitForFunction(() => [...document.querySelectorAll('label')].find(el => el.textContent.includes('高亮已朗读的文字'))?.querySelector('input')?.checked)
+  await page.getByText('双击高亮文字可重播。').waitFor()
   await page.keyboard.press('Escape')
   if (await page.getByTestId('mobile-history-drawer').isVisible()) await page.getByTestId('sidebar-collapse').click()
   const cardPoint = await select(cardTitle, 'Retaliatory')
@@ -95,6 +95,15 @@ try {
   const prosePoint = await select(bodyText, '说明正文')
   await play(4)
   assert.deepEqual((await highlighted()).sort(), ['Retaliatory', '说明正文'].sort())
+  for (const [mode, fill] of [['light', 'rgb(203, 220, 255)'], ['dark', 'rgb(52, 84, 132)']]) {
+    await openSettings(page, 'general')
+    await page.getByTestId('appearance-' + mode).click()
+    await page.waitForFunction(mode => document.documentElement.dataset.theme === mode, mode)
+    await page.keyboard.press('Escape')
+    for (const text of [bodyText, cardTitle]) {
+      assert.equal(await text.evaluate(el => getComputedStyle(el, '::highlight(spoken-selection)').backgroundColor), fill)
+    }
+  }
   await page.mouse.dblclick(prosePoint.x, prosePoint.y)
   await page.waitForFunction(() => window.plays === 5)
   await page.getByTestId('read-aloud-stop').click()
@@ -108,7 +117,7 @@ try {
   await openSettings(page, 'general')
   assert.equal(await setting.isChecked(), true, 'setting survives reload')
   await setting.click()
-  await page.waitForFunction(() => ![...document.querySelectorAll('label')].find(el => el.textContent.includes('高亮已朗读的文字'))?.querySelector('input')?.checked)
+  await page.getByText('双击高亮文字可重播。').waitFor({ state: 'hidden' })
   await page.keyboard.press('Escape')
   assert.deepEqual(await highlighted(), [])
   console.log('PASS GenUI and Markdown selection speech, expanded canvas, persisted preference, and cached replay by double-tap/double-click')
