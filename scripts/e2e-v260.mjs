@@ -30,10 +30,12 @@ try {
   }), 'nothing reserves an empty line below the composer bar')
   assert.ok((await textarea.boundingBox()).height <= 48)
   await textarea.fill('line\n'.repeat(70))
-  assert.ok((await textarea.boundingBox()).height <= 225)
-  assert.ok((await textarea.boundingBox()).height > 150)
+  await page.waitForFunction(() => {
+    const height = document.querySelector('[data-testid="composer"] textarea')?.getBoundingClientRect().height
+    return height > 150 && height <= 225
+  })
   await textarea.fill('')
-  assert.ok((await textarea.boundingBox()).height <= 48)
+  await page.waitForFunction(() => document.querySelector('[data-testid="composer"] textarea')?.getBoundingClientRect().height <= 48)
   await page.locator('[data-testid="composer-attach"]').click()
   const local = page.locator('[data-testid="composer-add-local"]')
   const library = page.locator('[data-testid="composer-from-library"]')
