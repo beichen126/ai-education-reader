@@ -24,7 +24,7 @@ import { getProductGuideSeenVersion, markProductGuideSeen, PRODUCT_GUIDE_VERSION
 import { documentUiActions, useDocumentUi } from './documents/document-ui-store'
 import { useGallery } from './gallery/gallery-store'
 import { useLearningUi } from './study-cards/learning-ui-store'
-const PromptManager = lazy(() => import('./prompts/PromptManager').then(m => ({default: m.PromptManager})))
+import { PromptManager } from './prompts/PromptManager'
 import { ReadAloudPlayer } from './speech/ReadAloudPlayer'
 
 const SettingsDialog = lazy(() => import('./cockpit/SettingsDialog').then(module => ({ default: module.SettingsDialog })))

@@ -1159,6 +1159,7 @@ export function DocumentReader() {
       <div ref={topbarRef} className={css.topbar}>
         <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary() }}>← {tx('文件', 'Files')}</button>
         <span className={css.title} data-testid="reader-title">{doc?.fileName ?? recordMeta?.fileName ?? '…'}</span>
+        <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>{tx('关闭', 'Close')}</button>
         <div className={css.topActions}>
           {doc && sessionRef.current && <PdfPageOcrButton documentId={doc.id} page={page} render={async () => (await renderOcrPage(sessionRef.current!, page)).blob} />}
           {doc && (
@@ -1173,7 +1174,6 @@ export function DocumentReader() {
           )}
           <button ref={tocToggleRef} className={css.tocToggle} data-testid="reader-toc-toggle" aria-expanded={tocPanelClosed ? false : (isNarrowViewport() ? tocOpen : true)} aria-controls={loadError ? undefined : 'reader-toc-panel'} onClick={toggleToc}>{tx('目录', 'Outline')}</button>
           {doc && <button type="button" ref={noteToggleRef} className={css.noteToggle} data-testid="reader-notes-toggle" data-note-state={noteButtonState} disabled={(!notesOpen && closedNoteState === 'loading') || noteActionBusy} aria-busy={noteActionBusy || undefined} onClick={() => void toggleNotes()}>{noteButtonLabel}</button>}
-          <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>{tx('关闭', 'Close')}</button>
         </div>
       </div>
       {relatedOpen && (
