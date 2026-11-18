@@ -113,8 +113,10 @@ assert(await page.locator('[role="alert"]').count() === 0, 'successful retry cle
 
 // Delete the rendered branch target after the Quick Follow-up bar exists. Clicking
 // the real button now exercises a branch rejection with no request/message growth.
+const quickFollowUp = page.locator('[data-testid="quick-follow-up-send"]:enabled').first()
+await quickFollowUp.waitFor({ state: 'visible' })
 const beforeQuickRequests = getRouteHits().completions
-await page.evaluate((id) => new Promise((resolve) => {
+const deleted = await page.evaluate((id) => new Promise((resolve) => {
   const request = indexedDB.open('ai-education-reader')
   request.onsuccess = () => {
     const db = request.result
@@ -125,7 +127,8 @@ await page.evaluate((id) => new Promise((resolve) => {
   }
   request.onerror = () => resolve(false)
 }), (await readBranchRows(page)).find((row) => row.conversationId === conversationId)?.id)
-await page.locator('[data-testid="quick-follow-up-send"]').first().click()
+assert(deleted && (await readBranchRows(page)).length === 0, 'branch deletion completed before trying Quick Follow-up')
+await quickFollowUp.click()
 await waitForAlert(page, '当前分支不存在')
 assert(getRouteHits().completions === beforeQuickRequests, 'rejected branch Quick Follow-up makes no model request')
 const afterQuickRows = await readBranchRows(page)
