@@ -13,6 +13,11 @@ class NativeYoutubeTest {
     assertEquals(json.toString(), player.toString())
     assertNull(NativeYoutube.playerResponse("ytInitialPlayerResponse = {broken"))
   }
+  @Test fun selectsRequestedVideoAfterUnrelatedPlayer() {
+    val html = """var ytInitialPlayerResponse = {"videoDetails":{"videoId":"other"}}; var ytInitialPlayerResponse = {"videoDetails":{"videoId":"ivfw_TcsHbw"}};"""
+    assertEquals("ivfw_TcsHbw", NativeYoutube.playerResponse(html, "ivfw_TcsHbw")!!.getJSONObject("videoDetails").getString("videoId"))
+    assertNull(NativeYoutube.playerResponse(html, "absent"))
+  }
   @Test fun languageAndManualTrackSelection() {
     val tracks = JSONArray("""[{"languageCode":"en","kind":"asr"},{"languageCode":"zh-Hans"},{"languageCode":"en"}]""")
     assertEquals("en", NativeYoutube.selectTrack(tracks, "en")!!.getString("languageCode"))

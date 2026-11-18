@@ -357,5 +357,5 @@ export async function initStore(): Promise<void> {
   const lastOk = last && convs.some(c => c.id === last) ? last : convs[0].id
   await initDrafts(convs.map(c => c.id))
   setState(toState(convs, lastOk, true))
-  await setSetting(LAST_CONV, lastOk)
+  if (last !== lastOk) await setSetting(LAST_CONV, lastOk)
 }

@@ -35,7 +35,13 @@ try {
     await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/outline-sample.pdf')
     await page.locator('[data-testid="document-reader"]').waitFor()
     await page.setViewportSize({ width: 412, height: 850 })
-    if (!oldWebview) await page.waitForFunction(() => window.nativePdfCalls.includes('render'))
+    // Initial display can now finish with PDF.js during native registration.
+    if (!oldWebview) {
+      await page.waitForFunction(() => window.nativePdfCalls.includes('open'))
+      await page.getByTestId('reader-page-img').waitFor()
+      await page.getByTestId('reader-next').click()
+      await page.waitForFunction(() => window.nativePdfCalls.includes('render'))
+    }
     await page.waitForFunction(() => [...document.querySelectorAll('[data-testid="document-reader"] canvas')].some(c => c.width > 10 && c.height > 10))
     await page.waitForFunction(fail => [...document.querySelectorAll('[data-testid="document-reader"] canvas')].some(c => {
       const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data

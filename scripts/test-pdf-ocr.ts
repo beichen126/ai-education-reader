@@ -41,6 +41,7 @@ assert.equal(result.ok,true);assert.equal(calls,count)
 const ids=getDraft('chat').imageIds
 assert.equal((await getAttachment(ids[0]))?.ocr?.text,a.text)
 const messages=await buildApiMessages([{id:'m',role:'user',content:'question',images:ids,createdAt:1,updatedAt:1}],toModelAttachment)
+assert.match(JSON.stringify(messages), /PDF OCR/); assert.doesNotMatch(JSON.stringify(messages), /YouTube|视频字幕/)
 assert.equal(countImageParts(messages),0);assert.match(JSON.stringify(messages),/Page text 1/);assert.doesNotMatch(JSON.stringify(messages),/box｜/)
 assert.equal(getDraft('chat').text,'')
 const backup=await buildBackup();parseAndValidate(backup)

@@ -17,23 +17,42 @@ class NativeYoutube {
   fun extract(videoId: String, language: String): JSONObject {
     require(videoId.matches(Regex("[a-zA-Z0-9_-]{11}")))
     deadline = System.currentTimeMillis() + 16000
+    // Ask for the Android caption tracks first, keeping the original watch-page path for compatibility.
+    val client = JSONObject().put("clientName", "ANDROID").put("clientVersion", ANDROID_VERSION)
+      .put("androidSdkVersion", 30).put("osName", "Android").put("osVersion", "11")
+      .put("hl", "en").put("userAgent", ANDROID_AGENT)
+    val body = JSONObject().put("context", JSONObject().put("client", client)).put("videoId", videoId)
+    try {
+      val player = JSONObject(get("https://www.youtube.com/youtubei/v1/player?prettyPrint=false", 3 * 1024 * 1024, ANDROID_AGENT, body))
+      return captions(player, videoId, language, ANDROID_AGENT)
+    } catch (e: CancellationException) {
+      throw e
+    } catch (_: Exception) {
+      checkActive()
+    }
     val html = get("https://www.youtube.com/watch?v=$videoId&hl=en", 6 * 1024 * 1024)
-    checkActive()
-    val player = playerResponse(html) ?: error("NATIVE_PLAYER_UNAVAILABLE")
+    val player = playerResponse(html, videoId) ?: error("NATIVE_PLAYER_UNAVAILABLE")
+    return captions(player, videoId, language, WEB_AGENT)
+  }
+  private fun captions(player: JSONObject, videoId: String, language: String, agent: String): JSONObject {
+    val status = player.optJSONObject("playabilityStatus")?.optString("status").orEmpty()
+    if (status.isNotEmpty() && status != "OK") error("NATIVE_PLAYABILITY_" + status.take(40))
     check(player.optJSONObject("videoDetails")?.optString("videoId") == videoId) { "NATIVE_VIDEO_MISMATCH" }
     val tracks = player.optJSONObject("captions")?.optJSONObject("playerCaptionsTracklistRenderer")?.optJSONArray("captionTracks") ?: error("NATIVE_CAPTIONS_UNAVAILABLE")
     val track = selectTrack(tracks, language) ?: error("NATIVE_LANGUAGE_UNAVAILABLE")
     val base = URI(track.getString("baseUrl"))
     require(base.scheme == "https" && base.host in listOf("www.youtube.com", "youtube.com") && base.path == "/api/timedtext") { "NATIVE_CAPTION_URL_INVALID" }
     val url = base.toASCIIString().replace(Regex("([?&])fmt=[^&]*"), "$1fmt=json3").let { if (Regex("[?&]fmt=").containsMatchIn(it)) it else it + (if (it.contains('?')) "&" else "?") + "fmt=json3" }
-    val caption = JSONObject(get(url, 3 * 1024 * 1024))
+    val raw = get(url, 3 * 1024 * 1024, agent)
+    check(raw.isNotBlank()) { "NATIVE_CAPTIONS_EMPTY" }
+    val caption = JSONObject(raw)
     val segments = parseSegments(caption)
     check(segments.length() > 0) { "NATIVE_CAPTIONS_EMPTY" }
     return JSONObject().put("videoId", videoId).put("title", player.getJSONObject("videoDetails").optString("title").take(300))
       .put("language", track.optString("languageCode", "unknown")).put("automatic", track.optString("kind") == "asr")
       .put("segments", segments).put("fetchedAt", System.currentTimeMillis())
   }
-  private fun get(url: String, limit: Int): String {
+  private fun get(url: String, limit: Int, agent: String = WEB_AGENT, body: JSONObject? = null): String {
     checkActive()
     val conn = URL(url).openConnection() as HttpURLConnection
     connection = conn
@@ -41,8 +60,14 @@ class NativeYoutube {
       checkActive()
       val remaining = (deadline - System.currentTimeMillis()).coerceIn(1, 6000).toInt()
       conn.connectTimeout = remaining; conn.readTimeout = remaining; conn.instanceFollowRedirects = false
-      conn.setRequestProperty("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36")
+      conn.setRequestProperty("User-Agent", agent)
       conn.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+      if (body != null) {
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+      }
       check(conn.responseCode == 200) { "NATIVE_HTTP_${conn.responseCode}" }
       return conn.inputStream.use { input ->
         val out = java.io.ByteArrayOutputStream()
@@ -53,8 +78,12 @@ class NativeYoutube {
     } finally { conn.disconnect(); connection = null }
   }
   companion object {
-    fun playerResponse(html: String): JSONObject? {
+    private const val ANDROID_VERSION = "21.26.364"
+    private const val ANDROID_AGENT = "com.google.android.youtube/$ANDROID_VERSION (Linux; U; Android 11) gzip"
+    private const val WEB_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
+    fun playerResponse(html: String, videoId: String? = null): JSONObject? {
       val marker = Regex("(?:var\\s+)?ytInitialPlayerResponse\\s*=\\s*|window\\[\"ytInitialPlayerResponse\"\\]\\s*=\\s*")
+      var blocked: JSONObject? = null
       for (match in marker.findAll(html)) {
         val start = html.indexOf('{', match.range.last + 1)
         if (start < 0 || start - match.range.last > 20) continue
@@ -63,11 +92,18 @@ class NativeYoutube {
           val c = html[i]
           if (quoted) { if (escaped) escaped = false else if (c == '\\') escaped = true else if (c == '"') quoted = false }
           else if (c == '"') quoted = true else if (c == '{') depth++ else if (c == '}') {
-            depth--; if (depth == 0) { try { return JSONObject(html.substring(start, i + 1)) } catch (_: Exception) { break } }
+            depth--
+            if (depth == 0) {
+              val candidate = try { JSONObject(html.substring(start, i + 1)) } catch (_: Exception) { break }
+              val details = candidate.optJSONObject("videoDetails")
+              if (videoId == null || details?.optString("videoId") == videoId) return candidate
+              if (details == null && candidate.has("playabilityStatus")) blocked = candidate
+              break
+            }
           }
         }
       }
-      return null
+      return blocked
     }
     fun selectTrack(tracks: JSONArray, language: String): JSONObject? {
       return (0 until tracks.length()).mapNotNull { tracks.optJSONObject(it) }.filter {

@@ -17,7 +17,7 @@ assert.equal(exampleFences.length,GENUI_PROMPT_EXAMPLES.length)
 for(const [index,match] of exampleFences.entries()){
  const spec=JSON.parse(match[1])
  assert.deepEqual(spec,GENUI_PROMPT_EXAMPLES[index].spec,'published example matches tested fixture')
- if(spec.schema==='reader-vocabulary')parseVocabulary(match[1])
+ if(spec.items[0]?.type==='vocabulary')parseVocabulary(match[1])
  else {
   const result=processGenuiSpec(normalizeGenuiInput(spec))
   assert.ok(isRenderableProcess(result),GENUI_PROMPT_EXAMPLES[index].name+': '+result.errors.join(';'))

@@ -458,7 +458,7 @@ function MessageSourceCopyButton({ source, user = false }: { source: string; use
     aria-label={copy.copied ? (user ? tx('已复制消息原文', 'Message source copied') : tx('已复制回复原文', 'Response source copied')) : (user ? tx('复制消息原始 Markdown 和 LaTeX', 'Copy message original Markdown and LaTeX') : tx('复制回复原始 Markdown 和 LaTeX', 'Copy original Markdown and LaTeX'))}
     title={tx('复制完整的原始 Markdown / LaTeX', 'Copy complete original Markdown / LaTeX')}
     onClick={copy.onCopy}
-  >{copy.copied ? tx('已复制', 'Copied') : tx('复制全文', 'Copy all')}</button>
+  >{copy.copied ? tx('已复制', 'Copied') : copy.failed ? tx('复制失败，重试', 'Copy failed, retry') : tx('复制全文', 'Copy all')}</button>
 }
 
 function QuickFollowUpBar({ items, disabled, sendingId, onSend, onInspect, onConfigure }: { items: QuickFollowUpPrompt[]; disabled: boolean; sendingId: string | null; onSend: (item: QuickFollowUpPrompt) => void; onInspect: (metadata: QuickFollowUpMetadata) => void; onConfigure: () => void }) {

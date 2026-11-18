@@ -22,6 +22,28 @@ if 'import com.example.aieducationreader.bridge.PdfBridge' not in source:
             raise RuntimeError('Android host changed: missing integration anchor ' + before)
         source = source.replace(before, after, 1)
     host.write_bytes(source.encode('utf8'))
+# Allow clipboard writes only from the packaged top-level reader origin.
+if '"ReaderClipboard"' not in source:
+    anchor = '          val nativePdf = PdfBridge'
+    if anchor not in source:
+        raise RuntimeError('Missing WebView clipboard integration anchor')
+    block = """          if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.WEB_MESSAGE_LISTENER)) {
+            androidx.webkit.WebViewCompat.addWebMessageListener(this, "ReaderClipboard", setOf("https://appassets.androidplatform.net")) { _, message, _, mainFrame, reply ->
+              if (mainFrame) {
+                val data = runCatching { org.json.JSONObject(message.data.orEmpty()) }.getOrNull()
+                if (data != null) {
+                  val copied = runCatching {
+                    val manager = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    manager.setPrimaryClip(android.content.ClipData.newPlainText("Reader", data.getString("text")))
+                  }.isSuccess
+                  reply.postMessage(org.json.JSONObject().put("id", data.optString("id")).put("ok", copied).toString())
+                }
+              }
+            }
+          }
+"""
+    source = source.replace(anchor, block + anchor, 1)
+    host.write_bytes(source.encode('utf8'))
 for relative in ['pdf/PdfBridge.kt', 'youtube/YoutubeBridge.kt', 'youtube/NativeYoutube.kt']:
     path = root / 'android' / relative
     (java / 'bridge' / path.name).write_bytes(path.read_bytes())

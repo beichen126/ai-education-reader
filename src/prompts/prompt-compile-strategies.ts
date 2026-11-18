@@ -96,6 +96,11 @@ export async function projectLogicalPromptContext(
   toDataUrl: PromptImageResolver = safeImageResolver(),
   options: { genUi?: boolean; genUiPrompt?: string } = {},
 ): Promise<ApiChatMessage[]> {
+  if (context.domain === 'conversation' && options.genUi) {
+    context = {...context, segments: context.segments.map(segment => ({
+      ...segment, snapshot: {...segment.snapshot, content: segment.snapshot.content.replace(/\bdsh-ui\b/gi, 'genui')}
+    }))}
+  }
   const history = await historyMessages(context.messages, toDataUrl)
 
   if (context.domain === 'conversation') {
@@ -148,7 +153,7 @@ export function appendGenUiGuidance(messages: ApiChatMessage[], prompt = GENUI_P
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]
     if (message.role !== 'user') continue
-    const guidance = '\n\n[Reader rendering capabilities]\n' + (configuredImageKeys(getSettingsSnapshot()).length ? withWebImageCapabilities(prompt) : prompt)
+    const guidance = '\n\n[Reader rendering capabilities]\n' + (configuredImageKeys(getSettingsSnapshot()).length ? withWebImageCapabilities(prompt) : prompt).replace(/\bdsh-ui\b/gi, 'genui')
     messages[index] = { ...message, content: typeof message.content === 'string'
       ? message.content + guidance
       : [...message.content, { type: 'text', text: guidance }] }

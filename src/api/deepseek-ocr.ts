@@ -28,5 +28,5 @@ export function validOcrPage(value: unknown): value is OcrPage {
 export function ocrContextText(page: OcrPage, name: string): string {
   // Strip positional metadata, retain the actual recognized content and formulas.
   const text = page.text.replace(/<｜box｜>[\s\S]*?<｜\/box｜>/g, '').replace(/<｜\/?(?:ref|det)｜>/g, '').trim()
-  return '【PDF OCR · ' + name + '】\n' + (text || '（本页未识别出文字）') + (page.finishReason === 'length' ? '\n【注意：本页 OCR 达到输出上限，文字不完整。】' : '')
+  return '【PDF OCR · ' + name + '】\n以下文字来自此 PDF 页面的 OCR 识别。\n' + (text || '（本页未识别出文字）') + (page.finishReason === 'length' ? '\n【注意：本页 OCR 达到输出上限，文字不完整。】' : '')
 }

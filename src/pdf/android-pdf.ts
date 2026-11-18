@@ -1,7 +1,7 @@
 /** Optional Android accelerator. Older APKs and browsers retain the PDF.js path. */
 type Document = { getData(): Promise<Uint8Array> }
 type Bridge = { request(id: string, payload: string): void; cancel(id: string): void }
-type Entry = { id: string; closed: boolean; ready: Promise<string | null> }
+type Entry = { id: string; closed: boolean; registered?: boolean; ready: Promise<string | null> }
 const documents = new WeakMap<Document, Entry>()
 function bridge(): Bridge | undefined {
   return typeof window !== 'undefined' ? (window as any).AndroidPdf : undefined
@@ -45,6 +45,7 @@ async function register(doc: Document): Promise<string | null> {
       }
       if (entry.closed) throw aborted()
       await request({ op: 'open', doc: entry.id })
+      entry.registered = true
       return entry.id
     } catch {
       void request({ op: 'close', doc: entry.id }).catch(() => {})
@@ -52,6 +53,13 @@ async function register(doc: Document): Promise<string | null> {
     }
   })()
   return entry.ready
+}
+/** Display can use PDF.js immediately while the native copy is being prepared. */
+export function androidDisplayReady(doc: Document): boolean {
+  if (!bridge()) return false
+  const entry = documents.get(doc)
+  if (!entry) void register(doc)
+  return !!entry?.registered && !entry.closed
 }
 export function closeAndroidPdf(doc: Document | null): void {
   if (!doc) return

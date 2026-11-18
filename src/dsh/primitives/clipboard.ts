@@ -9,6 +9,27 @@
  * @returns true only when the host accepted the write.
  */
 export async function writeClipboard(text: string): Promise<boolean> {
+  const native = (window as Window & { ReaderClipboard?: EventTarget & { postMessage(value: string): void } }).ReaderClipboard
+  if (native) {
+    const copied = await new Promise<boolean>(resolve => {
+      const id = crypto.randomUUID()
+      const finish = (ok: boolean) => {
+        clearTimeout(timer)
+        native.removeEventListener('message', receive)
+        resolve(ok)
+      }
+      const receive = (event: Event) => {
+        try {
+          const reply = JSON.parse((event as MessageEvent).data)
+          if (reply.id === id) finish(reply.ok === true)
+        } catch { /* Ignore unrelated responses. */ }
+      }
+      const timer = setTimeout(() => finish(false), 3000)
+      native.addEventListener('message', receive)
+      try { native.postMessage(JSON.stringify({id, text})) } catch { finish(false) }
+    })
+    if (copied) return true
+  }
   // lib.dom types clipboard non-optional, but insecure contexts omit it —
   // that runtime gap is exactly what this guard detects.
   /* oxlint-disable-next-line typescript/no-unnecessary-condition */
@@ -17,8 +38,7 @@ export async function writeClipboard(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text)
       return true
     } catch {
-      // Denied permissions / iframe policy — do not claim success.
-      return false
+      // WebView may expose the API but reject the write. Try the selection path below.
     }
   }
   // jsdom and older hosts: best-effort execCommand path when present.
@@ -35,7 +55,9 @@ export async function writeClipboard(text: string): Promise<boolean> {
   el.style.position = 'fixed'
   el.style.left = '-9999px'
   document.body.appendChild(el)
+  el.focus({preventScroll:true})
   el.select()
+  el.setSelectionRange(0, text.length)
   try {
     return exec('copy')
   } catch {

@@ -428,7 +428,7 @@ export function buildContextMessages(msgs: import('../engine/types').Message[], 
 /** Prepend a fixed global system prompt if enabled+non-empty. Shared by text/vision/streaming paths. */
 export function buildRequestMessages(apiMessages: ApiChatMessage[], settings: { customSystemPrompt: string; customSystemPromptEnabled: boolean }): ApiChatMessage[] {
   if (settings.customSystemPromptEnabled && settings.customSystemPrompt.trim()) {
-    return [{ role: 'system', content: settings.customSystemPrompt.trim() }, ...apiMessages]
+    return [{ role: 'system', content: settings.customSystemPrompt.trim().replace(/\bdsh-ui\b/gi, 'genui') }, ...apiMessages]
   }
   return apiMessages
 }

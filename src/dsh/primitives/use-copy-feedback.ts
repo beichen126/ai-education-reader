@@ -7,6 +7,7 @@ const COPIED_FEEDBACK_MS = 1000
 /** The copy-feedback hook's return: the transient flag and the copy handler. */
 export interface CopyFeedback {
   /** True for {@link COPIED_FEEDBACK_MS} after a successful write; render the success label off it. */
+  failed: boolean
   copied: boolean
   /** Copy the hook's text; no-op while `copied` is still true, silent on a refused write. */
   onCopy: () => void
@@ -18,14 +19,16 @@ export interface CopyFeedback {
  * @returns the `copied` flag and the `onCopy` handler.
  */
 export function useCopyFeedback(text: string): CopyFeedback {
+  const [failed,setFailed] = useState(false)
   const [copied, setCopied] = useState(false)
   const onCopy = useCallback(() => {
     if (copied) return
     void writeClipboard(text).then((ok) => {
+      setFailed(!ok)
       if (!ok) return
       setCopied(true)
       window.setTimeout(() => { setCopied(false) }, COPIED_FEEDBACK_MS)
     })
   }, [copied, text])
-  return { copied, onCopy }
+  return { copied, failed, onCopy }
 }

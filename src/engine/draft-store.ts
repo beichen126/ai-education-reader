@@ -144,7 +144,9 @@ async function restoreDraft(threadId: string, storageKey: string): Promise<void>
 
 export async function initDrafts(conversationIds: string[]): Promise<void> {
   try {
-    for (const id of conversationIds) await restoreDraft(id, draftSettingKey(id))
+    for (let i = 0; i < conversationIds.length; i += 16) {
+      await Promise.all(conversationIds.slice(i, i + 16).map(id => restoreDraft(id, draftSettingKey(id))))
+    }
   } catch (e) {
     console.error('[draft] initDrafts failed', e)
   }

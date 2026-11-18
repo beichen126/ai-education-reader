@@ -24,7 +24,7 @@ import { getProductGuideSeenVersion, markProductGuideSeen, PRODUCT_GUIDE_VERSION
 import { documentUiActions, useDocumentUi } from './documents/document-ui-store'
 import { useGallery } from './gallery/gallery-store'
 import { useLearningUi } from './study-cards/learning-ui-store'
-import { PromptManager } from './prompts/PromptManager'
+const PromptManager = lazy(() => import('./prompts/PromptManager').then(m => ({default: m.PromptManager})))
 import { ReadAloudPlayer } from './speech/ReadAloudPlayer'
 
 const SettingsDialog = lazy(() => import('./cockpit/SettingsDialog').then(module => ({ default: module.SettingsDialog })))
@@ -72,7 +72,7 @@ export function App() {
   const productGuideCheckedRef = useRef(false)
   const bootFn = useCallback(async () => {
     setBoot('loading')
-    try { await migrateLegacyPrompts(); await migratePromptSimplification(); await initSettings(); await initLayout(); await initStore(); setBoot('ready') }
+    try { await migrateLegacyPrompts(); await migratePromptSimplification(); await Promise.all([initSettings(), initLayout()]); await initStore(); setBoot('ready') }
     catch (e) { console.error('本地数据载入失败', e); setBoot('error') }
   }, [])
   useEffect(() => { void bootFn() }, [bootFn])

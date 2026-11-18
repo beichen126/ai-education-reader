@@ -1,4 +1,4 @@
-import { renderAndroidPdf, closeAndroidPdf } from './android-pdf'
+import { androidDisplayReady, renderAndroidPdf, closeAndroidPdf } from './android-pdf'
 // PDF.js integration boundary. UI never touches PDF.js directly.
 // Responsibilities: document open/close, page render (Canvas -> Blob), worker config.
 //
@@ -249,7 +249,7 @@ export function startPageSurfaceRender(doc: import('pdfjs-dist').PDFDocumentProx
     const vp = page.getViewport({ scale })
     const width = Math.max(1, Math.floor(vp.width))
     const height = Math.max(1, Math.floor(vp.height))
-    const native = typeof createImageBitmap === 'function' ? await renderAndroidPdf(doc, pageNumber, Math.max(width, height), controller.signal) : null
+    const native = typeof createImageBitmap === 'function' && androidDisplayReady(doc) ? await renderAndroidPdf(doc, pageNumber, Math.max(width, height), controller.signal) : null
     if (cancelled) throw new PdfCancellationError()
     if (native) {
       const bitmap = typeof createImageBitmap === 'function' ? await createImageBitmap(native.blob).catch(() => null) : null

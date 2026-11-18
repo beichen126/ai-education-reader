@@ -35,7 +35,7 @@ export const GENUI_PROMPT_EXAMPLES = [
   {name:'桑基图',spec:{title:'任务分配（示例数据，项）',items:[
     {type:'echart',preset:'sankey',links:[{from:'总任务',to:'阅读',value:6},{from:'总任务',to:'练习',value:4}]},
   ]}},
-  {name:'单词卡（独立协议）',spec:{schema:'reader-vocabulary',title:'词汇',items:[
+  {name:'单词卡',spec:{title:'词汇',items:[
     {type:'vocabulary',word:'analytics',phonetic:'/ˌænəˈlɪtɪks/',meaning:'n. 数据分析；分析学',example:'We use analytics to understand learning progress.'},
   ]}},
 ] as const

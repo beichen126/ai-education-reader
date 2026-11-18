@@ -6,7 +6,11 @@ assert.equal(parseVocabulary(JSON.stringify(sample)).items[0].word,'analytics')
 assert.throws(()=>parseVocabulary(JSON.stringify({...sample,items:[{...sample.items[0],word:{html:'x'}}]})))
 assert.equal(parseVocabulary(JSON.stringify({...sample,items:Array(100).fill(sample.items[0])})).items.length,100)
 assert.throws(()=>parseVocabulary(JSON.stringify({...sample,items:[{...sample.items[0],type:'script'}]})))
-assert.match(GENUI_PROMPT,/reader-vocabulary/)
+const partial = '{"items":[{"word":"a","meaning":"brace } and quote"}, {"word":"unfinished'
+assert.deepEqual(parseVocabulary(partial).items.map(w=>w.word), ['a'])
+assert.ok(parseVocabulary(partial).partial)
+assert.equal(parseVocabulary('{"reader-vocabulary":[{"word":"legacy"}]}').items[0].word,'legacy')
+assert.doesNotMatch(GENUI_PROMPT,/reader-vocabulary|dsh-ui/)
 console.log('PASS vocabulary schema bounds and real GenUI protocol inclusion')
 
 const {diagramRanks}=await import('../src/genui/readable-diagram-layout')

@@ -11,7 +11,7 @@
 - 选择与测验：choices。
 - 图形：icon、svg、scene3d。
 
-单词卡使用独立 reader-vocabulary 协议。保存 Firecrawl Key 后，当前请求额外开放 image、image-group，可嵌入 card/grid。图片由 query 检索，优先首张，加载失败依次尝试第二、第三张；全部失败显示紧凑占位与来源。
+词汇表使用 genui 围栏，items 填写 vocabulary 条目。保存 Firecrawl Key 后，当前请求额外开放 image、image-group，可嵌入 card/grid。图片由 query 检索，优先首张，加载失败依次尝试第二、第三张；全部失败显示紧凑占位与来源。
 
 ## 输出格式
 

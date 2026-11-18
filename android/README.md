@@ -31,7 +31,7 @@ behavior. Unsupported `createImageBitmap` retains the PDF.js display surface pat
 
 ## YouTube
 
-The caption-only native HTTP attempt reads the watch-page player JSON and requests
+The caption-only native HTTP attempt requests Android player metadata first, then tries the watch-page player JSON as a fallback. It requests
 the selected caption track. It fetches no video or page subresources. A failed or
 unsupported response invokes the hidden WebView compatibility extractor once.
 This is a small first-party HTTP extractor, not NewPipeExtractor or yt-dlp.

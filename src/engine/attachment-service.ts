@@ -372,11 +372,11 @@ export async function cleanupOrphanAttachments(graceMs = 24 * 60 * 60 * 1000): P
 /** Model projection keeps the saved preview, but OCR attachments transmit text only. */
 export async function toModelAttachment(id: StableId): Promise<string | { text: string }> {
   const meta = await getAttachment(id)
-  if (meta?.transcript) { const {validTranscript,transcriptContext}=await import('../youtube/transcript'); if(!validTranscript(meta.transcript))throw new AttachmentError('read-failed','invalid transcript'); return {text:transcriptContext(meta.transcript)} }
   if (meta?.ocr) {
     const { validOcrPage, ocrContextText } = await import('../api/deepseek-ocr')
     if (!validOcrPage(meta.ocr)) throw new AttachmentError('read-failed', 'invalid OCR metadata')
     return { text: ocrContextText(meta.ocr, meta.name) }
   }
+  if (meta?.transcript) { const {validTranscript,transcriptContext}=await import('../youtube/transcript'); if(!validTranscript(meta.transcript))throw new AttachmentError('read-failed','invalid transcript'); return {text:transcriptContext(meta.transcript)} }
   return toDataUrl(id)
 }
