@@ -12,9 +12,12 @@ import { projectLogicalPromptContext } from '../prompts/prompt-compile-strategie
 import type { AcceptedSendContext } from '../prompts/prompt-send'
 import type { SendFailure, SendOutcome } from './send-outcome'
 import { prepareWebResearch, WebResearchError } from '../api/deepseek-web'
+import { hasFirecrawlWebSearch, isWebSearchEnabled, prepareFirecrawlResearch } from '../api/firecrawl-web'
 import { streamProviderChat } from '../api/chat-provider'
 import { getLocalStatus, LocalProviderError } from '../api/openai-local'
 import { DeepSeekFilesError } from '../api/deepseek-files'
+import { getToolQueries, searchQuery } from '../api/web-search-tool'
+import { tx } from './locale'
 
 /**
  * Thread-agnostic streaming reply engine. ONE generation pipeline is shared by the ROOT
@@ -132,10 +135,14 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     }
     thread.setStreaming()
     if (onStreamStart) onStreamStart(controller, assistantId)
-    const native = nativeConversationOptions(settings, reqMessages, !!thread.acceptTitle && contextMessages.filter(m=>m.role==='user').length===1)
+    const userMessages = contextMessages.filter(message => message.role === 'user')
+    const question = userMessages.at(-1)?.content || ''
+    const firecrawl = hasFirecrawlWebSearch(settings)
+    const firecrawlEnabled = firecrawl && isWebSearchEnabled(settings)
+    const nativeSettings = firecrawl ? { ...settings, webSearchEnabled: false } : settings
+    const native = nativeConversationOptions(nativeSettings, reqMessages, !!thread.acceptTitle && userMessages.length === 1)
     let webFooter = ''
-    if (settings.webSearchEnabled && settings.chatProvider !== 'openai-local' && !native) {
-      const question = [...contextMessages].reverse().find(message => message.role === 'user')?.content || ''
+    if (!firecrawl && settings.webSearchEnabled && settings.chatProvider !== 'openai-local' && !native) {
       const research = await prepareWebResearch({ baseUrl: settings.apiBaseUrl, apiKey: settings.apiKey, question, signal: controller.signal })
       if (!ownedLease.isCurrent()) throw new DeepSeekError('aborted', 'Aborted')
       reqMessages.push(research.message)
@@ -144,7 +151,23 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     const r = await streamProviderChat(settings, {
       apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages,
       signal: controller.signal, onDelta, onReasoningDelta: delta => { reasoning += delta }, ...native,
+      ...(firecrawlEnabled ? {
+        nativeTools: [],
+        onWebToolCalls: async calls => {
+          const queries = getToolQueries(calls).map(call => searchQuery(call.name, call.args))
+          const index = queries.findIndex(Boolean)
+          const results = queries.map(query => ({ status: query ? 'search_limit' : 'invalid_query' }) as Record<string, unknown>)
+          if (index < 0) return results
+          if (!ownedLease.isCurrent()) throw new DeepSeekError('aborted', 'Aborted')
+          const research = await prepareFirecrawlResearch({ settings, query: queries[index], signal: controller.signal })
+          if (!ownedLease.isCurrent()) throw new DeepSeekError('aborted', 'Aborted')
+          webFooter = research.footer
+          results[index] = research.result
+          return results
+        },
+      } : {}),
     })
+    if (r.webToolUnavailable) webFooter = '\n\n---\n\n' + tx('当前模型接口不支持 Firecrawl 搜索工具。', 'This model endpoint does not support the Firecrawl search tool.')
     clearTimeout(renderTimer);renderTimer=undefined
     received = r.content + webFooter + citationFooter(r.annotations)
     clearTimeout(durableTimer)
@@ -168,7 +191,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       ownedLease.release(); thread.setError(failure); return failure
     }
     const err = e instanceof DeepSeekError ? e : new DeepSeekError(controller.signal.aborted ? 'aborted' : 'network-or-cors', 'Request failed')
-    if (err.kind === 'aborted') {
+    if (controller.signal.aborted || err.kind === 'aborted') {
       const message = errorKindLabel('aborted')
       if (placeholderCreated) thread.settleAssistant('aborted', message)
       await thread.persistFinal()

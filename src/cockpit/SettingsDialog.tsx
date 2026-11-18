@@ -453,7 +453,7 @@ export function SettingsDialog() {
           <article>
             <h4>{tx('朗读与联网搜索','Read aloud and web search')}</h4>
             <p>{tx('选中文字后点击“朗读”，可暂停或停止；在“通用”中设置中英文倍速和重复次数，默认重复三次。也可点击回答下方“朗读全文”。使用配置的 DeepSeek API 合成语音。','Select text and choose Read aloud; playback can be paused or stopped. Set Chinese/English rates and repeat count in General; the default is three passes. Choose Read all aloud below an answer to read its full text using the configured DeepSeek API.')}</p>
-            <p>{tx('资料菜单中的联网搜索默认关闭，可按需开启。它使用当前 API 服务的 Search / Fetch 能力，代理需支持相关接口和浏览器跨域访问，联网请求可能单独计费。','Web search in the materials menu is off by default. It uses the configured provider’s Search / Fetch tools; proxies need compatible endpoints and browser CORS support. Tool requests may incur separate charges.')}</p>
+            <p>{tx('保存 Firecrawl Key 后默认开启联网搜索，可在资料菜单关闭。搜索和配图共用额度。','Web search is on by default with a saved Firecrawl key. Use the materials menu to turn it off. Search and web images share credits.')}</p>
           </article>
           <article>
             <h4>{tx('数据与常见故障','Data and troubleshooting')}</h4>

@@ -14,7 +14,7 @@ async function stateId(key: string) {
 export async function imageKeyState(key: string): Promise<KeyState | undefined> {return getSetting(await stateId(key))}
 export async function resetImageKey(key: string) {await deleteSetting(await stateId(key)); await setSetting('firecrawl-cursor',await stateId(key))}
 let queue: Promise<unknown> = Promise.resolve()
-/** Serialize rotation across concurrent image positions. Three explicit quota failures advance a key; one full cycle bounds each search. */
+/** Serialize rotation across Firecrawl requests. Three explicit quota failures advance a key; one full cycle bounds each request. */
 export function requestWithImageKeys<T>(keys: ImageKey[], request: (key: string) => Promise<T>, signal?: AbortSignal): Promise<T> {
   const run = queue.then(async () => {
     signal?.throwIfAborted()
@@ -51,5 +51,11 @@ export function requestWithImageKeys<T>(keys: ImageKey[], request: (key: string)
     throw new Error('本轮配置均未成功。'+failures.join('；'))
   })
   queue = run.catch(()=>undefined)
-  return run
+  if (!signal) return run
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason)
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+    void run.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
+  })
 }

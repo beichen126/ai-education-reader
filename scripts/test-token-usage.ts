@@ -65,6 +65,36 @@ try {
   assert.equal(result.reasoning, diagnostics)
   assert.equal(result.finishReason, 'stop')
   assert.deepEqual(result.usage, { ...expected, totalTokens: 170, cachedReadTokens: 80, reasoningTokens: 20 })
+  for (const signature of ['signed-call', undefined]) {
+    let requests = 0
+    const functionCall = { id: 'gemini-search-1', name: 'search_web', args: { query: 'Firecrawl pricing' } }
+    const part = { functionCall, ...(signature ? { thoughtSignature: signature } : {}) }
+    const usageMetadata = { promptTokenCount: 120, candidatesTokenCount: 30, totalTokenCount: 170, cachedContentTokenCount: 80, thoughtsTokenCount: 20 }
+    globalThis.fetch = async (_url, init) => {
+      const request = JSON.parse(String(init?.body))
+      if (++requests === 1) {
+        assert.equal(request.toolConfig.functionCallingConfig.mode, 'AUTO')
+        assert.equal(request.tools[0].functionDeclarations[0].name, 'search_web')
+        return new Response('data: ' + JSON.stringify({ candidates: [{ content: { parts: [part] } }], usageMetadata }), { headers: { 'content-type': 'text/event-stream' } })
+      }
+      if (signature) {
+        assert.equal(request.toolConfig.functionCallingConfig.mode, 'NONE')
+        assert.deepEqual(request.contents.at(-2).parts, [part])
+        assert.deepEqual(request.contents.at(-1).parts, [{ functionResponse: { id: functionCall.id, name: functionCall.name, response: { status: 'ok', sources: ['official pricing'] } } }])
+      } else {
+        assert.equal(request.tools, undefined)
+        assert.match(request.contents.at(-1).parts.at(-1).text, /untrusted.*\s+.*official pricing/)
+      }
+      return Response.json({ candidates: [{ content: { parts: [{ text: 'The official pricing.' }] }, finishReason: 'STOP' }], usageMetadata })
+    }
+    const searched = await streamTextChat({ ...gemini, onDelta() {}, onWebToolCalls: async calls => {
+      assert.deepEqual(calls, { format: 'gemini', parts: [part] })
+      return [{ status: 'ok', sources: ['official pricing'] }]
+    } })
+    assert.equal(requests, 2)
+    assert.equal(searched.content, 'The official pricing.')
+    assert.deepEqual(searched.usage, { inputTokens: 240, outputTokens: 60, totalTokens: 340, cachedReadTokens: 160, reasoningTokens: 40 })
+  }
   globalThis.fetch = async (url, init) => {
     assert.equal(url, 'https://api.teamorouter.com/v1beta/models/gemini-3.8-flash:generateContent')
     assert.deepEqual(JSON.parse(String(init?.body)).generationConfig, { thinkingConfig: { includeThoughts: false }, responseMimeType: 'application/json', maxOutputTokens: 8192 })

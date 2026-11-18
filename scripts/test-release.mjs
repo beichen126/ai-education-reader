@@ -22,6 +22,7 @@ const CORE_E2E = [
   'e2e-genui-vocabulary',
   'e2e-selection-speech',
   'e2e-web-images',
+  'e2e-firecrawl-web',
   'e2e-pdf-ocr',
   'e2e-android-pdf',
   'e2e-background-chat',

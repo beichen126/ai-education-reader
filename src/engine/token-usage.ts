@@ -1,4 +1,16 @@
 export type TokenUsage = { inputTokens: number; outputTokens: number; totalTokens: number; cachedReadTokens?: number; cachedWriteTokens?: number; reasoningTokens?: number }
+export function combineTokenUsage(first?: TokenUsage, second?: TokenUsage): TokenUsage | undefined {
+  if (!first || !second) return undefined
+  const usage: TokenUsage = {
+    inputTokens: first.inputTokens + second.inputTokens,
+    outputTokens: first.outputTokens + second.outputTokens,
+    totalTokens: first.totalTokens + second.totalTokens,
+  }
+  for (const key of ['cachedReadTokens', 'cachedWriteTokens', 'reasoningTokens'] as const) {
+    if (first[key] !== undefined && second[key] !== undefined) usage[key] = first[key] + second[key]
+  }
+  return usage
+}
 /** Display only: original API integer counters remain unchanged in storage. */
 export function formatTokenCount(value: number): string { return (Math.round(value / 10) / 100).toFixed(2) + 'k' }
 /** Accept only complete, non-negative integer counters, never estimated usage. */

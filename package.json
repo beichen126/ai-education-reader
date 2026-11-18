@@ -266,7 +266,8 @@
     "test:pdf-ocr": "npx tsx scripts/test-pdf-ocr.ts",
     "test:youtube": "tsx scripts/test-youtube.ts && tsx scripts/test-android-pdf.ts",
     "test:speech-cache": "tsx scripts/test-speech-cache.ts && tsx scripts/test-read-aloud.ts",
-    "test:e2e-web-images": "node scripts/e2e-web-images.mjs"
+    "test:e2e-web-images": "node scripts/e2e-web-images.mjs",
+    "test:e2e-firecrawl-web": "node scripts/e2e-firecrawl-web.mjs"
   },
   "dependencies": {
     "@changfenhuang/dsh-genui": "0.16.0",

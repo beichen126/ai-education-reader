@@ -40,8 +40,8 @@ export function WebImageSettings({saveRef, dirtyRef}: {saveRef?: {current: (() =
   }
   if (saveRef) saveRef.current = () => save()
   return <div className={css.byokBlock} data-testid="firecrawl-settings">
-    <div className={css.byokTitle}>网络配图 · Firecrawl</div>
-    <p className={css.settingsHint}>为回答配图，Key 保存在本机。</p>
+    <div className={css.byokTitle}>联网搜索与配图 · Firecrawl</div>
+    <p className={css.settingsHint}>搜索和配图共用 Key，保存在本机。</p>
     <a className={layout.consoleLink} href="https://www.firecrawl.dev/app" target="_blank" rel="noopener noreferrer">获取 API Key ↗</a>
     <div className={layout.entries}>
     {rows.map((row,i) => <section key={i} className={layout.entry}>
@@ -66,6 +66,6 @@ export function WebImageSettings({saveRef, dirtyRef}: {saveRef?: {current: (() =
       {current && <small>最近使用：{current}</small>}
     </div>
     <details className={layout.manage}><summary>备用 Key 如何切换？</summary><p className={css.settingsHint}>额度耗尽连续 3 次后切换下一项，每次最多轮换一圈。同账号的 Key 可能共享额度。</p></details>
-    <div className={layout.footer}><span role="status" className={css.settingsHint}>{dirty ? '修改尚未保存' : status}</span><Button variant="primary" disabled={busy} onClick={()=>void save().catch(()=>{})}>{busy?'正在保存…':'保存配图配置'}</Button></div>
+    <div className={layout.footer}><span role="status" className={css.settingsHint}>{dirty ? '修改尚未保存' : status}</span><Button variant="primary" disabled={busy} onClick={()=>void save().catch(()=>{})}>{busy?'正在保存…':'保存 Firecrawl 配置'}</Button></div>
   </div>
 }

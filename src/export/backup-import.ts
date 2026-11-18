@@ -284,6 +284,7 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
   if ((settings as any).pdfNavigationMode !== undefined && !isPdfNavigationMode((settings as any).pdfNavigationMode)) throw new BackupError('settings.pdfNavigationMode 非法')
   if ((settings as any).uiLanguage !== undefined && (settings as any).uiLanguage !== 'zh-CN' && (settings as any).uiLanguage !== 'en') throw new BackupError('settings.uiLanguage 非法')
   if ((settings as any).webSearchEnabled !== undefined && typeof (settings as any).webSearchEnabled !== 'boolean') throw new BackupError('settings.webSearchEnabled must be a boolean')
+  if ((settings as any).firecrawlWebSearchEnabled !== undefined && typeof (settings as any).firecrawlWebSearchEnabled !== 'boolean') throw new BackupError('settings.firecrawlWebSearchEnabled must be a boolean')
   for (const key of ['chineseSpeechRate','englishSpeechRate']) {
     const rate = (settings as any)[key]
     if (rate !== undefined && (!isNum(rate) || rate < 0.5 || rate > 2)) throw new BackupError('settings.' + key + ' must be between 0.5 and 2')
@@ -626,6 +627,7 @@ export async function restoreBackup(backup: Backup, binaries?: {
       { key: 'pdfNavigationMode', value: isPdfNavigationMode((backup.settings as { pdfNavigationMode?: unknown } | undefined)?.pdfNavigationMode) ? (backup.settings as { pdfNavigationMode: string }).pdfNavigationMode : 'paged' },
       { key: 'uiLanguage', value: (backup.settings as { uiLanguage?: unknown } | undefined)?.uiLanguage === 'en' ? 'en' : 'zh-CN' },
       { key: 'webSearchEnabled', value: backup.settings?.webSearchEnabled === true ? 'true' : 'false' },
+      { key: 'firecrawlWebSearchEnabled', value: backup.settings?.firecrawlWebSearchEnabled === false ? 'false' : 'true' },
       { key: 'chineseSpeechRate', value: String(backup.settings?.chineseSpeechRate ?? 1) },
       { key: 'englishSpeechRate', value: String(backup.settings?.englishSpeechRate ?? 0.9) },
       { key: 'highlightSpokenSelection', value: String(backup.settings?.highlightSpokenSelection === true) },

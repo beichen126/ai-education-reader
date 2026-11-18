@@ -50,6 +50,7 @@ await markArtifactReady(quizArt.id, { quiz: quizDoc, generatedText: '[...]' }, q
 await setAppearance('dark')
 await setSetting('apiKey', 'sk-secret')
 await setSetting('webSearchEnabled', 'true')
+await setSetting('firecrawlWebSearchEnabled', 'false')
 
 // ---- build current backup schema ----
 const backup = await buildBackup()
@@ -65,6 +66,7 @@ assert(active && active.branchId === bB.id, 'backup includes active branch')
 assert(current.appearance === 'dark', 'backup appearance dark')
 assert(!('apiKey' in current.settings), 'backup settings EXCLUDE apiKey')
 assert(current.settings.webSearchEnabled === true, 'backup includes the web search preference')
+assert(current.settings.firecrawlWebSearchEnabled === false, 'backup includes Firecrawl opt-out')
 const attIds = (current.attachments as any[]).map((a) => a.id)
 assert(attIds.includes(pdfImg) && attIds.includes(branchImg) && attIds.includes(bDraftImg), 'attachment union includes root + branch message + branch draft refs')
 const quizBackup = current.artifacts.find((a: any) => a.kind === 'quiz')
@@ -98,6 +100,7 @@ const quizAfter = await getArtifact(quizArt.id)
 assert(quizAfter && quizAfter.kind === 'quiz' && quizAfter.quiz && quizAfter.quiz.questions.length === 1, 'restored: quiz structured artifacts preserved')
 assert((await getSetting('appearance')) === 'dark', 'restored: appearance dark')
 assert((await getSetting('webSearchEnabled')) === 'true', 'restored: web search preference')
+assert((await getSetting('firecrawlWebSearchEnabled')) === 'false', 'restored: Firecrawl opt-out')
 const apiKey = await getSetting('apiKey')
 assert(apiKey === '' || apiKey === undefined, 'restored: apiKey NOT restored')
 

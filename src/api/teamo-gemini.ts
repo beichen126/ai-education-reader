@@ -1,5 +1,6 @@
 import type { SendTextChatArgs } from './deepseek'
 import { parseTokenUsage } from '../engine/token-usage'
+import { WEB_SEARCH_TOOL, type GeminiToolPart } from './web-search-tool'
 
 export function isTeamoGemini(baseUrl: string, model: string): boolean {
   if (model.trim().toLowerCase() !== 'gemini-3.8-flash') return false
@@ -11,7 +12,8 @@ export function isTeamoGemini(baseUrl: string, model: string): boolean {
   } catch { return false }
 }
 
-type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } }
+type GeminiPart = GeminiToolPart | { inlineData: { mimeType: string; data: string } }
+  | { functionResponse: { id?: string; name: string; response: Record<string, unknown> } }
 
 export function teamoGeminiRequest(args: SendTextChatArgs, stream: boolean) {
   const instructions: GeminiPart[] = []
@@ -33,11 +35,20 @@ export function teamoGeminiRequest(args: SendTextChatArgs, stream: boolean) {
     if (previous?.role === role) previous.parts.push(...parts)
     else contents.push({ role, parts })
   }
+  const exchange = args.webToolExchange
+  if (exchange?.calls.format === 'gemini') {
+    const parts = exchange.calls.parts
+    contents.push({ role: 'model', parts })
+    contents.push({ role: 'user', parts: parts.flatMap(part => part.functionCall ? [part.functionCall] : []).map(({ id, name }, index) => ({
+      functionResponse: { ...(id ? { id } : {}), name, response: exchange.results[index] },
+    })) })
+  }
   return {
     endpoint: 'https://api.teamorouter.com/v1beta/models/gemini-3.8-flash:' + (stream ? 'streamGenerateContent?alt=sse' : 'generateContent'),
     body: {
       contents,
       ...(instructions.length ? { systemInstruction: { parts: instructions } } : {}),
+      ...(args.webSearchTool ? { tools: [{ functionDeclarations: [WEB_SEARCH_TOOL] }], toolConfig: { functionCallingConfig: { mode: exchange ? 'NONE' : 'AUTO' } } } : {}),
       generationConfig: {
         thinkingConfig: { includeThoughts: args.thinking !== 'disabled' },
         ...(args.jsonObject ? { responseMimeType: 'application/json' } : {}),
@@ -67,4 +78,10 @@ export function readGeminiReply(payload: any) {
       reasoningTokens: usage?.thoughtsTokenCount,
     }),
   }
+}
+
+export function readGeminiToolParts(payload: any): GeminiToolPart[] {
+  const parts = payload?.candidates?.[0]?.content?.parts
+  if (!Array.isArray(parts)) return []
+  return parts.filter(part => part && (typeof part.text === 'string' || typeof part.functionCall?.name === 'string'))
 }

@@ -16,7 +16,7 @@ try {
  await page.route('https://image.example/**',route=>route.request().url().includes('/broken')?route.fulfill({status:404,body:''}):route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="600" height="320"><rect width="600" height="320" fill="#b8d6fa"/><text x="80" y="160" font-size="32">Learning diagram</text></svg>'}))
  const fence=(lang,spec)=>'```'+lang+'\n'+JSON.stringify(spec)+'\n```'
  const answer=fence('genui',{title:'简洁入口',items:[{type:'card',title:'无需 schema',items:[{type:'text',content:'结构正常'},{type:'image',query:'neuron diagram'}]}]})+'\n'+fence('web-image',{type:'image',query:'neuron diagram'})+'\n'+fence('web-image',{type:'image-group',items:[{query:'animal cell'},{query:'plant cell'}]})
- await seedAndBoot(page,{convs:[{id:'images',title:'图片测试',createdAt:1,updatedAt:1,messages:[msg('answer','assistant',answer)]}],settings:{lastConversationId:'images',appearance:'dark',apiKey:'chat-test',model:'deepseek-flash'}})
+ await seedAndBoot(page,{convs:[{id:'images',title:'图片测试',createdAt:1,updatedAt:1,messages:[msg('answer','assistant',answer)]}],settings:{lastConversationId:'images',appearance:'dark',apiKey:'chat-test',model:'deepseek-flash',firecrawlWebSearchEnabled:'false'}})
  await page.getByText('结构正常',{exact:true}).waitFor()
  assert.equal(requests.length,0)
  await page.getByRole('button',{name:'设置',exact:true}).click()
@@ -59,7 +59,7 @@ try {
  await page.getByRole('button',{name:'设置',exact:true}).click()
  await panel.getByRole('button',{name:'清除',exact:true}).click()
  await panel.getByText('修改尚未保存').waitFor()
- await panel.getByRole('button',{name:'保存配图配置',exact:true}).click()
+ await panel.getByRole('button',{name:'保存 Firecrawl 配置',exact:true}).click()
  await panel.getByText('已清除，模型配图能力已关闭').waitFor()
  await page.keyboard.press('Escape')
  assert.equal(await page.locator('.reader-web-images').count(),0)
