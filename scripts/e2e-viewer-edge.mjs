@@ -90,7 +90,7 @@ async function drag(p, dx, dy) {
     return { scale: parseFloat(m[1]), w: parseFloat(img.style.width), h: parseFloat(img.style.height), sw: r.width, sh: r.height }
   })
   const ox = Math.max(0, (geo.w * geo.scale - geo.sw) / 2)
-  const oy = Math.max(0, (geo.h * geo.scale - geo.sh) / 2)
+  const oy = geo.h * geo.scale / 2
   assert(ox > 0 && oy > 0, 'A: zoomed image overflows both axes (ox=' + ox.toFixed(1) + ' oy=' + oy.toFixed(1) + ')')
   const right = await drag(page, ox * 2 + 800, 0)
   assert(right.tx > 0 && Math.abs(right.tx - ox) < 2, 'A: right limit reachable tx=' + right.tx.toFixed(1) + ' ~ +' + ox.toFixed(1))

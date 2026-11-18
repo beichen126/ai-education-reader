@@ -38,30 +38,22 @@ export function zoomAtPoint(
   }
 }
 
-/**
- * Clamp translation so the scaled image never fully leaves the viewport.
- *
- * Coordinate model: the scaled image is centered on the stage and shifted by
- * (tx,ty) — a symmetric origin, NOT the image top-left. So a scaled image that
- * is larger than the stage by `overflowX = (baseW*s - stageW) / 2` on each side
- * can shift within [-overflowX, +overflowX] and stay covered; an axis where the
- * scaled image fits inside the stage is locked to the center (tx=0).
- */
+/** Keep horizontal coverage and allow either vertical page edge to reach the reading center. */
 export function clampPan(
   tx: number,
   ty: number,
   scale: number,
   stageW: number,
-  stageH: number,
+  _stageH: number,
   baseW: number,
   baseH: number,
 ): { tx: number; ty: number } {
   const s = clampScale(scale)
   const overflowX = Math.max(0, (baseW * s - stageW) / 2)
-  const overflowY = Math.max(0, (baseH * s - stageH) / 2)
+  const verticalReach = baseH * s / 2
   return {
     tx: Math.max(-overflowX, Math.min(overflowX, tx)),
-    ty: Math.max(-overflowY, Math.min(overflowY, ty)),
+    ty: Math.max(-verticalReach, Math.min(verticalReach, ty)),
   }
 }
 

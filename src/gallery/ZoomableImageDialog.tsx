@@ -43,7 +43,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
   const txRef = useRef(tx); txRef.current = tx
   const tyRef = useRef(ty); tyRef.current = ty
   const pointers = useRef(new Map<number, Nd>())
-  const pinchRef = useRef<{ d0: number; s0: number; tx0: number; ty0: number } | null>(null)
+  const pinchRef = useRef<{ mx0: number; my0: number; d0: number; s0: number; tx0: number; ty0: number } | null>(null)
   const dragRef = useRef<{ x: number; y: number; moved: number } | null>(null)
   const lastMovedRef = useRef(0)
   // Transient zoom HUD: shows the current percent only while the user actually
@@ -65,8 +65,11 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
 
   const setT = useCallback((s: number, x: number, y: number) => {
     const b = base()
-    if (b) { const c = clampPan(x, y, s, stage.w, stage.h, b.w, b.h); setTx(c.tx); setTy(c.ty) } else { setTx(x); setTy(y) }
-    setScale(clampScale(s))
+    const next = b ? clampPan(x, y, s, stage.w, stage.h, b.w, b.h) : { tx:x, ty:y }
+    txRef.current = next.tx
+    tyRef.current = next.ty
+    scaleRef.current = clampScale(s)
+    setTx(next.tx); setTy(next.ty); setScale(scaleRef.current)
   }, [base, stage])
 
   const bump = useCallback((factor: number) => {
@@ -83,6 +86,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
   // Reset transform on image change — and drop any zoom HUD state so image 2
   // never inherits image 1's visible percent or pending hide timer.
   useEffect(() => {
+    pointers.current.clear(); pinchRef.current = null; dragRef.current = null
     const t = resetTransform(); setScale(t.scale); setTx(t.tx); setTy(t.ty)
     setZoomHudVisible(false)
     if (zoomHudTimerRef.current !== null) { window.clearTimeout(zoomHudTimerRef.current); zoomHudTimerRef.current = null }
@@ -156,7 +160,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
     ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()]
-      pinchRef.current = { d0: Math.hypot(a.x - b.x, a.y - b.y), s0: scaleRef.current, tx0: txRef.current, ty0: tyRef.current }
+      pinchRef.current = { mx0: (a.x+b.x)/2, my0: (a.y+b.y)/2, d0: Math.max(1,Math.hypot(a.x - b.x, a.y - b.y)), s0: scaleRef.current, tx0: txRef.current, ty0: tyRef.current }
       dragRef.current = null
     } else if (pointers.current.size === 1) {
       dragRef.current = { x: e.clientX, y: e.clientY, moved: 0 }
@@ -174,8 +178,8 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
       const rect = stageRef.current?.getBoundingClientRect()
       const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2
       const cx = rect ? rect.width / 2 : 0, cy = rect ? rect.height / 2 : 0
-      const z = zoomAtPoint(p.s0, ns, mx - (rect?.left || 0), my - (rect?.top || 0), cx, cy, p.tx0, p.ty0)
-      setT(ns, z.tx, z.ty)
+      const z = zoomAtPoint(p.s0, ns, p.mx0 - (rect?.left || 0), p.my0 - (rect?.top || 0), cx, cy, p.tx0, p.ty0)
+      setT(ns, z.tx + mx - p.mx0, z.ty + my - p.my0)
       showZoomHud() // live percent while pinching; timer keeps resetting
       lastMovedRef.current = 10
       return
@@ -186,24 +190,21 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
       d.moved += Math.abs(dx) + Math.abs(dy)
       d.x = e.clientX; d.y = e.clientY
       lastMovedRef.current = d.moved
-      if (scaleRef.current > 1) {
-        const b = base()
-        if (b) { const c = clampPan(txRef.current + dx, tyRef.current + dy, scaleRef.current, stage.w, stage.h, b.w, b.h); setTx(c.tx); setTy(c.ty) }
-        else { setTx(txRef.current + dx); setTy(tyRef.current + dy) }
-      }
+      setT(scaleRef.current, txRef.current + dx, tyRef.current + dy)
     }
   }
   const onPointerUp = (e: React.PointerEvent) => {
     pointers.current.delete(e.pointerId)
     if (pointers.current.size < 2) pinchRef.current = null
-    if (pointers.current.size === 0) dragRef.current = null
+    const remaining = pointers.current.values().next().value
+    dragRef.current = remaining ? { ...remaining, moved: lastMovedRef.current } : null
   }
   const onDoubleClick = (e: React.MouseEvent) => {
     const rect = stageRef.current!.getBoundingClientRect()
     const s = scaleRef.current
     const target = s < DOUBLE_CLICK_SCALE ? DOUBLE_CLICK_SCALE : 1
     const z = zoomAtPoint(s, target, e.clientX - rect.left, e.clientY - rect.top, rect.width / 2, rect.height / 2, txRef.current, tyRef.current)
-    setT(target, z.tx, z.ty)
+    setT(target, target === 1 ? 0 : z.tx, target === 1 ? 0 : z.ty)
     showZoomHud()
   }
   // Click on empty stage area closes; a pan suppresses it; clicks on the image don't close.
