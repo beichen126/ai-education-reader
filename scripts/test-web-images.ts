@@ -101,7 +101,7 @@ try {
  assert.equal(touched,false,'canceled queued request never invokes provider')
  let emptyCalls=0
  globalThis.fetch=async()=>{emptyCalls++;return Response.json({success:true,data:{images:[]}})}
- await assert.rejects(searchFirstImage('no results lifecycle',pool),/没有图片/)
+ await assert.rejects(searchFirstImage('no results lifecycle',pool),/未找到可用图片/)
  assert.equal(emptyCalls,1,'empty result does not burn through other keys')
 }finally{globalThis.fetch=original}
 console.log('PASS shared ownership, cancellation, cache reuse, reentry and empty-result lifecycle')
