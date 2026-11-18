@@ -2,6 +2,7 @@ import {WebImageSettings} from '../web-images/WebImageSettings'
 import {clearSpeechCache} from '../speech/audio-cache'
 import {stopReadAloud} from '../speech/read-aloud'
 import {ApiProfiles} from './ApiProfiles'
+import {ApiConfigTransfer} from './ApiConfigTransfer'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useSettings, patchSettings, DEFAULT_SETTINGS, useSettingsMutation } from '../engine/settings-store'
 import { testConnection, type VisionCapability } from '../api/deepseek'
@@ -47,6 +48,7 @@ function ShowHideLabel(props: { visible: boolean; onToggle: () => void; onClear:
 export function SettingsDialog() {
   const s = useSettings(x => x)
   const saveWebImagesRef = useRef<(() => Promise<void>) | null>(null)
+  const webImageDraftRef = useRef(false)
   const initialSection = useUi(state => state.settingsInitialSection)
   type Section = 'api' | 'general' | 'security' | 'help'
   const [section, setSection] = useState<Section>(initialSection ?? 'api')
@@ -215,6 +217,7 @@ export function SettingsDialog() {
       </div>
       <div ref={scrollRef} className={css.settingsScroll} data-testid="settings-panel-scroll">
       <section id="settings-section-api" role="tabpanel" aria-labelledby="settings-tab-api" hidden={section!=='api'} className={css.settingsSection}>
+      <ApiConfigTransfer hasImageDraft={() => webImageDraftRef.current} />
       <LocalProviderSettings />
       {s.chatProvider !== 'openai-local' && <>
       <div className={css.byokBlock} data-testid="settings-byok">
@@ -271,7 +274,7 @@ export function SettingsDialog() {
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
       <div className={css.settingsHint}>{tx('仅检查模型列表。', 'Checks the model list only; no chats, images or documents are sent.')}</div>
       </>}
-      <WebImageSettings saveRef={saveWebImagesRef} />
+      <WebImageSettings saveRef={saveWebImagesRef} dirtyRef={webImageDraftRef} />
       </section>
       <section id="settings-section-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={section!=='general'} className={css.settingsSection}>
       <div className={css.exportSection}>

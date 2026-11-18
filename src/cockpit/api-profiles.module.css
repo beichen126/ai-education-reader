@@ -7,6 +7,8 @@
 .hint{font-size:12px;line-height:1.6;color:var(--dsw-alias-label-secondary);margin:0;overflow-wrap:anywhere}
 .manage,.actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .manage{border-top:1px solid var(--dsw-alias-border-l2);padding-top:8px}
+.keyOption{display:flex;align-items:center;gap:8px;font-size:13px}
+.keyOption input{accent-color:var(--dsw-alias-button-primary-fill)}
 .editor{display:flex;flex-direction:column;gap:12px;padding:14px;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-bg-base)}
 .field{display:flex;flex-direction:column;gap:6px;font-size:12px;min-width:0}.field>span{width:100%;box-sizing:border-box}
 .error{font-size:13px;color:var(--dsw-alias-label-primary)}

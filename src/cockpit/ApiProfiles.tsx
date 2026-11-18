@@ -1,6 +1,7 @@
 import {useState} from 'react'
 import {useSettings,patchSettings,DEFAULT_SETTINGS,useSettingsMutation,type Settings} from '../engine/settings-store'
 import {profileConfig,type ApiProfile} from '../engine/api-profiles'
+import {savedApiProfiles} from '../engine/api-profile-transfer'
 import {tx} from '../engine/locale'
 import {Button,Input} from '../dsh/primitives'
 import css from './api-profiles.module.css'
@@ -13,7 +14,8 @@ export function ApiProfiles({draft,onApply}:{draft:Settings;onApply:(settings:Se
  const [pending,setPending]=useState<{id?:string;create?:boolean}|null>(null)
  const [endpoint,setEndpoint]=useState(DEFAULT_SETTINGS.apiBaseUrl),[apiKey,setKey]=useState(''),[model,setModel]=useState(DEFAULT_SETTINGS.model),[replacement,setReplacement]=useState('')
  const disabled=mutation.status==='pending'
- const rows=():ApiProfile[]=>profiles.some(p=>p.id===currentId)?profiles:[...profiles,{id:currentId,name:tx('原有配置','Original configuration'),config:profileConfig(settings)}]
+ const originalName=tx('原有配置','Original configuration')
+ const rows=()=>savedApiProfiles(settings,originalName)
  const currentName=current?.name||tx('未命名配置','Unnamed configuration')
  const failure=()=>setError(tx('保存失败，当前配置未切换，请重试。','Save failed. The current configuration has not changed.'))
  async function apply(list:ApiProfile[],id:string){const selected=list.find(p=>p.id===id);if(!selected)return;try{const next=await patchSettings({...selected.config,chatProvider:'deepseek',apiProfiles:list,activeApiProfileId:id});onApply(next);setMode(null);setPending(null);setError('');setStatus(tx('正在使用：','Now using: ')+selected.name)}catch{failure()}}
@@ -42,7 +44,7 @@ export function ApiProfiles({draft,onApply}:{draft:Settings;onApply:(settings:Se
    {mode==='new'&&<><label className={css.field}>{tx('服务类型','Service type')}<select aria-label={tx('新配置服务类型','New service type')} disabled={disabled} onChange={e=>{setKey('');if(e.target.value==='deepseek'){setEndpoint('https://api.deepseek.com');setModel('deepseek-flash')}else if(e.target.value==='teamo'){setEndpoint('https://api.teamorouter.com/v1');setModel('')}else{setEndpoint('');setModel('')}}}><option value="deepseek">DeepSeek</option><option value="teamo">TeamoRouter</option><option value="custom">{tx('其他兼容 API','Other compatible API')}</option></select></label><label className={css.field}>API Base URL<Input aria-label={tx('新配置服务地址','New endpoint')} value={endpoint} disabled={disabled} onChange={e=>setEndpoint(e.target.value)}/></label><label className={css.field}>API Key<Input aria-label={tx('新配置 API Key','New API key')} type="password" autoComplete="off" value={apiKey} disabled={disabled} onChange={e=>setKey(e.target.value)}/></label><label className={css.field}>{tx('模型 ID','Model ID')}<Input aria-label={tx('新配置模型','New model')} value={model} disabled={disabled} placeholder={tx('填写服务商提供的模型 ID','Model ID from your provider')} onChange={e=>setModel(e.target.value)}/></label></>}
    <div className={css.actions}><Button variant="primary" disabled={disabled||!name.trim()} onClick={()=>void submit()}>{mode==='rename'?tx('保存名称','Save name'):mode==='copy'?tx('复制并启用','Duplicate and use'):tx('保存并启用','Save and use')}</Button><Button disabled={disabled} onClick={()=>{setMode(null);setError('')}}>{tx('取消','Cancel')}</Button></div></>}
   </div>}
-  <p className={css.hint}>{tx('每份配置独立保存连接信息。Key 仅存本机，备份不包含 Key。','Connection details are stored independently. Keys stay on this device and are excluded from backups.')}</p>
+  <p className={css.hint}>{tx('完整备份会省略 API Key。','Full backups exclude API keys.')}</p>
   {error&&<p role="alert" className={css.error}>{error}</p>}{status&&<p role="status" className={css.hint}>{status}</p>}
  </section>
 }

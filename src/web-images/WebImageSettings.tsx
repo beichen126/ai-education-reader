@@ -6,7 +6,7 @@ import {Button, Input} from '../dsh/primitives'
 import css from '../cockpit/cockpit.module.css'
 import layout from './settings.module.css'
 
-export function WebImageSettings({saveRef}: {saveRef?: {current: (() => Promise<void>) | null}}) {
+export function WebImageSettings({saveRef, dirtyRef}: {saveRef?: {current: (() => Promise<void>) | null}; dirtyRef?: {current:boolean}}) {
   const settings = useSettings(s => s)
   const [rows, setRows] = useState<ImageKey[]>(() => configuredImageKeys(settings).length ? configuredImageKeys(settings) : [{name:'配置 1',key:''}])
   const [visible, setVisible] = useState<number[]>([])
@@ -19,7 +19,14 @@ export function WebImageSettings({saveRef}: {saveRef?: {current: (() => Promise<
     setCurrent(await getSetting('firecrawl-current') || '')
   }
   useEffect(() => {void refresh()}, [rows])
-  const dirty = JSON.stringify(configuredImageKeys({firecrawlKeys:rows}).map(r=>r.key)) !== JSON.stringify(configuredImageKeys(settings).map(r=>r.key))
+  const savedKeys = JSON.stringify(configuredImageKeys(settings).map(r=>r.key))
+  const dirty = JSON.stringify(configuredImageKeys({firecrawlKeys:rows}).map(r=>r.key)) !== savedKeys
+  if (dirtyRef) dirtyRef.current = dirty
+  useEffect(() => {
+    const keys: string[] = JSON.parse(savedKeys)
+    setRows(keys.length ? keys.map((key, index) => ({ name:'Key ' + (index + 1), key })) : [{ name:'配置 1', key:'' }])
+    setVisible([])
+  }, [savedKeys])
   const edit = (index: number, patch: Partial<ImageKey>) => setRows(old => old.map((row,i) => i === index ? {...row,...patch} : row))
   async function save(clear = false) {
     setBusy(true)

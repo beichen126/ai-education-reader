@@ -4,6 +4,10 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。正式发布的改动按版本记录，未发布改动再单独进入 `Unreleased`。
 
+## [4.0.21] - 2026-11-18
+
+- 设置新增「API 管理」，可用同一个 JSON 迁移模型 API 配置、Firecrawl 备用 Key、语音接口设置和本机 OpenAI 模型。导出可选择包含 API Key。
+
 ## [4.0.20] - 2026-11-18
 
 - Android PDF 首屏和目录缩略图优先出图，原生渲染在后台准备。目录识别界面标明使用 DeepSeek Flash。

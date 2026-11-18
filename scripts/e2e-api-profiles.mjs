@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {readFile} from 'node:fs/promises'
 import {launchBrowser} from './e2e-browser.mjs'
 import {seedAndBoot} from './e2e-fixture.mjs'
 import {openSettings} from './e2e-navigation.mjs'
@@ -35,8 +36,49 @@ try {
  await profile.getByRole('status').filter({hasText:'名称已更新'}).waitFor()
  await page.reload({waitUntil:'networkidle'});await openSettings(page,'api')
  assert.equal(await key.inputValue(),'router-key');assert.equal(await select.locator('option:checked').textContent(),'我的中转')
+ const transfer=page.getByTestId('api-config-management')
+ const imageKey=page.getByLabel('Firecrawl API Key',{exact:true})
+ await imageKey.fill('fc-existing')
+ await page.getByRole('button',{name:'保存配图配置'}).click()
+ await page.getByTestId('firecrawl-settings').getByRole('status').filter({hasText:'已保存'}).waitFor()
+ const downloadProfiles=async includeKeys=>{
+  await transfer.getByRole('button',{name:'导出 JSON',exact:true}).click()
+  const include=transfer.getByRole('checkbox',{name:'包含 API Key'})
+  assert.equal(await include.isChecked(),false)
+  if(includeKeys)await include.check()
+  const downloadEvent=page.waitForEvent('download')
+  await transfer.getByRole('button',{name:'下载 JSON',exact:true}).click()
+  const download=await downloadEvent
+  assert.equal(download.suggestedFilename(),'reader-api-config.json')
+  return JSON.parse(await readFile(await download.path(),'utf8'))
+ }
+ await model.fill('unsaved-draft')
+ const safe=await downloadProfiles(false)
+ assert.equal(safe.profiles.length,2)
+ assert.ok(safe.profiles.every(row=>!Object.hasOwn(row.config,'apiKey')))
+ assert.deepEqual(safe.firecrawl,{})
+ assert.equal(safe.profiles[1].config.model,'unsaved-model')
+ const full=await downloadProfiles(true)
+ assert.equal(full.profiles[1].config.apiKey,'router-key')
+ assert.deepEqual(full.firecrawl.keys,['fc-existing'])
+ full.firecrawl.keys.push('fc-imported')
+ full.profiles=[{...full.profiles[1],config:{...full.profiles[1].config,apiKey:'other-router-key'}}]
+ const importFile=transfer.getByTestId('api-profiles-import')
+ const importJson=doc=>importFile.setInputFiles({name:'reader-api-profiles.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(doc))})
+ const fileChooser=page.waitForEvent('filechooser')
+ await transfer.getByRole('button',{name:'导入 JSON',exact:true}).click()
+ await (await fileChooser).setFiles({name:'reader-api-profiles.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(full))})
+ await transfer.getByRole('status').filter({hasText:'API 配置已导入'}).waitFor()
+ assert.equal(await page.getByLabel('Firecrawl API Key 2',{exact:true}).inputValue(),'fc-imported')
+ assert.equal(await model.inputValue(),'unsaved-draft')
+ await importJson(full)
+ await transfer.getByRole('status').filter({hasText:'这些配置已存在'}).waitFor()
+ await page.reload({waitUntil:'networkidle'});await openSettings(page,'api')
+ assert.equal(await key.inputValue(),'router-key')
+ await select.selectOption({label:'我的中转 (2)'})
+ await page.waitForFunction(()=>document.querySelector('input[placeholder="sk-..."]')?.value==='other-router-key')
  await page.setViewportSize({width:390,height:844})
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth))
  await page.screenshot({path:'tmp/api-profiles-mobile.png',fullPage:true})
- console.log('PASS named API profiles: explicit create, isolated credentials, cancel/save/discard switching, rename, persistence and mobile')
+ console.log('PASS API profile management, JSON download, file-picker import, persistence and mobile')
 } finally {await browser.close()}

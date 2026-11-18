@@ -6,6 +6,8 @@ import { type VisionCapability } from '../api/deepseek'
 import { DEFAULT_PDF_NAVIGATION_MODE, normalizePdfNavigationMode, type PdfNavigationMode } from './pdf-navigation-settings'
 import { applyUiLanguage, normalizeUiLanguage, type UiLanguage } from './locale'
 import { DEFAULT_MODEL, resolveStoredModel } from '../api/model-defaults'
+import { ApiProfileFileError, MAX_FIRECRAWL_KEYS, mergeImportedApiProfiles, parseApiConfiguration, savedApiProfiles } from './api-profile-transfer'
+import { configuredImageKeys } from '../web-images/key-pool'
 
 export type { VisionCapability }
 export type { PdfNavigationMode }
@@ -151,10 +153,43 @@ async function commitPatch(patch: SettingsPatch): Promise<Settings> {
   return next
 }
 
-export function patchSettings(patch: SettingsPatch): Promise<Settings> {
-  const run = queue.then(() => commitPatch(patch), () => commitPatch(patch))
+function queueSettingsUpdate<T>(update: () => Promise<T>): Promise<T> {
+  const run = queue.then(update)
   queue = run.then(() => undefined, () => undefined)
   return run
+}
+
+export function patchSettings(patch: SettingsPatch): Promise<Settings> {
+  return queueSettingsUpdate(() => commitPatch(patch))
+}
+
+export async function importApiConfiguration(text: string, originalName: string): Promise<boolean> {
+  const imported = parseApiConfiguration(text)
+  return queueSettingsUpdate(async () => {
+    const current = savedApiProfiles(state, originalName)
+    const { rows, added } = mergeImportedApiProfiles(current, imported.profiles, () => crypto.randomUUID())
+    const patch: SettingsPatch = added ? { apiProfiles: rows, activeApiProfileId: state.activeApiProfileId || 'initial' } : {}
+    const existing = configuredImageKeys(state).map(item => item.key)
+    const keys = [...new Set([...existing, ...(imported.firecrawlKeys || [])])]
+    if (keys.length > MAX_FIRECRAWL_KEYS) throw new ApiProfileFileError(undefined, 'firecrawl-limit')
+    if (keys.length > existing.length) {
+      patch.firecrawlApiKey = ''
+      patch.firecrawlKeys = keys.map((key, index) => ({ name: 'Key ' + (index + 1), key }))
+    }
+    const speech = imported.speech
+    if (speech && (speech.baseUrl || speech.apiKey)) {
+      const sameEndpoint = speech.baseUrl === (state.speechApiUrl || '')
+      // A key-free file cannot move a locally saved speech credential to another endpoint.
+      if (speech.apiKey || sameEndpoint || !state.speechApiKey) {
+        if (!sameEndpoint) patch.speechApiUrl = speech.baseUrl
+        if (speech.apiKey && speech.apiKey !== state.speechApiKey) patch.speechApiKey = speech.apiKey
+      }
+    }
+    if (imported.localModel && imported.localModel !== state.openaiLocalModel) patch.openaiLocalModel = imported.localModel
+    if (!Object.keys(patch).length) return false
+    await commitPatch(patch)
+    return true
+  })
 }
 
 /** Persist a whole settings object through the same serial queue.
