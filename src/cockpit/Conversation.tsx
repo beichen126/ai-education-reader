@@ -1,4 +1,5 @@
 import { hasFirecrawlWebSearch, isWebSearchEnabled } from '../api/firecrawl-web'
+import { supportsNativeDeepSeekSearch } from '../api/deepseek-native'
 import { generationRegistry, genRootKey, genBranchKey } from '../engine/generation-registry'
 import {YoutubePicker} from '../youtube/YoutubePicker'
 import {transcriptPreview} from '../youtube/preview'
@@ -595,6 +596,8 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
   const picIds = useDraftImageIds(key)
   const webSearchEnabled = useSettings(isWebSearchEnabled)
   const firecrawlWebSearch = useSettings(hasFirecrawlWebSearch)
+  const nativeWebSearch = useSettings(supportsNativeDeepSeekSearch)
+  const officialChat = useSettings(s => isOfficialDeepSeek(s.apiBaseUrl))
   const openaiWebSearch = useSettings(s => s.chatProvider === 'openai-local')
   const settingsPending = useSettingsMutation().status === 'pending'
   const [openId, setOpenId] = useState<string | null>(null)
@@ -802,8 +805,8 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
               <label className={css.webSearchToggle}><input type="checkbox" checked disabled />{tx('OpenAI 联网搜索（默认启用）', 'OpenAI web search (enabled by default)')}</label>
               <small className={css.webSearchHint}>{tx('使用 OpenAI 原生搜索，模型按需调用；取决于账户及模型权限。', 'Uses native OpenAI search when needed, subject to model and account policy.')}</small>
             </> : <>
-              <label className={css.webSearchToggle}><input type="checkbox" checked={webSearchEnabled} disabled={busy || settingsPending} onChange={event => { void patchSettings(firecrawlWebSearch ? { firecrawlWebSearchEnabled: event.target.checked } : { webSearchEnabled: event.target.checked }).catch(() => setPhotoError(tx('无法保存联网设置，请重试。', 'Unable to save web search settings. Try again.'))) }} />{tx('联网搜索', 'Web search')}</label>
-              <small className={css.webSearchHint}>{firecrawlWebSearch ? tx('模型按需搜索 · 与配图共用额度', 'Model searches as needed · shares credits with web images') : tx('使用当前 API 配置；搜索和网页读取单独计费。', 'Uses current API settings. Search and webpage reads are billed separately.')}</small>
+              <label className={css.webSearchToggle}><input type="checkbox" checked={webSearchEnabled} disabled={busy || settingsPending || (!firecrawlWebSearch && !nativeWebSearch)} onChange={event => { void patchSettings(nativeWebSearch ? { deepseekWebSearchEnabled: event.target.checked } : { firecrawlWebSearchEnabled: event.target.checked }).catch(() => setPhotoError(tx('无法保存联网设置，请重试。', 'Unable to save web search settings. Try again.'))) }} />{tx('联网搜索', 'Web search')}</label>
+              <small className={css.webSearchHint}>{nativeWebSearch ? tx('DeepSeek 原生搜索 · 模型按需调用', 'DeepSeek native search · used as needed') : firecrawlWebSearch ? tx('Firecrawl · 模型按需搜索', 'Firecrawl · used as needed') : officialChat ? tx('使用 deepseek-flash 开启原生搜索', 'Use deepseek-flash for native search') : tx('保存 Firecrawl Key 后启用', 'Save a Firecrawl key to enable search')}</small>
             </>}
           </div>
         )}

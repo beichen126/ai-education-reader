@@ -8,10 +8,11 @@ try {
  await page.route('https://api.firecrawl.dev/v2/search',async route=>{
   const body=route.request().postDataJSON();requests.push(body)
   assert.equal(body.limit,3);assert.deepEqual(body.sources,['images'])
-  const images=body.query==='neuron diagram'||body.query==='plant cell'
+  const retryingPlant=body.query==='plant cell'&&requests.filter(request=>request.query==='plant cell').length>1
+  const images=retryingPlant?['retried.svg']:body.query==='neuron diagram'||body.query==='plant cell'
     ? ['broken.svg','broken-second.svg',body.query==='plant cell'?'broken-third.svg':'third.svg']
     : ['figure.svg','backup.svg','third.svg']
-  await route.fulfill({json:{success:true,data:{images:images.map((name,i)=>({imageUrl:'https://image.example/'+name,url:'https://source.example/lesson-'+i,title:'图示'}))},creditsUsed:2}})
+  await route.fulfill({json:{success:true,data:{images:images.map((name,i)=>({imageUrl:body.query==='animal cell'&&i===0?'javascript:invalid':'https://image.example/'+name,url:'https://source.example/lesson-'+i,title:'图示'}))},creditsUsed:2}})
  })
  await page.route('https://image.example/**',route=>route.request().url().includes('/broken')?route.fulfill({status:404,body:''}):route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="600" height="320"><rect width="600" height="320" fill="#b8d6fa"/><text x="80" y="160" font-size="32">Learning diagram</text></svg>'}))
  const fence=(lang,spec)=>'```'+lang+'\n'+JSON.stringify(spec)+'\n```'
@@ -36,6 +37,7 @@ try {
  assert.ok((await page.locator('.reader-web-image-failed').boundingBox()).height<80,'three failures leave a compact broken-image placeholder')
  assert.equal(await page.locator('.reader-web-image img[src$="third.svg"]').count(),2,'failed first image swaps to cached third without another search')
  assert.equal(await page.locator('[data-reader-card] .reader-web-image img').count(),1)
+ assert.equal(await page.locator('.reader-web-image img[src$="backup.svg"]').count(),1,'an invalid first candidate falls through to the second')
  await page.screenshot({path:'tmp/web-images-card.png'})
  await page.reload({waitUntil:'networkidle'})
  await page.waitForFunction(()=>document.querySelectorAll('.reader-web-image img').length===3)
@@ -56,6 +58,9 @@ try {
  assert.ok(sent.includes('image-group: items*:'))
  assert.ok(!sent.includes('fc-test'))
  assert.equal(requests.length,3,'new response reuses existing query')
+ await page.getByRole('button',{name:'重试搜索',exact:true}).click()
+ await page.locator('.reader-web-image img[src$="retried.svg"]').waitFor()
+ assert.equal(requests.filter(request=>request.query==='plant cell').length,2,'retry makes a fresh Firecrawl request and displays its result')
  await page.getByRole('button',{name:'设置',exact:true}).click()
  await panel.getByRole('button',{name:'清除',exact:true}).click()
  await panel.getByText('修改尚未保存').waitFor()

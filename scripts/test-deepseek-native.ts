@@ -13,7 +13,7 @@ assert.equal(options?.thinking,'enabled');assert.equal(options?.generateTitle,tr
 assert.equal(nativeConversationOptions({...settings,apiBaseUrl:'https://teamorouter.com/v1'},[],true),undefined)
 assert.equal(nativeConversationOptions({...settings,apiBaseUrl:'https://teamorouter.com/v1',nativeDeepSeekProxy:true},[],false)?.generateTitle,false)
 const off:ApiChatMessage[]=[{role:'user',content:'a'}]
-assert.deepEqual(nativeConversationOptions({...settings,userMetadataEnabled:false,autoTitleEnabled:false,readUrlEnabled:false,webSearchEnabled:false},off,true),{nativeTools:[],generateTitle:false})
+assert.deepEqual(nativeConversationOptions({...settings,userMetadataEnabled:false,autoTitleEnabled:false,readUrlEnabled:false,deepseekWebSearchEnabled:false},off,true),{nativeTools:[],generateTitle:false})
 assert.equal(off.length,1)
 const original=globalThis.fetch
 const calls=[{index:0,calls:[{id:'srvtool-1',signature:'encrypted-page',status:'completed'}]}]

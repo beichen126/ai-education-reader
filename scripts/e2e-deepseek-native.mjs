@@ -12,7 +12,7 @@ try {
  await seedAndBoot(page,{convs:[
   {id:'native-test',title:'Native test',createdAt:1,updatedAt:1,messages:[]},
   {id:'other-chat',title:'Other chat',createdAt:2,updatedAt:2,messages:[]},
- ],settings:{apiKey:'test-native',apiBaseUrl:'https://api.deepseek.com',model:'deepseek-flash',lastConversationId:'native-test',webSearchEnabled:'true',userLocation:'杭州'}})
+ ],settings:{apiKey:'test-native',apiBaseUrl:'https://api.deepseek.com',model:'deepseek-flash',lastConversationId:'native-test',webSearchEnabled:'false',firecrawlKeys:[{name:'Key 1',key:'fc-fixture'}],userLocation:'杭州'}})
  await page.locator('[data-testid="composer-attach"]').click()
  await page.locator('[data-testid="composer-deepseek-files"]').click()
  await page.waitForFunction(()=>document.querySelector('input[aria-label="批量上传文件"]')?.disabled===false)
@@ -33,6 +33,8 @@ try {
  await removeFile.waitFor({state:'hidden'})
  await page.getByText('文件学习笔记',{exact:true}).first().waitFor()
  assert.equal(requests[0].title.enabled,true)
+ assert.ok(requests[0].tools.some(tool=>tool.type==='deepseek_web_search'))
+ assert.ok(!requests[0].tools.some(tool=>tool.function?.name==='search_web'))
  assert.equal(requests[0].messages.at(-2).role,'latest_reminder')
  assert.ok(requests[0].messages.at(-1).content.some(p=>p.file_id==='file-api-browser'))
  await page.getByRole('link',{name:/参考资料/}).first().waitFor()

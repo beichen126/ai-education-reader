@@ -2,6 +2,7 @@ import {requestWithImageKeys, type ImageKey} from './key-pool'
 import {getSetting, setSetting} from '../storage/storage'
 
 export type WebImage = {imageUrl: string; sourceUrl: string; title: string; creditsUsed?: number; backup?: WebImage}
+export class ImageSearchError extends Error {}
 type Job = {promise: Promise<WebImage>; controller: AbortController; users: number; timer?: ReturnType<typeof setTimeout>}
 const pending = new Map<string, Job>()
 const memory = new Map<string, WebImage>()
@@ -17,7 +18,7 @@ const hash = async (value: string) => Array.from(new Uint8Array(await crypto.sub
 function safeUrl(value: unknown): string {
   if (typeof value !== 'string') throw new Error('搜索结果缺少图片或来源地址')
   const url = new URL(value)
-  if (url.protocol !== 'https:' || url.username || url.password) throw new Error('搜索结果地址无效')
+  if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) throw new Error('搜索结果地址无效')
   return url.href
 }
 export async function requestFirstImage(query: string, apiKey: string, signal?: AbortSignal): Promise<WebImage> {
@@ -26,15 +27,24 @@ export async function requestFirstImage(query: string, apiKey: string, signal?: 
     method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey.trim()},
     body: JSON.stringify({query, sources: ['images'], limit: 3}), signal,
   })
-  if (!response.ok) throw Object.assign(new Error(response.status === 401 ? 'Key 验证失败' : response.status === 402 ? '额度不足' : `请求失败（HTTP ${response.status}）`), {status: response.status})
+  if (!response.ok) throw Object.assign(new ImageSearchError(`Firecrawl 图片请求失败（HTTP ${response.status}）`), {status: response.status, terminal: response.status === 400 || response.status === 422})
   const data = await response.json()
-  const first = data?.data?.images?.[0]
-  if (!data.success || !first) throw Object.assign(new Error('本次搜索没有图片结果，请调整搜索描述。'),{terminal:true})
-  let backup:WebImage|undefined
-  for(const candidate of (data?.data?.images||[]).slice(1,3).reverse()){
-    try{backup={imageUrl:safeUrl(candidate.imageUrl),sourceUrl:safeUrl(candidate.url),title:String(candidate.title||query).slice(0,300),...(backup?{backup}:{})}}catch{}
+  let selected: WebImage | undefined
+  const seen = new Set<string>()
+  if (data.success && Array.isArray(data.data?.images)) {
+    const candidates = data.data.images.slice(0, 3).flatMap(candidate => {
+      try {
+        const imageUrl = safeUrl(candidate.imageUrl)
+        const sourceUrl = safeUrl(candidate.url)
+        if (!imageUrl.startsWith('https:') || seen.has(imageUrl)) return []
+        seen.add(imageUrl)
+        return [{ imageUrl, sourceUrl, title: String(candidate.title || query).slice(0, 300) }]
+      } catch { return [] }
+    })
+    for (const candidate of candidates.reverse()) selected = { ...candidate, ...(selected ? { backup: selected } : {}) }
   }
-  return {...(backup?{backup}:{}),imageUrl: safeUrl(first.imageUrl), sourceUrl: safeUrl(first.url), title: String(first.title || query).slice(0, 300), ...(typeof data.creditsUsed === 'number' ? {creditsUsed: data.creditsUsed} : {})}
+  if (!selected) throw Object.assign(new ImageSearchError('未找到可用图片'), {terminal:true})
+  return {...selected, ...(typeof data.creditsUsed === 'number' ? {creditsUsed: data.creditsUsed} : {})}
 }
 /** Persist selected references with the reader data, without storing provider keys in cache IDs. */
 export async function searchFirstImage(query: string, keys: ImageKey[], signal?: AbortSignal, refresh=false): Promise<WebImage> {

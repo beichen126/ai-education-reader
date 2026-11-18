@@ -48,7 +48,9 @@ export function teamoGeminiRequest(args: SendTextChatArgs, stream: boolean) {
     body: {
       contents,
       ...(instructions.length ? { systemInstruction: { parts: instructions } } : {}),
-      ...(args.webSearchTool ? { tools: [{ functionDeclarations: [WEB_SEARCH_TOOL] }], toolConfig: { functionCallingConfig: { mode: exchange ? 'NONE' : 'AUTO' } } } : {}),
+      ...(args.webSearchTool ? { tools: [{ functionDeclarations: [WEB_SEARCH_TOOL] }] } : {}),
+      // Teamo can return an empty stream or hang when NONE accompanies functionResponse.
+      ...(args.webSearchTool && !exchange ? { toolConfig: { functionCallingConfig: { mode: 'AUTO' } } } : {}),
       generationConfig: {
         thinkingConfig: { includeThoughts: args.thinking !== 'disabled' },
         ...(args.jsonObject ? { responseMimeType: 'application/json' } : {}),

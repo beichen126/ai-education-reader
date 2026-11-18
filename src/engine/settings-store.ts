@@ -11,7 +11,7 @@ import { configuredImageKeys } from '../web-images/key-pool'
 
 export type { VisionCapability }
 export type { PdfNavigationMode }
-export type Settings = { firecrawlApiKey?: string; firecrawlKeys?: {name: string; key: string}[]; apiProfiles?: ApiProfile[]; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: boolean; autoTitleEnabled?: boolean; readUrlEnabled?: boolean; nativeDeepSeekProxy?: boolean;  speechVoice?: 'stella' | 'tide'; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean; firecrawlWebSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number; speechLoop?: boolean; highlightSpokenSelection?: boolean; rememberReadingPosition?: boolean; chatProvider?: 'deepseek' | 'openai-local'; openaiLocalModel?: string }
+export type Settings = { firecrawlApiKey?: string; firecrawlKeys?: {name: string; key: string}[]; apiProfiles?: ApiProfile[]; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: boolean; autoTitleEnabled?: boolean; readUrlEnabled?: boolean; nativeDeepSeekProxy?: boolean;  speechVoice?: 'stella' | 'tide'; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; appearance: AppearanceMode; visionCapability: VisionCapability; pdfNavigationMode: PdfNavigationMode; uiLanguage: UiLanguage; webSearchEnabled?: boolean; firecrawlWebSearchEnabled?: boolean; deepseekWebSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number; speechLoop?: boolean; highlightSpokenSelection?: boolean; rememberReadingPosition?: boolean; chatProvider?: 'deepseek' | 'openai-local'; openaiLocalModel?: string }
 export const DEFAULT_SETTINGS: Settings = { apiBaseUrl: 'https://api.deepseek.com', apiKey: '', model: DEFAULT_MODEL, customSystemPrompt: '', customSystemPromptEnabled: false, appearance: DEFAULT_APPEARANCE, visionCapability: 'auto', pdfNavigationMode: DEFAULT_PDF_NAVIGATION_MODE, uiLanguage: 'zh-CN', chineseSpeechRate: 1, englishSpeechRate: 0.9, speechRepeatCount: 3, speechLoop: false, highlightSpokenSelection: false, rememberReadingPosition: true }
 
 /** A partial settings change. Every mutation goes through {@link patchSettings}. */
@@ -73,6 +73,7 @@ export function normalizeSettings(input: Settings): Settings {
     uiLanguage: normalizeUiLanguage(input.uiLanguage),
     webSearchEnabled: input.webSearchEnabled === true,
     firecrawlWebSearchEnabled: input.firecrawlWebSearchEnabled !== false,
+    deepseekWebSearchEnabled: input.deepseekWebSearchEnabled !== false,
     chineseSpeechRate: normalizeSpeechRate(input.chineseSpeechRate, 1),
     englishSpeechRate: normalizeSpeechRate(input.englishSpeechRate, 0.9),
     speechRepeatCount: normalizeSpeechRepeat(input.speechRepeatCount),
@@ -89,6 +90,7 @@ export async function initSettings(): Promise<void> {
   const resolvedLanguage = applyUiLanguage(uiLanguage)
   const webSearchEnabled = await getSetting('webSearchEnabled') === 'true'
   const firecrawlWebSearchEnabled = await getSetting('firecrawlWebSearchEnabled') !== 'false'
+  const deepseekWebSearchEnabled = await getSetting('deepseekWebSearchEnabled') !== 'false'
   const [zhRate, enRate] = await Promise.all([getSetting('chineseSpeechRate'),getSetting('englishSpeechRate')])
   const [repeat, storedHighlight] = await Promise.all([getSetting('speechRepeatCount'), getSetting('highlightSpokenSelection')])
   const speechVoice = await getSetting('speechVoice') === 'tide' ? 'tide' : 'stella'
@@ -97,7 +99,7 @@ export async function initSettings(): Promise<void> {
   const storedReadingPosition: unknown = await getSetting('rememberReadingPosition')
   const rememberReadingPosition = storedReadingPosition !== false && storedReadingPosition !== 'false'
   const [chatProvider, openaiLocalModel] = await Promise.all([getSetting('chatProvider'), getSetting('openaiLocalModel')])
-  set(normalizeSettings({ firecrawlKeys: await getSetting('firecrawlKeys') || [], firecrawlApiKey: await getSetting('firecrawlApiKey') || '', apiProfiles:parseProfiles(await getSetting('apiProfiles')), activeApiProfileId:await getSetting('activeApiProfileId') || '', userLocation: await getSetting('userLocation') || '', userMetadataEnabled: await getSetting('userMetadataEnabled') !== 'false', autoTitleEnabled: await getSetting('autoTitleEnabled') !== 'false', readUrlEnabled: await getSetting('readUrlEnabled') !== 'false', nativeDeepSeekProxy: await getSetting('nativeDeepSeekProxy') === 'true', speechVoice, speechApiUrl, speechApiKey, apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, firecrawlWebSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)), speechLoop: await getSetting('speechLoop') === 'true', highlightSpokenSelection: storedHighlight === 'true', rememberReadingPosition, chatProvider, openaiLocalModel }))
+  set(normalizeSettings({ firecrawlKeys: await getSetting('firecrawlKeys') || [], firecrawlApiKey: await getSetting('firecrawlApiKey') || '', apiProfiles:parseProfiles(await getSetting('apiProfiles')), activeApiProfileId:await getSetting('activeApiProfileId') || '', userLocation: await getSetting('userLocation') || '', userMetadataEnabled: await getSetting('userMetadataEnabled') !== 'false', autoTitleEnabled: await getSetting('autoTitleEnabled') !== 'false', readUrlEnabled: await getSetting('readUrlEnabled') !== 'false', nativeDeepSeekProxy: await getSetting('nativeDeepSeekProxy') === 'true', speechVoice, speechApiUrl, speechApiKey, apiBaseUrl: base || DEFAULT_SETTINGS.apiBaseUrl, apiKey: key || '', model: resolveStoredModel(model, base), customSystemPrompt: sys || '', customSystemPromptEnabled: sysOn ? sysOn === 'true' : false, appearance: resolvedAppearance, visionCapability: resolvedVision, pdfNavigationMode: normalizePdfNavigationMode(pdfNavigationMode), uiLanguage: resolvedLanguage, webSearchEnabled, firecrawlWebSearchEnabled, deepseekWebSearchEnabled, chineseSpeechRate: normalizeSpeechRate(Number(zhRate),1), englishSpeechRate: normalizeSpeechRate(Number(enRate),0.9), speechRepeatCount: normalizeSpeechRepeat(Number(repeat)), speechLoop: await getSetting('speechLoop') === 'true', highlightSpokenSelection: storedHighlight === 'true', rememberReadingPosition, chatProvider, openaiLocalModel }))
   writeAppearanceHint(resolvedAppearance)
 }
 
@@ -136,6 +138,7 @@ async function commitPatch(patch: SettingsPatch): Promise<Settings> {
       nativeDeepSeekProxy: String(next.nativeDeepSeekProxy),
       webSearchEnabled: String(next.webSearchEnabled === true),
       firecrawlWebSearchEnabled: String(next.firecrawlWebSearchEnabled !== false),
+      deepseekWebSearchEnabled: String(next.deepseekWebSearchEnabled !== false),
       chineseSpeechRate: String(next.chineseSpeechRate), englishSpeechRate: String(next.englishSpeechRate),
       speechRepeatCount: String(next.speechRepeatCount),
       speechLoop: String(next.speechLoop === true),

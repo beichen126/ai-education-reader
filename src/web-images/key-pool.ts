@@ -1,6 +1,7 @@
 import type {Settings} from '../engine/settings-store'
 import {getSetting, setSetting, deleteSetting} from '../storage/storage'
 export type ImageKey = {name: string; key: string}
+export class FirecrawlKeyPoolError extends Error {}
 type KeyState = {reason: string; until: number}
 export function configuredImageKeys(settings: Pick<Settings, 'firecrawlApiKey' | 'firecrawlKeys'>): ImageKey[] {
   const pool = settings.firecrawlKeys?.length ? settings.firecrawlKeys : [{name:'配置 1',key:settings.firecrawlApiKey || ''}]
@@ -48,7 +49,7 @@ export function requestWithImageKeys<T>(keys: ImageKey[], request: (key: string)
       }
       await setSetting('firecrawl-cursor',ids[(index+1)%keys.length]).catch(()=>undefined)
     }
-    throw new Error('本轮配置均未成功。'+failures.join('；'))
+    throw new FirecrawlKeyPoolError('本轮配置均未成功。'+failures.join('；'))
   })
   queue = run.catch(()=>undefined)
   if (!signal) return run

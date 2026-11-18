@@ -5,19 +5,17 @@ import { nativeConversationOptions, citationFooter } from '../api/deepseek-nativ
 import { validateDocumentContext } from '../api/deepseek-documents'
 import { newStableId, type Message, type StableId } from './types'
 import type { Settings } from './settings-store'
-import { buildContextMessages, buildApiMessages, countImageParts, isVisionModel, DeepSeekError, errorKindLabel } from '../api/deepseek'
+import { buildContextMessages, buildApiMessages, countImageParts, isVisionModel, DeepSeekError, errorKindLabel, apiRequestDiagnostic } from '../api/deepseek'
 import { toModelAttachment as toDataUrl, getAttachment, AttachmentError, attachmentErrorLabel } from './attachment-service'
 import { generationRegistry, type GenerationLease } from './generation-registry'
 import { projectLogicalPromptContext } from '../prompts/prompt-compile-strategies'
 import type { AcceptedSendContext } from '../prompts/prompt-send'
 import type { SendFailure, SendOutcome } from './send-outcome'
-import { prepareWebResearch, WebResearchError } from '../api/deepseek-web'
 import { hasFirecrawlWebSearch, isWebSearchEnabled, prepareFirecrawlResearch } from '../api/firecrawl-web'
 import { streamProviderChat } from '../api/chat-provider'
 import { getLocalStatus, LocalProviderError } from '../api/openai-local'
 import { DeepSeekFilesError } from '../api/deepseek-files'
 import { getToolQueries, searchQuery } from '../api/web-search-tool'
-import { tx } from './locale'
 
 /**
  * Thread-agnostic streaming reply engine. ONE generation pipeline is shared by the ROOT
@@ -136,18 +134,10 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     thread.setStreaming()
     if (onStreamStart) onStreamStart(controller, assistantId)
     const userMessages = contextMessages.filter(message => message.role === 'user')
-    const question = userMessages.at(-1)?.content || ''
     const firecrawl = hasFirecrawlWebSearch(settings)
     const firecrawlEnabled = firecrawl && isWebSearchEnabled(settings)
-    const nativeSettings = firecrawl ? { ...settings, webSearchEnabled: false } : settings
-    const native = nativeConversationOptions(nativeSettings, reqMessages, !!thread.acceptTitle && userMessages.length === 1)
+    const native = nativeConversationOptions(settings, reqMessages, !!thread.acceptTitle && userMessages.length === 1)
     let webFooter = ''
-    if (!firecrawl && settings.webSearchEnabled && settings.chatProvider !== 'openai-local' && !native) {
-      const research = await prepareWebResearch({ baseUrl: settings.apiBaseUrl, apiKey: settings.apiKey, question, signal: controller.signal })
-      if (!ownedLease.isCurrent()) throw new DeepSeekError('aborted', 'Aborted')
-      reqMessages.push(research.message)
-      webFooter = research.footer
-    }
     const r = await streamProviderChat(settings, {
       apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages,
       signal: controller.signal, onDelta, onReasoningDelta: delta => { reasoning += delta }, ...native,
@@ -167,7 +157,6 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
         },
       } : {}),
     })
-    if (r.webToolUnavailable) webFooter = '\n\n---\n\n' + tx('当前模型接口不支持 Firecrawl 搜索工具。', 'This model endpoint does not support the Firecrawl search tool.')
     clearTimeout(renderTimer);renderTimer=undefined
     received = r.content + webFooter + citationFooter(r.annotations)
     clearTimeout(durableTimer)
@@ -199,7 +188,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       ownedLease.release(); thread.setIdle()
       return { kind: 'aborted', ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
     }
-    const label = e instanceof WebResearchError || e instanceof LocalProviderError || e instanceof DeepSeekFilesError ? e.message : errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : '')
+    const label = e instanceof LocalProviderError || e instanceof DeepSeekFilesError ? e.message : errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : '') + apiRequestDiagnostic(err)
     const failure: SendFailure = { kind: 'failed', code: e instanceof LocalProviderError ? e.code : err.kind, message: label, ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
     if (placeholderCreated) thread.settleAssistant('failed', label)
     await thread.persistFinal()

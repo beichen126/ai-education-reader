@@ -59,7 +59,7 @@ try {
       msg('answer', 'assistant', '它区分不同的套餐。'),
     ] }],
     settings: {
-      lastConversationId: 'web', apiKey: 'chat-test', apiBaseUrl: 'https://api.deepseek.com', model: 'deepseek-flash',
+      lastConversationId: 'web', apiKey: 'chat-test', apiBaseUrl: 'https://gateway.example/v1', model: 'deepseek-flash',
       webSearchEnabled: 'true', firecrawlKeys: [{ name: 'Key 1', key: 'fc-empty' }, { name: 'Key 2', key: 'fc-available' }],
     },
   })

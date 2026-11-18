@@ -2,9 +2,13 @@ import { isOfficialDeepSeek } from './deepseek-files'
 import type { ApiChatMessage, SendTextChatArgs } from './deepseek'
 import type { Settings } from '../engine/settings-store'
 
+export function supportsNativeDeepSeekSearch(settings: Settings) {
+  return settings.chatProvider !== 'openai-local' && settings.model.trim().toLowerCase() === 'deepseek-flash' && isOfficialDeepSeek(settings.apiBaseUrl)
+}
+
 /** Native extensions are opt-in on gateways, which may implement only OpenAI chat. */
 export function nativeConversationOptions(settings: Settings, messages: ApiChatMessage[], firstTurn: boolean, now = new Date()): Partial<SendTextChatArgs> | undefined {
-  if (settings.chatProvider==='openai-local' || settings.model!=='deepseek-flash' || (!isOfficialDeepSeek(settings.apiBaseUrl) && !settings.nativeDeepSeekProxy)) {
+  if (settings.chatProvider==='openai-local' || settings.model.trim().toLowerCase()!=='deepseek-flash' || (!isOfficialDeepSeek(settings.apiBaseUrl) && !settings.nativeDeepSeekProxy)) {
     for (const message of messages) delete message.server_tool_calls
     return undefined
   }
@@ -16,9 +20,11 @@ export function nativeConversationOptions(settings: Settings, messages: ApiChatM
     const platform = typeof location!=='undefined' && location.hostname==='appassets.androidplatform.net' ? 'App' : 'Web'
     if (index>=0) messages.splice(index,0,{role:'latest_reminder',content:[date,weekday,(settings.userLocation||'').replace(/[\r\n]/g,' ').slice(0,160),platform,english?'English':'中文'].join(',')})
   }
+  const official = supportsNativeDeepSeekSearch(settings)
+  const search = official && settings.deepseekWebSearchEnabled !== false
   return {
-    ...(settings.webSearchEnabled ? {thinking:'enabled' as const} : {}),
-    nativeTools:[...(settings.webSearchEnabled?['deepseek_web_search']:[]),...(settings.readUrlEnabled!==false?['deepseek_read_url']:[])],
+    ...(search ? {thinking:'enabled' as const} : {}),
+    nativeTools:[...(search?['deepseek_web_search']:[]),...(official && settings.readUrlEnabled!==false?['deepseek_read_url']:[])],
     generateTitle:firstTurn && settings.autoTitleEnabled!==false,
   }
 }

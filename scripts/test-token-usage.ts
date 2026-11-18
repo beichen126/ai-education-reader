@@ -65,7 +65,7 @@ try {
   assert.equal(result.reasoning, diagnostics)
   assert.equal(result.finishReason, 'stop')
   assert.deepEqual(result.usage, { ...expected, totalTokens: 170, cachedReadTokens: 80, reasoningTokens: 20 })
-  for (const signature of ['signed-call', undefined]) {
+  for (const { signature, emptyContinuation } of [{ signature: 'signed-call' }, { signature: undefined }, { signature: 'signed-call', emptyContinuation: true }]) {
     let requests = 0
     const functionCall = { id: 'gemini-search-1', name: 'search_web', args: { query: 'Firecrawl pricing' } }
     const part = { functionCall, ...(signature ? { thoughtSignature: signature } : {}) }
@@ -77,10 +77,12 @@ try {
         assert.equal(request.tools[0].functionDeclarations[0].name, 'search_web')
         return new Response('data: ' + JSON.stringify({ candidates: [{ content: { parts: [part] } }], usageMetadata }), { headers: { 'content-type': 'text/event-stream' } })
       }
-      if (signature) {
-        assert.equal(request.toolConfig.functionCallingConfig.mode, 'NONE')
+      if (signature && requests === 2) {
+        assert.equal(request.toolConfig, undefined)
+        assert.equal(request.tools[0].functionDeclarations[0].name, 'search_web')
         assert.deepEqual(request.contents.at(-2).parts, [part])
         assert.deepEqual(request.contents.at(-1).parts, [{ functionResponse: { id: functionCall.id, name: functionCall.name, response: { status: 'ok', sources: ['official pricing'] } } }])
+        if (emptyContinuation) return new Response('data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } })
       } else {
         assert.equal(request.tools, undefined)
         assert.match(request.contents.at(-1).parts.at(-1).text, /untrusted.*\s+.*official pricing/)
@@ -91,7 +93,7 @@ try {
       assert.deepEqual(calls, { format: 'gemini', parts: [part] })
       return [{ status: 'ok', sources: ['official pricing'] }]
     } })
-    assert.equal(requests, 2)
+    assert.equal(requests, emptyContinuation ? 3 : 2)
     assert.equal(searched.content, 'The official pricing.')
     assert.deepEqual(searched.usage, { inputTokens: 240, outputTokens: 60, totalTokens: 340, cachedReadTokens: 160, reasoningTokens: 40 })
   }

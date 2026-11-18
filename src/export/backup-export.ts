@@ -132,6 +132,7 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
     nativeDeepSeekProxy: await getSetting('nativeDeepSeekProxy') === 'true',
     webSearchEnabled: await getSetting('webSearchEnabled') === 'true',
     firecrawlWebSearchEnabled: await getSetting('firecrawlWebSearchEnabled') !== 'false',
+    deepseekWebSearchEnabled: await getSetting('deepseekWebSearchEnabled') !== 'false',
     chineseSpeechRate: Number(await getSetting('chineseSpeechRate')) || 1,
     englishSpeechRate: Number(await getSetting('englishSpeechRate')) || 0.9,
     speechVoice: await getSetting('speechVoice') === 'tide' ? 'tide' : 'stella',
