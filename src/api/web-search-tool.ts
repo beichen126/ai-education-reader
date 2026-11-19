@@ -9,13 +9,7 @@ export const WEB_SEARCH_TOOL = {
 }
 
 export type OpenAiToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } }
-export type GeminiToolPart = {
-  text?: string
-  thought?: boolean
-  thoughtSignature?: string
-  functionCall?: { id?: string; name: string; args?: Record<string, unknown> }
-}
-export type ToolCalls = { format: 'openai'; calls: OpenAiToolCall[] } | { format: 'gemini'; parts: GeminiToolPart[] }
+export type ToolCalls = { format: 'openai'; calls: OpenAiToolCall[] }
 export type WebToolExchange = { calls: ToolCalls; content: string; reasoning?: string; results: Record<string, unknown>[] }
 
 export function collectOpenAiCalls(target: Map<number, OpenAiToolCall>, value: unknown) {
@@ -44,8 +38,6 @@ export function finalizeOpenAiCalls(target: Map<number, OpenAiToolCall>): ToolCa
 }
 
 export function getToolQueries(calls: ToolCalls) {
-  if (calls.format === 'gemini') return calls.parts.flatMap(part => part.functionCall
-    ? [{ name: part.functionCall.name, args: part.functionCall.args }] : [])
   return calls.calls.map(call => {
     let args: { query?: unknown } | undefined
     try { args = JSON.parse(call.function.arguments) } catch { /* The tool result reports invalid arguments. */ }

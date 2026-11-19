@@ -13,21 +13,19 @@ try {
     const conversation = { id: 'reasoning', title: '复制思维链测试', createdAt: now, updatedAt: now, messages: [msg('first', 'user', '准备测试')] }
     await seedAndBoot(page, { convs: [conversation], settings: {
       apiKey: 'test-key', model: gemini ? 'gemini-3.8-flash' : 'deepseek-flash',
-      apiBaseUrl: gemini ? 'https://api.teamorouter.com/v1' : 'https://api.deepseek.com', lastConversationId: conversation.id,
+      apiBaseUrl: gemini ? 'https://teamorouter.com/' : 'https://api.deepseek.com', lastConversationId: conversation.id,
     } })
     await page.setViewportSize({ width: 390, height: 844 })
     const reasoning = '单独保留的思考内容'
     const answer = '这是可见的回答正文'
     const requests = []
-    await page.route(gemini ? '**/v1beta/models/*:streamGenerateContent?alt=sse' : '**/chat/completions', async route => {
+    await page.route(gemini ? 'https://api.teamorouter.com/v1/chat/completions' : '**/chat/completions', async route => {
       const request = route.request().postDataJSON()
       requests.push(request)
       const error = requests.length === 3
-      const frames = gemini ? [
-        { candidates: [{ content: { parts: [{ thought: true, text: reasoning }, ...(error ? [] : [{ text: answer }])] }, finishReason: error ? 'MAX_TOKENS' : 'STOP' }] },
-      ] : [
+      const frames = [
         { choices: [{ delta: { reasoning_content: reasoning } }] },
-        ...(error ? [] : [{ choices: [{ delta: { content: answer }, finish_reason: 'stop' }] }]),
+        { choices: [{ delta: error ? {} : { content: answer }, finish_reason: error ? 'length' : 'stop' }] },
       ]
       await route.fulfill({ contentType: 'text/event-stream', body: frames.map(frame => `data: ${JSON.stringify(frame)}\n\n`).join('') })
     })
@@ -64,8 +62,8 @@ try {
     await composer.fill('截断后再试')
     await composer.press('Enter')
     await page.getByText(answer, { exact: true }).nth(2).waitFor()
-    const history = requests[3].contents ?? requests[3].messages
-    assert.equal(history.filter(entry => ['assistant', 'model'].includes(entry.role)).length, 2)
+    const history = requests[3].messages
+    assert.equal(history.filter(entry => entry.role === 'assistant').length, 2)
     await page.close()
   }
   console.log('PASS: DeepSeek and Gemini reasoning can be copied after reload or truncation and stays out of the answer and follow-up context')

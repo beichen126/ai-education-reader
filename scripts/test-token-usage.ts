@@ -33,8 +33,9 @@ try {
     assert.equal(r.content, 'hello')
     assert.equal(r.reasoning, 'diagnostic text')
   }
+  const endpoint = 'https://api.teamorouter.com/v1/chat/completions'
   const gemini = {
-    apiKey: 'mock', baseUrl: 'https://api.teamorouter.com/v1', model: 'gemini-3.8-flash',
+    apiKey: 'mock', baseUrl: 'https://teamorouter.com/', model: 'gemini-3.8-flash',
     messages: [
       { role: 'system' as const, content: 'system rules' },
       { role: 'user' as const, content: 'first turn' },
@@ -43,19 +44,21 @@ try {
       { role: 'user' as const, content: [{ type: 'text' as const, text: 'test' }, { type: 'image_url' as const, image_url: { url: 'data:image/png;base64,AA==' } }] },
     ],
   }
+  const usage = { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150, prompt_tokens_details: { cached_tokens: 80 }, completion_tokens_details: { reasoning_tokens: 20 } }
+  const sse = (...frames: unknown[]) => new Response(frames.map(frame => 'data: ' + JSON.stringify(frame) + '\n\n').join('') + 'data: [DONE]\n\n', { headers: { 'Content-Type': 'text/event-stream' } })
   let answer = '', diagnostics = ''
   globalThis.fetch = async (url, init) => {
-    assert.equal(url, 'https://api.teamorouter.com/v1beta/models/gemini-3.8-flash:streamGenerateContent?alt=sse')
-    const request = JSON.parse(String(init?.body))
-    assert.deepEqual(request.generationConfig.thinkingConfig, { includeThoughts: true })
-    assert.deepEqual(request.systemInstruction.parts, [{ text: 'system rules' }])
-    assert.deepEqual(request.contents.map((entry: any) => entry.role), ['user', 'model', 'user'])
-    assert.deepEqual(request.contents[2].parts[1], { inlineData: { mimeType: 'image/png', data: 'AA==' } })
-    const frames = [
-      { candidates: [{ content: { parts: [{ thought: true, text: 'summary' }] } }] },
-      { candidates: [{ content: { parts: [{ thought: true, text: ' continued' }, { text: 'hello', thoughtSignature: 'opaque' }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 120, candidatesTokenCount: 30, totalTokenCount: 170, cachedContentTokenCount: 80, thoughtsTokenCount: 20 } },
-    ]
-    return new Response(frames.map(frame => 'data: ' + JSON.stringify(frame)).join('\n\n'), { headers: { 'content-type': 'text/event-stream' } })
+    assert.equal(url, endpoint)
+    const body = JSON.parse(String(init?.body))
+    assert.equal(body.model, gemini.model)
+    assert.equal(body.stream, true)
+    assert.deepEqual(body.stream_options, { include_usage: true })
+    assert.deepEqual(body.messages, gemini.messages.filter(message => message.content))
+    assert.equal(body.generationConfig, undefined)
+    assert.equal(body.contents, undefined)
+    return sse({ choices: [{ delta: { reasoning_content: 'summary' } }] },
+      { choices: [{ delta: { reasoning_content: ' continued', content: 'hello' }, finish_reason: 'stop' }] },
+      { choices: [], usage })
   }
   const result = await streamTextChat({ ...gemini, onDelta: delta => { answer += delta }, onReasoningDelta: delta => { diagnostics += delta } })
   assert.equal(answer, 'hello')
@@ -63,74 +66,55 @@ try {
   assert.equal(diagnostics, 'summary continued')
   assert.equal(result.reasoning, diagnostics)
   assert.equal(result.finishReason, 'stop')
-  assert.deepEqual(result.usage, { ...expected, totalTokens: 170, cachedReadTokens: 80, reasoningTokens: 20 })
-  for (const offerSearch of [false, true]) {
-    let requests = 0, visible = ''
-    globalThis.fetch = async (_url, init) => {
-      const request = JSON.parse(String(init?.body))
+  assert.deepEqual(result.usage, { ...expected, cachedReadTokens: 80, reasoningTokens: 20 })
+
+  for (const emptyContinuation of [false, true]) {
+    let requests = 0, searches = 0
+    const call = { id: 'search-1', type: 'function', function: { name: 'search_web', arguments: '{"query":"Python release date"}' } }
+    globalThis.fetch = async (url, init) => {
+      assert.equal(url, endpoint)
+      const body = JSON.parse(String(init?.body))
       if (++requests === 1) {
-        assert.equal(Boolean(request.tools), offerSearch)
-        return new Response('data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } })
+        assert.equal(body.tool_choice, 'auto')
+        assert.equal(body.tools[0].function.name, 'search_web')
+        return sse({ choices: [{ delta: { tool_calls: [call] }, finish_reason: 'tool_calls' }], usage })
       }
-      assert.equal(request.tools, undefined)
-      assert.equal(request.generationConfig.thinkingConfig.includeThoughts, false)
-      return Response.json([
-        { candidates: [{ content: { parts: [{ text: 'Recovered ' }] } }] },
-        { candidates: [{ content: { parts: [{ text: 'answer.' }] }, finishReason: 'STOP' }] },
-      ])
-    }
-    const recovered = await streamTextChat({ ...gemini, onDelta: delta => { visible += delta },
-      ...(offerSearch ? { onWebToolCalls: async () => { throw new Error('ordinary retry must not search') } } : {}) })
-    assert.equal(requests, 2)
-    assert.equal(recovered.content, 'Recovered answer.')
-    assert.equal(visible, recovered.content)
-  }
-  let blockedRequests = 0
-  globalThis.fetch = async () => {
-    blockedRequests++
-    return Response.json({ promptFeedback: { blockReason: 'SAFETY' } })
-  }
-  await assert.rejects(streamTextChat({ ...gemini, onDelta() {}, onWebToolCalls: async () => [] }), error => {
-    return error instanceof DeepSeekError && error.kind === 'no-content' && /safety/.test(apiRequestDiagnostic(error))
-  })
-  assert.equal(blockedRequests, 1)
-  for (const { signature, emptyContinuation } of [{ signature: 'signed-call' }, { signature: undefined }, { signature: 'signed-call', emptyContinuation: true }]) {
-    let requests = 0
-    const functionCall = { id: 'gemini-search-1', name: 'search_web', args: { query: 'Firecrawl pricing' } }
-    const part = { functionCall, ...(signature ? { thoughtSignature: signature } : {}) }
-    const usageMetadata = { promptTokenCount: 120, candidatesTokenCount: 30, totalTokenCount: 170, cachedContentTokenCount: 80, thoughtsTokenCount: 20 }
-    globalThis.fetch = async (_url, init) => {
-      const request = JSON.parse(String(init?.body))
-      if (++requests === 1) {
-        assert.equal(request.toolConfig.functionCallingConfig.mode, 'AUTO')
-        assert.equal(request.tools[0].functionDeclarations[0].name, 'search_web')
-        return new Response('data: ' + JSON.stringify({ candidates: [{ content: { parts: [part] } }], usageMetadata }), { headers: { 'content-type': 'text/event-stream' } })
-      }
-      if (signature && requests === 2) {
-        assert.equal(request.toolConfig, undefined)
-        assert.equal(request.tools[0].functionDeclarations[0].name, 'search_web')
-        assert.deepEqual(request.contents.at(-2).parts, [part])
-        assert.deepEqual(request.contents.at(-1).parts, [{ functionResponse: { id: functionCall.id, name: functionCall.name, response: { status: 'ok', sources: ['official pricing'] } } }])
-        if (emptyContinuation) return new Response('data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } })
+      if (requests === 2) {
+        assert.equal(body.tool_choice, 'none')
+        assert.deepEqual(body.messages.at(-2).tool_calls, [call])
+        assert.equal(body.messages.at(-1).tool_call_id, call.id)
+        assert.match(body.messages.at(-1).content, /official date/)
+        if (emptyContinuation) return sse({ choices: [], usage })
       } else {
-        assert.equal(request.tools, undefined)
-        assert.match(request.contents.at(-1).parts.at(-1).text, /untrusted.*\s+.*official pricing/)
+        assert.equal(body.tools, undefined)
+        assert.match(body.messages.at(-1).content, /official date/)
       }
-      return Response.json({ candidates: [{ content: { parts: [{ text: 'The official pricing.' }] }, finishReason: 'STOP' }], usageMetadata })
+      return sse({ choices: [{ delta: { content: 'October 7, 2024.' }, finish_reason: 'stop' }], usage })
     }
-    const searched = await streamTextChat({ ...gemini, onDelta() {}, onWebToolCalls: async calls => {
-      assert.deepEqual(calls, { format: 'gemini', parts: [part] })
-      return [{ status: 'ok', sources: ['official pricing'] }]
+    const searched = await streamTextChat({ ...gemini, baseUrl: 'https://api.teamorouter.com/v1', onDelta() {}, onWebToolCalls: async calls => {
+      searches++
+      assert.deepEqual(calls, { format: 'openai', calls: [call] })
+      return [{ status: 'ok', sources: ['official date'] }]
     } })
+    assert.equal(searched.content, 'October 7, 2024.')
+    assert.equal(searches, 1)
     assert.equal(requests, emptyContinuation ? 3 : 2)
-    assert.equal(searched.content, 'The official pricing.')
-    assert.deepEqual(searched.usage, { inputTokens: 240, outputTokens: 60, totalTokens: 340, cachedReadTokens: 160, reasoningTokens: 40 })
   }
+  let emptyRequests = 0
+  globalThis.fetch = async () => { emptyRequests++; return sse({ choices: [], usage }) }
+  await assert.rejects(streamTextChat({ ...gemini, onDelta() {} }), error =>
+    error instanceof DeepSeekError && error.kind === 'no-content' && apiRequestDiagnostic(error).includes('Gemini'))
+  assert.equal(emptyRequests, 1)
+
   globalThis.fetch = async (url, init) => {
-    assert.equal(url, 'https://api.teamorouter.com/v1beta/models/gemini-3.8-flash:generateContent')
-    assert.deepEqual(JSON.parse(String(init?.body)).generationConfig, { thinkingConfig: { includeThoughts: false }, responseMimeType: 'application/json', maxOutputTokens: 8192 })
-    return Response.json({ candidates: [{ content: { parts: [{ text: '{"answer":true}' }] }, finishReason: 'STOP' }] })
+    assert.equal(url, endpoint)
+    const body = JSON.parse(String(init?.body))
+    assert.equal(body.stream, false)
+    assert.equal(body.stream_options, undefined)
+    assert.equal(body.max_tokens, 8192)
+    assert.deepEqual(body.response_format, { type: 'json_object' })
+    return Response.json({ choices: [{ message: { content: '{"answer":true}' }, finish_reason: 'stop' }] })
   }
   assert.deepEqual(await sendTextChat({ ...gemini, thinking: 'disabled', jsonObject: true, maxTokens: 8192 }), { content: '{"answer":true}', finishReason: 'stop' })
 } finally { globalThis.fetch = savedFetch }
-console.log('PASS: DeepSeek and Teamo Gemini reasoning separation, native text/image/JSON requests, and token usage')
+console.log('PASS: DeepSeek and Teamo Gemini OpenAI-compatible text, image, search, and token usage')
