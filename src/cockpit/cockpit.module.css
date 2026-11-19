@@ -120,8 +120,7 @@
 .materialActions button { display: flex; align-items: center; gap: 8px; }
 .materialActions small { display: block; font-size: 11px; color: var(--dsw-alias-label-tertiary); margin-top: 4px; }
 .addFileMenu { width: min(360px, calc(100vw - 80px)); box-sizing: border-box; }
-.webSearchToggle { display: flex; align-items: center; gap: 8px; padding: 10px 8px 4px; margin-top: 4px; border-top: 1px solid var(--dsw-alias-border-l2); cursor: pointer; font-size: 13px; }
-.webSearchHint { padding: 4px 8px 8px; color: var(--dsw-alias-label-tertiary); font-size: 11px; }
+.webSearchHint { margin: 4px 0 0; padding: 8px 8px 4px; border-top: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-tertiary); font-size: 12px; }
 .searchBadge { color: var(--dsw-alias-brand-primary); font-size: 9px; }
 .composerText:focus { outline: none; border-color: var(--dsw-alias-brand-primary); }
 .sendBtn { flex: none; height: 38px; padding: 0 18px; border: none; border-radius: 10px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); cursor: pointer; }

@@ -5,6 +5,10 @@ import { msg, seedAndBoot } from './e2e-fixture.mjs'
 const browser = await launchBrowser()
 try {
   const page = await browser.newPage()
+  await page.addInitScript(() => {
+    Object.defineProperty(AbortSignal, 'any', { value: undefined })
+    Object.defineProperty(AbortSignal, 'timeout', { value: undefined })
+  })
   const searches = [], reads = [], chats = []
   const pricing = 'https://example.com/pricing'
   let releaseSearch
@@ -60,13 +64,15 @@ try {
     ] }],
     settings: {
       lastConversationId: 'web', apiKey: 'chat-test', apiBaseUrl: 'https://gateway.example/v1', model: 'deepseek-flash',
-      webSearchEnabled: 'true', firecrawlKeys: [{ name: 'Key 1', key: 'fc-empty' }, { name: 'Key 2', key: 'fc-available' }],
+      webSearchEnabled: 'false', firecrawlWebSearchEnabled: 'false',
+      firecrawlKeys: [{ name: 'Key 1', key: 'fc-empty' }, { name: 'Key 2', key: 'fc-available' }],
     },
   })
   const toggle = page.getByRole('checkbox', { name: '联网搜索', exact: true })
   const attach = page.getByTestId('composer-attach')
   await attach.click()
-  assert.equal(await toggle.isChecked(), true, 'an existing Firecrawl configuration enables search by default')
+  await page.getByText('Firecrawl · 按需搜索', { exact: true }).waitFor()
+  assert.equal(await toggle.count(), 0)
   await attach.click()
 
   const send = async (text, count) => {
@@ -118,18 +124,13 @@ try {
   releaseSearch()
   assert.equal(chats.length, 6, 'stopping a search also stops the model continuation')
 
-  await attach.click()
-  await toggle.click()
-  await page.waitForFunction(() => !document.querySelector('[aria-label="联网搜索已开启"]'))
   await page.reload({ waitUntil: 'networkidle' })
-  await attach.click()
-  assert.equal(await toggle.isChecked(), false)
-  await attach.click()
+  await page.getByLabel('联网搜索已开启').waitFor()
   await send('直接解释这个概念', 4)
   assert.equal(searches.length, 6)
   assert.equal(chats.length, 7)
-  assert.ok(!(chats[6].tools ?? []).some(tool => tool.type === 'deepseek_web_search' || tool.function?.name === 'search_web'))
-  console.log('PASS model-triggered Firecrawl, direct reply with zero searches, split tool calls, quota rotation, errors and persistent opt-out')
+  assert.equal(chats[6].tools[0].function.name, 'search_web')
+  console.log('PASS model-triggered Firecrawl, direct reply with zero searches, quota rotation, errors, cancellation and older WebView signal support')
 } finally {
   await browser.close()
 }

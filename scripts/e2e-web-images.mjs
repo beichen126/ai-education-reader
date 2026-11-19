@@ -4,6 +4,10 @@ import {seedAndBoot,msg} from './e2e-fixture.mjs'
 const browser=await launchBrowser()
 try {
  const page=await browser.newPage({viewport:{width:1280,height:900}}),requests=[],errors=[]
+ await page.addInitScript(() => {
+   Object.defineProperty(AbortSignal, 'any', { value: undefined })
+   Object.defineProperty(AbortSignal, 'timeout', { value: undefined })
+ })
  page.on('pageerror',e=>errors.push(e.message))
  await page.route('https://api.firecrawl.dev/v2/search',async route=>{
   const body=route.request().postDataJSON();requests.push(body)

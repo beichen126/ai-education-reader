@@ -1,5 +1,6 @@
 import {requestWithImageKeys, type ImageKey} from './key-pool'
 import {getSetting, setSetting} from '../storage/storage'
+import {withRequestDeadline} from '../api/request-deadline'
 
 export type WebImage = {imageUrl: string; sourceUrl: string; title: string; creditsUsed?: number; backup?: WebImage}
 export class ImageSearchError extends Error {}
@@ -23,13 +24,20 @@ function safeUrl(value: unknown): string {
 }
 export async function requestFirstImage(query: string, apiKey: string, signal?: AbortSignal): Promise<WebImage> {
   if (!apiKey.trim()) throw new Error('请先配置 Firecrawl API Key')
-  const response = await fetch('https://api.firecrawl.dev/v2/search', {
-    method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey.trim()},
-    body: JSON.stringify({query, sources: ['images'], limit: 3}), signal,
-  })
+  let response: Response
+  try {
+    response = await fetch('https://api.firecrawl.dev/v2/search', {
+      method: 'POST', headers: {'Content-Type': 'application/json', Authorization: 'Bearer ' + apiKey.trim()},
+      body: JSON.stringify({query, sources: ['images'], limit: 3}), signal,
+    })
+  } catch {
+    if (signal?.reason?.name === 'TimeoutError') throw Object.assign(new ImageSearchError('Firecrawl 图片搜索超时'), {terminal: true})
+    signal?.throwIfAborted()
+    throw Object.assign(new ImageSearchError('未能连接 Firecrawl 图片搜索'), {terminal: true})
+  }
   if (!response.ok) {
-    const reason = response.status === 401 ? 'Firecrawl Key 验证失败' : response.status === 402 ? 'Firecrawl 额度不足' : 'Firecrawl 图片请求失败'
-    throw Object.assign(new ImageSearchError(`${reason}（HTTP ${response.status}）`), {status: response.status, terminal: response.status === 400 || response.status === 422})
+    const reason = response.status === 401 || response.status === 403 ? 'Firecrawl Key 验证失败' : response.status === 402 ? 'Firecrawl 额度不足' : 'Firecrawl 图片请求失败'
+    throw Object.assign(new ImageSearchError(`${reason}（HTTP ${response.status}）`), {status: response.status, terminal: ![401, 402, 403, 429].includes(response.status)})
   }
   const data = await response.json()
   let selected: WebImage | undefined
@@ -67,16 +75,15 @@ export async function searchFirstImage(query: string, keys: ImageKey[], signal?:
   let job = pending.get(jobId)
   if (!job || job.controller.signal.aborted) {
     const controller = new AbortController()
-    const deadline=AbortSignal.any([controller.signal,AbortSignal.timeout(60000)])
     const created: Job = {controller,users:0,promise:Promise.resolve(undefined as never)}
-    created.promise = (async()=>{
-      const image = await requestWithImageKeys(keys, key=>requestFirstImage(query,key,AbortSignal.any([deadline,AbortSignal.timeout(20000)])),deadline)
+    created.promise = withRequestDeadline(controller.signal, 60000, async deadline => {
+      const image = await requestWithImageKeys(keys, key => withRequestDeadline(deadline, 20000, attempt => requestFirstImage(query, key, attempt)), deadline)
       deadline.throwIfAborted()
       memory.set(id,image)
       if(memory.size>128) memory.delete(memory.keys().next().value!)
       await setSetting(id,image).catch(()=>undefined)
       return image
-    })().finally(()=>{if(pending.get(jobId)===created)pending.delete(jobId);if(created.timer)clearTimeout(created.timer)})
+    }).finally(()=>{if(pending.get(jobId)===created)pending.delete(jobId);if(created.timer)clearTimeout(created.timer)})
     pending.set(jobId,created)
     job=created
   }

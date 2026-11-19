@@ -17,7 +17,7 @@ export function exceedsVisionImageCount(count: number): boolean { return count >
 
 export type ErrorKind =
   | 'no-api-key' | 'network-or-cors' | 'unauthorized' | 'billing'
-  | 'rate-limited' | 'request-too-large' | 'bad-request' | 'server' | 'bad-json' | 'no-content' | 'aborted'
+  | 'rate-limited' | 'request-too-large' | 'bad-request' | 'server' | 'bad-json' | 'no-content' | 'aborted' | 'unexpected'
 
 export class DeepSeekError extends Error {
   readonly kind: ErrorKind; readonly status?: number
@@ -39,13 +39,14 @@ export function apiRequestDiagnostic(error: DeepSeekError): string {
 export function errorKindLabel(kind: ErrorKind): string {
   switch (kind) {
     case 'no-api-key': return tx('未配置 API Key，请先在设置中填写。', 'No API key is configured. Add one in Settings.')
-    case 'network-or-cors': return tx('网络不可用，或请求被跨域(CORS)策略拦截。', 'The network is unavailable or the request was blocked by CORS.')
+    case 'network-or-cors': return tx('未能连接 API 或完整读取响应，请检查网络后重试。', 'Could not connect to the API or read the full response. Check your connection and retry.')
     case 'unauthorized': return tx('API Key 无效（401），请检查后重试。', 'The API key is invalid (401). Check it and try again.')
     case 'billing': return tx('余额或计费问题（402），请检查账户。', 'There is a balance or billing issue (402). Check the account.')
     case 'rate-limited': return tx('请求过于频繁（429），请稍后重试。', 'Too many requests (429). Try again later.')
     case 'request-too-large': return tx('接口拒绝了本次请求：请求体过大（413）。请减少本次发送的页面或图片；DeepSeek 内联请求体上限为 48 MiB（包含 Base64 和文字）。', 'The API rejected this request as too large (413). Send fewer pages or images; DeepSeek limits inline requests to 48 MiB including Base64 and text.')
     case 'bad-request': return tx('当前 API 拒绝了本次请求。', 'The configured API rejected this request.')
-    case 'server': return tx('DeepSeek 服务端错误，请稍后重试。', 'The API service returned a server error. Try again later.')
+    case 'server': return tx('当前模型服务暂时不可用，请稍后重试。', 'The configured model service is temporarily unavailable. Try again later.')
+    case 'unexpected': return tx('处理本轮对话时出错，请重试。', 'An error occurred while processing this conversation. Try again.')
     case 'bad-json': return tx('返回内容不是有效的 JSON。', 'The response is not valid JSON.')
     case 'no-content': return tx('模型未返回有效内容，请重试。', 'The model returned no usable content. Try again.')
     case 'aborted': return tx('已停止生成。', 'Generation stopped.')

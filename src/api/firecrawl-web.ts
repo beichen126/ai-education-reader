@@ -1,19 +1,13 @@
 import { tx } from '../engine/locale'
 import type { Settings } from '../engine/settings-store'
 import { configuredImageKeys, requestWithImageKeys } from '../web-images/key-pool'
-import { isOfficialDeepSeek } from './deepseek-files'
-import { supportsNativeDeepSeekSearch } from './deepseek-native'
+import { withRequestDeadline } from './request-deadline'
 
 const DETAIL = /价格|定价|费用|计费|免费|额度|限制|版本|文档|字段|区别|比较|什么时候|\b(price|pricing|cost|billing|free|quota|limit|version|api|docs|compare|difference|release)\b|\d+\.\d+/i
 const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'what', 'how', 'does', 'about', 'please', '是什么', '请问', '一下'])
 
 export function hasFirecrawlWebSearch(settings: Settings) {
-  return settings.chatProvider !== 'openai-local' && !isOfficialDeepSeek(settings.apiBaseUrl) && configuredImageKeys(settings).length > 0
-}
-
-export function isWebSearchEnabled(settings: Settings) {
-  if (supportsNativeDeepSeekSearch(settings)) return settings.deepseekWebSearchEnabled !== false
-  return hasFirecrawlWebSearch(settings) && settings.firecrawlWebSearchEnabled !== false
+  return settings.chatProvider !== 'openai-local' && configuredImageKeys(settings).length > 0
 }
 
 function publicUrl(value: unknown): string | undefined {
@@ -72,7 +66,7 @@ async function request(
   usage: Usage,
 ): Promise<FirecrawlReply> {
   const timeout = endpoint === 'search' ? 9000 : 4000
-  return requestWithImageKeys(keys, async key => {
+  return requestWithImageKeys(keys, key => withRequestDeadline(signal, timeout + 1000, async attempt => {
     signal.throwIfAborted()
     if (endpoint === 'search') usage.searches++
     else usage.reads++
@@ -82,7 +76,7 @@ async function request(
         method: 'POST',
         headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...body, timeout }),
-        signal: AbortSignal.any([signal, AbortSignal.timeout(timeout + 1000)]),
+        signal: attempt,
       })
     } catch {
       usage.complete = false
@@ -99,7 +93,7 @@ async function request(
     else usage.complete = false
     if (!result?.success) throw Object.assign(new Error('Invalid Firecrawl response'), { terminal: true })
     return result
-  }, signal)
+  }), signal)
 }
 
 function footer(sources: Source[], usage: Usage, status = '') {
@@ -123,7 +117,12 @@ export async function prepareFirecrawlResearch(input: {
 }): Promise<{ result: Record<string, unknown>; footer: string }> {
   const { settings, query, signal } = input
   const keys = configuredImageKeys(settings)
-  const deadline = AbortSignal.any([signal, AbortSignal.timeout(16_000)])
+  return withRequestDeadline(signal, 16_000, async deadline => {
+    return researchFirecrawl(query, keys, deadline, signal)
+  })
+}
+
+async function researchFirecrawl(query: string, keys: ReturnType<typeof configuredImageKeys>, deadline: AbortSignal, signal: AbortSignal) {
   const usage: Usage = { searches: 0, reads: 0, credits: 0, complete: true }
   const seen = new Set<string>()
   const sources: Source[] = []

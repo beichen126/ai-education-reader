@@ -40,10 +40,8 @@ try {
   const local = page.locator('[data-testid="composer-add-local"]')
   const library = page.locator('[data-testid="composer-from-library"]')
   assert.ok(Math.abs((await local.boundingBox()).y - (await library.boundingBox()).y) < 2)
-  const toggle = page.getByRole('checkbox', { name: 'Web search', exact: true })
-  assert.equal(await toggle.isChecked(), false)
-  assert.equal(await toggle.isDisabled(), true)
-  await page.getByText('Use deepseek-flash for native search', { exact: true }).waitFor()
+  await page.getByText('Save a Firecrawl key to enable web search', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('checkbox', { name: 'Web search', exact: true }).count(), 0)
   await page.keyboard.press('Escape')
   // Remove fixture-only missing binaries before exercising the real send pipeline.
   await page.evaluate(() => new Promise(resolve => {

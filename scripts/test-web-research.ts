@@ -1,19 +1,18 @@
 import assert from 'node:assert/strict'
-import { hasFirecrawlWebSearch, isWebSearchEnabled } from '../src/api/firecrawl-web'
+import { hasFirecrawlWebSearch } from '../src/api/firecrawl-web'
 import { nativeConversationOptions } from '../src/api/deepseek-native'
 import { apiRequestDiagnostic, DeepSeekError, streamTextChat } from '../src/api/deepseek'
 import { DEFAULT_SETTINGS } from '../src/engine/settings-store'
 
 const official = { ...DEFAULT_SETTINGS, webSearchEnabled: false, firecrawlApiKey: 'fc-fixture' }
 const relay = { ...official, apiBaseUrl: 'https://relay.example/v1', nativeDeepSeekProxy: true, webSearchEnabled: true }
-assert.equal(isWebSearchEnabled(official), true)
-assert.equal(hasFirecrawlWebSearch(official), false)
-assert.equal(isWebSearchEnabled({ ...official, deepseekWebSearchEnabled: false }), false)
-assert.ok(nativeConversationOptions(official, [], false)?.nativeTools?.includes('deepseek_web_search'))
+assert.equal(hasFirecrawlWebSearch(official), true)
+assert.equal(hasFirecrawlWebSearch({ ...official, deepseekWebSearchEnabled: false, firecrawlWebSearchEnabled: false }), true)
+assert.deepEqual(nativeConversationOptions(official, [], false)?.nativeTools, ['deepseek_read_url'])
 assert.deepEqual(nativeConversationOptions(relay, [], false)?.nativeTools, [])
-assert.equal(isWebSearchEnabled(relay), true)
-assert.equal(isWebSearchEnabled({ ...relay, firecrawlApiKey: '' }), false)
-assert.equal(isWebSearchEnabled({ ...relay, firecrawlWebSearchEnabled: false }), false)
+assert.equal(hasFirecrawlWebSearch(relay), true)
+assert.equal(hasFirecrawlWebSearch({ ...relay, firecrawlApiKey: '' }), false)
+assert.equal(hasFirecrawlWebSearch({ ...relay, chatProvider: 'openai-local' }), false)
 
 const args = {
   apiKey: 'mock', baseUrl: relay.apiBaseUrl, model: 'mock-model',

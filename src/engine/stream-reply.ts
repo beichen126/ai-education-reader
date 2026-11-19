@@ -11,7 +11,7 @@ import { generationRegistry, type GenerationLease } from './generation-registry'
 import { projectLogicalPromptContext } from '../prompts/prompt-compile-strategies'
 import type { AcceptedSendContext } from '../prompts/prompt-send'
 import type { SendFailure, SendOutcome } from './send-outcome'
-import { hasFirecrawlWebSearch, isWebSearchEnabled, prepareFirecrawlResearch } from '../api/firecrawl-web'
+import { hasFirecrawlWebSearch, prepareFirecrawlResearch } from '../api/firecrawl-web'
 import { streamProviderChat } from '../api/chat-provider'
 import { getLocalStatus, LocalProviderError } from '../api/openai-local'
 import { DeepSeekFilesError } from '../api/deepseek-files'
@@ -134,8 +134,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     thread.setStreaming()
     if (onStreamStart) onStreamStart(controller, assistantId)
     const userMessages = contextMessages.filter(message => message.role === 'user')
-    const firecrawl = hasFirecrawlWebSearch(settings)
-    const firecrawlEnabled = firecrawl && isWebSearchEnabled(settings)
+    const firecrawlEnabled = hasFirecrawlWebSearch(settings)
     const native = nativeConversationOptions(settings, reqMessages, !!thread.acceptTitle && userMessages.length === 1)
     let webFooter = ''
     const r = await streamProviderChat(settings, {
@@ -179,7 +178,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       await thread.drainWrites()
       ownedLease.release(); thread.setError(failure); return failure
     }
-    const err = e instanceof DeepSeekError ? e : new DeepSeekError(controller.signal.aborted ? 'aborted' : 'network-or-cors', 'Request failed')
+    const err = e instanceof DeepSeekError ? e : new DeepSeekError(controller.signal.aborted ? 'aborted' : 'unexpected', 'Request failed')
     if (controller.signal.aborted || err.kind === 'aborted') {
       const message = errorKindLabel('aborted')
       if (placeholderCreated) thread.settleAssistant('aborted', message)

@@ -4,6 +4,11 @@ AI Education Reader 的用户可感知更新记录。
 
 格式参考 Keep a Changelog，但保持简洁。正式发布的改动按版本记录，未发布改动再单独进入 `Unreleased`。
 
+## [4.0.24] - 2026-11-19
+
+- DeepSeek 官方与中转站统一通过 Firecrawl 按需搜索。保存 Key 即可使用，附件菜单显示搜索状态。
+- 修复旧版 Android WebView 的网页搜索和配图兼容性。区分连接中断、模型服务错误和对话处理异常。
+
 ## [4.0.23] - 2026-11-19
 
 - DeepSeek 官方 Flash 默认提供原生搜索。中转站保存 Firecrawl Key 后，模型可按需搜索并引用网页资料。

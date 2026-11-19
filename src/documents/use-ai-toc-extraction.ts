@@ -126,6 +126,7 @@ function transportRetryPrompt(kind: ErrorKind): string {
     'bad-json': 'the API response was not valid JSON',
     'no-content': 'the model returned no usable content',
     aborted: 'the request was cancelled',
+    unexpected: 'an unexpected processing error occurred',
   }
   return 'The previous attempt failed because ' + reasons[kind] + '. Retry the same images with one complete JSON object {"rows":[...]}. Include title, pageLabel, sourceImageIndex, visualIndent and numbering per row. Preserve all printed entries and reading order. Use pageLabel:"" only for an unreadable or absent individual destination label. Honor this schema even if the API rejects format parameters. No fence, ellipses or explanation.'
 }

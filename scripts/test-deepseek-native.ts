@@ -8,8 +8,8 @@ const messages:ApiChatMessage[]=[{role:'user',content:'today'}]
 const options=nativeConversationOptions(settings,messages,true,new Date(2026,10,16))
 assert.equal(messages[0].role,'latest_reminder')
 assert.equal(messages[0].content,'2026-11-16,星期一,杭州,Web,中文')
-assert.deepEqual(options?.nativeTools,['deepseek_web_search','deepseek_read_url'])
-assert.equal(options?.thinking,'enabled');assert.equal(options?.generateTitle,true)
+assert.deepEqual(options?.nativeTools,['deepseek_read_url'])
+assert.equal(options?.generateTitle,true)
 assert.equal(nativeConversationOptions({...settings,apiBaseUrl:'https://teamorouter.com/v1'},[],true),undefined)
 assert.equal(nativeConversationOptions({...settings,apiBaseUrl:'https://teamorouter.com/v1',nativeDeepSeekProxy:true},[],false)?.generateTitle,false)
 const off:ApiChatMessage[]=[{role:'user',content:'a'}]
@@ -21,8 +21,8 @@ const annotations=[{type:'url_citation',url_citation:{url:'https://example.com/p
 try {
  globalThis.fetch=async(_url,init)=>{
   const body=JSON.parse(init?.body as string)
-  assert.equal(body.title.enabled,true);assert.equal(body.thinking.type,'enabled')
-  assert.equal(body.tools[0].type,'deepseek_web_search')
+  assert.equal(body.title.enabled,true)
+  assert.equal(body.tools[0].type,'deepseek_read_url')
   return new Response('data: '+JSON.stringify({choices:[{delta:{content:'Answer'}}]})+'\n\ndata: '+JSON.stringify({choices:[{delta:{title:'Short title',annotations,server_tool_calls:calls},finish_reason:'stop'}]})+'\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}})
  }
  const result=await streamTextChat({apiKey:'test',baseUrl:settings.apiBaseUrl,model:settings.model,messages,...options,onDelta:()=>{}})

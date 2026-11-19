@@ -1,5 +1,4 @@
-import { hasFirecrawlWebSearch, isWebSearchEnabled } from '../api/firecrawl-web'
-import { supportsNativeDeepSeekSearch } from '../api/deepseek-native'
+import { hasFirecrawlWebSearch } from '../api/firecrawl-web'
 import { generationRegistry, genRootKey, genBranchKey } from '../engine/generation-registry'
 import {YoutubePicker} from '../youtube/YoutubePicker'
 import {transcriptPreview} from '../youtube/preview'
@@ -14,7 +13,7 @@ import { GenUiActions } from '../genui/GenUiBlock'
 import { Fragment, lazy, memo, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties, RefObject } from 'react'
 import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/sessions-store'
-import { patchSettings, useSettings, useSettingsMutation } from '../engine/settings-store'
+import { useSettings, useSettingsMutation } from '../engine/settings-store'
 import { formatTokenCount } from '../engine/token-usage'
 import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, isSupportedImage } from '../engine/attachment-service'
@@ -594,10 +593,7 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
   const documents = useDraftDocuments(key)
   const supportsDocuments=useSettings(s=>s.chatProvider!=='openai-local'&&isOfficialDeepSeek(s.apiBaseUrl)&&s.model==='deepseek-flash')
   const picIds = useDraftImageIds(key)
-  const webSearchEnabled = useSettings(isWebSearchEnabled)
   const firecrawlWebSearch = useSettings(hasFirecrawlWebSearch)
-  const nativeWebSearch = useSettings(supportsNativeDeepSeekSearch)
-  const officialChat = useSettings(s => isOfficialDeepSeek(s.apiBaseUrl))
   const openaiWebSearch = useSettings(s => s.chatProvider === 'openai-local')
   const settingsPending = useSettingsMutation().status === 'pending'
   const [openId, setOpenId] = useState<string | null>(null)
@@ -789,7 +785,7 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
             the existing image / local-PDF / library actions. The hidden file inputs stay;
             the trigger merely dispatches into them. No domain merge. */}
         <button type="button" ref={attachBtnRef} className={css.attachBtn} role="button" aria-label={tx('添加资料', 'Add material')} title={tx('添加资料', 'Add material')} data-testid="composer-attach" aria-haspopup="menu" aria-expanded={attachMenuOpen} onClick={() => setAttachMenuOpen(v => !v)}>
-          <IconDocument16 />{webSearchEnabled && <span className={css.searchBadge} aria-label={tx('联网搜索已开启', 'Web search enabled')}>●</span>}
+          <IconDocument16 />{firecrawlWebSearch && <span className={css.searchBadge} aria-label={tx('联网搜索已开启', 'Web search enabled')}>●</span>}
         </button>
         {attachMenuOpen && (
           <div className={css.addFileMenu} data-testid="composer-add-file-menu" ref={attachMenuRef}>
@@ -801,13 +797,10 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
               <button type="button" className={css.menuItem} data-testid="composer-deepseek-files" disabled={!supportsDocuments} title={!supportsDocuments?tx('请切换到 DeepSeek 官方 deepseek-flash 配置','Switch to official DeepSeek deepseek-flash'):undefined} onClick={()=>{setAttachMenuOpen(false);setDocumentPicker([])}}><IconDocument16/><span>{tx('DeepSeek 文件解析','DeepSeek files')}<small>{supportsDocuments?tx('整份文件 · 批量上传','Whole files · batch upload'):tx('需 DeepSeek 官方配置','Official DeepSeek required')}</small></span></button>
             </div>
             {androidCamera && <button type="button" className={css.menuItem} data-testid="composer-camera" onClick={() => { setAttachMenuOpen(false); cameraInputRef.current?.click() }}><IconDocument16 /><span>{tx('拍照', 'Take photo')}<small>{tx('拍摄后加入草稿', 'Add captured photo to draft')}</small></span></button>}
-            {openaiWebSearch ? <>
-              <label className={css.webSearchToggle}><input type="checkbox" checked disabled />{tx('OpenAI 联网搜索（默认启用）', 'OpenAI web search (enabled by default)')}</label>
-              <small className={css.webSearchHint}>{tx('使用 OpenAI 原生搜索，模型按需调用；取决于账户及模型权限。', 'Uses native OpenAI search when needed, subject to model and account policy.')}</small>
-            </> : <>
-              <label className={css.webSearchToggle}><input type="checkbox" checked={webSearchEnabled} disabled={busy || settingsPending || (!firecrawlWebSearch && !nativeWebSearch)} onChange={event => { void patchSettings(nativeWebSearch ? { deepseekWebSearchEnabled: event.target.checked } : { firecrawlWebSearchEnabled: event.target.checked }).catch(() => setPhotoError(tx('无法保存联网设置，请重试。', 'Unable to save web search settings. Try again.'))) }} />{tx('联网搜索', 'Web search')}</label>
-              <small className={css.webSearchHint}>{nativeWebSearch ? tx('DeepSeek 原生搜索 · 模型按需调用', 'DeepSeek native search · used as needed') : firecrawlWebSearch ? tx('Firecrawl · 模型按需搜索', 'Firecrawl · used as needed') : officialChat ? tx('使用 deepseek-flash 开启原生搜索', 'Use deepseek-flash for native search') : tx('保存 Firecrawl Key 后启用', 'Save a Firecrawl key to enable search')}</small>
-            </>}
+            <p className={css.webSearchHint}>{openaiWebSearch
+              ? tx('OpenAI · 按需搜索', 'OpenAI · search as needed')
+              : firecrawlWebSearch ? tx('Firecrawl · 按需搜索', 'Firecrawl · search as needed')
+                : tx('保存 Firecrawl Key 后可联网搜索', 'Save a Firecrawl key to enable web search')}</p>
           </div>
         )}
         <input ref={imageInputRef} data-testid="composer-images-input" type="file" accept="image/jpeg,image/png,image/gif,image/webp" multiple hidden onChange={e => { if (e.target.files && e.target.files.length) onFiles(e.target.files); e.target.value = '' }} />

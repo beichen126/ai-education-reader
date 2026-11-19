@@ -453,7 +453,7 @@ export function SettingsDialog() {
           <article>
             <h4>{tx('朗读与联网搜索','Read aloud and web search')}</h4>
             <p>{tx('选中文字后点击“朗读”，可暂停或停止；在“通用”中设置中英文倍速和重复次数，默认重复三次。也可点击回答下方“朗读全文”。使用配置的 DeepSeek API 合成语音。','Select text and choose Read aloud; playback can be paused or stopped. Set Chinese/English rates and repeat count in General; the default is three passes. Choose Read all aloud below an answer to read its full text using the configured DeepSeek API.')}</p>
-            <p>{tx('DeepSeek 官方 deepseek-flash 默认使用原生搜索。中转站保存 Firecrawl Key 后默认开启。','Official DeepSeek Flash uses native search by default. Gateways use Firecrawl when a key is saved.')}</p>
+            <p>{tx('保存 Firecrawl Key 后，模型会按需联网搜索。','Save a Firecrawl key to let the model search the web as needed.')}</p>
           </article>
           <article>
             <h4>{tx('数据与常见故障','Data and troubleshooting')}</h4>
