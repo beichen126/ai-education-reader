@@ -151,7 +151,7 @@ assert(await page.locator('[data-testid="document-reader"]').count() === 0, 'H: 
 await page.locator('[data-testid="library-close"]').click().catch(() => {})
 await page.waitForTimeout(200)
 await page.locator(IMAGES_ENTRY).first().click()
-await page.getByText('当前会话暂无图片资料').waitFor({ state: 'visible', timeout: 10000 })
+await page.getByTestId('gallery').getByText('当前会话暂无图片或转写稿', { exact: true }).waitFor({ state: 'visible', timeout: 10000 })
 const galleryTitle = await page.locator('div[class*="head"] span').first().textContent()
 assert(galleryTitle === '图片', 'H: gallery entry opens with 图片 title (got ' + galleryTitle + ')')
 await page.getByRole('button', { name: '关闭' }).last().click()
