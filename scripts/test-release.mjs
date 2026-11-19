@@ -42,7 +42,6 @@ const CORE_E2E = [
   'e2e-copy-reasoning',
   'e2e-back-navigation',
   'e2e-math-actions',
-  'e2e-android-login-entry',
   'e2e-webview-pdf-compat',
   'e2e-reading-position',
   'e2e-list-display-math',

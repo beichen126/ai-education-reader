@@ -49,7 +49,7 @@ export function ApiConfigTransfer({ hasImageDraft }: { hasImageDraft: () => bool
 
   return <section className={css.root} data-testid="api-config-management">
     <strong className={css.heading}>{tx('API 管理', 'API management')}</strong>
-    <p className={css.hint}>{tx('迁移模型配置、Firecrawl、语音接口和本机 OpenAI 模型。', 'Transfer model profiles, Firecrawl, speech API, and the local OpenAI model.')}</p>
+    <p className={css.hint}>{tx('迁移模型配置、Firecrawl 和语音接口。', 'Transfer model profiles, Firecrawl, and the speech API.')}</p>
     <div className={css.actions}>
       <Button size="sm" variant="outline" disabled={disabled} onClick={() => fileInput.current?.click()}>{importing ? tx('正在导入…', 'Importing…') : tx('导入 JSON', 'Import JSON')}</Button>
       <Button size="sm" variant="outline" aria-expanded={exportOpen} disabled={disabled} onClick={() => {

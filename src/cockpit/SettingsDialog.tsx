@@ -5,8 +5,7 @@ import {ApiProfiles} from './ApiProfiles'
 import {ApiConfigTransfer} from './ApiConfigTransfer'
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useSettings, patchSettings, DEFAULT_SETTINGS, useSettingsMutation } from '../engine/settings-store'
-import { testConnection, type VisionCapability } from '../api/deepseek'
-import { isTeamoGemini } from '../api/teamo-gemini'
+import { testConnection } from '../api/deepseek'
 import { uiActions, useUi } from '../engine/ui-store'
 import { useSessions } from '../engine/sessions-store'
 import { exportBackupZip, exportConversationMd, exportMarkedOnlyMd, exportConversationBundle, importBackupFile, BackupError } from '../export'
@@ -22,7 +21,6 @@ import { deriveDataSafetyStatus, getLastBackupRecord, recordBackupCompleted, typ
 import { inspectApiSetup } from '../api/api-setup'
 import { releaseAllPreviews } from '../engine/attachment-service'
 import css from './cockpit.module.css'
-import { LocalProviderSettings } from './LocalProviderSettings'
 
 export const APP_NAME = 'AI Education Reader'
 
@@ -61,7 +59,6 @@ export function SettingsDialog() {
   const [key, setKey] = useState(s.apiKey)
   const [showKey, setShowKey] = useState(false)
   const [model, setModel] = useState(s.model || DEFAULT_SETTINGS.model)
-  const [visionCapability, setVisionCapability] = useState<VisionCapability>(s.visionCapability || 'auto')
   // PDF navigation is committed the moment the user chooses it. `pdfPending` only carries
   // the optimistic visual until the IndexedDB transaction resolves; the durable value is
   // always `s.pdfNavigationMode` from the committed store.
@@ -119,12 +116,12 @@ export function SettingsDialog() {
   const onSave = async () => {
     setSaved(false)
     try {
-      await patchSettings({ apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim(), visionCapability })
+      await patchSettings({ apiBaseUrl: base.trim(), apiKey: key.trim(), model: model.trim() })
       await saveWebImagesRef.current?.()
       setSaved(true); setTimeout(() => setSaved(false), 1500)
     } catch { /* mutation state carries the visible failure */ }
   }
-  const apiInspection = inspectApiSetup({ baseUrl: base, apiKey: key, model, visionCapability })
+  const apiInspection = inspectApiSetup({ baseUrl: base, apiKey: key, model })
   const onTest = async () => {
     if (!apiInspection.readyForConnectionTest) {
       setTest(tx('请先修正未完成的配置项。', 'Fix the incomplete configuration items first.'))
@@ -218,19 +215,13 @@ export function SettingsDialog() {
       <div ref={scrollRef} className={css.settingsScroll} data-testid="settings-panel-scroll">
       <section id="settings-section-api" role="tabpanel" aria-labelledby="settings-tab-api" hidden={section!=='api'} className={css.settingsSection}>
       <ApiConfigTransfer hasImageDraft={() => webImageDraftRef.current} />
-      <LocalProviderSettings />
-      {s.chatProvider !== 'openai-local' && <>
       <div className={css.byokBlock} data-testid="settings-byok">
         <div className={css.byokTitle}>{tx('API Key 接入', 'BYOK (bring your own API key)')}</div>
         <div className={css.settingsHint}>{tx('填写服务地址、API Key 和模型。Key 仅保存在此浏览器，调用由服务商计费。', 'Enter your endpoint, API key and model. Keys stay in this browser; provider usage is billed separately.')}</div>
         <a className={css.byokLink} href="https://platform.deepseek.com/" target="_blank" rel="noopener noreferrer" data-testid="settings-deepseek-link">{tx('打开 DeepSeek 开放平台获取 API Key', 'Get an API key from DeepSeek')}</a>
         <a className={css.byokLinkSub} href="https://api-docs.deepseek.com/zh-cn/" target="_blank" rel="noopener noreferrer">{tx('DeepSeek API 文档', 'DeepSeek API documentation')}</a>
       </div>
-      <div className={css.apiPresetRow}>
-        <span className={css.settingsHint}>{tx('快速填写地址和模型', 'Fill endpoint and model')}</span>
-        <Button size="sm" variant="outline" onClick={() => { setBase(DEFAULT_SETTINGS.apiBaseUrl); setModel(DEFAULT_SETTINGS.model); setTest(null); setTestOk(null) }}>DeepSeek</Button>
-      </div>
-      <ApiProfiles draft={{...s,apiBaseUrl:base,apiKey:key,model,visionCapability}} onApply={next=>{setBase(next.apiBaseUrl);setKey(next.apiKey);setModel(next.model);setVisionCapability(next.visionCapability);setShowKey(false);setTest(null);setTestOk(null);setSaved(false)}} />
+      <ApiProfiles draft={{...s,apiBaseUrl:base,apiKey:key,model}} onApply={next=>{setBase(next.apiBaseUrl);setKey(next.apiKey);setModel(next.model);setShowKey(false);setTest(null);setTestOk(null);setSaved(false)}} />
       <div className={css.field}><label>API Base URL</label><Input className={css.fieldInput} value={base} onChange={e => setBase(e.target.value)} placeholder={DEFAULT_SETTINGS.apiBaseUrl} /></div>
       <div className={css.field}>
         <label>API Key</label>
@@ -240,30 +231,6 @@ export function SettingsDialog() {
         </span>
       </div>
       <div className={css.field}><label>Model</label><Input className={css.fieldInput} value={model} onChange={e => setModel(e.target.value)} placeholder="deepseek-flash" /></div>
-      {isTeamoGemini(base, model) && <div className={css.settingsHint}>{tx('使用 Gemini 原生接口。思考摘要可从回复菜单复制。', 'Uses the Gemini native API. Copy thought summaries from the reply menu.')}</div>}
-      <div className={css.field}>
-        <label>{tx('模型图片能力（Vision）', 'Model image capability (Vision)')}</label>
-        <div className={css.appearanceRow} data-testid="settings-vision">
-          <button type="button" className={css.appearanceOpt} data-testid="vision-auto" aria-pressed={visionCapability === 'auto'} onClick={() => setVisionCapability('auto')}>{tx('自动', 'Auto')}</button>
-          <button type="button" className={css.appearanceOpt} data-testid="vision-supports" aria-pressed={visionCapability === 'supports-image'} onClick={() => setVisionCapability('supports-image')}>{tx('支持图片', 'Supports images')}</button>
-          <button type="button" className={css.appearanceOpt} data-testid="vision-textonly" aria-pressed={visionCapability === 'text-only'} onClick={() => setVisionCapability('text-only')}>{tx('仅文本', 'Text only')}</button>
-        </div>
-        <div className={css.settingsHint}>{tx('不确定时选“自动”；模型支持图片但未识别时，可手动开启。', 'Use Auto unless image support needs to be enabled manually.')}</div>
-      </div>
-      <div className={css.apiChecklist} data-testid="api-setup-checklist">
-        <div className={css.apiChecklistTitle}>{tx('配置检查', 'Configuration checklist')}</div>
-        {[
-          [apiInspection.endpointValid, tx('API 地址有效', 'API endpoint is valid')],
-          [apiInspection.keyPresent, tx('API Key 已填写', 'API key is present')],
-          [apiInspection.modelPresent, tx('模型名已填写', 'Model name is present')],
-          [apiInspection.visionConfigured, tx('图片能力策略已选择', 'Image capability policy is selected')],
-        ].map(([ok, label]) => (
-          <div key={String(label)} className={css.apiCheck} data-ok={String(ok)}>
-            <span aria-hidden="true">{ok ? '✓' : '!'}</span><span>{label}</span>
-          </div>
-        ))}
-      </div>
-      <div className={css.settingsHint}>{tx('请求直达所配置的服务。', 'Selected context goes directly to your configured provider, without a Reader relay.')}</div>
       <div className={css.settingsActions}>
         <Button variant="outline" onClick={onTest}>{test === tx('正在测试…', 'Testing…') ? test : tx('检查 API 配置', 'Check API configuration')}</Button>
         <Button variant="primary" onClick={onSave}>{saved ? tx('已保存', 'Saved') : tx('保存 API 设置', 'Save API settings')}</Button>
@@ -273,7 +240,6 @@ export function SettingsDialog() {
       )}
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
       <div className={css.settingsHint}>{tx('仅检查模型列表。', 'Checks the model list only; no chats, images or documents are sent.')}</div>
-      </>}
       <WebImageSettings saveRef={saveWebImagesRef} dirtyRef={webImageDraftRef} />
       </section>
       <section id="settings-section-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={section!=='general'} className={css.settingsSection}>

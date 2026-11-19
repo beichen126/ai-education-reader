@@ -4,7 +4,7 @@ import { sanitizeTitle } from './session-title'
 import { getSetting, setSetting, getConversation, saveConversation, saveConversationRenameAndSyncCards, deleteConversation, listConversations, commitAcceptedUserMessage, updateConversationOrganization, type ConversationOrganizationAction } from '../storage/storage'
 import { getSettingsSnapshot } from './settings-store'
 import { providerPreflight } from '../api/chat-provider'
-import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, isVisionModel, exceedsVisionImageCount } from '../api/deepseek'
+import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, exceedsVisionImageCount } from '../api/deepseek'
 import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError } from './attachment-service'
 import { deleteConvAnnotations } from '../annotations/annotation-store'
 import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
@@ -189,7 +189,7 @@ export const sessionsActions = {
       let acceptedSend: AcceptedSendContext
       let afterUser: Conversation
       try {
-        const providerRejection = await providerPreflight(settings, controller.signal)
+        const providerRejection = await providerPreflight(settings)
         if (!lease.isCurrent()) { lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
         if (providerRejection) { lease.release(); return { outcome: Promise.resolve(rejectSend(target, providerRejection, intent)) } }
         const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, ...(options.documents?.length ? { documents: options.documents.map(d=>({...d})) } : {}), images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
@@ -349,7 +349,7 @@ class RootReplyThread implements ReplyThread {
 
 /** Fire-and-forget reply stream: runs AFTER the user message is accepted & persisted. */
 async function runReplyStream(id: string, settings: ReturnType<typeof getSettingsSnapshot>, acceptedSend: AcceptedSendContext, lease: GenerationLease): Promise<SendOutcome> {
-  if (settings.chatProvider !== 'openai-local' && !settings.apiKey) {
+  if (!settings.apiKey) {
     const failure: SendFailure = { kind: 'failed', code: 'no-api-key', message: errorKindLabel('no-api-key') }
     lease.release()
     setSessionsSendError({ ...failure, conversationId: id })

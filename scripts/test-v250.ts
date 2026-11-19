@@ -46,16 +46,15 @@ assert.equal(deriveDataSafetyStatus(
 ).backupState, 'fresh')
 
 assert.deepEqual(inspectApiSetup({
-  baseUrl: 'https://api.deepseek.com', apiKey: ' sk-test ', model: 'deepseek-chat', visionCapability: 'auto',
+  baseUrl: 'https://api.deepseek.com', apiKey: ' sk-test ', model: 'deepseek-chat',
 }), {
   endpointValid: true,
   keyPresent: true,
   modelPresent: true,
-  visionConfigured: true,
   readyForConnectionTest: true,
 })
 assert.equal(inspectApiSetup({
-  baseUrl: 'javascript:alert(1)', apiKey: '', model: '', visionCapability: 'text-only',
+  baseUrl: 'javascript:alert(1)', apiKey: '', model: '',
 }).readyForConnectionTest, false)
 
 const originalFetch = globalThis.fetch

@@ -80,7 +80,7 @@ export function Conversation() {
   const focusMessage = useSessions(s => s.focusMessage)
   // Local subscription access never requires a browser API key; readiness is
   // checked before accepting a message, not inferred from the DeepSeek key.
-  const hasKey = useSettings(s => s.chatProvider === 'openai-local' || !!s.apiKey)
+  const hasKey = useSettings(s => !!s.apiKey)
   const navigationOpen = useLayoutStore(s => s.narrowExpanded)
   const mobileNavigation = <button type="button" className={css.mobileMenuToggle} data-testid="mobile-menu-toggle" aria-label={tx('展开导航', 'Open navigation')} aria-expanded={navigationOpen} aria-controls="mobile-navigation" onClick={() => layoutStore.actions.openNarrowSidebar()}><svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 8h18M3 16h11" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></button>
   const listRef = useRef<HTMLDivElement | null>(null)
@@ -591,10 +591,9 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
   const [documentPicker,setDocumentPicker]=useState<File[] | null>(null)
   const [youtubePicker,setYoutubePicker]=useState(false)
   const documents = useDraftDocuments(key)
-  const supportsDocuments=useSettings(s=>s.chatProvider!=='openai-local'&&isOfficialDeepSeek(s.apiBaseUrl)&&s.model==='deepseek-flash')
+  const supportsDocuments=useSettings(s=>isOfficialDeepSeek(s.apiBaseUrl)&&s.model==='deepseek-flash')
   const picIds = useDraftImageIds(key)
   const firecrawlWebSearch = useSettings(hasFirecrawlWebSearch)
-  const openaiWebSearch = useSettings(s => s.chatProvider === 'openai-local')
   const settingsPending = useSettingsMutation().status === 'pending'
   const [openId, setOpenId] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | undefined>(undefined)
@@ -785,7 +784,7 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
             the existing image / local-PDF / library actions. The hidden file inputs stay;
             the trigger merely dispatches into them. No domain merge. */}
         <button type="button" ref={attachBtnRef} className={css.attachBtn} role="button" aria-label={tx('添加资料', 'Add material')} title={tx('添加资料', 'Add material')} data-testid="composer-attach" aria-haspopup="menu" aria-expanded={attachMenuOpen} onClick={() => setAttachMenuOpen(v => !v)}>
-          <IconDocument16 />{firecrawlWebSearch && <span className={css.searchBadge} aria-label={tx('联网搜索已开启', 'Web search enabled')}>●</span>}
+          <IconDocument16 />{firecrawlWebSearch && <span className={css.searchBadge} aria-label={tx('联网搜索已开启', 'Web search enabled')}/>}
         </button>
         {attachMenuOpen && (
           <div className={css.addFileMenu} data-testid="composer-add-file-menu" ref={attachMenuRef}>
@@ -797,9 +796,7 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
               <button type="button" className={css.menuItem} data-testid="composer-deepseek-files" disabled={!supportsDocuments} title={!supportsDocuments?tx('请切换到 DeepSeek 官方 deepseek-flash 配置','Switch to official DeepSeek deepseek-flash'):undefined} onClick={()=>{setAttachMenuOpen(false);setDocumentPicker([])}}><IconDocument16/><span>{tx('DeepSeek 文件解析','DeepSeek files')}<small>{supportsDocuments?tx('整份文件 · 批量上传','Whole files · batch upload'):tx('需 DeepSeek 官方配置','Official DeepSeek required')}</small></span></button>
             </div>
             {androidCamera && <button type="button" className={css.menuItem} data-testid="composer-camera" onClick={() => { setAttachMenuOpen(false); cameraInputRef.current?.click() }}><IconDocument16 /><span>{tx('拍照', 'Take photo')}<small>{tx('拍摄后加入草稿', 'Add captured photo to draft')}</small></span></button>}
-            <p className={css.webSearchHint}>{openaiWebSearch
-              ? tx('OpenAI · 按需搜索', 'OpenAI · search as needed')
-              : firecrawlWebSearch ? tx('Firecrawl · 按需搜索', 'Firecrawl · search as needed')
+            <p className={css.webSearchHint}>{firecrawlWebSearch ? tx('Firecrawl · 按需搜索', 'Firecrawl · search as needed')
                 : tx('保存 Firecrawl Key 后可联网搜索', 'Save a Firecrawl key to enable web search')}</p>
           </div>
         )}

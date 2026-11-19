@@ -61,16 +61,19 @@ export function teamoGeminiRequest(args: SendTextChatArgs, stream: boolean) {
 }
 
 export function readGeminiReply(payload: any) {
-  const candidate = payload?.candidates?.[0]
   let content = '', reasoning = ''
-  const parts = candidate?.content?.parts
-  for (const part of Array.isArray(parts) ? parts : []) {
-    if (typeof part?.text !== 'string') continue
-    if (part.thought === true) reasoning += part.text
-    else content += part.text
+  let usage, reason
+  for (const frame of Array.isArray(payload) ? payload : [payload]) {
+    const candidate = frame?.candidates?.[0]
+    const parts = candidate?.content?.parts
+    for (const part of Array.isArray(parts) ? parts : []) {
+      if (typeof part?.text !== 'string') continue
+      if (part.thought === true) reasoning += part.text
+      else content += part.text
+    }
+    usage = frame?.usageMetadata ?? usage
+    reason = candidate?.finishReason ?? frame?.promptFeedback?.blockReason ?? reason
   }
-  const usage = payload?.usageMetadata
-  const reason = candidate?.finishReason
   return {
     content, reasoning,
     finishReason: reason === 'STOP' ? 'stop' : reason === 'MAX_TOKENS' ? 'length' : typeof reason === 'string' ? reason.toLowerCase() : undefined,

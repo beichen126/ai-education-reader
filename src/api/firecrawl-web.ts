@@ -7,7 +7,7 @@ const DETAIL = /价格|定价|费用|计费|免费|额度|限制|版本|文档|�
 const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'what', 'how', 'does', 'about', 'please', '是什么', '请问', '一下'])
 
 export function hasFirecrawlWebSearch(settings: Settings) {
-  return settings.chatProvider !== 'openai-local' && configuredImageKeys(settings).length > 0
+  return configuredImageKeys(settings).length > 0
 }
 
 function publicUrl(value: unknown): string | undefined {

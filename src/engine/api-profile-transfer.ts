@@ -27,7 +27,6 @@ export function exportApiConfiguration(settings: Settings, originalName: string,
     })),
     firecrawl: includeKeys ? { keys: configuredImageKeys(settings).map(item => item.key) } : {},
     speech: { baseUrl: settings.speechApiUrl || '', ...(includeKeys ? { apiKey: settings.speechApiKey || '' } : {}) },
-    localOpenAI: { model: settings.openaiLocalModel || '' },
   }
 }
 
@@ -80,15 +79,14 @@ export function parseApiConfiguration(text: string) {
   })
   if (root.version === 1) return { profiles }
   try {
-    if (!record(root.firecrawl) || !record(root.speech) || !record(root.localOpenAI)) throw new Error()
+    if (!record(root.firecrawl) || !record(root.speech)) throw new Error()
     const keys = root.firecrawl.keys
     if (keys !== undefined && (!Array.isArray(keys) || keys.some(key => typeof key !== 'string' || !key.trim()))) throw new Error()
     const firecrawlKeys = Array.isArray(keys) ? [...new Set(keys.map(key => (key as string).trim()))] : []
     if (firecrawlKeys.length > MAX_FIRECRAWL_KEYS) throw new ApiProfileFileError(undefined, 'firecrawl-limit')
     const speechKey = root.speech.apiKey
-    const localModel = root.localOpenAI.model
-    if ((speechKey !== undefined && typeof speechKey !== 'string') || typeof localModel !== 'string' || localModel.length > 128) throw new Error()
-    return { profiles, firecrawlKeys, speech: { baseUrl: endpoint(root.speech.baseUrl), apiKey: typeof speechKey === 'string' ? speechKey.trim() : undefined }, localModel: localModel.trim() }
+    if ((speechKey !== undefined && typeof speechKey !== 'string')) throw new Error()
+    return { profiles, firecrawlKeys, speech: { baseUrl: endpoint(root.speech.baseUrl), apiKey: typeof speechKey === 'string' ? speechKey.trim() : undefined } }
   } catch (error) { throw error instanceof ApiProfileFileError ? error : new ApiProfileFileError() }
 }
 

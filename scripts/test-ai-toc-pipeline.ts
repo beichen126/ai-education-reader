@@ -4,7 +4,7 @@ import { describeTocRepairReasons } from '../src/documents/toc-repair-reasons.ts
 import { prioritizeThumbnails } from '../src/documents/thumbnail-priority.ts'
 import { countStreamedTocLevels, inferNumberedTocLevels, inferFallbackTocLevels, validateTocStructure, buildTocStructureRepairPrompt } from '../src/documents/ai-toc.ts'
 import { resolveStoredModel, DEFAULT_MODEL } from '../src/api/model-defaults.ts'
-import { isVisionModel, streamTextChat } from '../src/api/deepseek.ts'
+import { streamTextChat } from '../src/api/deepseek.ts'
 
 let active = 0, peak = 0
 const pending: Array<() => void> = []
@@ -72,8 +72,7 @@ assert.equal(flattened.ok, false)
 assert.ok(buildTocStructureRepairPrompt(rows.length, flattened.diagnostics).includes('flattened'))
 assert.ok(validateTocStructure(rows, [1, 2, 3, 3, 2, 1]).ok)
 assert.equal(inferNumberedTocLevels(['Chapter 1', 'Chapter 2', 'Chapter 3'].map(title => ({ title }))), null, 'genuinely flat chapters are not forced into L3')
-assert.equal(DEFAULT_MODEL, 'deepseek-flash'); assert.equal(isVisionModel(DEFAULT_MODEL), true)
-assert.equal(isVisionModel(DEFAULT_MODEL, 'text-only'), false)
+assert.equal(DEFAULT_MODEL, 'deepseek-flash')
 assert.equal(resolveStoredModel('', ''), DEFAULT_MODEL)
 assert.equal(resolveStoredModel('deepseek-v4-flash-vision-exp', 'https://api.deepseek.com/v1'), DEFAULT_MODEL)
 assert.equal(resolveStoredModel('my-model', 'https://api.deepseek.com'), 'my-model')

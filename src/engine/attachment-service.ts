@@ -8,7 +8,7 @@ import { BRANCH_DRAFT_PREFIX } from '../branches/branch-types'
 import { persistBinary, readBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
 import { PreviewReadQueue } from './preview-read-queue'
 
-export type AttachmentErrorKind = 'unsupported-format' | 'read-failed' | 'missing-attachment' | 'image-too-large' | 'vision-unsupported'
+export type AttachmentErrorKind = 'unsupported-format' | 'read-failed' | 'missing-attachment' | 'image-too-large'
 export class AttachmentError extends Error { readonly kind: AttachmentErrorKind; constructor(kind: AttachmentErrorKind, m: string) { super(m); this.kind = kind } }
 export function attachmentErrorLabel(kind: AttachmentErrorKind): string {
   switch (kind) {
@@ -16,7 +16,6 @@ export function attachmentErrorLabel(kind: AttachmentErrorKind): string {
     case 'read-failed': return '图片读取失败，请重试。'
     case 'missing-attachment': return '图片附件已丢失，请重新添加。'
     case 'image-too-large': return '图片过大，请换一张较小的图片。'
-    case 'vision-unsupported': return '当前模型不支持图片，请切换到支持 Vision 的模型。'
     default: return '图片处理失败。'
   }
 }

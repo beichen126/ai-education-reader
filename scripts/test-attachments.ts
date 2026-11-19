@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto'
 import { saveFiles, getAttachment, toDataUrl, deleteAttachment, existsAttachment, isSupportedImage, ensurePreviewUrl, releasePreviewUrl } from '../src/engine/attachment-service.ts'
 import { getAttachmentRow } from '../src/storage/storage.ts'
-import { buildApiMessages, isVisionModel, type ApiChatMessage } from '../src/api/deepseek.ts'
+import { buildApiMessages, type ApiChatMessage } from '../src/api/deepseek.ts'
 import { newStableId, type Message } from '../src/engine/types.ts'
 import { closeDb } from '../src/storage/idb.ts'
 
@@ -92,8 +92,6 @@ assert(!(await existsAttachment(idA)), 'idA gone')
 assert(await existsAttachment(idB), 'idB still present')
 
 // vision model check
-assert(isVisionModel('deepseek-v4-flash-vision-exp'), 'vision model recognized')
-assert(!isVisionModel('deepseek-chat'), 'text model not vision')
 
 console.log('\nRESULT pass='+pass+' fail='+fail)
 process.exit(fail===0?0:1)

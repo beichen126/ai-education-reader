@@ -39,7 +39,7 @@ try {
  const transfer=page.getByTestId('api-config-management')
  const imageKey=page.getByLabel('Firecrawl API Key',{exact:true})
  await imageKey.fill('fc-existing')
- await page.getByTestId('firecrawl-settings').getByRole('button',{name:'保存 Firecrawl 配置',exact:true}).click()
+ await page.getByTestId('firecrawl-settings').getByRole('button',{name:'保存配置',exact:true}).click()
  await page.getByTestId('firecrawl-settings').getByRole('status').filter({hasText:'已保存'}).waitFor()
  const downloadProfiles=async includeKeys=>{
   await transfer.getByRole('button',{name:'导出 JSON',exact:true}).click()

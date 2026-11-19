@@ -136,7 +136,7 @@ export async function commitAcceptedUserMessage(conv: Conversation, lastConversa
  * failure can no longer leave a mixed configuration after reload (e.g. apiKey committed
  * but model not). Values commit first, then the caller publishes them as saved state.
  */
-export async function saveSettingsAtomic(values: { firecrawlApiKey?: string; firecrawlKeys?: {name: string; key: string}[]; apiProfiles?: string; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: string; autoTitleEnabled?: string; readUrlEnabled?: string; nativeDeepSeekProxy?: string;  speechVoice?: string; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string; pdfNavigationMode: string; uiLanguage: string; webSearchEnabled?: string; firecrawlWebSearchEnabled?: string; deepseekWebSearchEnabled?: string; chineseSpeechRate?: string; englishSpeechRate?: string; speechRepeatCount?: string; speechLoop?: string; highlightSpokenSelection?: string; rememberReadingPosition?: string; chatProvider?: string; openaiLocalModel?: string }): Promise<void> {
+export async function saveSettingsAtomic(values: { firecrawlApiKey?: string; firecrawlKeys?: {name: string; key: string}[]; apiProfiles?: string; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: string; autoTitleEnabled?: string; readUrlEnabled?: string; nativeDeepSeekProxy?: string;  speechVoice?: string; speechApiUrl?: string; speechApiKey?: string; apiBaseUrl: string; apiKey: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: string; appearance: string; visionCapability: string; pdfNavigationMode: string; uiLanguage: string; webSearchEnabled?: string; firecrawlWebSearchEnabled?: string; deepseekWebSearchEnabled?: string; chineseSpeechRate?: string; englishSpeechRate?: string; speechRepeatCount?: string; speechLoop?: string; highlightSpokenSelection?: string; rememberReadingPosition?: string }): Promise<void> {
   await idbRunTxn(['settings'], (txn) => {
     const os = txn.objectStore('settings')
     os.put({key: 'firecrawlApiKey', value: values.firecrawlApiKey || ''})
@@ -159,8 +159,6 @@ export async function saveSettingsAtomic(values: { firecrawlApiKey?: string; fir
     os.put({ key: 'highlightSpokenSelection', value: values.highlightSpokenSelection ?? 'false' })
     os.put({ key: 'speechRepeatCount', value: values.speechRepeatCount ?? '3' })
     os.put({ key: 'rememberReadingPosition', value: values.rememberReadingPosition ?? 'false' })
-    if (values.chatProvider !== undefined) os.put({ key: 'chatProvider', value: values.chatProvider })
-    if (values.openaiLocalModel !== undefined) os.put({ key: 'openaiLocalModel', value: values.openaiLocalModel })
   })
 }
 

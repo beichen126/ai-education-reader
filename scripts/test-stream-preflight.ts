@@ -39,20 +39,6 @@ async function waitForSettled(label: string, id: string, predicate: (status: str
 
 await initSettings()
 
-// 1) vision-unsupported preflight -> NO ghost assistant, correct error (not a fetch).
-{
-  await saveSettings({ apiBaseUrl:'https://api.deepseek.com', apiKey:'k', model:'deepseek-chat', customSystemPrompt:'', customSystemPromptEnabled:false })
-  await initStore()
-  const id = await sessionsActions.newChat()
-  fetchMock = async () => { throw new Error('should not fetch') }
-  await sessionsActions.sendUserMessage(id, '描述图', ['missing-id'])
-  const msgs = await waitForSettled('vision unsupported', id, (status, messages) => status === 'error' && messages.length === 1)
-  assert(msgs.length === 1, 'vision-unsupported leaves NO assistant placeholder (msgs='+msgs.length+')')
-  assert(getSessionsStatus()==='error', 'vision-unsupported -> status error')
-  const se = getSessionsSendError() || ''
-  assert(se.includes('支持') && se.includes('Vision') || se.includes('Vision'), 'vision error label mentions model support (got '+JSON.stringify(se)+')')
-}
-
 // 2) missing historical attachment -> attachment error, NOT network/CORS; no ghost.
 {
   await saveSettings({ apiBaseUrl:'https://api.deepseek.com', apiKey:'k', model:'deepseek-vision', customSystemPrompt:'', customSystemPromptEnabled:false })
@@ -68,9 +54,9 @@ await initSettings()
   assert(!se.includes('网络') && !se.includes('CORS'), 'missing attachment NOT reported as network/CORS (got '+JSON.stringify(se)+')')
 }
 
-// 3) success with a real attachment on a vision model -> one stable assistant message + content.
+// 3) success with a real attachment and a legacy text-only setting -> one stable assistant message + content.
 {
-  await saveSettings({ apiBaseUrl:'https://api.deepseek.com', apiKey:'k', model:'deepseek-vision', customSystemPrompt:'', customSystemPromptEnabled:false })
+  await saveSettings({ apiBaseUrl:'https://api.deepseek.com', apiKey:'k', model:'unmarked-model', visionCapability:'text-only', customSystemPrompt:'', customSystemPromptEnabled:false })
   await initStore()
   const id = await sessionsActions.newChat()
   const imgId = await mkAttachment()

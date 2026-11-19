@@ -12,7 +12,6 @@ assert.deepEqual(nativeConversationOptions(official, [], false)?.nativeTools, ['
 assert.deepEqual(nativeConversationOptions(relay, [], false)?.nativeTools, [])
 assert.equal(hasFirecrawlWebSearch(relay), true)
 assert.equal(hasFirecrawlWebSearch({ ...relay, firecrawlApiKey: '' }), false)
-assert.equal(hasFirecrawlWebSearch({ ...relay, chatProvider: 'openai-local' }), false)
 
 const args = {
   apiKey: 'mock', baseUrl: relay.apiBaseUrl, model: 'mock-model',

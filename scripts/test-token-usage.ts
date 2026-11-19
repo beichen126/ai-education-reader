@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import { parseTokenUsage, formatTokenCount } from '../src/engine/token-usage'
-import { sendTextChat, streamTextChat, streamUsageOptions } from '../src/api/deepseek'
-import { relayResponses } from '../server/openai-contract.mjs'
+import { apiRequestDiagnostic, DeepSeekError, sendTextChat, streamTextChat, streamUsageOptions } from '../src/api/deepseek'
 
 const expected = { inputTokens: 120, outputTokens: 30, totalTokens: 150 }
 assert.equal(formatTokenCount(74650), '74.65k')
@@ -65,6 +64,36 @@ try {
   assert.equal(result.reasoning, diagnostics)
   assert.equal(result.finishReason, 'stop')
   assert.deepEqual(result.usage, { ...expected, totalTokens: 170, cachedReadTokens: 80, reasoningTokens: 20 })
+  for (const offerSearch of [false, true]) {
+    let requests = 0, visible = ''
+    globalThis.fetch = async (_url, init) => {
+      const request = JSON.parse(String(init?.body))
+      if (++requests === 1) {
+        assert.equal(Boolean(request.tools), offerSearch)
+        return new Response('data: [DONE]\n\n', { headers: { 'content-type': 'text/event-stream' } })
+      }
+      assert.equal(request.tools, undefined)
+      assert.equal(request.generationConfig.thinkingConfig.includeThoughts, false)
+      return Response.json([
+        { candidates: [{ content: { parts: [{ text: 'Recovered ' }] } }] },
+        { candidates: [{ content: { parts: [{ text: 'answer.' }] }, finishReason: 'STOP' }] },
+      ])
+    }
+    const recovered = await streamTextChat({ ...gemini, onDelta: delta => { visible += delta },
+      ...(offerSearch ? { onWebToolCalls: async () => { throw new Error('ordinary retry must not search') } } : {}) })
+    assert.equal(requests, 2)
+    assert.equal(recovered.content, 'Recovered answer.')
+    assert.equal(visible, recovered.content)
+  }
+  let blockedRequests = 0
+  globalThis.fetch = async () => {
+    blockedRequests++
+    return Response.json({ promptFeedback: { blockReason: 'SAFETY' } })
+  }
+  await assert.rejects(streamTextChat({ ...gemini, onDelta() {}, onWebToolCalls: async () => [] }), error => {
+    return error instanceof DeepSeekError && error.kind === 'no-content' && /safety/.test(apiRequestDiagnostic(error))
+  })
+  assert.equal(blockedRequests, 1)
   for (const { signature, emptyContinuation } of [{ signature: 'signed-call' }, { signature: undefined }, { signature: 'signed-call', emptyContinuation: true }]) {
     let requests = 0
     const functionCall = { id: 'gemini-search-1', name: 'search_web', args: { query: 'Firecrawl pricing' } }
@@ -104,10 +133,4 @@ try {
   }
   assert.deepEqual(await sendTextChat({ ...gemini, thinking: 'disabled', jsonObject: true, maxTokens: 8192 }), { content: '{"answer":true}', finishReason: 'stop' })
 } finally { globalThis.fetch = savedFetch }
-for (const usage of [{ input_tokens: 120, output_tokens: 30, total_tokens: 150, secret: 'must-not-relay' }, undefined, { input_tokens: -1, output_tokens: 30, total_tokens: 150 }]) {
-  const events: any[] = []
-  await relayResponses(new Response(`data: ${JSON.stringify({ type: 'response.completed', response: { usage } })}\n\n`).body, (e: any) => events.push(e))
-  assert.deepEqual(events[0].usage, usage?.input_tokens === 120 ? expected : undefined)
-  assert.ok(!JSON.stringify(events).includes('must-not-relay'))
-}
 console.log('PASS: DeepSeek and Teamo Gemini reasoning separation, native text/image/JSON requests, and token usage')

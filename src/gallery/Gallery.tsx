@@ -9,7 +9,6 @@ import css from './gallery.module.css'
 import { tx } from '../engine/locale'
 import { useBackTarget } from '../engine/back-navigation'
 import { getAttachment } from '../engine/attachment-service'
-import { Modal } from '../dsh/primitives'
 import { timestamp, type YoutubeTranscript } from '../youtube/transcript'
 import { useBranchChat } from '../cockpit/use-branch-chat'
 import { branchThreadKey, useDraftImageIds } from '../engine/draft-store'
@@ -22,13 +21,15 @@ export function Gallery() {
   const convId = conv ? conv.id : undefined
   const { effectiveMessages, activeBranchId, ready } = useBranchChat(g.open ? conv : undefined)
   const draftIds = useDraftImageIds(g.open ? activeBranchId ? branchThreadKey(activeBranchId) : convId || '' : '')
-  const draftMetas = useAttachmentMetas(draftIds)
-  const imageIds = useMemo(() => {
-    const sent = effectiveMessages.flatMap(message => message.role === 'user' ? message.images : [])
-    const attached = new Set(sent)
-    const transcripts = draftMetas.flatMap(attachment => attachment.transcript && !attached.has(attachment.id) ? [attachment.id] : [])
-    return [...sent, ...transcripts]
-  }, [effectiveMessages, draftMetas])
+  const sent = useMemo(() => [...new Set(effectiveMessages.flatMap(message => message.role === 'user' ? message.images : []))], [effectiveMessages])
+  const attachmentIds = useMemo(() => [...new Set([...sent, ...draftIds])], [sent, draftIds])
+  const metas = useAttachmentMetas(attachmentIds)
+  const transcriptById = new Map(metas.flatMap(meta => meta.transcript ? [[meta.id, meta.transcript] as const] : []))
+  const imageIds = sent.filter(id => !transcriptById.has(id))
+  const transcripts = attachmentIds.flatMap(id => {
+    const transcript = transcriptById.get(id)
+    return transcript ? [{ id, transcript }] : []
+  })
   useEffect(() => { if (g.open && g.convId !== convId) galleryActions.close() }, [g.open, g.convId, convId])
   if (!g.open) return null
   const count = imageIds.length
@@ -37,19 +38,20 @@ export function Gallery() {
       <div className={css.head}>
         <div className={css.headInner}>
           <div className={css.heading}>
-            <span className={css.title}>{tx('图片', 'Images')}</span>
-            <span className={css.count} data-testid="gallery-count">{tx('共 ' + count + ' 张', count + ' total')}</span>
+            <span className={css.title}>{transcripts.length ? count ? tx('图片与转写稿', 'Images and transcripts') : tx('转写稿', 'Transcripts') : tx('图片', 'Images')}</span>
+            {count > 0 && <span className={css.count} data-testid="gallery-count">{tx('共 ' + count + ' 张', count + ' total')}</span>}
           </div>
           <button type="button" className={css.closeBtn} onClick={galleryActions.close}>{tx('关闭', 'Close')}</button>
         </div>
       </div>
       {(conv && !ready) ? <div className={css.empty} role="status">{tx('正在读取图片资料…', 'Loading images…')}</div> :
-        count === 0 ? <div className={css.empty}>{tx('当前会话暂无图片资料', 'No images in this chat')}</div> :
-        g.view === 'list' ? (
+        count === 0 && !transcripts.length ? <div className={css.empty}>{tx('当前会话暂无图片或转写稿', 'No images or transcripts in this chat')}</div> :
+        g.view === 'list' || !count ? (
           <div className={css.galleryScroll}>
-            <div className={css.grid} data-testid="gallery-grid" aria-label={tx('当前会话图片，共 ' + count + ' 张', count + ' images in this chat')}>
+            {transcripts.length > 0 && <div className={css.transcriptList}>{transcripts.map(({ id, transcript }) => <TranscriptCard key={id} transcript={transcript} />)}</div>}
+            {count > 0 && <div className={css.grid} data-testid="gallery-grid" aria-label={tx('当前会话图片，共 ' + count + ' 张', count + ' images in this chat')}>
               {imageIds.map((id, i) => <Thumb key={id} id={id} index={i} />)}
-            </div>
+            </div>}
           </div>
         ) : (
           <GalleryViewer imageIds={imageIds} index={clampIndex(g.index, count)} />
@@ -94,28 +96,13 @@ function GalleryAttachmentAction({ id }: { id: string }) {
     void getAttachment(id).then(value => { if (active) setAttachment(value) }).catch(() => {})
     return () => { active = false }
   }, [id])
-  if (attachment?.transcript) return <TranscriptButton transcript={attachment.transcript} />
   return attachment?.source ? <AttachmentPageOcr attachmentId={id} /> : null
 }
 
-function TranscriptButton({ transcript }: { transcript: YoutubeTranscript }) {
-  const [open, setOpen] = useState(false)
-  const text = useMemo(() => open ? transcript.segments.map(segment => '[' + timestamp(segment.start) + '] ' + segment.text).join('\n') : '', [open, transcript])
-  useEffect(() => {
-    if (!open) return
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') { event.preventDefault(); setOpen(false) }
-      else if (!['ArrowLeft', 'ArrowRight', '+', '-', '='].includes(event.key)) return
-      event.stopImmediatePropagation()
-    }
-    window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
-  }, [open])
-  return <>
-    <button type="button" className={css.transcriptButton} onClick={() => setOpen(true)}>{tx('查看转写稿', 'View transcript')}</button>
-    {open && <Modal open onClose={() => setOpen(false)} title={tx('YouTube 转写稿', 'YouTube transcript')} closeLabel={tx('关闭', 'Close')} className={css.transcriptDialog} rootClassName={css.transcriptOverlay}>
-      <p className={css.transcriptTitle}>{transcript.title}</p>
-      <textarea autoFocus readOnly className={css.transcriptText} aria-label={tx('带时间戳的字幕', 'Timestamped transcript')} value={text} />
-    </Modal>}
-  </>
+function TranscriptCard({ transcript }: { transcript: YoutubeTranscript }) {
+  const text = useMemo(() => transcript.segments.map(segment => '[' + timestamp(segment.start) + '] ' + segment.text).join('\n'), [transcript])
+  return <article className={css.transcriptCard}>
+    <h3 className={css.transcriptTitle}>{transcript.title}</h3>
+    <pre className={css.transcriptText} aria-label={tx('带时间戳的字幕', 'Timestamped transcript')}>{text}</pre>
+  </article>
 }

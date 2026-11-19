@@ -34,23 +34,24 @@ export function WebImageSettings({saveRef, dirtyRef}: {saveRef?: {current: (() =
       const keys = clear ? [] : configuredImageKeys({firecrawlKeys: rows}).map((row,i)=>({...row,name:`Key ${i+1}`}))
       await patchSettings({firecrawlApiKey:'',firecrawlKeys:keys})
       if (clear) setRows([{name:'配置 1',key:''}])
-      setStatus(keys.length ? '已保存，单图与双图配图能力已开启' : '已清除，模型配图能力已关闭')
+      setStatus(keys.length ? '已保存，搜索与配图可用' : '已清除 Firecrawl Key')
       await refresh()
     } catch (error) {setStatus('保存失败，请重试'); throw error} finally {setBusy(false)}
   }
   if (saveRef) saveRef.current = () => save()
-  return <div className={css.byokBlock} data-testid="firecrawl-settings">
-    <div className={css.byokTitle}>联网搜索与配图 · Firecrawl</div>
-    <p className={css.settingsHint}>搜索和配图共用 Key，保存在本机。</p>
-    <a className={layout.consoleLink} href="https://www.firecrawl.dev/app" target="_blank" rel="noopener noreferrer">获取 API Key ↗</a>
+  const keyCount = configuredImageKeys(settings).length
+  return <div className={layout.panel} data-testid="firecrawl-settings">
+    <div className={layout.header}>
+      <h3>Firecrawl <span>搜索与配图</span></h3>
+      <a href="https://www.firecrawl.dev/app" target="_blank" rel="noopener noreferrer">获取 Key ↗</a>
+    </div>
     <div className={layout.entries}>
     {rows.map((row,i) => <section key={i} className={layout.entry}>
-      <div className={layout.heading}><strong>{rows.length === 1 ? 'Key 1' : `Key ${i+1}`}</strong><span className={layout.order}>{i === 0 ? '优先使用' : `备用 ${i}`}</span></div>
-      <label htmlFor={'firecrawl-key-'+i}>{i === 0 ? 'Firecrawl API Key' : 'Firecrawl API Key '+(i+1)}</label>
+      <label htmlFor={'firecrawl-key-'+i}>Key {i+1}{rows.length>1 && current==='Key '+(i+1) && <span> · 最近使用</span>}</label>
       <div className={layout.keyRow}>
-        <Input id={'firecrawl-key-'+i} className={css.fieldInput} type={visible.includes(i) ? 'text' : 'password'} value={row.key} onChange={e=>edit(i,{key:e.target.value})} autoComplete="off" placeholder="fc-…" />
-        <Button variant="outline" onClick={()=>setVisible(old=>old.includes(i)?old.filter(n=>n!==i):[...old,i])}>{visible.includes(i)?'隐藏':'显示'}</Button>
-        <Button variant="outline" className={layout.clear} disabled={!row.key} onClick={()=>edit(i,{key:''})}>清除</Button>
+        <Input id={'firecrawl-key-'+i} aria-label={i === 0 ? 'Firecrawl API Key' : 'Firecrawl API Key '+(i+1)} type={visible.includes(i) ? 'text' : 'password'} value={row.key} onChange={e=>edit(i,{key:e.target.value})} autoComplete="off" placeholder="fc-…" />
+        <Button size="sm" variant="outline" onClick={()=>setVisible(old=>old.includes(i)?old.filter(n=>n!==i):[...old,i])}>{visible.includes(i)?'隐藏':'显示'}</Button>
+        <Button size="sm" variant="outline" className={layout.clear} disabled={!row.key} onClick={()=>edit(i,{key:''})}>清除</Button>
       </div>
       {rows.length>1 && <details className={layout.manage}><summary>管理此配置</summary><p className={css.settingsHint}>{states[i]}</p><div className={layout.actions}>
         <Button variant="outline" disabled={!row.key || dirty} onClick={()=>void resetImageKey(row.key).then(refresh)}>下一次从此项开始</Button>
@@ -59,13 +60,10 @@ export function WebImageSettings({saveRef, dirtyRef}: {saveRef?: {current: (() =
       </div></details>}
     </section>)}
     </div>
-    <Button variant="outline" className={layout.add} disabled={rows.length>=10} onClick={()=>setRows(old=>[...old,{name:'配置 '+(old.length+1),key:''}])}>＋ 添加备用 Key</Button>
-    <div className={layout.checks}>
-      <strong>配置状态</strong>
-      <div>{dirty ? '有修改待保存' : configuredImageKeys(settings).length ? `已保存 ${configuredImageKeys(settings).length} 个 Key · 配图已开启` : '填写并保存 Key 后开启配图'}</div>
-      {current && <small>最近使用：{current}</small>}
+    <div className={layout.footer}>
+      <Button size="sm" variant="outline" disabled={rows.length>=10} onClick={()=>setRows(old=>[...old,{name:'配置 '+(old.length+1),key:''}])}>添加备用 Key</Button>
+      <Button size="sm" variant="primary" disabled={busy} onClick={()=>void save().catch(()=>{})}>{busy?'正在保存…':'保存配置'}</Button>
     </div>
-    <details className={layout.manage}><summary>备用 Key 如何切换？</summary><p className={css.settingsHint}>额度耗尽连续 3 次后切换下一项，每次最多轮换一圈。同账号的 Key 可能共享额度。</p></details>
-    <div className={layout.footer}><span role="status" className={css.settingsHint}>{dirty ? '修改尚未保存' : status}</span><Button variant="primary" disabled={busy} onClick={()=>void save().catch(()=>{})}>{busy?'正在保存…':'保存 Firecrawl 配置'}</Button></div>
+    <span role="status" className={layout.status}>{dirty ? '修改尚未保存' : status || (keyCount ? '已保存 '+keyCount+' 个 Key' : 'Key 保存在本机')}</span>
   </div>
 }

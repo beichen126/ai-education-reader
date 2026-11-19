@@ -23,8 +23,7 @@ const profileFile = exportApiConfiguration(getSettingsSnapshot(), 'Original', tr
 profileFile.profiles = [{ ...saved[0], config: { ...saved[0].config, apiBaseUrl:'https://api.example.test/v1', apiKey:'IMPORTED' } }]
 profileFile.firecrawl = { keys: ['fc-first', 'fc-second'] }
 profileFile.speech = { baseUrl: 'https://speech.example.test/v1', apiKey: 'SPEECH-IMPORT' }
-profileFile.localOpenAI.model = 'model-test'
-const validText = JSON.stringify(profileFile)
+const validText = JSON.stringify({ ...profileFile, localOpenAI: { model:'model-test' } })
 const invalidText = JSON.stringify({ ...profileFile, profiles: [...profileFile.profiles, { name:'invalid', config:{ apiBaseUrl:'javascript:alert(1)', model:'example' } }] })
 await assert.rejects(importApiConfiguration(invalidText, 'Original'), { row: 2 })
 assert.equal(getSettingsSnapshot().apiProfiles?.length, 1, 'invalid files are atomic')
@@ -43,5 +42,5 @@ assert.equal(getSettingsSnapshot().apiProfiles?.[2].config.apiKey, '')
 assert.deepEqual(getSettingsSnapshot().firecrawlKeys?.map(item=>item.key), ['fc-first','fc-second'])
 assert.equal(getSettingsSnapshot().speechApiKey, 'SPEECH-IMPORT')
 assert.equal(getSettingsSnapshot().speechApiUrl, 'https://speech.example.test/v1')
-assert.equal(getSettingsSnapshot().openaiLocalModel, 'model-test')
+assert.equal('localOpenAI' in exportApiConfiguration(getSettingsSnapshot(), 'Original', false), false)
 console.log('PASS API profile backups, optional key export, atomic import, collision handling and concurrent deduplication')

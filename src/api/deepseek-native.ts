@@ -4,7 +4,7 @@ import type { Settings } from '../engine/settings-store'
 
 /** Native extensions are opt-in on gateways, which may implement only OpenAI chat. */
 export function nativeConversationOptions(settings: Settings, messages: ApiChatMessage[], firstTurn: boolean, now = new Date()): Partial<SendTextChatArgs> | undefined {
-  if (settings.chatProvider==='openai-local' || settings.model.trim().toLowerCase()!=='deepseek-flash' || (!isOfficialDeepSeek(settings.apiBaseUrl) && !settings.nativeDeepSeekProxy)) {
+  if (settings.model.trim().toLowerCase()!=='deepseek-flash' || (!isOfficialDeepSeek(settings.apiBaseUrl) && !settings.nativeDeepSeekProxy)) {
     for (const message of messages) delete message.server_tool_calls
     return undefined
   }

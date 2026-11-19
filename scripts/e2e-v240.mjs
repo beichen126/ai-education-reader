@@ -27,7 +27,7 @@ await page.waitForTimeout(250)
 
 await page.locator('[data-testid="sidebar-settings"]').click()
 await selectSettingsSection(page, 'general'); await page.locator('[data-testid="settings-language"]').waitFor({ state: 'visible' })
-assert(await page.locator('[data-testid="api-setup-checklist"]').count() === 1, 'API configuration checklist is available')
+assert(await page.locator('[data-testid="api-setup-checklist"]').count() === 0, 'API configuration uses the check action without a persistent checklist')
 assert(await page.locator('[data-testid="data-safety-center"]').count() === 1, 'local data safety center is available')
 await selectSettingsSection(page, 'general'); await page.locator('[data-testid="language-en"]').click()
 await page.waitForFunction(() => document.documentElement.lang === 'en')

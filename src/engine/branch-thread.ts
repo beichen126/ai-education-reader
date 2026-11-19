@@ -113,7 +113,7 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
     const lease = generationRegistry.acquireChat(key, conversationId, controller)
     if (!lease) return pendingRejected({ kind: 'rejected', code: 'generation-busy', message: '当前已有生成任务，请稍候。' })
     try {
-      const providerRejection = await providerPreflight(settings, controller.signal)
+      const providerRejection = await providerPreflight(settings)
       if (!lease.isCurrent()) { lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
       if (providerRejection) { lease.release(); return pendingRejected(providerRejection) }
       const now = Date.now()

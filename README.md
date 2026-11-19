@@ -13,7 +13,7 @@
 [隐私与备份](#数据隐私与备份) ·
 [Roadmap](docs/ROADMAP.md)
 
-![status](https://img.shields.io/badge/status-v4.0.24-green?style=flat-square)
+![status](https://img.shields.io/badge/status-v4.0.25-green?style=flat-square)
 
 ![license](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![local-first](https://img.shields.io/badge/local--first-browser-orange?style=flat-square)
@@ -23,7 +23,7 @@
 
 ---
 
-可选的 [OpenAI 本机服务](docs/LOCAL_OPENAI.md) 提供独立 ChatGPT 订阅登录与 Provider 入口，文字和图片调用已验证。官方 GitHub Pages 可配对连接同一电脑上的服务；需浏览器允许本地网络访问，OpenAI 凭证仍仅保存在本机。原有 DeepSeek 使用方式不变。
+
 
 普通 AI 对话现支持 [GenUI 交互回答](docs/GENUI.md)：可直接操作表格、自测题、学习表单与图表，并通过按钮继续追问。
 

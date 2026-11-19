@@ -5,15 +5,13 @@ import { nativeConversationOptions, citationFooter } from '../api/deepseek-nativ
 import { validateDocumentContext } from '../api/deepseek-documents'
 import { newStableId, type Message, type StableId } from './types'
 import type { Settings } from './settings-store'
-import { buildContextMessages, buildApiMessages, countImageParts, isVisionModel, DeepSeekError, errorKindLabel, apiRequestDiagnostic } from '../api/deepseek'
+import { buildContextMessages, buildApiMessages, countImageParts, streamTextChat, DeepSeekError, errorKindLabel, apiRequestDiagnostic } from '../api/deepseek'
 import { toModelAttachment as toDataUrl, getAttachment, AttachmentError, attachmentErrorLabel } from './attachment-service'
 import { generationRegistry, type GenerationLease } from './generation-registry'
 import { projectLogicalPromptContext } from '../prompts/prompt-compile-strategies'
 import type { AcceptedSendContext } from '../prompts/prompt-send'
 import type { SendFailure, SendOutcome } from './send-outcome'
 import { hasFirecrawlWebSearch, prepareFirecrawlResearch } from '../api/firecrawl-web'
-import { streamProviderChat } from '../api/chat-provider'
-import { getLocalStatus, LocalProviderError } from '../api/openai-local'
 import { DeepSeekFilesError } from '../api/deepseek-files'
 import { getToolQueries, searchQuery } from '../api/web-search-tool'
 
@@ -96,17 +94,9 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
 
   try {
     const contextMessages = acceptedSendContext?.logical.messages ?? await buildOcrAwareContext(await thread.getContextMessages())
-    validateDocumentContext(contextMessages.flatMap(m=>m.documents || []), settings.chatProvider==='openai-local'?'':settings.apiBaseUrl, settings.chatProvider==='openai-local'?'':settings.model)
+    validateDocumentContext(contextMessages.flatMap(m=>m.documents || []), settings.apiBaseUrl, settings.model)
     const contextAttachments = await Promise.all(contextMessages.flatMap(x => x.images).map(async id => ({ id, meta: await getAttachment(id) })))
     const expectedImages = contextAttachments.filter(a => !a.meta?.ocr && !a.meta?.transcript).length
-    const hasImages = expectedImages > 0
-    const supportsImages = !hasImages || (settings.chatProvider === 'openai-local'
-      ? (await getLocalStatus(controller.signal, 15000)).imageModels?.includes(settings.openaiLocalModel || '') === true
-      : isVisionModel(settings.model, settings.visionCapability))
-    if (hasImages && !supportsImages) {
-      const failure: SendFailure = { kind: 'failed', code: 'vision-unsupported', message: attachmentErrorLabel('vision-unsupported') }
-      ownedLease.release(); thread.setError(failure); return failure
-    }
     // Provider limits differ. Never apply DeepSeek counts or an arbitrary raw
     // image-byte budget to OpenAI / compatible endpoints. Surface actual errors.
     const genUiPrompt = (await resolveCurrentProtocol('genui')).content
@@ -137,7 +127,7 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     const firecrawlEnabled = hasFirecrawlWebSearch(settings)
     const native = nativeConversationOptions(settings, reqMessages, !!thread.acceptTitle && userMessages.length === 1)
     let webFooter = ''
-    const r = await streamProviderChat(settings, {
+    const r = await streamTextChat({
       apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages,
       signal: controller.signal, onDelta, onReasoningDelta: delta => { reasoning += delta }, ...native,
       ...(firecrawlEnabled ? {
@@ -187,8 +177,8 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
       ownedLease.release(); thread.setIdle()
       return { kind: 'aborted', ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
     }
-    const label = e instanceof LocalProviderError || e instanceof DeepSeekFilesError ? e.message : errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : '') + apiRequestDiagnostic(err)
-    const failure: SendFailure = { kind: 'failed', code: e instanceof LocalProviderError ? e.code : err.kind, message: label, ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
+    const label = e instanceof DeepSeekFilesError ? e.message : errorKindLabel(err.kind) + (err.status ? ('（HTTP ' + err.status + '）') : '') + apiRequestDiagnostic(err)
+    const failure: SendFailure = { kind: 'failed', code: err.kind, message: label, ...(placeholderCreated ? { assistantMessageId: assistantId } : {}) }
     if (placeholderCreated) thread.settleAssistant('failed', label)
     await thread.persistFinal()
     await thread.drainWrites()

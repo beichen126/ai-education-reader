@@ -39,8 +39,8 @@
   .thumb { transition: none; }
   .thumb:hover { transform: none; }
 }
-.transcriptButton { padding: 0 12px; font: inherit; cursor: pointer; white-space: nowrap; }
-.transcriptDialog { width: min(720px, 94vw); }
-.transcriptOverlay { z-index: 2600; }
-.transcriptTitle { margin: 0 0 8px; overflow-wrap: anywhere; }
-.transcriptText { display: block; box-sizing: border-box; width: 100%; height: min(55vh, 440px); resize: vertical; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); padding: 12px; font: inherit; line-height: 1.6; }
+.transcriptText { margin: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); padding: 10px 12px; font: inherit; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+
+.transcriptList { display: grid; gap: 10px; max-width: 860px; margin: 0 auto; padding: 12px; }
+.transcriptCard { min-width: 0; }
+.transcriptTitle { margin: 0 0 6px; font-size: 15px; overflow-wrap: anywhere; }
