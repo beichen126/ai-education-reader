@@ -1,5 +1,5 @@
 import { getConversation, saveConversation } from '../storage/storage'
-import { getBranch, listBranchesByConversation, saveBranch } from '../branches/branch-store'
+import { getBranch, listBranchesByConversation, updateExistingBranch } from '../branches/branch-store'
 import { buildEffectiveMessageIds } from '../branches/branch-path'
 import { buildEffectivePromptPath } from './effective-prompt-path'
 import { getPromptTransitionIssues } from './prompt-validation'
@@ -98,10 +98,12 @@ export async function switchConversationMode(input: SwitchConversationModeInput)
       return { changed: true, definition, snapshot, transition, conversation: updated }
     }
 
-    const next = appendPromptTransition(branch.promptTransitions ?? [], transition)
-    assertTimeline(next, effectiveIds ?? [])
-    const updated = { ...branch, promptTransitions: next, updatedAt: now }
-    await saveBranch(updated)
+    const updated = await updateExistingBranch(branch.id, currentBranch => {
+      const next = appendPromptTransition(currentBranch.promptTransitions ?? [], transition)
+      assertTimeline(next, effectiveIds ?? [])
+      return { ...currentBranch, promptTransitions: next, updatedAt: now }
+    })
+    if (!updated) throw new PromptModeServiceError('branch-not-found', '分支不存在')
     return { changed: true, definition, snapshot, transition, branch: updated }
   })
   if (!locked.acquired) throw new PromptModeServiceError('mutation-busy', '会话正在发送消息，请稍后重试')

@@ -37,12 +37,12 @@ export function Gallery() {
   const sent = useMemo(() => [...new Set(effectiveMessages.flatMap(message => message.role === 'user' ? message.images : []))], [effectiveMessages])
   const sharedIds = project?.attachmentIds
   const showChat = !project || (ownedChat && ready)
-  const attachmentIds = useMemo(() => [...new Set([...(sharedIds ?? []), ...(showChat ? sent : []), ...(project && showChat ? draftIds : [])])], [sharedIds, showChat, sent, draftIds, project])
+  const attachmentIds = useMemo(() => [...new Set([...(sharedIds ?? []), ...(showChat ? [...sent, ...draftIds] : [])])], [sharedIds, showChat, sent, draftIds])
   const metas = useAttachmentMetas(attachmentIds)
   const transcriptById = new Map(metas.flatMap(meta => meta.transcript ? [[meta.id, meta.transcript] as const] : []))
   const metaById = new Map(metas.map(meta => [meta.id, meta]))
   const shared = new Set(sharedIds)
-  const imageIds = attachmentIds.filter(id => !transcriptById.has(id))
+  const imageIds = (project ? attachmentIds : sent).filter(id => !transcriptById.has(id))
   const projectImageIds = imageIds.filter(id => shared.has(id))
   const conversationImageIds = imageIds.filter(id => !shared.has(id))
   function endSelection() {
@@ -108,9 +108,9 @@ export function Gallery() {
     void updateProject(project.id, current => ({ ...current, attachmentIds: current.attachmentIds.filter(item => item !== id) }))
       .catch(() => setProjectError(tx('无法移出项目资料。', 'Could not remove project material.')))
   }
-  const removeAction = (id: string) => !selection && <div className={css.projectCardActions}>
+  const removeAction = (id: string) => !selection && (
     <button type="button" className={css.closeBtn + ' ' + css.unpinMaterial} aria-label={tx('移出项目', 'Remove from project')} title={tx('移出项目', 'Remove from project')} onClick={() => unpin(id)}>×</button>
-  </div>
+  )
   const renderProjectImage = (id: string) => {
     const meta = metaById.get(id)
     const source = meta?.source
@@ -121,15 +121,17 @@ export function Gallery() {
     return <article key={id} className={css.projectCard} data-project-material={id} data-selected={chosen || undefined} data-used={sent.includes(id) || undefined}>
     <Thumb id={id} index={imageIds.indexOf(id)} showIndex={false}
       selection={selection ? { label, chosen, continuous, onClick: () => selectItem(id), onPointerDown: event => startDrag(event, id), onPointerMove: moveDrag, onPointerUp: finishDrag, onPointerCancel: finishDrag } : undefined} />
-    <div className={css.materialCaption}>
-      <strong className={css.materialName} title={source?.fileName ?? name}>{label}</strong>
-      {source && name && <span className={css.materialSource} title={source.fileName}>{name}</span>}
+    <div className={css.materialDetails}>
+      <div className={css.materialCaption}>
+        <strong className={css.materialName} title={source?.fileName ?? name}>{label}</strong>
+        {source && name && <span className={css.materialSource} title={source.fileName}>{name}</span>}
+        <div className={css.projectCardMeta}>
+          {meta?.ocr && <small>{tx('含 OCR', 'OCR available')}</small>}
+          {!selection && (chosen ? <small>{tx('本次已选', 'Selected for this question')}</small> : sent.includes(id) && <small>{tx('本会话已用', 'Used in this chat')}</small>)}
+        </div>
+      </div>
+      {removeAction(id)}
     </div>
-    <div className={css.projectCardMeta}>
-      {metaById.get(id)?.ocr && <small>{tx('含 OCR', 'OCR available')}</small>}
-      {!selection && (chosen ? <small>{tx('本次已选', 'Selected for this question')}</small> : sent.includes(id) && <small>{tx('本会话已用', 'Used in this chat')}</small>)}
-    </div>
-    {removeAction(id)}
   </article>
   }
   const transcripts = attachmentIds.flatMap(id => {
@@ -177,7 +179,8 @@ export function Gallery() {
               {transcripts.some(item => shared.has(item.id)) && <div className={css.transcriptList}>
                 {transcripts.filter(item => shared.has(item.id)).map(({ id, transcript }) => <div className={css.projectCard} key={id} data-project-material={id} data-selected={draftIds.includes(id) || undefined} data-used={sent.includes(id) || undefined}>
                   {selection && <label className={css.transcriptSelect}><input type="checkbox" checked={selection.has(id)} onChange={() => selectItem(id)} />{tx('选择转写稿', 'Select transcript')}</label>}
-                  <TranscriptCard transcript={transcript} />{removeAction(id)}
+                  <TranscriptCard transcript={transcript} />
+                  {!selection && <div className={css.projectCardActions}>{removeAction(id)}</div>}
                 </div>)}
               </div>}
             </section>}

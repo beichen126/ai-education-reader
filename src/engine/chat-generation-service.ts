@@ -1,7 +1,7 @@
 import { type Message, type StableId } from './types'
 import type { ChatThreadRef } from '../branches/branch-types'
 import { buildEffectiveConversationPath } from '../branches/branch-path'
-import { getBranch, listBranchesByConversation, saveBranch } from '../branches/branch-store'
+import { getBranch, listBranchesByConversation, updateExistingBranch } from '../branches/branch-store'
 import { acceptBranchUserMessage } from '../branches/branch-service'
 import { getConversation } from '../storage/storage'
 import { getSessionsStatus } from './sessions-store'
@@ -86,11 +86,7 @@ export function threadGenKey(ref: ChatThreadRef): string { return ref.type === '
 
 /** Save a branch's assistant message. Never resurrects a deleted branch. */
 export async function appendBranchAssistantMessage(branchId: StableId, message: Message): Promise<boolean> {
-  const branch = await getBranch(branchId)
-  if (!branch) return false
-  const updated = { ...branch, updatedAt: Date.now(), messages: [...branch.messages, message] }
-  await saveBranch(updated)
-  return true
+  return !!await updateExistingBranch(branchId, branch => ({ ...branch, updatedAt: Date.now(), messages: [...branch.messages, message] }))
 }
 
 /** Effective messages THROUGH a message for a thread (artifact source contract). */

@@ -200,20 +200,24 @@ export async function saveGeneratedImagesAndBranchDraft(images: GeneratedImageIn
   }
   const rows = await stageAttachmentRows(metas, blobs)
   try {
-    await idbRunTxn(['attachments', 'settings'], (txn) => {
+    await idbRunTxn(['attachments', 'settings', 'conversationBranches'], (txn) => {
       if (deps.failTxn) { txn.abort(); return }
-      const aos = txn.objectStore('attachments')
-      for (const row of rows) aos.put(row)
-      const sos = txn.objectStore('settings')
-      const newIds = rows.map(r => r.id)
-      const current = deps.getCurrentDraft?.()
-      const text = current?.text ?? draft.text
-      const imageIds = [...new Set([...(current?.imageIds ?? draft.existingImageIds), ...newIds])]
-      const key = BRANCH_DRAFT_PREFIX + draft.branchId
-      if (text !== '' || imageIds.length > 0) {
-        sos.put({ key, value: { version: 1, text, imageIds } })
-      } else {
-        sos.delete(key)
+      const owner = txn.objectStore('conversationBranches').getKey(draft.branchId)
+      owner.onsuccess = () => {
+        if (owner.result === undefined) { txn.abort(); return }
+        const aos = txn.objectStore('attachments')
+        for (const row of rows) aos.put(row)
+        const sos = txn.objectStore('settings')
+        const newIds = rows.map(r => r.id)
+        const current = deps.getCurrentDraft?.()
+        const text = current?.text ?? draft.text
+        const imageIds = [...new Set([...(current?.imageIds ?? draft.existingImageIds), ...newIds])]
+        const key = BRANCH_DRAFT_PREFIX + draft.branchId
+        if (text !== '' || imageIds.length > 0) {
+          sos.put({ key, value: { version: 1, text, imageIds } })
+        } else {
+          sos.delete(key)
+        }
       }
     })
   } catch (e) {

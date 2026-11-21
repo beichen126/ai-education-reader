@@ -1,7 +1,7 @@
 import { idbGet, idbGetAll, idbGetAllByIndex, idbPut, idbDelete, idbBatchPut, idbBatchDelete, idbRunTxn } from '../storage/idb'
 import { getSetting, setSetting, deleteSetting } from '../storage/storage'
 import { normalizeMessagePdfContexts, type StableId } from '../engine/types'
-import { activeBranchKey } from './branch-types'
+import { activeBranchKey, BRANCH_DRAFT_PREFIX } from './branch-types'
 import type { ConversationBranch } from './branch-types'
 
 /** Branch persistence: first-class 'conversationBranches' store (never the settings store). */
@@ -16,6 +16,7 @@ function publishBranchChange(change:BranchChange):void {
 }
 /** Call only after the owning IDB transaction has committed. */
 export function notifyBranchSaved(branch:ConversationBranch):void {publishBranchChange({kind:'saved',branch:normalizeBranch(branch)})}
+export function notifyBranchDeleted(id: StableId): void { publishBranchChange({ kind: 'deleted', id }) }
 
 function normalizeBranch(branch: ConversationBranch): ConversationBranch {
   return { ...branch, messages: branch.messages.map(normalizeMessagePdfContexts) }
@@ -37,8 +38,36 @@ export async function allBranches(): Promise<ConversationBranch[]> { return (awa
 
 export async function saveBranch(branch: ConversationBranch): Promise<void> { await idbPut('conversationBranches', normalizeBranch(branch));notifyBranchSaved(branch) }
 export async function saveBranches(branches: ConversationBranch[]): Promise<void> { await idbBatchPut('conversationBranches', branches.map(normalizeBranch));branches.forEach(notifyBranchSaved) }
-export async function deleteBranch(id: StableId): Promise<void> { await idbDelete('conversationBranches', id);publishBranchChange({kind:'deleted',id}) }
-export async function deleteBranches(ids: StableId[]): Promise<void> { await idbBatchDelete('conversationBranches', ids);ids.forEach(id=>publishBranchChange({kind:'deleted',id})) }
+export async function deleteBranch(id: StableId): Promise<void> { await idbDelete('conversationBranches', id);notifyBranchDeleted(id) }
+export async function deleteBranches(ids: StableId[]): Promise<void> { await idbBatchDelete('conversationBranches', ids);ids.forEach(notifyBranchDeleted) }
+
+/** Update the current durable branch only while it and its owning chat still exist. */
+export async function updateExistingBranch(id: StableId, change: (branch: ConversationBranch) => ConversationBranch, clearDraft = false): Promise<ConversationBranch | undefined> {
+  let committed: ConversationBranch | undefined
+  let mutationError: unknown
+  await idbRunTxn(['conversations', 'conversationBranches', 'settings'], txn => {
+    const branches = txn.objectStore('conversationBranches')
+    const lookup = branches.get(id)
+    lookup.onsuccess = () => {
+      const branch = lookup.result as ConversationBranch | undefined
+      if (!branch) return
+      const root = txn.objectStore('conversations').getKey(branch.conversationId)
+      root.onsuccess = () => {
+        if (root.result === undefined) return
+        try {
+          committed = change(branch)
+          if (committed !== branch) branches.put(normalizeBranch(committed))
+          if (clearDraft) txn.objectStore('settings').delete(BRANCH_DRAFT_PREFIX + id)
+        } catch (error) {
+          mutationError = error
+          txn.abort()
+        }
+      }
+    }
+  }).catch(error => { throw mutationError ?? error })
+  if (committed) notifyBranchSaved(committed)
+  return committed
+}
 
 /** Delete every branch of a conversation (used by delete-conversation). */
 export async function deleteBranchesByConversation(conversationId: StableId): Promise<void> {
@@ -47,14 +76,27 @@ export async function deleteBranchesByConversation(conversationId: StableId): Pr
 }
 
 /** Atomically commit a branch record + the active-branch setting in ONE readwrite txn. */
-export async function saveBranchAndActive(branch: ConversationBranch, activeBranchId: StableId | undefined): Promise<void> {
-  await idbRunTxn(['conversationBranches', 'settings'], (txn) => {
-    txn.objectStore('conversationBranches').put(normalizeBranch(branch))
-    const sos = txn.objectStore('settings')
-    if (activeBranchId) sos.put({ key: activeBranchKey(branch.conversationId), value: activeBranchId })
-    else sos.delete(activeBranchKey(branch.conversationId))
+export async function saveBranchAndActive(branch: ConversationBranch, activeBranchId: StableId | undefined): Promise<boolean> {
+  let saved = false
+  await idbRunTxn(['conversations', 'conversationBranches', 'settings'], txn => {
+    const branches = txn.objectStore('conversationBranches')
+    const write = () => {
+      branches.put(normalizeBranch(branch))
+      const settings = txn.objectStore('settings')
+      if (activeBranchId) settings.put({ key: activeBranchKey(branch.conversationId), value: activeBranchId })
+      else settings.delete(activeBranchKey(branch.conversationId))
+      saved = true
+    }
+    const root = txn.objectStore('conversations').getKey(branch.conversationId)
+    root.onsuccess = () => {
+      if (root.result === undefined) return
+      if (!branch.parentBranchId) { write(); return }
+      const parent = branches.get(branch.parentBranchId)
+      parent.onsuccess = () => { if (parent.result?.conversationId === branch.conversationId) write() }
+    }
   })
-  notifyBranchSaved(branch)
+  if (saved) notifyBranchSaved(branch)
+  return saved
 }
 
 /** Read the persisted active branch for a conversation (absent/undefined => root). */

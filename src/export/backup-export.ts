@@ -53,6 +53,7 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
     ...conversation,
     promptTransitions: conversation.promptTransitions ?? [],
   }))
+  const conversationIds = new Set(conversations.map(conversation => conversation.id))
   const annotations: Annotation[] = []
   const attachments: Array<BackupAttachment | { id: string; meta: Attachment; mimeType: string; entry: string }> = []
   const binaries: PortableBinaryEntry[] = []
@@ -68,10 +69,11 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
     }
   }
   // Branch-local messages own attachments too (image / PDF Context / Document Context).
-  const branches = (await allBranches()).map((branch) => ({
+  const branches = (await allBranches()).filter(branch => conversationIds.has(branch.conversationId)).map((branch) => ({
     ...branch,
     promptTransitions: branch.promptTransitions ?? [],
   }))
+  const branchOwners = new Map(branches.map(branch => [branch.id, branch.conversationId]))
   for (const b of branches) {
     for (const m of b.messages) for (const imgId of m.images) if (!seen.has(imgId)) seen.add(imgId)
   }
@@ -89,6 +91,7 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
     if (typeof row.key !== 'string') continue
     if (row.key.indexOf('draft:') === 0) {
       const convId = row.key.slice('draft:'.length)
+      if (!conversationIds.has(convId)) continue
       const v = row.value
       if (v && typeof v.text === 'string' && Array.isArray(v.imageIds)) {
         drafts.push({ conversationId: convId, text: v.text, imageIds: v.imageIds.filter((x: any) => typeof x === 'string') })
@@ -96,6 +99,7 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
       }
     } else if (row.key.indexOf('draft-branch:') === 0) {
       const branchId = row.key.slice('draft-branch:'.length)
+      if (!branchOwners.has(branchId)) continue
       const v = row.value
       if (v && typeof v.text === 'string' && Array.isArray(v.imageIds)) {
         branchDrafts.push({ branchId, text: v.text, imageIds: v.imageIds.filter((x: any) => typeof x === 'string') })
@@ -103,7 +107,7 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
       }
     } else if (row.key.indexOf('activeBranch:') === 0) {
       const conversationId = row.key.slice('activeBranch:'.length)
-      if (typeof row.value === 'string' && row.value) activeBranches.push({ conversationId, branchId: row.value })
+      if (typeof row.value === 'string' && branchOwners.get(row.value) === conversationId) activeBranches.push({ conversationId, branchId: row.value })
     }
   }
   // A missing / unreadable referenced attachment (message OR draft) fails the WHOLE export.
@@ -194,8 +198,14 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
   // pure reference-integrity validator used for import (no JSON round-trip). A "complete"
   // backup that references a missing attachment/document/draft is rejected here, not shipped.
   if (portable) {
+    const manifestBackup = backup as PortableBackupV7
+    parseAndValidate({
+      ...manifestBackup,
+      attachments: manifestBackup.attachments.map(({ id, meta, mimeType }) => ({ id, meta, mimeType, data: 'AA==' })),
+      documents: manifestBackup.documents.map(({ id, meta, mimeType }) => ({ id, meta, mimeType, data: 'AA==' })),
+    })
     return {
-      manifest: { archiveFormat: PORTABLE_ARCHIVE_FORMAT, archiveVersion: 2, backup: backup as PortableBackupV7 },
+      manifest: { archiveFormat: PORTABLE_ARCHIVE_FORMAT, archiveVersion: 2, backup: manifestBackup },
       binaries,
     }
   }

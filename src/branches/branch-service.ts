@@ -1,9 +1,8 @@
 import { newStableId, type Conversation, type Message, type StableId, type DraftDisposition } from '../engine/types'
 import { getConversation } from '../storage/storage'
-import { idbRunTxn } from '../storage/idb'
 import { canForkFromMessage, canonicalForkOwner, descendantBranchIds } from './branch-path'
-import { getBranch, saveBranchAndActive, listBranchesByConversation, getActiveBranch, setActiveBranch, deleteBranches, notifyBranchSaved } from './branch-store'
-import { branchDraftSettingKey, deleteBranchDraft, clearBranchDraftMemory } from '../engine/draft-store'
+import { getBranch, saveBranchAndActive, listBranchesByConversation, getActiveBranch, setActiveBranch, deleteBranches, updateExistingBranch } from './branch-store'
+import { deleteBranchDraft, clearBranchDraftMemory } from '../engine/draft-store'
 import type { ConversationBranch } from './branch-types'
 import type { PromptTransition } from '../prompts/prompt-types'
 
@@ -36,19 +35,15 @@ export async function createBranchFromMessage(conversationId: StableId, forkMess
     messages: [],
   }
   // ONE durable txn: branch record + active-branch setting commit together.
-  await saveBranchAndActive(branch, branch.id)
+  if (!await saveBranchAndActive(branch, branch.id)) throw new BranchError('conversation-not-found', '会话或父分支已删除')
   return branch
 }
 
 /** Rename a branch. Metadata only — never touches messages or ancestry. */
 export async function renameBranch(branchId: StableId, title: string): Promise<ConversationBranch | undefined> {
-  const branch = await getBranch(branchId)
-  if (!branch) return undefined
   const clean = title.trim()
-  if (!clean) return branch
-  const updated: ConversationBranch = { ...branch, title: clean, updatedAt: Date.now() }
-  await saveBranchAndActive(updated, await getActiveBranch(branch.conversationId))
-  return updated
+  if (!clean) return getBranch(branchId)
+  return updateExistingBranch(branchId, branch => ({ ...branch, title: clean, updatedAt: Date.now() }))
 }
 
 /**
@@ -87,15 +82,11 @@ export async function getActiveBranchForConversation(conversationId: StableId): 
  * or (message absent + draft intact). Returning true means accepted & durable.
  */
 export async function acceptBranchUserMessage(branchId: StableId, message: Message, promptTransitions?: PromptTransition[], draftDisposition: DraftDisposition = 'clear'): Promise<boolean> {
-  const branch = await getBranch(branchId)
-  if (!branch) return false
-  const now = Date.now()
-  const updated: ConversationBranch = { ...branch, updatedAt: now, messages: [...branch.messages, message], ...(promptTransitions ? { promptTransitions } : {}) }
-  await idbRunTxn(['conversationBranches', 'settings'], (txn) => {
-    txn.objectStore('conversationBranches').put(updated)
-    if (draftDisposition === 'clear') txn.objectStore('settings').delete(branchDraftSettingKey(branchId))
-  })
-  notifyBranchSaved(updated)
+  const updated = await updateExistingBranch(branchId, branch => ({
+    ...branch, updatedAt: Date.now(), messages: [...branch.messages, message],
+    ...(promptTransitions ? { promptTransitions } : {}),
+  }), draftDisposition === 'clear')
+  if (!updated) return false
   if (draftDisposition === 'clear') clearBranchDraftMemory(branchId)
   return true
 }

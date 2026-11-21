@@ -8,7 +8,7 @@ import { createDocument, readDocumentSourceBlob } from '../src/documents/documen
 import { saveFiles } from '../src/engine/attachment-service.ts'
 import { idbClearAll, idbPut, idbGet, closeDb } from '../src/storage/idb.ts'
 import { type OpfsFileSystem } from '../src/storage/binary-store.ts'
-import { buildBackup } from '../src/export/backup-export.ts'
+import { buildBackup, buildPortableBackupPlan } from '../src/export/backup-export.ts'
 import { restoreBackup, parseAndValidate, BackupError } from '../src/export/backup-import.ts'
 import { getConversation, saveConversation, updateConversationOrganization } from '../src/storage/storage.ts'
 
@@ -143,6 +143,21 @@ function uninstallMock() { (globalThis as any).__dshOpfsMock = undefined; readCo
   const got = await (await import('../src/documents/document-service.ts')).getDocument(did);
   assert(got && got.sourceBlob.size === 300, 'restored backup document readable');
   uninstallMock();
+}
+
+{
+  await idbClearAll()
+  await idbPut('conversationBranches', { id: 'old-orphan', conversationId: 'deleted-root', forkMessageId: 'm', title: 'Old', createdAt: 1, updatedAt: 1, messages: [] })
+  await idbPut('settings', { key: 'draft-branch:old-orphan', value: { text: 'old', imageIds: ['missing'] } })
+  await idbPut('settings', { key: 'activeBranch:deleted-root', value: 'old-orphan' })
+  assert((await buildBackup()).branches?.length === 0, 'JSON omits legacy branches whose main chat was deleted')
+  const portable = await buildPortableBackupPlan()
+  assert(portable.manifest.backup.branches?.length === 0 && portable.manifest.backup.branchDrafts?.length === 0, 'ZIP omits legacy orphan branch data')
+  await saveConversation({ id: 'root', title: 'Live', createdAt: 1, updatedAt: 1, messages: [] })
+  await idbPut('conversationBranches', { id: 'invalid-live', conversationId: 'root', forkMessageId: 'missing-fork', title: 'Invalid', createdAt: 1, updatedAt: 1, messages: [] })
+  let rejected = false
+  try { await buildPortableBackupPlan() } catch (error) { rejected = error instanceof BackupError }
+  assert(rejected, 'ZIP validates remaining live branch references before producing a file')
 }
 
 await closeDb();

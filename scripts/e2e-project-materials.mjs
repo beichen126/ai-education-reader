@@ -81,6 +81,10 @@ try {
   await page16.scrollIntoViewIfNeeded()
   assert.deepEqual(await page16.locator('strong').allTextContents(), ['第 16 页'])
   assert.ok(await page16.locator('span[title]').evaluate(element => getComputedStyle(element).textOverflow === 'ellipsis' && element.scrollWidth > element.clientWidth))
+  const caption = await page16.getByText('第 16 页', { exact: true }).boundingBox()
+  const remove = await page16.getByRole('button', { name: '移出项目' }).boundingBox()
+  const meta = await page16.getByText('含 OCR', { exact: true }).boundingBox()
+  assert.ok(remove.y < meta.y + meta.height && remove.y + remove.height > caption.y, 'remove action sits beside the compact caption')
   await gallery.screenshot({ path: 'tmp/project-materials-mobile.png' })
   await page.setViewportSize({ width: 1440, height: 900 })
   await gallery.getByRole('button', { name: '关闭', exact: true }).click()
@@ -278,6 +282,16 @@ try {
   await heading.getByRole('button', { name: '返回项目' }).click()
   await projectRow.click()
   await heading.getByText('哲学导论', { exact: true }).waitFor()
+  const rootWithReply = conversations.find(chat => chat.projectId === project.id && chat.messages.length > 0)
+  const branchId = 'project-test-branch'
+  await openAppDb(page, { store: 'conversationBranches', operation: 'put', value: {
+    id: branchId, conversationId: rootWithReply.id, forkMessageId: rootWithReply.messages[0].id,
+    title: '项目分支', createdAt: 1, updatedAt: 1, messages: [],
+  } })
+  await openAppDb(page, { store: 'settings', operation: 'put', value: { key: 'activeBranch:' + rootWithReply.id, value: branchId } })
+  await openAppDb(page, { store: 'settings', operation: 'put', value: {
+    key: 'draft-branch:' + branchId, value: { text: '分支草稿', imageIds: [project.attachmentIds[0]] },
+  } })
   for (let i = 0; i < 2; i++) {
     const row = page.getByTestId('history-session').first().locator('..')
     await row.getByRole('button', { name: '操作', exact: true }).click()
@@ -286,6 +300,9 @@ try {
   }
   const afterDeletion = await backupDownload()
   assert.ok(afterDeletion.buffer.length > 100)
+  assert.equal(await openAppDb(page, { store: 'conversationBranches', operation: 'get', key: branchId }), undefined)
+  assert.equal(await openAppDb(page, { store: 'settings', operation: 'get', key: 'draft-branch:' + branchId }), undefined)
+  assert.equal(await openAppDb(page, { store: 'settings', operation: 'get', key: 'activeBranch:' + rootWithReply.id }), undefined)
   const remaining = await openAppDb(page, { store: 'attachments' })
   assert.ok(project.attachmentIds.every(id => remaining.some(row => row.id === id)), 'project attachments survive deletion of chats that used them in drafts and messages')
   console.log('PASS project PDF/OCR persists across chats and reload; only the selected page is sent, and the material tile is reused')

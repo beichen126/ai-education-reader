@@ -4,6 +4,7 @@ import type { Annotation } from '../annotations/annotation-types'
 import type { StoredBinary } from './binary-store'
 import { MAX_STUDY_CARD_TITLE_LENGTH } from '../study-cards/study-card-types'
 import { clearReadingPositions } from '../engine/reading-position'
+import { activeBranchKey, BRANCH_DRAFT_PREFIX, type ConversationBranch } from '../branches/branch-types'
 
 // Persisted attachment row (Stage 9.4D). Blob bytes live in OPFS-first storage via
 // a StoredBinary reference (binary); legacy rows carry a Blob inline (blob).
@@ -47,7 +48,40 @@ export async function saveConversation(conv: Conversation): Promise<void> {
   const normalized = normalizeConversationPdfContexts(conv)
   await idbRunTxn(['conversations'], txn => putConversation(txn.objectStore('conversations'), normalized))
 }
-export async function deleteConversation(id: string): Promise<void> { await idbDelete('conversations', id) }
+export async function deleteConversation(id: string): Promise<{ branchIds: string[]; attachmentIds: string[] }> {
+  const branchIds: string[] = []
+  const attachmentIds = new Set<string>()
+  await idbRunTxn(['conversations', 'conversationBranches', 'settings'], txn => {
+    const conversations = txn.objectStore('conversations')
+    const branches = txn.objectStore('conversationBranches')
+    const settings = txn.objectStore('settings')
+    const removeDraft = (key: string) => {
+      const request = settings.get(key)
+      request.onsuccess = () => {
+        const ids = request.result?.value?.imageIds
+        if (Array.isArray(ids)) for (const id of ids) attachmentIds.add(id)
+        settings.delete(key)
+      }
+    }
+    const root = conversations.get(id)
+    root.onsuccess = () => {
+      for (const message of (root.result as Conversation | undefined)?.messages ?? []) for (const image of message.images) attachmentIds.add(image)
+      conversations.delete(id)
+    }
+    const owned = branches.index('by_conversation').getAll(id)
+    owned.onsuccess = () => {
+      for (const branch of owned.result as ConversationBranch[]) {
+        branchIds.push(branch.id)
+        for (const message of branch.messages) for (const image of message.images) attachmentIds.add(image)
+        removeDraft(BRANCH_DRAFT_PREFIX + branch.id)
+        branches.delete(branch.id)
+      }
+    }
+    removeDraft('draft:' + id)
+    settings.delete(activeBranchKey(id))
+  })
+  return { branchIds, attachmentIds: [...attachmentIds] }
+}
 
 export type ConversationOrganizationAction = 'pin' | 'unpin' | 'archive' | 'restore'
 export async function updateConversationOrganization(id: string, action: ConversationOrganizationAction): Promise<Pick<Conversation, 'pinnedAt' | 'archivedAt'> | undefined> {

@@ -7,7 +7,7 @@ import { providerPreflight } from '../api/chat-provider'
 import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, exceedsVisionImageCount } from '../api/deepseek'
 import { toDataUrl, deleteUnreferencedAttachments, attachmentErrorLabel, AttachmentError } from './attachment-service'
 import { deleteConvAnnotations } from '../annotations/annotation-store'
-import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
+import { getDraft, getBranchDraft, clearBranchDraftMemory, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
 import { runThreadReply, type ReplyMetadata, type ReplyThread } from './stream-reply'
 import { generationRegistry, genBranchKey, genRootKey, type GenerationLease } from './generation-registry'
 import { attachPdfContexts } from '../pdf/pdf-message-context'
@@ -265,13 +265,17 @@ export const sessionsActions = {
     const next = toState(state.list.filter(c => c.id !== id), state.current === id ? undefined : state.current)
     setState({ ...next, focusMessage: state.focusMessage?.conversationId === id ? undefined : state.focusMessage })
     await drainWrites(id)
-    await deleteConversation(id)
-    const candidates = new Set(getDraft(id).imageIds)
+    const removed = await deleteConversation(id)
+    const candidates = new Set([...removed.attachmentIds, ...getDraft(id).imageIds])
     if (conv) {
       for (const m of conv.messages) for (const img of m.images) candidates.add(img)
       try { await deleteConvAnnotations(id) } catch {}
     }
-    await deleteDraft(id)
+    clearDraftMemory(id)
+    for (const branchId of removed.branchIds) {
+      for (const image of getBranchDraft(branchId).imageIds) candidates.add(image)
+      clearBranchDraftMemory(branchId)
+    }
     await deleteUnreferencedAttachments(candidates)
     // Persist the REAL current session (not the top-of-list one) so reloads reopen it.
     await setSetting(LAST_CONV, state.current ?? '')

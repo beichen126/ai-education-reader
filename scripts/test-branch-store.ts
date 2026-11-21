@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto'
 import { newStableId, type Conversation, type Message } from '../src/engine/types.ts'
-import { saveConversation, getConversation } from '../src/storage/storage.ts'
-import { closeDb } from '../src/storage/idb.ts'
+import { saveConversation, getConversation, deleteConversation } from '../src/storage/storage.ts'
+import { closeDb, idbPut } from '../src/storage/idb.ts'
 import { listBranchesByConversation, getBranch, getActiveBranch, setActiveBranch, saveBranch, subscribeBranchChanges } from '../src/branches/branch-store.ts'
 import { createBranchFromMessage, renameBranch, deleteBranchSubtree, acceptBranchUserMessage } from '../src/branches/branch-service.ts'
 import { setBranchDraftText, addBranchDraftImages, getBranchDraft, initBranchDrafts, branchDraftSettingKey, getDraft, setDraftText } from '../src/engine/draft-store.ts'
@@ -113,7 +113,19 @@ await deleteBranchSubtree(b4.id)
 assert(changes.at(-1)?.kind==='deleted' && changes.at(-1)?.id===b4.id,'deletion notifies the live view')
 unsubscribe();unsubscribeThrow()
 const count=changes.length
-await createBranchFromMessage(convId,'m1')
+const concurrent = await createBranchFromMessage(convId,'m1')
 assert(changes.length===count,'unmounted views stop receiving notifications')
+const replies = await Promise.all([
+  acceptBranchUserMessage(concurrent.id, msg('parallel-one')),
+  acceptBranchUserMessage(concurrent.id, msg('parallel-two')),
+])
+assert(replies.every(Boolean) && (await getBranch(concurrent.id))?.messages.map(m => m.id).join() === 'parallel-one,parallel-two', 'concurrent acceptance commits both messages')
+await Promise.all([deleteBranchSubtree(concurrent.id), renameBranch(concurrent.id, 'racing rename')])
+assert(!(await getBranch(concurrent.id)), 'concurrent rename does not resurrect a deleted branch')
+const ownedBranch = await createBranchFromMessage(convId, 'm1')
+await idbPut('settings', { key: branchDraftSettingKey(ownedBranch.id), value: { imageIds: ['draft-attachment'] } })
+const deletedRoot = await deleteConversation(convId)
+assert(deletedRoot.branchIds.includes(ownedBranch.id) && deletedRoot.attachmentIds.includes('draft-attachment'), 'root deletion collects branch drafts for attachment cleanup')
+assert(!(await getBranch(ownedBranch.id)) && !(await getActiveBranch(convId)) && !(await getSetting(branchDraftSettingKey(ownedBranch.id))), 'root, branch, branch draft and active pointer are removed together')
 console.log('\nRESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)

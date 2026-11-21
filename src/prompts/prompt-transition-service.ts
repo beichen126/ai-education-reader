@@ -1,5 +1,5 @@
 import { getConversation, saveConversation } from '../storage/storage'
-import { getBranch, listBranchesByConversation, saveBranch } from '../branches/branch-store'
+import { getBranch, listBranchesByConversation, updateExistingBranch } from '../branches/branch-store'
 import { buildEffectiveMessageIds } from '../branches/branch-path'
 import { getPromptTransitionIssues } from './prompt-validation'
 import { appendPromptTransition } from './prompt-timeline'
@@ -49,9 +49,11 @@ export async function appendBranchPromptTransition(
   const branches = await listBranchesByConversation(branch.conversationId)
   const effectiveIds = buildEffectiveMessageIds(conversation, branches, branch.id)
   if (effectiveIds === null) throw new PromptTransitionServiceError('branch-path-invalid', '分支路径无效，无法写入提示词 transition')
-  const nextTransitions = appendPromptTransition(branch.promptTransitions ?? [], transition)
-  assertTimeline(nextTransitions, effectiveIds)
-  const updated = { ...branch, promptTransitions: nextTransitions }
-  await saveBranch(updated)
+  const updated = await updateExistingBranch(branchId, current => {
+    const nextTransitions = appendPromptTransition(current.promptTransitions ?? [], transition)
+    assertTimeline(nextTransitions, effectiveIds)
+    return { ...current, promptTransitions: nextTransitions }
+  })
+  if (!updated) throw new PromptTransitionServiceError('branch-not-found', '分支不存在')
   return updated
 }

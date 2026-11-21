@@ -4,7 +4,7 @@ import { providerPreflight } from '../api/chat-provider'
 import { runThreadReply, type ReplyMetadata, type ReplyThread } from './stream-reply'
 import { generationRegistry, genBranchKey } from './generation-registry'
 import { getConversation } from '../storage/storage'
-import { getBranch, saveBranch, listBranchesByConversation } from '../branches/branch-store'
+import { getBranch, updateExistingBranch, listBranchesByConversation } from '../branches/branch-store'
 import { acceptBranchUserMessage } from '../branches/branch-service'
 import { buildEffectiveConversationPath } from '../branches/branch-path'
 import { attachPdfContexts } from '../pdf/pdf-message-context'
@@ -73,10 +73,7 @@ export class BranchReplyThread implements ReplyThread {
   /** Queue a read-modify-write on the branch record; a deleted branch is never written. */
   private mutate(updater: (b: NonNullable<Awaited<ReturnType<typeof getBranch>>>) => NonNullable<Awaited<ReturnType<typeof getBranch>>>): void {
     void enqueueBranchWrite(this.branchId, async () => {
-      const b = await getBranch(this.branchId)
-      if (!b) return
-      const next = updater(b)
-      if (next !== b) await saveBranch(next)
+      await updateExistingBranch(this.branchId, updater)
     })
   }
 }
