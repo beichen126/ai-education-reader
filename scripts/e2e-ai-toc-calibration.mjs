@@ -89,7 +89,7 @@ assert(data[5] === '', 'E: "A-1" (附录) stays unresolved (got ' + JSON.stringi
 
 // --- F: not every row is 页码待确认 anymore (the bug was 45/45) ---
 const warn = await page.locator('[data-testid="toc-review-unresolved"]').textContent()
-assert(warn.includes('2 项页码待确认'), 'F: only 2 rows remain unresolved (got ' + warn + ')')
+assert(warn.includes('2 项页码无法自动映射'), 'F: only 2 rows remain unresolved (got ' + warn + ')')
 assert(!warn.includes('6 项页码待确认'), 'F: no longer ALL rows unresolved')
 const offsetVal = await page.locator('[data-testid="toc-review-offset"]').inputValue()
 assert(offsetVal === '7', 'F: derived offset shown (7) in advanced field (got ' + offsetVal + ')')
