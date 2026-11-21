@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { launchBrowser } from './e2e-browser.mjs'
 import { seedAndBoot } from './e2e-fixture.mjs'
+import { openAppDb } from './e2e-idb.mjs'
+import { dismissProductGuide, selectSettingsSection } from './e2e-navigation.mjs'
 
 const browser = await launchBrowser()
 try {
@@ -38,12 +41,16 @@ try {
   await projectPicker.getByText('还没有本地文件，请先导入 PDF。').waitFor()
   const chooser = page.waitForEvent('filechooser')
   await projectPicker.getByTestId('doc-context-import-pdf').click()
-  await (await chooser).setFiles('test/.playwright/outline-big.pdf')
+  const longName = '数据库系统与数据仓库导论'.repeat(6) + '-outline-big.pdf'
+  await (await chooser).setFiles({ name: longName, mimeType: 'application/pdf', buffer: await readFile('test/.playwright/outline-big.pdf') })
   const pdf = page.getByRole('dialog', { name: 'PDF 本地预览' })
   await pdf.getByTestId('pdf-mode-manual').click()
   assert.equal(await pdf.getByTestId('pdf-context-mode').count(), 0)
-  await pdf.getByTestId('pdf-start').fill('15')
-  await pdf.getByTestId('pdf-end').fill('30')
+  await pdf.getByTestId('pdf-visual-pages').click()
+  await page.getByTestId('toc-picker-range-start').fill('15')
+  await page.getByTestId('toc-picker-range-end').fill('30')
+  await page.getByTestId('toc-picker-range-apply').click()
+  await page.getByTestId('toc-picker-start').click()
   await pdf.getByTestId('pdf-generate').click()
   await pdf.getByTestId('pdf-add').click({ timeout: 60000 })
   await pdf.getByText('已固定 16 页', { exact: true }).waitFor()
@@ -64,12 +71,16 @@ try {
   assert.doesNotMatch(JSON.stringify(requests[0]), /Project OCR marker|image_url/)
   await page.getByTestId('sidebar-entry-images').click()
   const page16 = gallery.locator('[data-project-material]').filter({ hasText: /第 16 页/ })
-  await page16.getByRole('button', { name: '用于本次提问' }).click()
+  await gallery.getByRole('button', { name: '选择资料', exact: true }).click()
+  await page16.getByRole('button', { name: '选择 第 16 页', exact: true }).click()
+  await gallery.getByRole('button', { name: '加入本次提问', exact: true }).click()
   assert.equal(await page16.getAttribute('data-selected'), 'true')
   assert.equal(await gallery.locator('[data-project-material]').count(), 16)
   await page.setViewportSize({ width: 390, height: 844 })
   assert.ok(await gallery.evaluate(element => element.scrollWidth <= element.clientWidth))
   await page16.scrollIntoViewIfNeeded()
+  assert.deepEqual(await page16.locator('strong').allTextContents(), ['第 16 页'])
+  assert.ok(await page16.locator('span[title]').evaluate(element => getComputedStyle(element).textOverflow === 'ellipsis' && element.scrollWidth > element.clientWidth))
   await gallery.screenshot({ path: 'tmp/project-materials-mobile.png' })
   await page.setViewportSize({ width: 1440, height: 900 })
   await gallery.getByRole('button', { name: '关闭', exact: true }).click()
@@ -90,6 +101,11 @@ try {
   await page.getByTestId('history-session').filter({ hasText: '无附件问题' }).click()
   await page.getByText('项目回答 2', { exact: true }).waitFor()
   assert.equal(await page.getByTestId('sidebar-projects').getAttribute('aria-pressed'), 'false')
+  await page.getByTestId('sidebar-entry-images').click()
+  await gallery.getByTestId('gallery-thumbnail').waitFor()
+  assert.equal(await gallery.locator('[data-project-material]').count(), 0)
+  assert.equal(await gallery.getByTestId('gallery-thumbnail').count(), 1, 'regular view shows only the page actually sent')
+  await gallery.getByRole('button', { name: '关闭', exact: true }).click()
   await page.reload({ waitUntil: 'networkidle' })
   await page.getByTestId('history-session').filter({ hasText: '无附件问题' }).waitFor()
   const projectRow = page.getByTestId('project-row').filter({ hasText: '哲学导论' })
@@ -120,8 +136,13 @@ try {
   await reader.getByTestId('reader-back').click()
   const library = page.getByTestId('document-library')
   await library.getByRole('button', { name: '存入项目', exact: true }).click()
-  await page.getByTestId('doc-context-tab-manual').waitFor()
+  await page.getByTestId('doc-context-tab-manual').click()
   assert.equal(await page.getByTestId('pdf-context-mode').count(), 0)
+  await projectPicker.getByTestId('doc-context-visual-pages').click()
+  await page.getByTestId('toc-thumb-1').click()
+  await page.getByTestId('toc-thumb-3').click()
+  await page.getByTestId('toc-picker-start').click()
+  assert.match(await projectPicker.getByTestId('doc-context-summary').textContent(), /共 2 页/)
   await projectPicker.getByTestId('doc-context-cancel').click()
   await library.getByTestId('library-close').click()
   await heading.getByText('哲学导论').waitFor()
@@ -164,18 +185,19 @@ try {
   assert.equal(await gallery.locator('[data-project-material]').count(), 24)
   assert.equal(requests.length, 2, 'saving an existing chapter does not call the chat model')
   await page.setViewportSize({ width: 1440, height: 900 })
-  const backup = await page.evaluate(async () => {
-    const { buildBackup } = await import(location.pathname + 'src/export/backup-export.ts')
-    const result = await buildBackup()
-    window.__projectBackup = result
-    const project = result.projects[0]
-    return { saved: project.attachmentIds.length, attached: result.attachments.length,
-      ocr: result.attachments.filter(item => item.meta.ocr).length,
-      transcript: result.attachments.filter(item => item.meta.transcript).length,
-      chats: result.conversations.filter(chat => chat.projectId === project.id).length }
-  })
-  assert.deepEqual(backup, { saved: 24, attached: 24, ocr: 22, transcript: 1, chats: 2 })
   await gallery.getByRole('button', { name: '关闭', exact: true }).click()
+  const backupDownload = async () => {
+    await page.getByTestId('sidebar-settings').click()
+    await selectSettingsSection(page, 'security')
+    const pending = page.waitForEvent('download', { timeout: 30000 })
+    await page.getByRole('button', { name: '导出完整备份 ZIP', exact: true }).click()
+    const download = await pending
+    const file = { name: download.suggestedFilename(), mimeType: 'application/zip', buffer: await readFile(await download.path()) }
+    await page.keyboard.press('Escape')
+    return file
+  }
+  const backup = await backupDownload()
+  assert.ok(backup.buffer.length > 100)
   await page.getByTestId('composer-images-input').setInputFiles({
     name: 'chat-only.png', mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
@@ -209,16 +231,62 @@ try {
   await projectRow.waitFor({ state: 'detached' })
   await page.getByTestId('sidebar-projects').click()
   assert.ok(await page.getByTestId('history-session').count() >= 2, 'deleting a project preserves its chats')
-  await page.evaluate(async () => {
-    const { parseAndValidate, restoreBackup } = await import(location.pathname + 'src/export/backup-import.ts')
-    await restoreBackup(parseAndValidate(window.__projectBackup))
-  })
-  await page.reload({ waitUntil: 'networkidle' })
+  await page.getByTestId('sidebar-settings').click()
+  const restored = page.waitForNavigation({ waitUntil: 'networkidle', timeout: 40000 })
+  await page.locator('input[type="file"][accept*=".zip"]').setInputFiles(backup)
+  await page.locator('[data-testid="import-overwrite-warning"] input[type="checkbox"]').check()
+  await page.getByTestId('confirm-import-overwrite').click()
+  await restored
+  await dismissProductGuide(page)
+  const projectRecord = await openAppDb(page, { store: 'settings', operation: 'get', key: 'reader-projects' })
+  const [project] = projectRecord.value
+  const attachmentRows = await openAppDb(page, { store: 'attachments' })
+  const conversations = await openAppDb(page, { store: 'conversations' })
+  assert.equal(project.attachmentIds.length, 24)
+  assert.equal(attachmentRows.filter(item => item.meta.ocr).length, 22)
+  assert.equal(attachmentRows.filter(item => item.meta.transcript).length, 1)
+  assert.equal(conversations.filter(chat => chat.projectId === project.id).length, 2)
   await page.getByTestId('sidebar-projects').click()
   await projectRow.click()
   await heading.getByText('哲学导论').waitFor()
   await page.getByTestId('sidebar-entry-images').click()
   await gallery.getByText('项目视频转写稿', { exact: true }).waitFor()
   assert.equal(await gallery.locator('[data-project-material]').count(), 24)
+  await gallery.getByRole('button', { name: '选择资料', exact: true }).click()
+  await gallery.getByRole('button', { name: '连续选择', exact: true }).click()
+  const dragThumbs = gallery.locator('[data-project-material]').getByTestId('gallery-thumbnail')
+  const start = await dragThumbs.nth(0).boundingBox()
+  const end = await dragThumbs.nth(2).boundingBox()
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, { steps: 12 })
+  await page.mouse.up()
+  assert.equal(await gallery.locator('[data-project-material][data-selected]').count(), 3)
+  await gallery.getByRole('button', { name: '加入本次提问', exact: true }).click()
+  assert.equal(await gallery.locator('[data-project-material][data-selected]').count(), 3)
+  await gallery.getByRole('button', { name: '关闭', exact: true }).click()
+  await heading.getByRole('button', { name: '返回项目' }).click()
+  await page.getByTestId('project-create').click()
+  await page.getByLabel('项目名称').fill('空项目')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await heading.getByText('空项目', { exact: true }).waitFor()
+  await page.getByTestId('sidebar-entry-images').click()
+  await gallery.getByText('空项目 · 项目资料', { exact: true }).waitFor()
+  assert.equal(await gallery.getByTestId('gallery-thumbnail').count(), 0, 'another project does not fall back to the current chat or its project material')
+  assert.equal(await gallery.getByText('项目视频转写稿', { exact: true }).count(), 0)
+  await gallery.getByRole('button', { name: '关闭', exact: true }).click()
+  await heading.getByRole('button', { name: '返回项目' }).click()
+  await projectRow.click()
+  await heading.getByText('哲学导论', { exact: true }).waitFor()
+  for (let i = 0; i < 2; i++) {
+    const row = page.getByTestId('history-session').first().locator('..')
+    await row.getByRole('button', { name: '操作', exact: true }).click()
+    await row.getByRole('button', { name: '删除', exact: true }).click()
+    await row.getByRole('button', { name: '删除', exact: true }).click()
+  }
+  const afterDeletion = await backupDownload()
+  assert.ok(afterDeletion.buffer.length > 100)
+  const remaining = await openAppDb(page, { store: 'attachments' })
+  assert.ok(project.attachmentIds.every(id => remaining.some(row => row.id === id)), 'project attachments survive deletion of chats that used them in drafts and messages')
   console.log('PASS project PDF/OCR persists across chats and reload; only the selected page is sent, and the material tile is reused')
 } finally { await browser.close() }

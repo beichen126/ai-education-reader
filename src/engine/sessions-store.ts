@@ -5,7 +5,7 @@ import { getSetting, setSetting, getConversation, saveConversation, saveConversa
 import { getSettingsSnapshot } from './settings-store'
 import { providerPreflight } from '../api/chat-provider'
 import { streamTextChat, DeepSeekError, errorKindLabel, buildApiMessages, buildContextMessages, buildRequestMessages, countImageParts, exceedsVisionImageCount } from '../api/deepseek'
-import { toDataUrl, deleteAttachment, attachmentErrorLabel, AttachmentError } from './attachment-service'
+import { toDataUrl, deleteUnreferencedAttachments, attachmentErrorLabel, AttachmentError } from './attachment-service'
 import { deleteConvAnnotations } from '../annotations/annotation-store'
 import { getDraft, deleteDraft, initDrafts, draftSettingKey, clearDraftMemory } from './draft-store'
 import { runThreadReply, type ReplyMetadata, type ReplyThread } from './stream-reply'
@@ -266,19 +266,13 @@ export const sessionsActions = {
     setState({ ...next, focusMessage: state.focusMessage?.conversationId === id ? undefined : state.focusMessage })
     await drainWrites(id)
     await deleteConversation(id)
+    const candidates = new Set(getDraft(id).imageIds)
     if (conv) {
-      const ids = new Set<string>()
-      for (const m of conv.messages) for (const img of m.images) ids.add(img)
-      for (const img of ids) { try { await deleteAttachment(img) } catch {} }
+      for (const m of conv.messages) for (const img of m.images) candidates.add(img)
       try { await deleteConvAnnotations(id) } catch {}
     }
-    // Pending draft attachments (never sent) belong only to THIS conversation's draft.
-    // Delete only those not already referenced by a message; never touch B's data.
-    const referenced = new Set<string>()
-    if (conv) for (const m of conv.messages) for (const img of m.images) referenced.add(img)
-    const draft = getDraft(id)
-    for (const img of draft.imageIds) { if (!referenced.has(img)) { try { await deleteAttachment(img) } catch {} } }
     await deleteDraft(id)
+    await deleteUnreferencedAttachments(candidates)
     // Persist the REAL current session (not the top-of-list one) so reloads reopen it.
     await setSetting(LAST_CONV, state.current ?? '')
   },

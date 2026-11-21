@@ -11,6 +11,7 @@ import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
 import { bookmarkRangePresentation, type BookmarkRangeEndMode } from '../pdf/bookmark-range'
 import { ChapterRangeModeControl } from './ChapterRangeModeControl'
 import { DocumentContextPreview } from './DocumentContextPreview'
+import { PdfAttachmentPagePicker } from './PdfAttachmentPagePicker'
 import css from './document-context-picker.module.css'
 import { tx } from '../engine/locale'
 import { useBackTarget } from '../engine/back-navigation'
@@ -51,6 +52,7 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
   const [doc, setDoc] = useState<DocumentContextDescriptor | null>(null)
   const [binaryAvailable, setBinaryAvailable] = useState<boolean | null>(null)
   const [previewDoc, setPreviewDoc] = useState<LearningDocument | null>(null)
+  const [visualPages, setVisualPages] = useState(false)
   const [previewInitialPage, setPreviewInitialPage] = useState(1)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [docs, setDocs] = useState<DocumentSummary[] | null>(null)
@@ -390,6 +392,7 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
               </div>
             ) : (
               <div ref={contextBodyRef} className={css.manualBody} data-testid="doc-context-manual">
+                <button type="button" className={css.btn} data-testid="doc-context-visual-pages" disabled={binaryAvailable !== true} onClick={() => setVisualPages(true)}>{tx('按缩略图选页', 'Select pages by thumbnail')}</button>
                 <div className={css.fieldRow}><label>{tx('开始页', 'Start page')}</label><input className={css.input} data-testid="doc-context-ms" inputMode="numeric" value={manualStart} onChange={e => setManualStart(e.target.value)} /></div>
                 <div className={css.fieldRow}><label>{tx('结束页', 'End page')}</label><input className={css.input} data-testid="doc-context-me" inputMode="numeric" value={manualEnd} onChange={e => setManualEnd(e.target.value)} /></div>
                 {manualError && <div className={css.limitHint} data-testid="doc-context-manual-error">{manualError}</div>}
@@ -426,6 +429,13 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
         )}
         {blockMsg && <div className={css.blockMsg} data-testid="doc-context-block">{blockMsg}</div>}
       </div>
+      {visualPages && doc && <PdfAttachmentPagePicker source={doc.id} onCancel={() => setVisualPages(false)} onSelect={ranges => {
+        setVisualPages(false)
+        setWholeChecked(false)
+        setChecked(new Set())
+        setManualError(null)
+        setManualSel({ kind: 'manual', title: pdfRangesText(ranges), ranges })
+      }} />}
     </div>
   )
 }

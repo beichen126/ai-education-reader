@@ -79,17 +79,29 @@ export function addDraftImages(id: string, ids: StableId[]): void {
   put(id, { text: cur.text, imageIds: [...new Set([...cur.imageIds, ...ids])] })
   void persistDraft(id)
 }
+
+export function replaceDraftImageSelection(id: string, scope: readonly StableId[], selected: readonly StableId[]): void {
+  const current = getDraft(id)
+  const scoped = new Set(scope)
+  const chosen = new Set(selected)
+  const retained = current.imageIds.filter(image => !scoped.has(image) || chosen.has(image))
+  const imageIds = [...new Set([...retained, ...selected])]
+  put(id, { text: current.text, imageIds })
+  void persistDraft(id)
+}
 /** Update the in-memory draft object without any database write. Used when the durable
  *  draft row was already committed atomically (e.g. PDF Context commit) — must NOT issue a
  *  second DB mutation. */
 export function updateDraftMemory(id: string, d: Draft): void {
   put(id, d)
 }
-export function removeDraftImage(id: string, img: StableId): void {
+export function removeDraftImages(id: string, ids: readonly StableId[]): Promise<void> {
   const cur = getDraft(id)
-  put(id, { text: cur.text, imageIds: cur.imageIds.filter(x => x !== img) })
-  void persistDraft(id)
+  const removed = new Set(ids)
+  put(id, { text: cur.text, imageIds: cur.imageIds.filter(x => !removed.has(x)) })
+  return persistDraft(id)
 }
+export function removeDraftImage(id: string, img: StableId): void { void removeDraftImages(id, [img]) }
 
 /** Clear text + image ids WITHOUT deleting attachments (ownership moves to a Message on send).
  * Memory is updated synchronously; the persisted row is removed and awaited. */

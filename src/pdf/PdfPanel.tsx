@@ -7,6 +7,7 @@
 // normalize into ONE PdfRange[] context; adding to the draft no longer closes
 // the panel so the user can keep selecting and add a second group.
 import { PdfContextMode, PdfPageOcrButton } from '../documents/PdfOcrControls'
+import { PdfAttachmentPagePicker } from '../documents/PdfAttachmentPagePicker'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
 import { Modal, Button, Input } from '../dsh/primitives'
 import { formatBytes } from '../storage/diagnostics'
@@ -50,6 +51,9 @@ export function PdfPanel({
   const [mode, setMode] = useState<'chapter' | 'manual'>('chapter')
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
+  const [file, setFile] = useState(initialFile)
+  const [visualOpen, setVisualOpen] = useState(false)
+  const [visualRanges, setVisualRanges] = useState<PdfRange[]>([])
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set())
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
   const [selError, setSelError] = useState<string | null>(null)
@@ -63,7 +67,7 @@ export function PdfPanel({
   const [addMsg, setAddMsg] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement | null>(null)
 
-  useEffect(() => { if (initialFile) void selectFile(initialFile) }, [initialFile])
+  useEffect(() => { if (initialFile) { setFile(initialFile); void selectFile(initialFile) } }, [initialFile])
 
   const hasOutline = outlineStatus === 'ready' && !!outline && outline.items.length > 0
   const inChapterMode = hasOutline && mode === 'chapter'
@@ -78,7 +82,7 @@ export function PdfPanel({
 
   const onPick = async (e: ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
-    if (f) { setStart(''); setEnd(''); resetSelection(); await selectFile(f) }
+    if (f) { setFile(f); setStart(''); setEnd(''); setVisualRanges([]); resetSelection(); await selectFile(f) }
     e.target.value = ''
   }
 
@@ -116,6 +120,13 @@ export function PdfPanel({
       if (needsPdfContextSoftConfirm(selectedCount)) { setPendingConfirm({ ranges: selectedRanges, count: selectedCount }); return }
       startGenerateRanges(selectedRanges)
     } else {
+      if (visualRanges.length) {
+        const count = countPdfRangePages(visualRanges)
+        if (exceedsPdfContextHardLimit(count)) { setSelError(tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少页码范围后重试。', 'Select up to ' + MAX_PDF_CONTEXT_PAGES + ' pages.')); return }
+        if (needsPdfContextSoftConfirm(count)) setPendingConfirm({ ranges: visualRanges, count })
+        else startGenerateRanges(visualRanges)
+        return
+      }
       const s = Number(start) || 0; const e2 = Number(end) || 0
       if (s < 1 || e2 < 1 || e2 < s) {
         setSelError(validatePdfRange(start, end, doc?.pageCount ?? 0))
@@ -173,7 +184,7 @@ export function PdfPanel({
   return (
     <>
       <input ref={fileRef} type="file" accept=".pdf,application/pdf" hidden onChange={onPick} />
-      <Modal open rootClassName={rootClassName} onClose={onClose} title={tx('PDF 本地预览', 'Local PDF preview')} closeLabel={tx('关闭', 'Close')} className={css.modal}>
+      <Modal open rootClassName={rootClassName} onClose={visualOpen ? () => setVisualOpen(false) : onClose} title={tx('PDF 本地预览', 'Local PDF preview')} closeLabel={tx('关闭', 'Close')} className={css.modal}>
         <div className={css.column}>
           {status === 'loading' && <div className={css.empty}>{tx('正在打开 PDF…', 'Opening PDF…')}</div>}
 
@@ -231,9 +242,11 @@ export function PdfPanel({
               ) : (
                 <>
                   <div className={css.rangeRow}>
-                    <div className={css.rangeField}><label className={css.rangeLabel}>{tx('开始页', 'Start page')}</label><Input className={css.rangeInput} inputMode="numeric" data-testid="pdf-start" value={start} onChange={e => setStart(e.target.value)} placeholder="1" /></div>
-                    <div className={css.rangeField}><label className={css.rangeLabel}>{tx('结束页', 'End page')}</label><Input className={css.rangeInput} inputMode="numeric" data-testid="pdf-end" value={end} onChange={e => setEnd(e.target.value)} placeholder={String(doc.pageCount)} /></div>
+                    <div className={css.rangeField}><label className={css.rangeLabel}>{tx('开始页', 'Start page')}</label><Input className={css.rangeInput} inputMode="numeric" data-testid="pdf-start" value={start} onChange={e => { setStart(e.target.value); setVisualRanges([]) }} placeholder="1" /></div>
+                    <div className={css.rangeField}><label className={css.rangeLabel}>{tx('结束页', 'End page')}</label><Input className={css.rangeInput} inputMode="numeric" data-testid="pdf-end" value={end} onChange={e => { setEnd(e.target.value); setVisualRanges([]) }} placeholder={String(doc.pageCount)} /></div>
                   </div>
+                  {file && <Button variant="outline" data-testid="pdf-visual-pages" disabled={adding || generating} onClick={() => setVisualOpen(true)}>{tx('按缩略图选页', 'Select pages by thumbnail')}</Button>}
+                  {visualRanges.length > 0 && <div className={css.summaryRange}>{pdfRangesText(visualRanges)}</div>}
                 </>
               )}
 
@@ -297,6 +310,15 @@ export function PdfPanel({
           )}
         </div>
       </Modal>
+      {visualOpen && file && <PdfAttachmentPagePicker source={file} onCancel={() => setVisualOpen(false)} onSelect={ranges => {
+        setVisualOpen(false)
+        setStart('')
+        setEnd('')
+        setVisualRanges(ranges)
+        setSelError(null)
+        setAddMsg(null)
+        clearPreview()
+      }} />}
     </>
   )
 }

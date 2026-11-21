@@ -1,8 +1,9 @@
 import 'fake-indexeddb/auto'
-import { saveFiles, isSupportedImage } from '../src/engine/attachment-service.ts'
-import { saveAttachment, getAttachmentRow } from '../src/storage/storage.ts'
+import { saveFiles, isSupportedImage, deleteUnreferencedAttachments } from '../src/engine/attachment-service.ts'
+import { getAttachmentRow, setSetting, saveConversation } from '../src/storage/storage.ts'
 import { idbGetAll } from '../src/storage/idb.ts'
-import { newStableId } from '../src/engine/types.ts'
+import { PROJECTS_KEY } from '../src/projects/project-records.ts'
+import { saveProjectPdf } from '../src/projects/project-materials.ts'
 
 let pass=0, fail=0
 function assert(c:boolean,m:string){ if(c){pass++;console.log('  ok: '+m)}else{fail++;console.log('  FAIL: '+m)} }
@@ -47,6 +48,30 @@ async function allIds(): Promise<string[]> { const rows = await idbGetAll('attac
   assert(isSupportedImage({type:'image/png',size:1}), 'png supported')
   assert(!isSupportedImage({type:'image/png',size:0}), 'empty file rejected')
   assert(!isSupportedImage({type:'application/pdf',size:100}), 'pdf rejected')
+}
+
+{
+  const file = await mkFile('page.png', 'image/png', [1, 2, 3])
+  const [projectOnly, otherMessage, otherDraft, orphan] = await saveFiles([file, file, file, file])
+  await setSetting(PROJECTS_KEY, [{ id: 'project', name: 'Project', createdAt: 1, attachmentIds: [projectOnly.id] }])
+  await setSetting('draft:other', { imageIds: [otherDraft.id] })
+  await saveConversation({ id: 'other', title: 'Other', createdAt: 1, updatedAt: 1, messages: [{ id: 'm', role: 'user', content: '', images: [otherMessage.id], createdAt: 1, updatedAt: 1 }] })
+  await deleteUnreferencedAttachments([projectOnly.id, otherMessage.id, otherDraft.id, orphan.id])
+  assert((await allIds()).includes(projectOnly.id), 'project-owned attachment survives conversation cleanup')
+  assert((await allIds()).includes(otherMessage.id), 'attachment referenced by another conversation survives cleanup')
+  assert((await allIds()).includes(otherDraft.id), 'attachment referenced by another draft survives cleanup')
+  assert(!(await allIds()).includes(orphan.id), 'attachment without remaining owners is deleted')
+
+  const before = await allIds()
+  let checks = 0
+  const cancelled = await saveProjectPdf('project', {
+    documentId: 'doc', fileName: 'cancel.pdf', selection: { kind: 'manual', ranges: [{ startPage: 1, endPage: 1 }] },
+    pages: [{ pageNumber: 1, blob: file, width: 1, height: 1 }],
+    isCancelled: () => ++checks >= 3,
+  })
+  assert(!cancelled.ok && cancelled.error === '' && (await allIds()).join() === before.join(), 'cancellation at commit rolls back attachment metadata')
+  const projects = (await idbGetAll('settings')).find((row: any) => row.key === PROJECTS_KEY).value
+  assert(projects[0].attachmentIds.join() === projectOnly.id, 'cancellation leaves project ownership unchanged')
 }
 
 console.log('\nRESULT pass='+pass+' fail='+fail)

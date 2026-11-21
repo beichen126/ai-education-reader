@@ -80,6 +80,7 @@ const CORE_E2E = [
   'e2e-sidebar-information-architecture',
   'e2e-sidebar-resize',
   'e2e-gallery-layout',
+  'e2e-project-materials',
   'e2e-study-cards',
   'e2e-learning-center',
   'e2e-card-backlinks',
@@ -113,6 +114,7 @@ const OPTIONAL_E2E = [
 // Approximate seconds for suites that took at least ten seconds on the Pages
 // runners (run 44262934622). Short and newly added suites use the default.
 const SUITE_SECONDS = {
+  'e2e-project-materials': 25,
   'e2e-selection-speech': 10,
   'e2e-responsive-surfaces': 20,
   'e2e-reading-position': 37,

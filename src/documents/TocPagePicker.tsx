@@ -22,9 +22,10 @@ type Props = {
   pagesByPage?: (n: number) => void
   onCancel: () => void
   onStart: (selectedPages: number[]) => void
+  forAttachment?: boolean
 }
 
-export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) {
+export function TocPagePicker({ session, pageCount, onCancel, onStart, forAttachment }: Props) {
   const [loadedCount, setLoadedCount] = useState(INITIAL_BATCH)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [thumbs, setThumbs] = useState<Record<number, string>>({})
@@ -48,6 +49,8 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   const observerRef = useRef<IntersectionObserver | null>(null);
   const thumbRefs = useRef<Record<number, HTMLElement | null>>({})
   const gridRef = useRef<HTMLDivElement | null>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => { if (forAttachment) cancelRef.current?.focus() }, [forAttachment])
 
   const revoke = (url: string) => { try { URL.revokeObjectURL(url) } catch {} };
 
@@ -187,14 +190,14 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
   }, [sorted])
 
   return (
-    <div className={css.overlay} data-testid="toc-picker">
-      <div className={css.panel}>
+    <div className={css.overlay + (forAttachment ? ' ' + css.attachmentOverlay : '')} data-testid="toc-picker">
+      <div className={css.panel} role={forAttachment ? 'dialog' : undefined} aria-modal={forAttachment || undefined} aria-label={forAttachment ? tx('选择 PDF 页面', 'Select PDF pages') : undefined}>
         <div className={css.header}>
           <div className={css.headRow}>
-            <span className={css.title}>{tx('选择目录页', 'Select outline pages')}</span>
+            <span className={css.title}>{forAttachment ? tx('选择 PDF 页面', 'Select PDF pages') : tx('选择目录页', 'Select outline pages')}</span>
             <div className={css.headerBtns}>
-              <button type="button" className={css.btn} data-testid="toc-picker-cancel" onClick={onCancel}>{tx('取消', 'Cancel')}</button>
-              <button type="button" className={css.btnPrimary} data-testid="toc-picker-start" disabled={selected.size === 0} onClick={() => onStart(sorted)}>{tx('开始识别', 'Start detection')}{selected.size ? tx('（' + selected.size + ' 页）', ' (' + selected.size + ' pages)') : ''}</button>
+              <button ref={cancelRef} type="button" className={css.btn} data-testid="toc-picker-cancel" onClick={onCancel}>{tx('取消', 'Cancel')}</button>
+              <button type="button" className={css.btnPrimary} data-testid="toc-picker-start" disabled={selected.size === 0} onClick={() => onStart(sorted)}>{forAttachment ? tx('确认选择', 'Confirm selection') : tx('开始识别', 'Start detection')}{selected.size ? tx('（' + selected.size + ' 页）', ' (' + selected.size + ' pages)') : ''}</button>
             </div>
           </div>
           <div className={css.rangeRow} data-testid="toc-picker-range">
@@ -209,16 +212,27 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
           {rangeError && <div className={css.rangeErr} data-testid="toc-picker-range-error">{rangeError}</div>}
           <div className={css.pickCount} data-testid="toc-picker-count">{tx('已选择 ' + sorted.length + ' 页', sorted.length + ' pages selected')} · PDF {selectedText || '—'}</div>
         </div>
-        <div className={css.privacy} data-testid="toc-picker-privacy">{tx('先对所选页做 OCR，DeepSeek Flash 仅接收识别出的文字。', 'Selected pages are processed by OCR. DeepSeek Flash receives only the recognized text.')}</div>
+        {!forAttachment && <div className={css.privacy} data-testid="toc-picker-privacy">{tx('先对所选页做 OCR，DeepSeek Flash 仅接收识别出的文字。', 'Selected pages are processed by OCR. DeepSeek Flash receives only the recognized text.')}</div>}
         <div ref={gridRef} onScroll={() => pump.current()} className={css.grid} data-testid="toc-picker-grid">
           {Array.from({ length: Math.min(loadedCount, pageCount) }, (_, i) => i + 1).map(n => (
-            <button key={n} type="button" ref={(el) => { thumbRefs.current[n] = el }} className={css.thumb + (selected.has(n) ? ' ' + css.selected : '')} data-testid={'toc-thumb-' + n} data-page={n} data-selected={selected.has(n) ? '1' : '0'}
+            <button key={n} type="button" ref={(el) => { thumbRefs.current[n] = el }} className={css.thumb + (selected.has(n) ? ' ' + css.selected : '')} data-testid={'toc-thumb-' + n} data-page={n} data-selected={selected.has(n) ? '1' : '0'} data-continuous={continuousMode || undefined}
               onClick={() => { if (suppressClickRef.current) { suppressClickRef.current = false; return } toggle(n) }}
-              onPointerDown={(e) => { if (continuousMode || e.pointerType === 'mouse') { e.preventDefault(); dragStart(n) } }}
+              onPointerDown={(e) => {
+                if (!e.isPrimary || e.button !== 0 || (!continuousMode && e.pointerType !== 'mouse')) return
+                e.preventDefault()
+                if (e.pointerType !== 'mouse') e.currentTarget.setPointerCapture(e.pointerId)
+                dragStart(n)
+              }}
               onPointerEnter={(e) => { if (dragRef.current) dragOver(n) }}
+              onPointerMove={e => {
+                if (!continuousMode || e.pointerType === 'mouse' || !dragRef.current) return
+                const target = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>('[data-page]')
+                const page = Number(target?.dataset.page)
+                if (page > 0 && gridRef.current?.contains(target ?? null)) dragOver(page)
+              }}
               >
               <span className={css.thumbNum}>{n}</span>
-              {thumbs[n] ? <img className={css.thumbImg} src={thumbs[n]} alt={tx('第 ' + n + ' 页', 'Page ' + n)} /> : <span className={css.thumbLoad}>{failedThumbs.has(n) ? tx('预览失败', 'Preview failed') : '…'}</span>}
+              {thumbs[n] ? <img className={css.thumbImg} src={thumbs[n]} alt={tx('第 ' + n + ' 页', 'Page ' + n)} draggable={false} /> : <span className={css.thumbLoad}>{failedThumbs.has(n) ? tx('预览失败', 'Preview failed') : '…'}</span>}
               {selected.has(n) && <span className={css.check}>✓</span>}
             </button>
           ))}

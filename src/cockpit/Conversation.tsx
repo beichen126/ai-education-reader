@@ -17,8 +17,8 @@ import { useProjects } from '../projects/project-store'
 import { useSettings, useSettingsMutation } from '../engine/settings-store'
 import { formatTokenCount } from '../engine/token-usage'
 import { uiActions, useUi } from '../engine/ui-store'
-import { saveImagesAndDraft, saveGeneratedImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteAttachment, attachmentErrorLabel, isSupportedImage } from '../engine/attachment-service'
-import { useDraftDocuments, setDraftDocuments, useDraftImageIds, getDraft, removeDraftImage, updateDraftMemory } from '../engine/draft-store'
+import { saveImagesAndDraft, saveGeneratedImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteUnreferencedAttachments, attachmentErrorLabel, isSupportedImage } from '../engine/attachment-service'
+import { useDraftDocuments, setDraftDocuments, useDraftImageIds, getDraft, removeDraftImages, updateDraftMemory } from '../engine/draft-store'
 import { ComposerInput } from './ComposerInput'
 import { typedLocalFile, useComposerFileDrop } from './composer-file-input'
 import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
@@ -99,8 +99,6 @@ export function Conversation() {
     if (!el) return
     atBottomRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 60
   }
-  const imageOffsetByMsg: Record<string, number> = {}
-  { let off = 0; for (const m of messages) { if (m.role === 'user') { imageOffsetByMsg[m.id] = off; off += m.images.length } } }
   const lastMsg = messages[messages.length - 1]
   const sig = messages.length + '|' + (lastMsg ? lastMsg.content : '')
   const lastRef = useRef('')
@@ -347,7 +345,7 @@ export function Conversation() {
             const transition = previous ? transitionByBoundary.get(previous.id) : undefined
             return <Fragment key={m.id}>
               {transition && <PromptTransitionDivider transition={transition} onOpen={() => setInspectedTransition(transition)} />}
-              <MessageRow m={m} streamingId={activeStreamingId} convId={session?.id} branchId={branchChat.activeBranchId} imgOffset={imageOffsetByMsg[m.id] || 0} menuOpen={menuMsgId === m.id} cardSave={cardSaves[m.id]} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} onArtifactCustom={(mid) => { setCreatingError(undefined); setCreating({ kind: 'note', messageId: mid, customEntry: true }) }} onSaveCard={(mid, rating) => void saveCard(mid, rating)} onViewSavedCard={(mid) => void viewSavedCard(mid)} onInspectQuickFollowUp={setInspectedQuickFollowUp} />
+              <MessageRow m={m} streamingId={activeStreamingId} convId={session?.id} branchId={branchChat.activeBranchId} menuOpen={menuMsgId === m.id} cardSave={cardSaves[m.id]} onToggleMenu={(open) => setMenuMsgId(open ? m.id : null)} onBranch={(mid) => { void branchChat.branchFrom(mid) }} onArtifact={(kind, mid) => { setCreatingError(undefined); setCreating({ kind, messageId: mid }) }} onArtifactCustom={(mid) => { setCreatingError(undefined); setCreating({ kind: 'note', messageId: mid, customEntry: true }) }} onSaveCard={(mid, rating) => void saveCard(mid, rating)} onViewSavedCard={(mid) => void viewSavedCard(mid)} onInspectQuickFollowUp={setInspectedQuickFollowUp} />
               {quickFollowUpAnchorId === m.id && activeThread && <QuickFollowUpBar items={quickFollowUps} disabled={busy || !!quickSendingId} sendingId={quickSendingId} onSend={(item) => void sendQuickFollowUp(item)} onInspect={setInspectedQuickFollowUp} onConfigure={() => uiActions.openPromptManager('quick-follow-up')} />}
             </Fragment>
             })}
@@ -380,7 +378,7 @@ function PromptTransitionDivider({ transition, onOpen }: { transition: PromptTra
   </div>
 }
 
-function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, cardSave, onToggleMenu, onBranch, onArtifact, onArtifactCustom, onSaveCard, onViewSavedCard, onInspectQuickFollowUp }: { m: TMessage; streamingId?: string; convId?: string; branchId?: string; imgOffset: number; menuOpen?: boolean; cardSave?: { state: CardSaveState; title?: string; cardId?: string; rating?: StudyCardRating; error?: string }; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: CreateArtifactKind, messageId: string) => void; onArtifactCustom?: (messageId: string) => void; onSaveCard?: (messageId: string, rating?: StudyCardRating) => void; onViewSavedCard?: (messageId: string) => void; onInspectQuickFollowUp?: (metadata: QuickFollowUpMetadata) => void }) {
+function MessageRow({ m, streamingId, convId, branchId, menuOpen, cardSave, onToggleMenu, onBranch, onArtifact, onArtifactCustom, onSaveCard, onViewSavedCard, onInspectQuickFollowUp }: { m: TMessage; streamingId?: string; convId?: string; branchId?: string; menuOpen?: boolean; cardSave?: { state: CardSaveState; title?: string; cardId?: string; rating?: StudyCardRating; error?: string }; onToggleMenu?: (open: boolean) => void; onBranch?: (messageId: string) => void; onArtifact?: (kind: CreateArtifactKind, messageId: string) => void; onArtifactCustom?: (messageId: string) => void; onSaveCard?: (messageId: string, rating?: StudyCardRating) => void; onViewSavedCard?: (messageId: string) => void; onInspectQuickFollowUp?: (metadata: QuickFollowUpMetadata) => void }) {
   if (m.role === 'user') {
     return (
       <div className={css.msg + ' ' + css.msgUser} data-message-id={m.id}>
@@ -388,7 +386,7 @@ function MessageRow({ m, streamingId, convId, branchId, imgOffset, menuOpen, car
         <div className={css.bubble}><RenderedMarkdown content={m.content} messageId={m.id} /></div>
         <div className={css.messageTools}>{m.content && <MessageSourceCopyButton source={m.content} user />}<MessageTimestamp createdAt={m.createdAt} /></div>
         {m.quickFollowUp && <div className={css.quickFollowUpHistory} data-testid="quick-follow-up-history"><span>{tx('快捷追问', 'Quick follow-up')} · {m.quickFollowUp.labelSnapshot}</span><button type="button" data-testid="quick-follow-up-history-inspect" onClick={() => onInspectQuickFollowUp?.(m.quickFollowUp)}>{tx('查看实际提示词', 'View exact prompt')}</button></div>}
-        {m.images.length > 0 && <MessageAttachmentStrip convId={convId} message={m} imgOffset={imgOffset} />}
+        {m.images.length > 0 && <MessageAttachmentStrip convId={convId} message={m} />}
         {pdfContextsOf(m).map((context, index) => <PdfSourceButton key={context.documentId + ':' + index} context={context} />)}
       </div>
     )
@@ -528,18 +526,15 @@ function PdfSourceButton({ context }: { context: { documentId: string; pageNumbe
   )
 }
 
-function MessageAttachmentStrip({ message, convId, imgOffset }: { message: any; convId?: string; imgOffset: number }) {
+function MessageAttachmentStrip({ message, convId }: { message: TMessage; convId?: string }) {
   const metas = useAttachmentMetas(message.images)
   const items = buildAttachmentDisplayItems(message.images, metas)
-  let running = imgOffset
   return (
     <div className={css.photoStrip}>
       {items.map((item, idx) => {
         if (item.type === 'image') {
-          const off = running; running++
-          return <Thumb key={'i' + item.attachmentId} id={item.attachmentId} onOpen={() => galleryActions.open(convId, off, 'viewer')} />
+          return <Thumb key={'i' + item.attachmentId} id={item.attachmentId} onOpen={() => galleryActions.openAttachment(convId, item.attachmentId)} />
         }
-        running += item.attachmentIds.length
         return <PdfContextCard key={'g' + item.groupId + '-' + idx} item={item} readOnly />
       })}
     </div>
@@ -676,9 +671,8 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
   }, [attachMenuOpen])
   const metas = useAttachmentMetas(picIds)
   const composerItems = useMemo(() => buildAttachmentDisplayItems(picIds, metas), [picIds, metas])
-  const removeGroup = (item: Extract<AttachmentDisplayItem, { type: 'pdf-group' }>) => {
-    for (const id of item.attachmentIds) { removeDraftImage(key, id); void deleteAttachment(id) }
-  }
+  const removeImages = (ids: string[]) => { void removeDraftImages(key, ids).then(() => deleteUnreferencedAttachments(ids)) }
+  const removeGroup = (item: Extract<AttachmentDisplayItem, { type: 'pdf-group' }>) => removeImages(item.attachmentIds)
   const onFiles = async (files: FileList | File[]) => {
     // ATOMIC ordinary-image upload (P0): stage OPFS binaries, then ONE IndexedDB txn commits
     // the attachment metadata rows AND the draft:<conversationId> row together. On failure
@@ -732,8 +726,7 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
       setPhotoError(tx('请拖入一组图片、单个 PDF，或一批 DeepSeek 支持的文档。', 'Drop images, one PDF, or a batch of documents supported by DeepSeek.'))
     }
   })
-  // User removes a pending draft image explicitly -> the attachment is gone for good.
-  const removePic = (id: string) => { removeDraftImage(key, id); void deleteAttachment(id) }
+  const removePic = (id: string) => removeImages([id])
   const send = async () => {
     if (busy) return
     const { text, imageIds } = getDraft(key)

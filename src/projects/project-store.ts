@@ -51,10 +51,3 @@ export async function updateProject(id: string, change: (project: ReaderProject)
 export function deleteProject(id: string) {
   return update(list => list.filter(project => project.id !== id))
 }
-
-export function addProjectAttachments(id: string, ids: string[]) {
-  return updateProject(id, project => {
-    if (project.archivedAt !== undefined) throw new Error('项目已归档。')
-    return { ...project, attachmentIds: [...new Set([...project.attachmentIds, ...ids])] }
-  })
-}

@@ -2,9 +2,9 @@ import { PROJECTS_KEY, readProjectRecords } from '../projects/project-records'
 // attachmentService — the single authority for attachment lifecycle. The UI never
 // touches IndexedDB, OPFS, Blob, objectURL, or base64 directly.
 import { newStableId, type Attachment, type PdfAttachmentSource, type StableId } from './types'
-import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, listAllAttachmentRows, listConversations, getConversation, type StoredAttachmentRow } from '../storage/storage'
-import { idbScan, idbGetAll, idbRunTxn, idbUpdate } from '../storage/idb'
-import { allBranches, getBranch } from '../branches/branch-store'
+import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, getConversation, type StoredAttachmentRow } from '../storage/storage'
+import { idbRunTxn, idbUpdate } from '../storage/idb'
+import { getBranch } from '../branches/branch-store'
 import { BRANCH_DRAFT_PREFIX } from '../branches/branch-types'
 import { persistBinary, readBinary, deleteBinary, type StoredBinary } from '../storage/binary-store'
 import { PreviewReadQueue } from './preview-read-queue'
@@ -237,7 +237,7 @@ export async function saveImagesAndDraft(files: File[], draft: DraftOwnership, d
   return saveGeneratedImagesAndDraft(inputs, draft, deps)
 }
 
-export async function saveGeneratedImages(images: GeneratedImageInput[]): Promise<Attachment[]> {
+function generatedImages(images: GeneratedImageInput[]) {
   if (!Array.isArray(images) || images.length === 0) throw new AttachmentError('read-failed', 'no generated images');
   const now = Date.now()
   const metas: Attachment[] = []
@@ -248,8 +248,52 @@ export async function saveGeneratedImages(images: GeneratedImageInput[]): Promis
     metas.push({ id: newStableId(), name: g.name || 'generated.jpg', mimeType: g.blob.type, size: g.blob.size, createdAt: now, updatedAt: now, ...(g.source ? { source: g.source } : {}), ...(g.ocr ? { ocr: g.ocr } : {}), ...(g.transcript ? { transcript: g.transcript } : {}) });
     blobs.push(g.blob);
   }
-  await writeBatch('attachments', metas, blobs);
+  return { metas, blobs }
+}
+
+export async function saveGeneratedImages(images: GeneratedImageInput[]): Promise<Attachment[]> {
+  const { metas, blobs } = generatedImages(images)
+  await writeBatch('attachments', metas, blobs)
   return metas;
+}
+
+/** Atomically publish staged assets together with the setting that references them. */
+export async function saveGeneratedImagesWithSetting(
+  images: GeneratedImageInput[],
+  key: string,
+  update: (value: unknown, ids: string[]) => unknown,
+  isCancelled?: () => boolean,
+): Promise<boolean> {
+  if (isCancelled?.()) return false
+  const { metas, blobs } = generatedImages(images)
+  const rows = await stageAttachmentRows(metas, blobs)
+  let cancelled = false
+  let updateError: unknown
+  try {
+    await idbRunTxn(['attachments', 'settings'], txn => {
+      const settings = txn.objectStore('settings')
+      const request = settings.get(key)
+      request.onsuccess = () => {
+        try {
+          if (isCancelled?.()) { cancelled = true; txn.abort(); return }
+          const value = update(request.result?.value, rows.map(row => row.id))
+          for (const row of rows) txn.objectStore('attachments').put(row)
+          const write = settings.put({ key, value })
+          write.onsuccess = () => {
+            if (isCancelled?.()) { cancelled = true; txn.abort() }
+          }
+        } catch (error) {
+          updateError = error
+          txn.abort()
+        }
+      }
+    })
+    return true
+  } catch (error) {
+    await Promise.allSettled(rows.flatMap(row => row.binary?.storage === 'opfs' ? [deleteBinary(row.binary)] : []))
+    if (cancelled) return false
+    throw updateError ?? error
+  }
 }
 
 export async function sumAttachmentBytes(ids: StableId[]): Promise<number> {
@@ -328,53 +372,80 @@ export async function deleteAttachment(id: StableId): Promise<void> {
 }
 export function releaseAllPreviews(): void { for (const [id, e] of urlRegistry) { e.controller?.abort(); if (e.url) URL.revokeObjectURL(e.url); urlRegistry.delete(id) } }
 
-/**
- * Conservative attachment graph-reachability cleanup. Live attachment references are
- * those reachable from: conversation MESSAGES, or persisted DRAFTS. Attachment rows not
- * reachable from either graph AND older than `graceMs` (24h default) are deleted with
- * their binary. Never touches anything younger (in-flight/staged data), never enumerates
- * another app/origin directory (deleteBinary only removes this app's own namespace).
- * Best-effort: never throws; only reports the count of removed orphans.
- */
-export async function cleanupOrphanAttachments(graceMs = 24 * 60 * 60 * 1000): Promise<{ removed: number }> {
-  try {
-    // Live set = ROOT message images + ROOT drafts + BRANCH message images + BRANCH drafts.
+/** Read graph roots and delete unreferenced metadata in the same transaction. */
+async function purgeUnusedAttachments(ids?: Iterable<StableId>, cutoff = Infinity): Promise<number> {
+  const candidates = ids === undefined ? undefined : [...new Set(ids)]
+  if (candidates?.length === 0) return 0
+  const removed: StoredAttachmentRow[] = []
+  await idbRunTxn(['conversations', 'conversationBranches', 'settings', 'attachments'], txn => {
     const live = new Set<string>()
-    for (const conv of await listConversations()) {
-      for (const m of (conv.messages || [])) { for (const img of (m.images || [])) live.add(img) }
+    const attachments = txn.objectStore('attachments')
+    let pending = 3
+    const remove = (row: StoredAttachmentRow | undefined) => {
+      if (!row || live.has(row.id) || (row.meta?.createdAt ?? 0) >= cutoff) return
+      attachments.delete(row.id)
+      removed.push(row)
     }
-    // Branch-local messages own attachments too (image / PDF Context / Document Context).
-    for (const b of await allBranches()) {
-      for (const m of (b.messages || [])) { for (const img of (m.images || [])) live.add(img) }
-    }
-    const draftRows = await idbGetAll('settings')
-    for (const row of draftRows) {
-      if (row.key === PROJECTS_KEY) for (const project of readProjectRecords(row.value)) for (const id of project.attachmentIds) live.add(id)
-      if (typeof row.key === 'string' && (row.key.indexOf('draft:') === 0 || row.key.indexOf('draft-branch:') === 0)) {
-        const val = row.value
-        if (val && Array.isArray(val.imageIds)) for (const img of val.imageIds) live.add(img)
+    const finishRoot = () => {
+      if (--pending !== 0) return
+      if (candidates) {
+        for (const id of candidates) {
+          if (live.has(id)) continue
+          const request = attachments.get(id)
+          request.onsuccess = () => remove(request.result)
+        }
+      } else {
+        const request = attachments.openCursor()
+        request.onsuccess = () => {
+          const cursor = request.result
+          if (!cursor) return
+          remove(cursor.value)
+          cursor.continue()
+        }
       }
     }
-    const cutoff = Date.now() - graceMs
-    let removed = 0
-    // idbScan walks the attachments store one row at a time; collect deletes, then batch.
-    const toDelete: string[] = []
-    await idbScan('attachments', (row: StoredAttachmentRow) => {
-      if (!row || live.has(row.id)) return
-      const created = row.meta && typeof row.meta.createdAt === 'number' ? row.meta.createdAt : 0
-      if (created >= cutoff) return // too new — likely in-flight/staged
-      toDelete.push(row.id)
-    })
-    for (const id of toDelete) {
-      try {
-        const rowr = await getAttachmentRow(id)
-        await deleteAttachment(id)
-        if (rowr && rowr.binary && rowr.binary.storage === 'opfs') { try { await deleteBinary(rowr.binary) } catch { /* orphan */ } }
-        removed++
-      } catch { /* best-effort, skip */ }
+    for (const name of ['conversations', 'conversationBranches']) {
+      const request = txn.objectStore(name).getAll()
+      request.onsuccess = () => {
+        for (const row of request.result) {
+          for (const message of row.messages ?? []) for (const id of message.images ?? []) live.add(id)
+        }
+        finishRoot()
+      }
     }
-    return { removed }
-  } catch { return { removed: 0 } }
+    const settings = txn.objectStore('settings').getAll()
+    settings.onsuccess = () => {
+      for (const { key, value } of settings.result) {
+        if (key === PROJECTS_KEY) {
+          for (const project of readProjectRecords(value)) for (const id of project.attachmentIds) live.add(id)
+        }
+        if (typeof key === 'string' && (key.startsWith('draft:') || key.startsWith(BRANCH_DRAFT_PREFIX))) {
+          if (Array.isArray(value?.imageIds)) for (const id of value.imageIds) live.add(id)
+        }
+      }
+      finishRoot()
+    }
+  })
+  await Promise.allSettled(removed.map(async row => {
+    const entry = urlRegistry.get(row.id)
+    if (entry) {
+      entry.controller?.abort()
+      if (entry.url) URL.revokeObjectURL(entry.url)
+      urlRegistry.delete(row.id)
+    }
+    if (row.binary?.storage === 'opfs') await deleteBinary(row.binary)
+  }))
+  return removed.length
+}
+
+export async function deleteUnreferencedAttachments(ids: Iterable<StableId>): Promise<void> {
+  try { await purgeUnusedAttachments(ids) } catch { /* retried by orphan cleanup */ }
+}
+
+/** Background sweeps leave recently staged attachments alone. */
+export async function cleanupOrphanAttachments(graceMs = 24 * 60 * 60 * 1000): Promise<{ removed: number }> {
+  try { return { removed: await purgeUnusedAttachments(undefined, Date.now() - graceMs) } }
+  catch { return { removed: 0 } }
 }
 
 /** Model projection keeps the saved preview, but OCR attachments transmit text only. */

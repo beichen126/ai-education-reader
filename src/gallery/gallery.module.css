@@ -57,3 +57,16 @@
 .projectCardMeta { display: flex; gap: 8px; flex-wrap: wrap; }
 .projectCardMeta:empty { display: none; }
 .unpinMaterial { min-width: 30px; padding-inline: 6px; margin-left: auto; }
+.materialCaption { display: grid; min-width: 0; gap: 2px; }
+.materialName, .materialSource { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.materialName { font-size: 13px; line-height: 1.35; }
+.materialSource { font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.selectionBar { box-sizing: border-box; width: min(100%, 1680px); margin: 0 auto; padding: 0 clamp(12px, 2.2vw, 32px) 8px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.selectionBar button { min-height: 32px; }
+.selectionBar span { color: var(--dsw-alias-label-secondary); font-size: 12px; }
+.selectionBar button[aria-pressed="true"] { border-color: var(--dsw-alias-button-primary-fill); }
+.selectionApply { border: 0; border-radius: 8px; padding: 4px 10px; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); font: inherit; font-size: 13px; cursor: pointer; }
+.thumb[data-continuous] { touch-action: none; user-select: none; }
+.selectionMark { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 21px; height: 21px; border: 1px solid var(--dsw-alias-label-secondary); border-radius: 6px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font-size: 13px; }
+.thumb[aria-pressed="true"] .selectionMark { border-color: var(--dsw-alias-button-primary-fill); background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); }
+.transcriptSelect { display: flex; align-items: center; gap: 6px; font-size: 13px; }
