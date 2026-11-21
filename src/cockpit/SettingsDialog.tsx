@@ -1,6 +1,6 @@
 import {WebImageSettings} from '../web-images/WebImageSettings'
 import {clearSpeechCache} from '../speech/audio-cache'
-import {hasAndroidVocabularySpeech, stopReadAloud} from '../speech/read-aloud'
+import {androidVoicePack, androidVoicePackStatus, hasAndroidVocabularySpeech, stopReadAloud} from '../speech/read-aloud'
 import {ApiProfiles} from './ApiProfiles'
 import {ApiConfigTransfer} from './ApiConfigTransfer'
 import { useState, useCallback, useEffect, useRef } from 'react'
@@ -314,7 +314,7 @@ export function SettingsDialog() {
           </select>
         </label>)}
         <div className={css.settingsHint}>{tx('中英文自动切换倍速，使用 DeepSeek 语音服务。','Automatically selects the Chinese or English speed. Uses DeepSeek speech.')}</div>
-        {hasAndroidVocabularySpeech() && <div className={css.settingsHint}>
+        {androidVoicePack() ? <OfflineVoicePackControl /> : hasAndroidVocabularySpeech() && <div className={css.settingsHint}>
           {tx('词汇卡使用手机的离线语音。在系统「文字转语音输出」选择引擎和语音包，切换后重新打开 Reader。','Vocabulary cards use your phone’s offline voices. Select an engine and download a voice in system text-to-speech settings, then reopen Reader.')}
           {' '}<a href="https://f-droid.org/en/packages/app.marmalade.tts/" target="_blank" rel="noreferrer">{tx('下载 Marmalade TTS','Download Marmalade TTS')}</a>
         </div>}
@@ -460,6 +460,28 @@ export function SettingsDialog() {
       )}
     </Modal>
   )
+}
+
+function OfflineVoicePackControl() {
+  const [pack, setPack] = useState(androidVoicePackStatus)
+  useEffect(() => {
+    if (pack.state !== 'downloading') return
+    const timer = window.setInterval(() => setPack(androidVoicePackStatus()), 450)
+    return () => window.clearInterval(timer)
+  }, [pack.state])
+  const progress = pack.total ? Math.min(100, Math.floor((pack.downloaded ?? 0) * 100 / pack.total)) : 0
+  const size = Math.round((pack.total ?? 0) / 1_000_000)
+  return <div className={css.settingsHint}>
+    <p>{tx('词汇卡的离线语音包只需下载一次。','Download the vocabulary voice pack once for offline playback.')}</p>
+    {pack.state === 'ready' ? <span role="status">{tx('离线语音包已安装','Offline voice pack installed')}</span> :
+      <Button variant="outline" size="sm" disabled={pack.state === 'downloading'} data-testid="download-offline-voice-pack" onClick={() => {
+        androidVoicePack()?.downloadPack()
+        setPack(androidVoicePackStatus())
+      }}>{pack.state === 'downloading' ? tx('正在下载 '+progress+'%','Downloading '+progress+'%') :
+        pack.state === 'failed' ? tx('重试下载','Retry download') :
+          tx('下载离线语音包 · '+size+' MB','Download offline voice pack · '+size+' MB')}</Button>}
+    {pack.state === 'failed' && <p role="status">{tx('下载失败。请检查网络连接或手机存储空间后重试。','Download failed. Check connectivity and free storage, then try again.')}</p>}
+  </div>
 }
 
 function SpeechCacheControl(){const [status,setStatus]=useState(''),[busy,setBusy]=useState(false);return <div className={css.settingsHint}><p>{tx('音频缓存 7 天，重复播放复用缓存。','Audio stays on this device for 7 days, up to 32 MiB / 128 entries, evicting least recently used audio. Speed and repeats do not resynthesize.')}</p><Button variant="outline" size="sm" disabled={busy} onClick={()=>{stopReadAloud();setBusy(true);void clearSpeechCache().then(()=>setStatus(tx('语音缓存已清理','Audio cache cleared'))).catch(()=>setStatus(tx('清理失败，请重试','Unable to clear cache'))).finally(()=>setBusy(false))}}>{tx('清理语音缓存','Clear audio cache')}</Button>{status&&<span role="status">{status}</span>}</div>}

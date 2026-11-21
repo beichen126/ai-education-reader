@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { pauseReadAloud, resumeReadAloud, stopReadAloud, useReadAloud } from './read-aloud'
+import { androidVoicePack, pauseReadAloud, resumeReadAloud, stopReadAloud, useReadAloud } from './read-aloud'
 import { tx } from '../engine/locale'
 import css from './read-aloud.module.css'
 
@@ -19,6 +19,6 @@ export function ReadAloudPlayer() {
       {state.status==='paused' && <button type="button" data-testid="read-aloud-resume" onClick={resumeReadAloud}>{tx('继续','Resume')}</button>}
       <button type="button" data-testid="read-aloud-stop" onClick={()=>stopReadAloud()}>{tx('停止','Stop')}</button>
     </div>
-    <small>{state.offline ? tx('使用手机选定的离线语音引擎。','Uses the phone’s selected offline speech engine.') : tx('朗读文字将发送到配置的 DeepSeek API 服务；再次播放优先复用本机缓存。','Text is sent to the configured DeepSeek API. Repeated playback reuses synthesized audio.')}</small>
+    <small>{state.offline ? androidVoicePack() ? tx('使用 Reader 的离线语音包。','Uses Reader’s offline voice pack.') : tx('使用手机选定的离线语音引擎。','Uses the phone’s selected offline speech engine.') : tx('朗读文字将发送到配置的 DeepSeek API 服务；再次播放优先复用本机缓存。','Text is sent to the configured DeepSeek API. Repeated playback reuses synthesized audio.')}</small>
   </aside>
 }

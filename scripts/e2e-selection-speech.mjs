@@ -152,7 +152,12 @@ try {
   const androidErrors = []
   android.on('pageerror', error => androidErrors.push(error.message))
   await android.addInitScript(() => {
-    window.AndroidTTS = { offlineOnly: () => true }
+    window.packState = 'missing'
+    window.AndroidTTS = {
+      offlineOnly: () => true,
+      getPackStatus: () => JSON.stringify({state:window.packState,downloaded:50,total:100}),
+      downloadPack: () => { window.packState = 'downloading' },
+    }
     window.__androidTtsInstalled = true
     window.offlineCalls = []
     window.SpeechSynthesisUtterance = class {
@@ -186,6 +191,16 @@ try {
     settings:{apiKey:'test-key',apiBaseUrl:'https://api.deepseek.com',lastConversationId:'android-speech'},
   })
   const cards = android.getByTestId('genui-word-card')
+  await cards.nth(0).getByRole('button',{name:/朗读单词/}).click()
+  await android.getByTestId('read-aloud-player').getByRole('status').filter({hasText:'下载离线语音包'}).waitFor()
+  assert.deepEqual(await android.evaluate(() => window.offlineCalls), [])
+  await openSettings(android, 'general')
+  const download = android.getByTestId('download-offline-voice-pack')
+  await download.click()
+  await download.getByText('正在下载 50%').waitFor()
+  await android.evaluate(() => { window.packState = 'ready' })
+  await android.getByText('离线语音包已安装').waitFor()
+  await android.keyboard.press('Escape')
   await cards.nth(0).getByRole('button',{name:/朗读单词/}).click()
   await cards.nth(1).getByRole('button',{name:/朗读单词/}).click()
   await cards.nth(2).getByRole('button',{name:/朗读单词/}).click()
