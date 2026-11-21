@@ -1,8 +1,7 @@
 // TOC page mapping domain (Stage 9.4B). PURE — maps the model's printed pageLabel
 // to a PDF physical page. PDF.js page labels (getPageLabels) are preferred; when the
-// PDF has none we fall back to a human-calibrated numeric offset. Never fabricates
-// a page: an unmappable label stays unresolved (kept in the review list) until the
-// user confirms it. Individual manual overrides survive a global remap.
+// PDF has none we fall back to a human-calibrated numeric offset. Blank labels
+// between mapped entries use the following entry's page.
 import { validateChapterDraft, type ChapterDraftItem } from './chapter-builder'
 import { tx } from '../engine/locale'
 export type MappedTocItem = {
@@ -113,11 +112,38 @@ export function resolveItemByLabels(labels: string[] | null | undefined, item: {
  * Build the initial mapped list from raw model entries + optional PDF labels.
  * Items that match exactly get a physical page; the rest stay unresolved.
  */
-export function buildInitialMapping(entries: { title: string; level: number; pageLabel: string; tocPage: number }[], labels: string[] | null): MappedTocItem[] {
-  return entries.map(e => {
+export function buildInitialMapping(entries: { title: string; level: number; pageLabel: string; tocPage: number }[], labels: string[] | null, pageCount = labels?.length ?? Infinity): MappedTocItem[] {
+  const first = entries.findIndex(entry => entry.pageLabel.trim() !== '')
+  if (first < 0) return []
+  let last = entries.length - 1
+  while (!entries[last].pageLabel.trim()) last--
+  const ancestors: number[] = []
+  const mapped = entries.slice(first, last + 1).map(e => {
+    while (ancestors.length && ancestors.at(-1)! >= e.level) ancestors.pop()
+    ancestors.push(e.level)
     const p = exactLabelToPage(labels, e.pageLabel)
-    return { ...e, startPage: p > 0 ? p : null }
+    return { ...e, level: ancestors.length, startPage: e.pageLabel.trim() && p > 0 ? p : null }
   })
+  return inferBlankTocPages(mapped, pageCount)
+}
+
+/** Use the following physical page for a blank run bounded by two mapped entries. */
+export function inferBlankTocPages(items: MappedTocItem[], pageCount: number): MappedTocItem[] {
+  const isAnchor = (it: MappedTocItem) => it.manualOverride || it.pageLabel.trim() !== ''
+  const valid = (page: number | null): page is number => page != null && Number.isInteger(page) && page >= 1 && page <= pageCount
+  const result = items.slice()
+  let previous = -1
+  for (let i = 0; i <= items.length; i++) {
+    if (i < items.length && !isAnchor(items[i])) continue
+    const before = items[previous]?.startPage ?? null
+    const after = items[i]?.startPage ?? null
+    const page = valid(before) && valid(after) && before <= after ? after : null
+    for (let j = previous + 1; j < i; j++) {
+      if (items[j].startPage !== page) result[j] = { ...items[j], startPage: page }
+    }
+    previous = i
+  }
+  return result
 }
 
 /** Is a page label a single safe Arabic integer (after canonicalization)? */

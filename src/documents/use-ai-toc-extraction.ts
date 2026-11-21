@@ -129,7 +129,7 @@ export async function extractAiToc(opts: {
   const hierarchy = levels.ok ? levels.levels : inferFallbackTocLevels(mapped.rows)
   onProgress?.({ phase: 'mapping' })
   const mappingStarted = aiTocNowMs()
-  const items = buildInitialMapping(mapped.rows.map(({ title, pageLabel, tocPage }, index) => ({ title, pageLabel, tocPage, level: hierarchy[index] })), labels)
+  const items = buildInitialMapping(mapped.rows.map(({ title, pageLabel, tocPage }, index) => ({ title, pageLabel, tocPage, level: hierarchy[index] })), labels, session.documentProxy.numPages)
   timing.mappingMs = elapsedAiTocMs(mappingStarted)
   onProgress?.({ phase: 'done' })
   return finish({ ok: true, items, labels, labelsPlainNumeric: labelsArePlainNumeric(labels),

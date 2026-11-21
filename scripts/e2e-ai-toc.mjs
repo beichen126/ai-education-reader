@@ -153,6 +153,38 @@ const emptyLabelCalls = await page.evaluate(() => globalThis.__dshAllCalls)
 assert(emptyLabelCalls.length === 1, 'G2: missing labels never trigger another model request')
 await page.getByTestId('ai-toc-progress-close').click()
 
+await page.evaluate(() => {
+  globalThis.__dshMockAiToc = () => JSON.stringify({ rows: [
+    ['', '空页码前言'], ['1', '第一章'], ['', '无页码分节'], ['2', '下一节'],
+    ...Array.from({ length: 20 }, (_, i) => ['2', '小节 ' + i]),
+    ['A-1', '需要删除的附录'], ['', '空页码结尾'],
+  ].map(([pageLabel, title]) => ({ pageLabel, title, sourceImageIndex: 1, level: 1 })) })
+})
+await page.getByTestId('reader-toc-ai').click()
+await page.getByTestId('toc-thumb-7').click()
+await page.getByTestId('toc-picker-start').click()
+const review = page.getByTestId('toc-review')
+await review.waitFor()
+assert(await review.getByText(/空页码前言|空页码结尾/).count() === 0, 'H: blank front/back entries are omitted')
+await review.getByTestId('toc-review-item-0').click()
+await review.getByTestId('toc-review-page').fill('5')
+await review.getByTestId('toc-review-calibrate').click()
+assert(await review.getByTestId('toc-review-item-1').getAttribute('data-sp') === '6', 'H: interior blank uses the following item after calibration')
+await page.setViewportSize({ width: 390, height: 844 })
+const issue = review.getByTestId('toc-review-item-23')
+await review.getByTestId('toc-review-locate-unresolved').click()
+await page.waitForFunction(() => {
+  const list = document.querySelector('[data-testid="toc-review-list"]')
+  const issue = document.querySelector('[data-testid="toc-review-item-23"]')
+  const bounds = list?.getBoundingClientRect()
+  const row = issue?.getBoundingClientRect()
+  return bounds && row && row.top >= bounds.top && row.bottom <= bounds.bottom && document.activeElement === issue
+})
+assert(await issue.getAttribute('aria-current') === 'true', 'H: locating an issue scrolls and highlights its row on mobile')
+assert(!await review.getByTestId('toc-review-adjust').isVisible(), 'H: locating an issue leaves the mobile editor closed')
+await issue.getByRole('button', { name: '删除目录项：需要删除的附录' }).click()
+assert(await issue.count() === 0, 'H: the located issue can be deleted directly in the list')
+
 await browser.close()
 const pageErrors = errors.length ? errors.join(' | ') : '(none)'
 const passCount = results.filter(r => r.startsWith('PASS')).length

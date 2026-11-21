@@ -8,7 +8,7 @@ import {
 } from '../src/documents/ai-toc.ts'
 import {
   exactLabelToPage, labelsArePlainNumeric, buildInitialMapping, numericOffsetFromAnchor,
-  applyGlobalOffset, pickVerificationAnchor, setManualPageOverride, validateMappedTocReview,
+  applyGlobalOffset, inferBlankTocPages, pickVerificationAnchor, setManualPageOverride, validateMappedTocReview,
 } from '../src/documents/toc-mapping.ts'
 
 let pass = 0, fail = 0
@@ -278,6 +278,30 @@ function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' +
 }
 // --- numeric offset ---
 { assert(numericOffsetFromAnchor(1, 15) === 14, 'offset from printed 1 -> PDF 15 = 14') }
+// --- blank outline page labels ---
+{
+  const entries = [
+    { title: 'Front matter', level: 1, pageLabel: '' },
+    { title: 'First numbered', level: 2, pageLabel: '1' },
+    { title: 'Blank A', level: 2, pageLabel: '' },
+    { title: 'Blank B', level: 3, pageLabel: ' ' },
+    { title: 'Following numbered', level: 3, pageLabel: '4' },
+    { title: 'Unmapped with a label', level: 1, pageLabel: 'A-1' },
+    { title: 'Back matter', level: 1, pageLabel: '' },
+  ].map(entry => ({ ...entry, tocPage: 2 }))
+  const mapped = buildInitialMapping(entries, ['i', '1', '2', '3', '4'])
+  assert(mapped.map(row => row.title).join('|') === 'First numbered|Blank A|Blank B|Following numbered|Unmapped with a label', 'only leading and trailing blank labels are removed')
+  assert(mapped.map(row => row.level).join(',') === '1,1,2,2,1', 'surviving descendants have valid levels')
+  assert(mapped.map(row => row.startPage).join(',') === '2,5,5,5,', 'consecutive interior blanks use the next mapped physical page')
+  const withoutLabels = buildInitialMapping(entries, null)
+  const calibrated = inferBlankTocPages(applyGlobalOffset(withoutLabels, 7), 20)
+  assert(calibrated.map(row => row.startPage).join(',') === '8,11,11,11,', 'calibration also resolves interior blanks')
+  const overridden = inferBlankTocPages(setManualPageOverride(calibrated, 1, 9), 20)
+  assert(overridden[1].startPage === 9 && overridden[2].startPage === 11, 'manual edits survive inference')
+  const reversed = buildInitialMapping(entries, ['4', '1'])
+  assert(reversed[1].startPage === null && reversed[2].startPage === null, 'reversed anchors leave blank rows for review')
+}
+
 // --- applyGlobalOffset ---
 {
   const items = [

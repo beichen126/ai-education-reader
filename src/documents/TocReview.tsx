@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useBackTarget } from '../engine/back-navigation'
 import { validateChapterDraft, buildChapterTreeFromDraft, type ChapterDraftItem } from './chapter-builder'
-import { applyGlobalOffset, setManualPageOverride, validateMappedTocReview, canUseNumericOffset, canonicalNumericPageNumber, type MappedTocItem } from './toc-mapping'
+import { applyGlobalOffset, inferBlankTocPages, setManualPageOverride, validateMappedTocReview, canUseNumericOffset, canonicalNumericPageNumber, type MappedTocItem } from './toc-mapping'
 import { emptyReviewState, markRowUnchecked, markChangedRowsUnchecked, verifiedCount as countVerified, resolveSaveStage, removeReviewEntry, restoreReviewEntry, type RemovedReviewEntry, type ReviewState, type ReviewStateValue } from './toc-review-state'
 import type { ChapterNode, DocumentChapterSource } from './document-types'
 import css from './toc-review.module.css'
@@ -40,6 +40,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   const uncheckedAckRef = useRef(false)
   const issueAckRef = useRef(false)
   const pageInputRef = useRef<HTMLInputElement | null>(null)
+  const listRef = useRef<HTMLDivElement | null>(null)
   const [levelRaw, setLevelRaw] = useState<Record<number, string>>({})
   const [deleted, setDeleted] = useState<RemovedReviewEntry<MappedTocItem>[]>([])
   const [editExpanded, setEditExpanded] = useState(false)
@@ -52,6 +53,18 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
     focusFrameRef.current = window.requestAnimationFrame(() => {
       focusFrameRef.current = null
       document.querySelector<HTMLButtonElement>(empty ? '[data-testid="toc-review-undo-delete"]' : '[data-testid="toc-review-delete-' + index + '"]')?.focus()
+    })
+  }
+  const revealRow = (index: number, focus: boolean) => {
+    if (focusFrameRef.current !== null) window.cancelAnimationFrame(focusFrameRef.current)
+    focusFrameRef.current = window.requestAnimationFrame(() => {
+      focusFrameRef.current = null
+      const list = listRef.current
+      const row = list?.querySelector<HTMLElement>('[data-testid="toc-review-item-' + index + '"]')
+      if (!list || !row) return
+      list.scrollTop += row.getBoundingClientRect().top - list.getBoundingClientRect().top - 6
+      if (focus) row.focus({ preventScroll: true })
+      else pageInputRef.current?.focus({ preventScroll: true })
     })
   }
   const resetSaveAttempt = () => {
@@ -139,7 +152,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   const unresolvedBlankCount = useMemo(() => rows.filter(row => row.startPage == null && row.pageLabel.trim() === '').length, [rows])
   const unresolvedOtherCount = unresolvedCount - unresolvedNumericIndices.length - unresolvedBlankCount
   const nonMappingInvalidCount = validation.blockingRowIndices.filter(i => rows[i]?.startPage != null).length
-  const needsSingleCalibration = unresolvedCount > 0 && unresolvedNumericIndices.length === unresolvedCount && nonMappingInvalidCount === 0
+  const needsSingleCalibration = unresolvedNumericIndices.length > 0 && unresolvedOtherCount === 0 && nonMappingInvalidCount === 0
 
   // v1.1.3: numeric offset / anchor calibration is available whenever at least one row's
   // printed page label can be read as a safe integer. This deliberately does NOT depend on
@@ -152,12 +165,12 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   // has trustworthy local provenance (`tocPage`), so selecting the error jumps to
   // the exact PDF outline page where the row was recognized instead of doing
   // nothing and leaving the user to hunt for it.
-  const jump = (i: number) => {
+  const jump = (i: number, edit = true) => {
     const row = rows[i]
     const target = row?.startPage ?? row?.tocPage
     if (Number.isInteger(target) && (target as number) >= 1 && (target as number) <= pageCount) onJump(target as number)
     setIdx(i)
-    setEditExpanded(true)
+    setEditExpanded(edit)
   }
 
   const beginCalibration = () => {
@@ -165,14 +178,14 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
     if (target == null) return
     jump(target)
     setSaveError(null)
-    window.requestAnimationFrame(() => pageInputRef.current?.focus())
+    revealRow(target, false)
   }
 
   const beginIssueReview = () => {
     const target = validation.blockingRowIndices[0]
     if (target == null) return
-    jump(target)
-    window.requestAnimationFrame(() => pageInputRef.current?.focus())
+    jump(target, false)
+    revealRow(target, true)
   }
 
   const markVerified = (i: number) => setState(s => ({ ...s, [i]: 'verified' }))
@@ -204,7 +217,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
     if (!Number.isFinite(n)) return
     setRows(r => {
       const before = r.map(x => x.startPage)
-      const after = applyGlobalOffset(r, n)
+      const after = inferBlankTocPages(applyGlobalOffset(r, n), pageCount)
       setState(s => markChangedRowsUnchecked(s, before, after))
       return after
     })
@@ -223,7 +236,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
     setOffset(String(n))
     setRows(r => {
       const before = r.map(x => x.startPage)
-      const after = applyGlobalOffset(r, n)
+      const after = inferBlankTocPages(applyGlobalOffset(r, n), pageCount)
       setState(s => markChangedRowsUnchecked(s, before, after))
       return after
     })
@@ -329,11 +342,11 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
         )}
         </div></details>}
         <div className={css.reviewBody}>
-          <div className={css.list} data-testid="toc-review-list">
+          <div ref={listRef} className={css.list} data-testid="toc-review-list">
             {rows.map((it, i) => (
-              <div key={i} tabIndex={0} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); jump(i) } }} className={css.item + (i === idx ? ' ' + css.active : '')} data-testid={'toc-review-item-' + i} data-sp={it.startPage ?? ''} data-state={state[i] || 'unchecked'} onClick={() => jump(i)}>
+              <div key={i} tabIndex={0} aria-current={i === idx || undefined} onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); jump(i) } }} className={css.item + (i === idx ? ' ' + css.active : '')} data-testid={'toc-review-item-' + i} data-sp={it.startPage ?? ''} data-state={state[i] || 'unchecked'} onClick={() => jump(i)}>
                 <div className={css.itemTitle}><span className={css.itemMark}>{state[i] === 'verified' ? '✓' : state[i] === 'issue' ? '!' : '·'}</span><span className={css.itemText}>{it.title}</span></div>
-                <div className={css.itemMeta}>L{it.level} · {it.pageLabel}{it.startPage != null ? ' → PDF ' + it.startPage : tx(' · 页码待确认', ' · page needs confirmation')}</div>
+                <div className={css.itemMeta}>L{it.level} · {it.pageLabel && it.pageLabel + ' → '}{it.startPage != null ? 'PDF ' + it.startPage : tx('页码待确认', 'Page needs confirmation')}{it.startPage != null && !it.manualOverride && !it.pageLabel.trim() && tx(' · 沿用下一项', ' · From next entry')}</div>
                 <div className={css.itemBtns}>
                   <button type="button" className={css.mini} data-testid={'toc-review-ok-' + i} disabled={saving || isBlocking(i)} onClick={(e) => { e.stopPropagation(); verifyButton(i) }}>✓ {tx('正确', 'Correct')}</button>
                   <button type="button" className={css.mini} data-testid={'toc-review-edit-' + i} disabled={saving} onClick={event => { event.stopPropagation(); jump(i) }}>{tx('调整', 'Edit')}</button>
