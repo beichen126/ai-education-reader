@@ -45,7 +45,7 @@ export type PdfPreviewApi = {
   reset: () => Promise<void>
 }
 
-export function usePdfPreview(): PdfPreviewApi {
+export function usePdfPreview(keepOcrPreview = false): PdfPreviewApi {
   const [doc, setDoc] = useState<LocalPdfDocument | null>(null)
   const [pages, setPages] = useState<RenderedPdfPage[]>([])
   const [status, setStatus] = useState<PdfPreviewStatus>('idle')
@@ -147,7 +147,7 @@ export function usePdfPreview(): PdfPreviewApi {
       else { for (let k = 0; k < PDF_LARGE_PREVIEW_COUNT; k++) { previewIdx.add(k); previewIdx.add(total - 1 - k) } }
     }
     try {
-      const run = contextMode === 'ocr' && documentId ? (options: import('./pdf-context-render').PdfContextRenderOptions) => prepareOcrPages(documentId, options) : renderPdfContextRanges
+      const run = contextMode === 'ocr' && documentId ? (options: import('./pdf-context-render').PdfContextRenderOptions) => prepareOcrPages(documentId, options, keepOcrPreview) : renderPdfContextRanges
       setProgress({ done: 0, total: 0, bytes: 0 })
       const result = await run({
         ranges,
@@ -181,7 +181,7 @@ export function usePdfPreview(): PdfPreviewApi {
     } finally {
       if (gen === genRef.current) setProgress(undefined)
     }
-  }, [doc, documentId, revokeAll])
+  }, [doc, documentId, revokeAll, keepOcrPreview])
 
   const clearPreview = useCallback(() => {
     genRef.current++

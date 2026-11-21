@@ -7,7 +7,7 @@ export function deferredPdfPreview(): Blob {
   return new Blob([bytes], { type: 'image/png' })
 }
 
-export async function prepareOcrPages(documentId: string, opts: PdfContextRenderOptions) {
+export async function prepareOcrPages(documentId: string, opts: PdfContextRenderOptions, keepPreview = false) {
   return renderPdfContextRanges({ ...opts, renderPage: async page => {
     let rendered: Awaited<ReturnType<typeof opts.renderPage>> | undefined
     const ocr = await ensurePageOcr(documentId, page, async () => {
@@ -16,6 +16,7 @@ export async function prepareOcrPages(documentId: string, opts: PdfContextRender
       if (opts.isCancelled?.()) throw new Error('已取消')
       return rendered.blob
     })
+    if (keepPreview && !rendered) rendered = await opts.renderPage(page)
     return { ...(rendered ?? { blob: deferredPdfPreview(), width: 1, height: 1, mimeType: 'image/png' }), ocr, previewDeferred: !rendered }
   } })
 }

@@ -5,7 +5,7 @@ import {Button} from '../dsh/primitives/Button'
 import {fetchTranscript} from './bridge-client'
 import {parsePastedTranscript,youtubeVideoId,timestamp,type YoutubeTranscript} from './transcript'
 import css from '../cockpit/material-picker.module.css'
-export function YoutubePicker({onClose,onSelect}:{onClose:()=>void;onSelect:(t:YoutubeTranscript)=>Promise<void>}){
+export function YoutubePicker({onClose,onSelect,rootClassName,selectLabel='加入本次提问'}:{onClose:()=>void;onSelect:(t:YoutubeTranscript)=>Promise<void>;selectLabel?:string;rootClassName?:string}){
  const [url,setUrl]=useState(''),[language,setLanguage]=useState('auto'),[data,setData]=useState<YoutubeTranscript>(),[busy,setBusy]=useState(false),[notice,setNotice]=useState('');const controller=useRef<AbortController|null>(null),alive=useRef(true);
  const [recovery,setRecovery]=useState(''),[pasted,setPasted]=useState(''),[importError,setImportError]=useState('')
  function resetRecovery(){setRecovery('');setPasted('');setImportError('')}
@@ -20,7 +20,7 @@ export function YoutubePicker({onClose,onSelect}:{onClose:()=>void;onSelect:(t:Y
   if(failure?.code==='VERIFICATION_REQUIRED'||failure?.nativeFailure==='NATIVE_PLAYABILITY_LOGIN_REQUIRED')setRecovery(youtubeVideoId(url))
  }}finally{if(alive.current&&controller.current===c)setBusy(false)}}
  async function attach(){if(!data)return;setBusy(true);try{await onSelect(data);onClose()}catch(e){setNotice(e instanceof Error?e.message:'加入失败');setBusy(false)}}
- return <Modal open onClose={()=>{controller.current?.abort();onClose()}} title="YouTube 视频解析" closeLabel="关闭" className={css.dialog} footer={<Button variant="primary" disabled={!data||busy} onClick={()=>void attach()}>加入本次提问</Button>}>
+ return <Modal open rootClassName={rootClassName} onClose={()=>{controller.current?.abort();onClose()}} title="YouTube 视频解析" closeLabel="关闭" className={css.dialog} footer={<Button variant="primary" disabled={!data||busy} onClick={()=>void attach()}>{selectLabel}</Button>}>
  <div className={css.body}><p className={css.hint}>提取可用字幕，保留时间戳并作为文字附件加入。优先匹配所选语言，必要时使用 YouTube 当前转写语言；已提取的视频使用本地缓存。</p>
  <label className={css.field}>视频链接<input value={url} disabled={busy} placeholder="https://www.youtube.com/watch?v=…" onChange={e=>{setUrl(e.target.value);setData(undefined);resetRecovery()}}/></label>
  <div className={css.actions}><label className={css.field}>字幕语言<select value={language} disabled={busy} onChange={e=>{setLanguage(e.target.value);setData(undefined)}}><option value="auto">自动选择字幕</option><option value="zh">中文优先</option><option value="en">英语优先</option><option value="ja">日语优先</option><option value="ko">韩语优先</option><option value="es">西班牙语优先</option></select></label><Button variant="outline" disabled={busy||!url.trim()} onClick={()=>void extract()}>{busy?'正在处理…':'提取字幕'}</Button>{busy&&<Button onClick={()=>controller.current?.abort()}>取消</Button>}</div>

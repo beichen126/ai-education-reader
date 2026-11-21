@@ -1,3 +1,4 @@
+import { PROJECTS_KEY, isReaderProject, readProjectRecords } from '../projects/project-records'
 import {validTranscript} from '../youtube/transcript'
 import { validOcrPage } from '../api/deepseek-ocr'
 import {parseProfiles} from '../engine/api-profiles'
@@ -380,6 +381,18 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
       }
     }
   }
+  const rawProjects = (input as { projects?: unknown }).projects
+  const projectIds = new Set<string>()
+  if (rawProjects !== undefined) {
+    if (!Array.isArray(rawProjects)) throw new BackupError('projects 必须是数组')
+    for (const project of rawProjects) {
+      if (!isReaderProject(project) || projectIds.has(project.id) || project.attachmentIds.some(id => !attIds.has(id))) throw new BackupError('项目资料索引非法')
+      projectIds.add(project.id)
+    }
+  }
+  for (const chat of input.conversations) {
+    if (chat.projectId !== undefined && !projectIds.has(chat.projectId)) throw new BackupError('会话引用了不存在的项目')
+  }
   // V3/V4: validate persisted Draft user data + appearance (referenced attachments must exist).
   if (isV3 || isV4) {
     const app = (input as BackupV3).appearance
@@ -640,6 +653,7 @@ export async function restoreBackup(backup: Backup, binaries?: {
       { key: 'lastConversationId', value: typeof (backup.settings as { lastConversationId?: unknown } | undefined)?.lastConversationId === 'string' && backup.conversations.some(conversation => conversation.id === (backup.settings as { lastConversationId: string }).lastConversationId) ? (backup.settings as { lastConversationId: string }).lastConversationId : '' },
       // V3: restore the appearance + every persisted Draft row (unsent user data). The API
       // Key is NEVER restored (always empty). Draft rows re-create the unsent composer state.
+      { key: PROJECTS_KEY, value: readProjectRecords((backup as BackupV7).projects) },
       { key: 'appearance', value: (backup as BackupV3).appearance || 'system' },
       // V6: prompt preferences are one durable snapshot. Legacy backups reset to the
       // current defaults rather than inheriting preferences from the old local database.

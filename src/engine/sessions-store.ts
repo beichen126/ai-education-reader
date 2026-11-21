@@ -132,8 +132,9 @@ function drainWrites(convId: string): Promise<void> { return writeChains.get(con
 
 
 export const sessionsActions = {
-  async newChat(): Promise<string> {
+  async newChat(projectId?: string): Promise<string> {
     const c = makeSession()
+    if (projectId) c.projectId = projectId
     setState({ ...toState([c, ...state.list], c.id), focusMessage: undefined })
     await saveConversation(c)
     if (state.current === c.id) await setSetting(LAST_CONV, c.id)

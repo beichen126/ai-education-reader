@@ -1,3 +1,4 @@
+import { PROJECTS_KEY, readProjectRecords } from '../projects/project-records'
 import {parseProfiles} from '../engine/api-profiles'
 import { listConversations, getAnnotationsByConversation, getAttachmentRow, getSetting } from '../storage/storage'
 import { resolveStoredModel } from '../api/model-defaults'
@@ -80,6 +81,10 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
   const branchDrafts: BackupBranchDraft[] = []
   const activeBranches: BackupActiveBranch[] = []
   const settingsRows = await idbGetAll('settings')
+  const projects = readProjectRecords(settingsRows.find((row: { key: string }) => row.key === PROJECTS_KEY)?.value)
+  const projectIds = new Set(projects.map(project => project.id))
+  for (const project of projects) for (const id of project.attachmentIds) seen.add(id)
+  for (const chat of conversations) if (chat.projectId && !projectIds.has(chat.projectId)) delete chat.projectId
   for (const row of settingsRows) {
     if (typeof row.key !== 'string') continue
     if (row.key.indexOf('draft:') === 0) {
@@ -181,7 +186,7 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
   })
   const studyCardPreferences = await getSetting(STUDY_CARD_PREFERENCES_KEY)
   const backup = {
-    format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, annotations, attachments, documents, documentNotes, drafts, appearance: appearanceOut, branches, branchDrafts, artifacts, activeBranches, prompts, promptPreferences,
+    format: BACKUP_FORMAT, version: BACKUP_VERSION, exportedAt: Date.now(), settings, conversations, ...(projects.length ? { projects } : {}), annotations, attachments, documents, documentNotes, drafts, appearance: appearanceOut, branches, branchDrafts, artifacts, activeBranches, prompts, promptPreferences,
     studyCards,
     ...(studyCardPreferences && typeof studyCardPreferences === 'object' ? { studyCardPreferences: studyCardPreferences as BackupV7['studyCardPreferences'] } : {}),
   } as BackupV7 | PortableBackupV7

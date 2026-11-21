@@ -20,10 +20,10 @@ function OcrProfileChoice() {
   </div>
 }
 
-export function PdfContextMode({ value, onChange, disabled = false }: { value: 'image' | 'ocr'; onChange: (mode: 'image' | 'ocr') => void; disabled?: boolean }) {
+export function PdfContextMode({ value, onChange, disabled = false, projectMaterial = false }: { projectMaterial?: boolean; value: 'image' | 'ocr'; onChange: (mode: 'image' | 'ocr') => void; disabled?: boolean }) {
   return <div className={css.mode} data-testid="pdf-context-mode">
-    <label>{tx('发送方式', 'Send as')} <select aria-label={tx('PDF 发送方式', 'PDF send mode')} value={value} disabled={disabled} onChange={e => onChange(e.target.value as 'image' | 'ocr')}><option value="image">{tx('页面图片', 'Page images')}</option><option value="ocr">{tx('OCR 文本 · DeepSeek', 'OCR text · DeepSeek')}</option></select></label>
-    {value === 'ocr' && <><small>{tx('保留页面预览；模型只接收 OCR 文本，输入框保持不变。', 'Keep page previews; send only OCR text to the model without changing your message.')}</small><OcrProfileChoice /></>}
+    <label>{projectMaterial ? tx('保存方式', 'Save as') : tx('发送方式', 'Send as')} <select aria-label={tx('PDF 发送方式', 'PDF send mode')} value={value} disabled={disabled} onChange={e => onChange(e.target.value as 'image' | 'ocr')}><option value="image">{tx('页面图片', 'Page images')}</option><option value="ocr">{tx('OCR 文本 · DeepSeek', 'OCR text · DeepSeek')}</option></select></label>
+    {value === 'ocr' && <><small>{projectMaterial ? tx('保留页面图片和 OCR。选用于提问时发送 OCR 文本。', 'Keep page images and OCR. When selected for a question, send the OCR text.') : tx('保留页面预览；模型只接收 OCR 文本，输入框保持不变。', 'Keep page previews; send only OCR text to the model without changing your message.')}</small><OcrProfileChoice /></>}
   </div>
 }
 

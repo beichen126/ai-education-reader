@@ -1,3 +1,6 @@
+import { useProjects } from '../projects/project-store'
+import { ProjectList } from '../projects/ProjectList'
+import type { ReaderProject } from '../projects/project-records'
 import { generationRegistry } from '../engine/generation-registry'
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useSessions, sessionsActions, type ChatSession } from '../engine/sessions-store'
@@ -23,16 +26,35 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   const sessions = useSessions(s => s.list)
   const current = useSessions(s => s.current)
   const currentConv = useSessions(s => s.byId[s.current || ''])
+  const projects = useProjects()
+  const [projectMode, setProjectMode] = useState(false)
+  const [projectScope, setProjectScope] = useState<string | undefined>()
+  const project = projects.find(item => item.id === (projectScope ?? (projectMode ? undefined : currentConv?.projectId)))
   const [q, setQ] = useState('')
   const [showArchive, setShowArchive] = useState(false)
   const [organizationError, setOrganizationError] = useState(false)
   const { fs, toggle } = useFullscreen()
   const query = q.trim().toLowerCase()
-  const filtered = sessions.filter(session => (session.archivedAt !== undefined) === showArchive && localizedSessionTitle(session).toLowerCase().includes(query))
+  const projectRows = projects.filter(item => (item.archivedAt !== undefined) === showArchive && item.name.toLowerCase().includes(query))
+    .sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0) || b.createdAt - a.createdAt)
+  const projectIds = new Set(projects.map(item => item.id))
+  const filtered = sessions.filter(session => (project ? session.projectId === project.id : !session.projectId || !projectIds.has(session.projectId)) &&
+    (session.archivedAt !== undefined) === showArchive && localizedSessionTitle(session).toLowerCase().includes(query))
   filtered.sort((a, b) => showArchive
     ? (b.archivedAt ?? 0) - (a.archivedAt ?? 0)
     : (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0))
   const toggleArchive = () => { setShowArchive(value => !value); setQ(''); setOrganizationError(false) }
+  const openProject = (selected: ReaderProject) => {
+    setProjectScope(selected.id); setProjectMode(true); setShowArchive(false); setQ('')
+    const existing = sessions.find(session => session.projectId === selected.id && session.archivedAt === undefined)
+    if (existing) void sessionsActions.open(existing.id).catch(() => setOrganizationError(true))
+  }
+  const createChat = () => {
+    setShowArchive(false); setQ('')
+    if (project?.archivedAt !== undefined) return
+    void sessionsActions.newChat(project?.id).catch(() => setOrganizationError(true))
+  }
+  const openImages = () => galleryActions.open(currentConv?.id, 0, 'list', project?.id)
   const fsTitle = fs ? tx('退出全屏', 'Exit full screen') : tx('全屏', 'Full screen')
   const narrow = useLayoutStore(s => s.narrow)
   const toggleDesktopSidebar = () => {
@@ -59,8 +81,8 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
     return (
       <div className={css.sideRail} style={{ width }}>
         <button type="button" className={css.railBtn} data-testid="rail-history" aria-label={tx('历史会话', 'Chat history')} title={tx('历史会话', 'Chat history')} onClick={openHistory}><IconClockOutline16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label={t('sidebar.newChat')} title={t('sidebar.newChat')} onClick={() => sessionsActions.newChat()}><IconNewChatOutline16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-images" aria-label={tx('图片资料', 'Images')} title={tx('图片资料', 'Images')} onClick={() => galleryActions.open(currentConv?.id, 0)}><IconPhoto16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label={t('sidebar.newChat')} title={t('sidebar.newChat')} onClick={createChat}><IconNewChatOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-images" aria-label={tx('图片资料', 'Images')} title={tx('图片资料', 'Images')} onClick={openImages}><IconPhoto16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-files" aria-label={tx('本地文件', 'Local files')} title={tx('本地文件', 'Local files')} onClick={() => documentUiActions.openLibrary()}><IconFolderOpenOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-cards" aria-label={tx('学习中心', 'Learning center')} title={tx('学习中心', 'Learning center')} onClick={() => learningUiActions.openLibrary('cards')}><IconListPenOutline16 /></button>
         <div className={css.railSpacer} />
@@ -78,13 +100,13 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         </div>
       </div>
       <div className={css.sidebarNew}>
-        <button type="button" className={css.newChatBtn} data-testid="sidebar-new-chat" onClick={() => { setShowArchive(false); setQ(''); void sessionsActions.newChat() }}>
+        <button type="button" className={css.newChatBtn} data-testid="sidebar-new-chat" disabled={project?.archivedAt !== undefined} onClick={createChat}>
           <IconNewChatOutline16 /> {t('sidebar.newChat')}
         </button>
       </div>
       <div className={css.sidebarSection}>{tx('资料', 'Materials')}</div>
       <div className={css.sidebarEntries}>
-        <button type="button" className={css.entryBtn} data-testid="sidebar-entry-images" onClick={() => galleryActions.open(currentConv?.id, 0)}>
+        <button type="button" className={css.entryBtn} data-testid="sidebar-entry-images" onClick={openImages}>
           <IconPhoto16 /> <span>{tx('图片', 'Images')}</span>
         </button>
         <button type="button" className={css.entryBtn} data-testid="sidebar-entry-files" onClick={() => documentUiActions.openLibrary()}>
@@ -98,16 +120,29 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         </button>
       </div>
       <div className={css.sidebarSection + ' ' + css.historyHeading}>
-        <span>{showArchive ? tx('已归档会话', 'Archived chats') : tx('会话', 'Chats')}</span>
+        <span>{projectMode && !project ? tx('项目', 'Projects') : showArchive ? tx('已归档会话', 'Archived chats') : tx('会话', 'Chats')}</span>
+        <div className={css.historyActions}>
+        <button type="button" className={css.archiveToggle} data-testid="sidebar-projects" aria-pressed={projectMode || !!project} onClick={() => {
+          setProjectMode(value => !value || !!project); setProjectScope(''); setQ(''); setShowArchive(false)
+        }}><IconFolderOpenOutline16 size={15} /> {tx('项目', 'Projects')}</button>
         <button type="button" className={css.archiveToggle} aria-pressed={showArchive} onClick={toggleArchive}>
           <IconArchiveOutline20 size={15} /> {tx('归档', 'Archive')}
         </button>
+        </div>
       </div>
-      <div className={css.sidebarSearch}><Input icon={<IconSearchOutline16 />} value={q} onChange={e => setQ(e.target.value)} placeholder={showArchive ? tx('搜索归档…', 'Search archive…') : t('sidebar.search')} /></div>
+      <div className={css.sidebarSearch}><Input icon={<IconSearchOutline16 />} value={q} onChange={e => setQ(e.target.value)} placeholder={projectMode && !project ? tx('搜索项目…', 'Search projects…') : showArchive ? tx('搜索归档…', 'Search archive…') : t('sidebar.search')} /></div>
+      {project && <div className={css.projectHeading} data-testid="project-heading">
+        <button className={css.archiveToggle} type="button" aria-label={tx('返回项目', 'Back to projects')} onClick={() => { setProjectMode(true); setProjectScope(''); setQ(''); setShowArchive(false) }}>‹</button>
+        <strong className={css.sessionTitle}>{project.name}</strong>
+        <button className={css.archiveToggle} type="button" onClick={openImages}>{tx('项目资料', 'Project materials')}</button>
+        {!project.archivedAt && <button className={css.archiveToggle} data-testid="project-new-chat" type="button" onClick={createChat}>＋ {tx('新会话', 'New chat')}</button>}
+      </div>}
       {organizationError && <div className={css.sidebarEmpty} role="alert">{tx('会话状态未能保存，请重试。', 'Could not update the chat. Try again.')}</div>}
       <div className={css.sidebarList}>
+        {projectMode && !project ? <ProjectList projects={projectRows} archived={showArchive} onOpen={openProject} onError={setOrganizationError} /> : <>
         {filtered.map(s => <SessionRow key={s.id} session={s} active={s.id === current} narrow={narrow} onOrganizationError={setOrganizationError} />)}
         {filtered.length === 0 && <div className={css.sidebarEmpty}>{query ? tx('没有匹配的会话', 'No matching chats') : showArchive ? tx('暂无归档会话', 'No archived chats') : tx('暂无会话', 'No chats')}</div>}
+        </>}
       </div>
       <div className={css.sidebarFoot}>
         {!isAndroidReader() && <button type="button" className={css.footBtn} data-testid="sidebar-fullscreen" onClick={toggle}><IconFullscreenOutline16 /> <span>{fsTitle}</span></button>}

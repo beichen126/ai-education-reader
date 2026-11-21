@@ -38,13 +38,15 @@ function rangeOf(node: PdfOutlineItem): PdfRange { return { startPage: node.star
 function miB(bytes: number): string { return (bytes / (1024 * 1024)).toFixed(1) + ' MiB' }
 
 export function PdfPanel({
-  initialFile, onClose, onAddToDraft,
+  initialFile, onClose, onAddToDraft, projectMaterial = false, rootClassName,
 }: {
   initialFile?: File
+  projectMaterial?: boolean
+  rootClassName?: string
   onClose: () => void
   onAddToDraft: (payload: PdfAddPayload) => Promise<PdfAddResult>
 }) {
-  const { doc, pages, status, error, progress, outline, outlineStatus, outlineError, documentId, documentSaveError, selectFile, generateRanges, clearPreview } = usePdfPreview()
+  const { doc, pages, status, error, progress, outline, outlineStatus, outlineError, documentId, documentSaveError, selectFile, generateRanges, clearPreview } = usePdfPreview(projectMaterial)
   const [mode, setMode] = useState<'chapter' | 'manual'>('chapter')
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
@@ -53,7 +55,7 @@ export function PdfPanel({
   const [selError, setSelError] = useState<string | null>(null)
   const [lastRanges, setLastRanges] = useState<PdfRange[] | null>(null)
   const [pendingConfirm, setPendingConfirm] = useState<{ ranges: PdfRange[]; count: number } | null>(null)
-  const [contextMode, setContextMode] = useState<'image' | 'ocr'>('image')
+  const [contextMode, setContextMode] = useState<'image' | 'ocr'>(projectMaterial ? 'ocr' : 'image')
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   const [adding, setAdding] = useState(false)
@@ -157,7 +159,7 @@ export function PdfPanel({
         isCancelled: () => !alive.current,
         onOcrProgress: (done, total) => { if (alive.current) setAddMsg(tx('OCR / 缓存 ' + done + ' / ' + total + ' 页', 'OCR / cache ' + done + ' / ' + total + ' pages')) },
       })
-      setAddMsg(res.ok ? tx('已加入 ' + res.count + ' 页', 'Added ' + res.count + ' pages') : localizedErrorText(res.error, 'Unable to add the PDF pages to the chat.'))
+      setAddMsg(res.ok ? (projectMaterial ? tx('已固定 ' + res.count + ' 页', 'Saved ' + res.count + ' pages to project') : tx('已加入 ' + res.count + ' 页', 'Added ' + res.count + ' pages')) : localizedErrorText(res.error, 'Unable to add the PDF pages to the chat.'))
     } catch { setAddMsg(tx('无法将 PDF 页面加入对话。', 'Unable to add the PDF pages to the chat.')) }
     setAdding(false)
   }
@@ -170,7 +172,7 @@ export function PdfPanel({
   return (
     <>
       <input ref={fileRef} type="file" accept=".pdf,application/pdf" hidden onChange={onPick} />
-      <Modal open onClose={onClose} title={tx('PDF 本地预览', 'Local PDF preview')} closeLabel={tx('关闭', 'Close')} className={css.modal}>
+      <Modal open rootClassName={rootClassName} onClose={onClose} title={tx('PDF 本地预览', 'Local PDF preview')} closeLabel={tx('关闭', 'Close')} className={css.modal}>
         <div className={css.column}>
           {status === 'loading' && <div className={css.empty}>{tx('正在打开 PDF…', 'Opening PDF…')}</div>}
 
@@ -237,7 +239,7 @@ export function PdfPanel({
               {selError && <div className={css.error} data-testid="pdf-error">{selError}</div>}
               {error && <div className={css.error} data-testid="pdf-error">{localizedErrorText(error, 'PDF processing failed.')}</div>}
 
-              <PdfContextMode value={contextMode} onChange={value => { setContextMode(value); clearPreview() }} disabled={adding || generating} />
+              <PdfContextMode projectMaterial={projectMaterial} value={contextMode} onChange={value => { setContextMode(value); clearPreview() }} disabled={adding || generating} />
               <div className={css.actions}>
                 <Button variant="primary" data-testid="pdf-generate" disabled={adding || generating || (inChapterMode && selectedNodes.length === 0)} onClick={onGenerate}>
                   {generating ? tx('正在处理…', 'Processing…') : contextMode === 'ocr' ? tx('准备 OCR 文本', 'Prepare OCR text') : tx('生成预览', 'Generate preview')}
@@ -270,7 +272,7 @@ export function PdfPanel({
                     <span className={css.fileMeta}>{addBarTitle}{addBarRange} · {tx('共 ' + pages.length + ' 页', pages.length + ' pages')}</span>
                   </div>
                   <div className={css.actions}>
-                    <Button variant="primary" data-testid="pdf-add" disabled={adding} onClick={() => void addToDraft()}>{adding ? tx('正在加入 ' + pages.length + ' 页…', 'Adding ' + pages.length + ' pages…') : tx('加入对话', 'Add to chat')}</Button>
+                    <Button variant="primary" data-testid="pdf-add" disabled={adding} onClick={() => void addToDraft()}>{adding ? tx('正在加入 ' + pages.length + ' 页…', 'Adding ' + pages.length + ' pages…') : projectMaterial ? tx('固定到项目', 'Save to project') : tx('加入对话', 'Add to chat')}</Button>
                     <Button variant="outline" disabled={adding} onClick={() => fileRef.current?.click()}>{tx('重新选择', 'Choose another')}</Button>
                     <Button variant="outline" data-testid="pdf-done" onClick={onClose}>{tx('完成', 'Done')}</Button>
                   </div>

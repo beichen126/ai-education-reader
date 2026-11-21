@@ -1,3 +1,4 @@
+import { PROJECTS_KEY, readProjectRecords } from '../projects/project-records'
 // attachmentService — the single authority for attachment lifecycle. The UI never
 // touches IndexedDB, OPFS, Blob, objectURL, or base64 directly.
 import { newStableId, type Attachment, type PdfAttachmentSource, type StableId } from './types'
@@ -348,6 +349,7 @@ export async function cleanupOrphanAttachments(graceMs = 24 * 60 * 60 * 1000): P
     }
     const draftRows = await idbGetAll('settings')
     for (const row of draftRows) {
+      if (row.key === PROJECTS_KEY) for (const project of readProjectRecords(row.value)) for (const id of project.attachmentIds) live.add(id)
       if (typeof row.key === 'string' && (row.key.indexOf('draft:') === 0 || row.key.indexOf('draft-branch:') === 0)) {
         const val = row.value
         if (val && Array.isArray(val.imageIds)) for (const img of val.imageIds) live.add(img)

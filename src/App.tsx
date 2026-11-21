@@ -1,3 +1,4 @@
+import { reloadProjects } from './projects/project-store'
 
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -102,6 +103,7 @@ export function App() {
     // P2: conservative attachment-graph reachability cleanup after boot (best-effort, never
     // blocks boot, never deletes fresh/in-flight data, no modal — diagnostics only).
     void cleanupOrphanAttachments().catch(() => {})
+    void reloadProjects().catch(() => {})
     // One-time best-effort persistent-storage request (never blocks; failure is a no-op).
     if (!persistRequestedRef.current) { persistRequestedRef.current = true; void requestStoragePersist().catch(() => {}) }
   }, [boot])

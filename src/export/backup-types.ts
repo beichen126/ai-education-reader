@@ -1,3 +1,4 @@
+import type { ReaderProject } from '../projects/project-records'
 import type { Attachment, Conversation } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import type { LearningDocument, DocumentNote } from '../documents/document-types'
@@ -85,6 +86,7 @@ export type BackupV6 = Omit<BackupV5, 'version'> & {
 export type BackupV7 = Omit<BackupV6, 'version'> & {
   version: 7
   studyCards: StudyCard[]
+  projects?: ReaderProject[]
   studyCardPreferences?: StudyCardPreferences
 }
 export type Backup = BackupV1 | BackupV2 | BackupV3 | BackupV4 | BackupV5 | BackupV6 | BackupV7
