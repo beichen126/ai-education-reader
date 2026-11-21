@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { tx } from '../engine/locale'
-import { isSupportedImage } from '../engine/attachment-service'
+import { AttachmentError, attachmentErrorLabel, isSupportedImage } from '../engine/attachment-service'
 import { YoutubePicker } from '../youtube/YoutubePicker'
 import { transcriptPreview } from '../youtube/preview'
 import { saveProjectMaterials, saveProjectPdf } from './project-materials'
@@ -51,7 +51,7 @@ export function ProjectMaterialImport({ projectId, projectName }: { projectId: s
       await saveProjectMaterials(projectId, files.map(file => ({ name: file.name, blob: file })))
       setNotice(tx('图片已固定到项目。', 'Images saved to project.'))
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : tx('图片保存失败。', 'Could not save images.'))
+      setNotice(error instanceof AttachmentError ? attachmentErrorLabel(error.kind) : error instanceof Error ? error.message : tx('图片保存失败。', 'Could not save images.'))
     } finally { setBusy(false) }
   }
   return <div className={css.projectActions}>

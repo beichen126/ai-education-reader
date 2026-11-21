@@ -79,6 +79,18 @@ async function stageAttachmentRows(metas: Attachment[], blobs: Blob[]): Promise<
     for (const w of written) { try { await deleteBinary(w) } catch { /* orphan */ } }
     refs = blobs.map(b => ({ storage: 'idb', blob: b, size: b.size, mimeType: b.type || 'application/octet-stream' }))
   }
+  try {
+    for (const ref of refs) {
+      if (ref.storage === 'idb' && typeof File !== 'undefined' && ref.blob instanceof File) {
+        // Detach native Android picker files from their content URI before IndexedDB
+        // commits the transaction. The copy also survives picker permission expiry.
+        ref.blob = new Blob([await ref.blob.arrayBuffer()], { type: ref.mimeType })
+      }
+    }
+  } catch {
+    await Promise.allSettled(refs.map(ref => deleteBinary(ref)))
+    throw new AttachmentError('read-failed', 'could not read selected image files')
+  }
   return metas.map((m, i) => ({ id: m.id, meta: m, binary: refs[i], recordVersion: 2 }))
 }
 
