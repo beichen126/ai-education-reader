@@ -13,10 +13,12 @@ import { ChapterRangeModeControl } from './ChapterRangeModeControl'
 import { DocumentContextPreview } from './DocumentContextPreview'
 import css from './document-context-picker.module.css'
 import { tx } from '../engine/locale'
+import { useBackTarget } from '../engine/back-navigation'
 
 type Props = {
   documentId?: string
   projectName?: string
+  onImportPdf?: () => void
   onCancel: () => void
   onAdd: (selection: PdfSelection, documentId: string, fileName: string) => void
   onPreferencesCommitted?: (delta: BookmarkRangePreferenceDelta) => void
@@ -42,7 +44,7 @@ type PreferenceWriteEntry = {
 // (Library / Reader) goes straight to the context stage and never offers a misleading back.
 // Back semantics (0.10): only the unscoped picker has a document-list back; a scoped picker
 // has no back that would clear the document and leave an empty panel.
-export function DocumentContextPicker({ documentId, projectName, onCancel, onAdd, onPreferencesCommitted }: Props) {
+export function DocumentContextPicker({ documentId, projectName, onImportPdf, onCancel, onAdd, onPreferencesCommitted }: Props) {
   const [contextMode, setContextMode] = useState<'image' | 'ocr'>('image')
   const scoped = !!documentId
   const [stage, setStage] = useState<'document' | 'context'>(scoped ? 'context' : 'document')
@@ -329,8 +331,18 @@ export function DocumentContextPicker({ documentId, projectName, onCancel, onAdd
     }
   }
 
+  useBackTarget(projectName !== undefined, () => {
+    if (previewDoc) returnFromPreview()
+    else if (confirming) setConfirming(null)
+    else if (stage === 'context' && !scoped) void requestBackToDocs()
+    else void requestCancel()
+  }, 60)
+
   if (previewDoc) return <DocumentContextPreview document={previewDoc} initialPage={previewInitialPage} onBack={returnFromPreview} />
 
+  const documentListTitle = projectName === undefined
+    ? tx('从文件资料库加入对话', 'Add from the file library')
+    : tx('从资料库选择 PDF', 'Choose a PDF from the library')
   return (
     <div className={css.overlay} data-testid="doc-context-picker">
       <div className={css.panel}>
@@ -338,13 +350,16 @@ export function DocumentContextPicker({ documentId, projectName, onCancel, onAdd
           {stage === 'context' && !scoped && (
             <button type="button" className={css.back} data-testid="doc-context-back" onClick={() => void requestBackToDocs()}>←</button>
           )}
-          <span className={css.title}>{stage === 'document' ? tx('从文件资料库加入对话', 'Add from the file library') : (doc ? doc.fileName : '')}</span>
+          <span className={css.title}>{stage === 'document' ? documentListTitle : doc?.fileName}</span>
           <span className={css.subTitle}>{stage === 'context' && doc ? tx(doc.pageCount + ' 页', doc.pageCount + ' pages') : ''}</span>
           <button type="button" className={css.btn} data-testid="doc-context-cancel" onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
         </div>
         {stage === 'document' ? (
           <div className={css.docPick}>
-            <input className={css.search} data-testid="doc-context-search" placeholder={tx('搜索文件', 'Search files')} value={search} onChange={e => setSearch(e.target.value)} />
+            <div className={css.docPickActions}>
+              <input className={css.search} data-testid="doc-context-search" placeholder={tx('搜索文件', 'Search files')} value={search} onChange={e => setSearch(e.target.value)} />
+              {onImportPdf && <button type="button" className={css.btn} data-testid="doc-context-import-pdf" onClick={onImportPdf}>{tx('导入 PDF', 'Import PDF')}</button>}
+            </div>
             <div className={css.docList} data-testid="doc-context-doclist">
               {(filtered || []).map(d => (
                 <button key={d.id} type="button" className={css.docRow} data-testid={'doc-context-doc-' + d.id} onClick={() => void selectDoc(d.id)}>

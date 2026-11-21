@@ -82,7 +82,7 @@ try {
     assert.equal(transcriptionCalls, 1, 'only one model call per run, including failures')
     assert.equal(ocrCalls.length, scenario === 'six-pages' ? 6 : 1)
     assert.equal(requests[0].response_format.type, 'json_object')
-    assert.equal(requests[0].max_tokens, 8192)
+    assert.equal(requests[0].max_tokens, 32768)
     assert.equal(requests[0].thinking.type, 'disabled')
     assert.equal(requests[0].reasoning_effort, undefined)
     assert.deepEqual(errors, [])

@@ -26,12 +26,14 @@ try {
       assert.equal(completedOcr, 20)
       assert.equal(body.model, 'deepseek-flash')
       assert.equal(body.stream, false)
+      assert.equal(body.max_tokens, 32768)
       const pages = JSON.parse(body.messages.at(-1).content.split('\n').at(-1))
       assert.deepEqual(pages.map(item => item.sourceImageIndex), Array.from({ length: 20 }, (_, i) => i + 1))
       assert.ok(pages.every(item => item.text === 'Recognized directory text'))
-      const rows = pages.map(({ sourceImageIndex }, index) => ({
-        title: 'Outline entry ' + (index + 1), pageLabel: String(index + 1), sourceImageIndex, level: [1, 2, 3, 2][index % 4],
-      }))
+      const rows = pages.flatMap(({ sourceImageIndex }, pageIndex) => Array.from({ length: 12 }, (_, index) => ({
+        title: 'Outline entry ' + (pageIndex * 12 + index + 1) + ' — Data representation and database management principles',
+        pageLabel: String(pageIndex * 12 + index + 1), sourceImageIndex, level: [1, 2, 3, 2][index % 4],
+      })))
       await modelHeld
       await route.fulfill({ headers: cors, json: { choices: [{ message: { content: JSON.stringify({ rows }) }, finish_reason: 'stop' }] } }).catch(error => { if (!cancel) throw error })
     })
@@ -57,7 +59,7 @@ try {
       releaseModel()
       await page.getByTestId('toc-review').waitFor()
       const items = await page.locator('[data-testid^="toc-review-item-"]').allTextContents()
-      assert.equal(items.length, 20)
+      assert.equal(items.length, 240)
       assert.match(items[2], /Outline entry 3.*L3/)
     }
     assert.equal(requests.length, 1)

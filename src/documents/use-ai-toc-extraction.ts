@@ -33,6 +33,7 @@ export type AiTocProgress =
 
 const AI_TOC_RENDER_EDGE = 1400
 const AI_TOC_OCR_CONCURRENCY = 3
+const AI_TOC_MAX_OUTPUT_TOKENS = 32768
 
 /** A single model request after all selected OCR pages are ready. */
 export async function extractAiToc(opts: {
@@ -98,10 +99,10 @@ export async function extractAiToc(opts: {
   try {
     if (mock) raw = mock({ pages, phase: 'outline' })
     else {
-      const content = 'Process all the OCR pages together. Return one JSON object {"rows":[{"title":"Chapter 1","pageLabel":"1","sourceImageIndex":1,"level":1}]}. The level is required for every row.\n' + JSON.stringify(ocrInput)
+      const content = 'Process all the OCR pages together. Return one compact JSON object {"rows":[{"title":"Chapter 1","pageLabel":"1","sourceImageIndex":1,"level":1}]}. The level is required for every row. Preserve all outline entries in order. Use no pretty-printing, prose, or fields beyond the outline schema.\n' + JSON.stringify(ocrInput)
       const messages = await compileMachineProtocolMessages({ domain: 'ai-toc-transcription', protocol, content })
       const reply = await sendTextChat({ apiKey, baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash',
-        messages, signal, thinking: 'disabled', jsonObject: true, maxTokens: 8192 })
+        messages, signal, thinking: 'disabled', jsonObject: true, maxTokens: AI_TOC_MAX_OUTPUT_TOKENS })
       truncated = reply.finishReason === 'length'
       raw = reply.content
     }

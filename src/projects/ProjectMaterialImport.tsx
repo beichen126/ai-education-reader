@@ -1,20 +1,47 @@
-import { lazy, Suspense, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { tx } from '../engine/locale'
 import { isSupportedImage } from '../engine/attachment-service'
 import { YoutubePicker } from '../youtube/YoutubePicker'
 import { transcriptPreview } from '../youtube/preview'
 import { saveProjectMaterials, saveProjectPdf } from './project-materials'
+import { DocumentContextPicker } from '../documents/DocumentContextPicker'
+import { executeDocumentContext } from '../documents/document-context-service'
+import type { PdfSelection } from '../pdf/pdf-types'
 import css from '../gallery/gallery.module.css'
 
 const PdfPanel = lazy(() => import('../pdf/PdfPanel').then(module => ({ default: module.PdfPanel })))
 
-export function ProjectMaterialImport({ projectId }: { projectId: string }) {
+export function ProjectMaterialImport({ projectId, projectName }: { projectId: string; projectName: string }) {
   const imageInput = useRef<HTMLInputElement>(null)
   const pdfInput = useRef<HTMLInputElement>(null)
+  const pendingSave = useRef<AbortController>()
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const [pdf, setPdf] = useState<File>()
   const [youtube, setYoutube] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  useEffect(() => () => pendingSave.current?.abort(), [])
+  async function saveFromLibrary(selection: PdfSelection, documentId: string, fileName: string) {
+    if (pendingSave.current) return
+    const controller = new AbortController()
+    pendingSave.current = controller
+    setLibraryOpen(false)
+    setBusy(true)
+    setNotice(tx('正在准备 PDF 页面…', 'Preparing PDF pages…'))
+    try {
+      const result = await executeDocumentContext({
+        targetProjectId: projectId, documentId, fileName, pageCount: 0, selection,
+        isCancelled: () => controller.signal.aborted,
+        onProgress: ({ done, total }) => setNotice(tx('正在准备 PDF 页面 · ', 'Preparing PDF pages · ') + done + ' / ' + total),
+      })
+      if (!controller.signal.aborted) setNotice(result.ok
+        ? tx('已存入项目 · ' + result.count + ' 页', 'Saved to project · ' + result.count + ' pages')
+        : result.error)
+    } finally {
+      pendingSave.current = undefined
+      if (!controller.signal.aborted) setBusy(false)
+    }
+  }
   async function saveImages(files: File[]) {
     if (!files.length || busy) return
     setBusy(true)
@@ -28,7 +55,7 @@ export function ProjectMaterialImport({ projectId }: { projectId: string }) {
     } finally { setBusy(false) }
   }
   return <div className={css.projectActions}>
-    <button className={css.closeBtn} type="button" disabled={busy} onClick={() => pdfInput.current?.click()}>{tx('＋ PDF 章节或页面', '＋ PDF chapter or pages')}</button>
+    <button className={css.closeBtn} type="button" disabled={busy} onClick={() => setLibraryOpen(true)}>{tx('＋ PDF 章节或页面', '＋ PDF chapter or pages')}</button>
     <button className={css.closeBtn} type="button" disabled={busy} onClick={() => imageInput.current?.click()}>{tx('＋ 图片', '＋ Images')}</button>
     <button className={css.closeBtn} type="button" disabled={busy} onClick={() => setYoutube(true)}>＋ YouTube</button>
     <input ref={imageInput} hidden type="file" multiple accept="image/png,image/jpeg,image/webp,image/gif" onChange={event => {
@@ -41,6 +68,7 @@ export function ProjectMaterialImport({ projectId }: { projectId: string }) {
       event.currentTarget.value = ''
     }} />
     {notice && <span role="status">{notice}</span>}
+    {libraryOpen && !pdf && <DocumentContextPicker projectName={projectName} onImportPdf={() => pdfInput.current?.click()} onCancel={() => setLibraryOpen(false)} onAdd={(...args) => void saveFromLibrary(...args)} />}
     {pdf && <Suspense fallback={null}><PdfPanel rootClassName={css.projectModal} projectMaterial initialFile={pdf} onClose={() => setPdf(undefined)} onAddToDraft={payload => saveProjectPdf(projectId, payload)} /></Suspense>}
     {youtube && <YoutubePicker rootClassName={css.projectModal} selectLabel={tx('固定到项目', 'Save to project')} onClose={() => setYoutube(false)} onSelect={async transcript => {
       await saveProjectMaterials(projectId, [{ name: transcript.title + '.png', blob: await transcriptPreview(transcript), transcript }])
