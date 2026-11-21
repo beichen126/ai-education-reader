@@ -13,7 +13,7 @@ import { buildEffectiveMessageIds, validateBranchGraph } from '../branches/branc
 import { validateArtifact, validateQuizDocument } from '../artifacts/artifact-validation'
 import type { ConversationBranch } from '../branches/branch-types'
 import type { StudyArtifact } from '../artifacts/artifact-types'
-import { normalizeConversationPdfContexts, normalizeMessagePdfContexts, validateMessageGenerationState } from '../engine/types'
+import { materialModesFor, normalizeConversationPdfContexts, normalizeMessagePdfContexts, validateMessageGenerationState } from '../engine/types'
 import { sanitizeBookmarkRangePreferences, isBookmarkRangeEndMode } from '../documents/bookmark-range-preferences'
 import { getPromptDefinitionIssues, getPromptSnapshotIssues, getPromptTransitionIssues, validatePromptDefinition } from '../prompts/prompt-validation'
 import { DEFAULT_PROMPT_PREFERENCES } from '../prompts/prompt-preferences'
@@ -150,7 +150,15 @@ function throwPromptMetadataIssue(prefix: string, issue: { path: string; message
   throw new BackupError(prefix + (issue.path ? '.' + issue.path : '') + '：' + issue.message)
 }
 
+function validateMaterialModes(modes: unknown, ids: string[]) {
+  if (modes === undefined) return
+  if (!isObj(modes) || Object.entries(modes).some(([id, mode]) => !ids.includes(id) || (mode !== 'image' && mode !== 'ocr'))) {
+    throw new BackupError('materialModes 包含无效的资料发送方式')
+  }
+}
+
 function validateMessagePromptMetadata(message: Record<string, any>): void {
+  validateMaterialModes(message.materialModes, message.images)
   if (message.quickFollowUp === undefined) return
   const metadata = message.quickFollowUp
   if (!isObj(metadata)) throw new BackupError('message.quickFollowUp 非法')
@@ -337,6 +345,7 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
     if (!isObj(at.meta) || at.meta.id !== at.id) throw new BackupError('attachment.meta.id 必须与 at.id 一致')
     if (at.meta.transcript !== undefined && !validTranscript(at.meta.transcript)) throw new BackupError('attachment.transcript 非法')
     if (at.meta.ocr !== undefined && (!validOcrPage(at.meta.ocr) || at.meta.source?.type !== 'pdf-page')) throw new BackupError('attachment.ocr 非法')
+    if (at.meta.materialOcr !== undefined && !validOcrPage(at.meta.materialOcr)) throw new BackupError('attachment.materialOcr 非法')
     if (!isStr(at.mimeType) || !/^image\//.test(at.mimeType)) throw new BackupError('attachment.mimeType 非法')
     if (!isBase64(at.data)) throw new BackupError('attachment.data 不是合法的 base64')
     attIds.add(at.id)
@@ -408,6 +417,7 @@ export function parseAndValidate(input: unknown): Backup {  if (!isObj(input)) t
       if (!convIds.has(d.conversationId)) throw new BackupError('draft 引用了不存在的会话：' + d.conversationId.slice(0, 8))
       if (!isStr(d.text)) throw new BackupError('draft.text 必须是字符串')
       if (!Array.isArray(d.imageIds) || !d.imageIds.every(isStr)) throw new BackupError('draft.imageIds 必须是字符串数组')
+      validateMaterialModes(d.materialModes, d.imageIds)
       for (const img of d.imageIds) {
         if (!attIds.has(img)) throw new BackupError('draft 引用了不存在的附件：' + String(img).slice(0, 8))
       }
@@ -510,6 +520,7 @@ function validateV4BranchesAndArtifacts(input: BackupV4, conversations: any[], a
     draftBranchIds.add(d.branchId)
     if (!isStr(d.text)) throw new BackupError('branchDraft.text 必须是字符串')
     if (!Array.isArray(d.imageIds) || !d.imageIds.every(isStr)) throw new BackupError('branchDraft.imageIds 非法')
+    validateMaterialModes(d.materialModes, d.imageIds)
     for (const img of d.imageIds) if (!attIds.has(img)) throw new BackupError('branchDraft 引用了不存在的附件：' + String(img).slice(0, 8))
   }
 
@@ -661,8 +672,8 @@ export async function restoreBackup(backup: Backup, binaries?: {
       // V7: the card list preference is a rebuildable UI preference; an older package
       // resets it instead of inheriting the previous local choice.
       { key: STUDY_CARD_PREFERENCES_KEY, value: v7?.studyCardPreferences ?? {} },
-      ...((backup as BackupV3).drafts || []).map((d: BackupDraft) => ({ key: 'draft:' + d.conversationId, value: { version: 1, text: d.text, imageIds: d.imageIds } })),
-      ...((backup as BackupV4).branchDrafts || []).map((d: BackupBranchDraft) => ({ key: 'draft-branch:' + d.branchId, value: { version: 1, text: d.text, imageIds: d.imageIds } })),
+      ...((backup as BackupV3).drafts || []).map((d: BackupDraft) => ({ key: 'draft:' + d.conversationId, value: { version: 1, text: d.text, imageIds: d.imageIds, ...materialModesFor(d.imageIds, d.materialModes) } })),
+      ...((backup as BackupV4).branchDrafts || []).map((d: BackupBranchDraft) => ({ key: 'draft-branch:' + d.branchId, value: { version: 1, text: d.text, imageIds: d.imageIds, ...materialModesFor(d.imageIds, d.materialModes) } })),
       ...((backup as BackupV4).activeBranches || []).map((ab: BackupActiveBranch) => ({ key: 'activeBranch:' + ab.conversationId, value: ab.branchId })),
     ];
     // D. Snapshot OLD opfs refs for post-success cleanup.

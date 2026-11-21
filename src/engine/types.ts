@@ -74,7 +74,14 @@ export type PdfContext = {
 
 /** Canonical attachment metadata. The binary blob lives in IndexedDB 'attachments' keyed by id. No base64/objectURL here.
  * source is OPTIONAL: ordinary user-uploaded images and all pre-Stage-5 attachments omit it. */
-export type Attachment = { id: StableId; name: string; mimeType: string; size: number; createdAt: number; updatedAt: number; source?: PdfAttachmentSource; ocr?: import('../api/deepseek-ocr').OcrPage; transcript?: import('../youtube/transcript').YoutubeTranscript }
+export type Attachment = { id: StableId; name: string; mimeType: string; size: number; createdAt: number; updatedAt: number; source?: PdfAttachmentSource; ocr?: import('../api/deepseek-ocr').OcrPage; materialOcr?: import('../api/deepseek-ocr').OcrPage; transcript?: import('../youtube/transcript').YoutubeTranscript }
+export type MaterialModes = Record<StableId, 'image' | 'ocr'>
+
+export function materialModesFor(ids: readonly StableId[], modes?: MaterialModes): { materialModes?: MaterialModes } {
+  if (!modes) return {}
+  const entries = ids.flatMap(id => modes[id] === 'image' || modes[id] === 'ocr' ? [[id, modes[id]] as const] : [])
+  return entries.length ? { materialModes: Object.fromEntries(entries) } : {}
+}
 /** Message holds only stable attachment id references, never objectURL/base64. */
 export type Message = {
   /** Provider-returned diagnostic text, separate from the answer and model context. */
@@ -87,6 +94,7 @@ export type Message = {
   role: MessageRole
   content: string
   images: StableId[]
+  materialModes?: MaterialModes
   createdAt: number
   updatedAt: number
   /** Present only when an assistant generation ended after acceptance. */

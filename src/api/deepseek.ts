@@ -552,7 +552,7 @@ function emptyChatReply(gemini: boolean, finishReason: string | undefined, frame
 }
 // ---- multimodal helpers (used by the store's message conversion; UI never builds this) ----
 export type VisionCapability = 'auto' | 'supports-image' | 'text-only'
-export async function buildApiMessages(msgs: import('../engine/types').Message[], toDataUrl: (id: string) => Promise<string | { text: string }>): Promise<ApiChatMessage[]> {
+export async function buildApiMessages(msgs: import('../engine/types').Message[], toDataUrl: (id: string, mode?: 'image' | 'ocr') => Promise<string | { text: string }>): Promise<ApiChatMessage[]> {
   const out: ApiChatMessage[] = []
   for (const m of msgs) {
     if (m.role === 'assistant') { out.push({ role: 'assistant', content: m.content, ...(m.serverToolCalls ? {server_tool_calls:m.serverToolCalls} : {}) }); continue }
@@ -563,7 +563,7 @@ export async function buildApiMessages(msgs: import('../engine/types').Message[]
       for(const doc of m.documents || []) parts.push({type:'file',file_id:doc.id})
       if (m.content) parts.push({ type: 'text', text: m.content })
       for (let idx = 0; idx < m.images.length; idx++) {
-        const attachment = await toDataUrl(m.images[idx])
+        const attachment = await toDataUrl(m.images[idx], m.materialModes?.[m.images[idx]])
         if (typeof attachment === 'string') {
           parts.push({ type: 'text', text: '【图片 ' + (idx + 1) + '/' + m.images.length + '】' })
           parts.push({ type: 'image_url', image_url: { url: attachment } })

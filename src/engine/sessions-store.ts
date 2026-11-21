@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { type Conversation, type Message, type Attachment, type StableId, type DraftDisposition, type QuickFollowUpMetadata, newStableId, NEW_TITLE } from './types'
+import { type Conversation, type Message, type Attachment, type StableId, type DraftDisposition, type QuickFollowUpMetadata, type MaterialModes, materialModesFor, newStableId, NEW_TITLE } from './types'
 import { sanitizeTitle } from './session-title'
 import { getSetting, setSetting, getConversation, saveConversation, saveConversationRenameAndSyncCards, deleteConversation, listConversations, commitAcceptedUserMessage, updateConversationOrganization, type ConversationOrganizationAction } from '../storage/storage'
 import { getSettingsSnapshot } from './settings-store'
@@ -75,6 +75,7 @@ export function presentRejectedSend(target: SendTarget, outcome: RejectedSend, i
 
 export type SendUserMessageOptions = {
   quickFollowUp?: QuickFollowUpMetadata
+  materialModes?: MaterialModes
   documents?: import('../api/deepseek-documents').DeepSeekDocument[]
   draftDisposition?: DraftDisposition
 }
@@ -193,7 +194,7 @@ export const sessionsActions = {
         const providerRejection = await providerPreflight(settings)
         if (!lease.isCurrent()) { lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
         if (providerRejection) { lease.release(); return { outcome: Promise.resolve(rejectSend(target, providerRejection, intent)) } }
-        const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, ...(options.documents?.length ? { documents: options.documents.map(d=>({...d})) } : {}), images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
+        const m = await attachPdfContexts({ id: newStableId(), role: 'user', content, ...(options.documents?.length ? { documents: options.documents.map(d=>({...d})) } : {}), images: imageIds, ...materialModesFor(imageIds, options.materialModes), createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
         const titled = conv.title === NEW_TITLE && content ? content.slice(0, 18) : conv.title
         const candidate: Conversation = { ...conv, title: titled, updatedAt: now, messages: [...conv.messages, m] }
         if (!lease.isCurrent()) { lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }

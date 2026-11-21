@@ -1,6 +1,7 @@
 import { useProjects, updateProject } from '../projects/project-store'
 import { ProjectMaterialImport } from '../projects/ProjectMaterialImport'
-import { replaceDraftImageSelection } from '../engine/draft-store'
+import { ensureProjectImageOcr } from '../projects/project-materials'
+import { flushAllDrafts, getDraft, replaceDraftImageSelection } from '../engine/draft-store'
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { useSessions } from '../engine/sessions-store'
 import { useGallery, galleryActions } from './gallery-store'
@@ -11,23 +12,31 @@ import { clampIndex } from './zoom'
 import css from './gallery.module.css'
 import { tx } from '../engine/locale'
 import { useBackTarget } from '../engine/back-navigation'
-import { getAttachment } from '../engine/attachment-service'
+import { deleteUnreferencedAttachments, getAttachment } from '../engine/attachment-service'
+import type { MaterialModes } from '../engine/types'
+import { Modal, Button } from '../dsh/primitives'
 import { timestamp, type YoutubeTranscript } from '../youtube/transcript'
 import { useBranchChat } from '../cockpit/use-branch-chat'
-import { branchThreadKey, useDraftImageIds } from '../engine/draft-store'
+import { branchThreadKey, useDraftImageIds, useDraftMaterialModes } from '../engine/draft-store'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
 import { useDialogFocus } from '../engine/use-dialog-focus'
 
 export function Gallery() {
   const g = useGallery(x => x)
   const dialogRef = useRef<HTMLDivElement>(null)
-  useBackTarget(g.open, galleryActions.close, 10)
   const conv = useSessions(s => s.byId[s.current || ''])
   const projects = useProjects()
   const project = projects.find(item => item.id === g.projectId)
   const ownedChat = !!project && conv?.projectId === project.id
   const [projectError, setProjectError] = useState('')
   const [selection, setSelection] = useState<Set<string> | null>(null)
+  const [managing, setManaging] = useState(false)
+  const [sendMode, setSendMode] = useState<'auto' | 'image' | 'ocr'>('auto')
+  const [confirm, setConfirm] = useState<'ocr' | 'delete'>()
+  const [busy, setBusy] = useState(false)
+  const [recognized, setRecognized] = useState<Set<string>>(new Set())
+  const [notice, setNotice] = useState('')
+  const operation = useRef<AbortController>()
   const [continuous, setContinuous] = useState(false)
   const anchor = useRef<string>()
   const drag = useRef<{ id: string; pointerId: number; before: Set<string>; last: string; moved: boolean }>()
@@ -36,6 +45,7 @@ export function Gallery() {
   const { effectiveMessages, activeBranchId, ready } = useBranchChat(g.open ? conv : undefined)
   const draftKey = activeBranchId ? branchThreadKey(activeBranchId) : convId ?? ''
   const draftIds = useDraftImageIds(g.open ? draftKey : '')
+  const draftModes = useDraftMaterialModes(g.open ? draftKey : '')
   const sent = useMemo(() => [...new Set(effectiveMessages.flatMap(message => message.role === 'user' ? message.images : []))], [effectiveMessages])
   const sharedIds = project?.attachmentIds
   const showChat = !project || (ownedChat && ready)
@@ -49,10 +59,19 @@ export function Gallery() {
   const conversationImageIds = imageIds.filter(id => !shared.has(id))
   function endSelection() {
     setSelection(null)
+    setManaging(false)
+    setConfirm(undefined)
     setContinuous(false)
     anchor.current = undefined
     drag.current = undefined
     suppressClick.current = false
+  }
+  function startSelection(manage: boolean) {
+    setSelection(new Set())
+    setManaging(manage)
+    setSendMode('auto')
+    setProjectError('')
+    setNotice('')
   }
   function selectRange(from: string, to: string, before: Set<string>, remove = false) {
     const start = projectImageIds.indexOf(from), end = projectImageIds.indexOf(to)
@@ -65,7 +84,7 @@ export function Gallery() {
     setSelection(next)
   }
   function selectItem(id: string) {
-    if (!selection) return
+    if (!selection || busy) return
     if (suppressClick.current) { suppressClick.current = false; return }
     if (continuous && anchor.current && projectImageIds.includes(id)) {
       selectRange(anchor.current, id, selection)
@@ -80,7 +99,7 @@ export function Gallery() {
   }
   function startDrag(event: PointerEvent<HTMLButtonElement>, id: string) {
     suppressClick.current = false
-    if (!continuous || !selection || !event.isPrimary || event.button !== 0) return
+    if (!continuous || !selection || busy || !event.isPrimary || event.button !== 0) return
     event.currentTarget.setPointerCapture(event.pointerId)
     drag.current = { id, pointerId: event.pointerId, before: selection, last: id, moved: false }
   }
@@ -99,20 +118,76 @@ export function Gallery() {
     suppressClick.current = drag.current.moved && event.type === 'pointerup'
     drag.current = undefined
   }
-  function applySelection() {
-    if (!ownedChat || !draftKey || !ready || !sharedIds || !selection) return
-    replaceDraftImageSelection(draftKey, sharedIds, sharedIds.filter(id => selection.has(id) && metaById.has(id)))
-    endSelection()
+  const hasOcr = (id: string) => !!(metaById.get(id)?.ocr || metaById.get(id)?.materialOcr || recognized.has(id))
+  function addToDraft(ids: string[], mode: typeof sendMode) {
+    const images = ids.filter(id => !transcriptById.has(id))
+    const modes: MaterialModes = Object.fromEntries(images.map(id => [id, mode === 'auto' ? hasOcr(id) ? 'ocr' : 'image' : mode]))
+    replaceDraftImageSelection(draftKey, ids, ids, modes)
+    setNotice(tx('已加入提问草稿 · ' + ids.length + ' 项', 'Added to draft · ' + ids.length + ' items'))
   }
-  const unpin = (id: string) => {
-    if (!project) return
+  function toggleDraftMaterial(id: string) {
+    if (!ownedChat || !ready || !metaById.has(id)) return
+    if (getDraft(draftKey).imageIds.includes(id)) {
+      replaceDraftImageSelection(draftKey, [id], [])
+      setNotice(tx('已从提问草稿移除。', 'Removed from the draft.'))
+      return
+    }
+    addToDraft([id], 'auto')
+  }
+  const chosenIds = (sharedIds ?? []).filter(id => selection?.has(id) && metaById.has(id))
+  const missingOcr = chosenIds.filter(id => !transcriptById.has(id) && !hasOcr(id))
+  async function applySelection(confirmed = false) {
+    if (!ownedChat || !ready || !chosenIds.length || operation.current) return
+    if (sendMode === 'ocr' && missingOcr.length && !confirmed) { setConfirm('ocr'); return }
+    const controller = new AbortController()
+    operation.current = controller
+    setConfirm(undefined)
+    setBusy(true)
     setProjectError('')
-    void updateProject(project.id, current => ({ ...current, attachmentIds: current.attachmentIds.filter(item => item !== id) }))
-      .catch(() => setProjectError(tx('无法移出项目资料。', 'Could not remove project material.')))
+    try {
+      if (sendMode === 'ocr') {
+        for (const id of missingOcr) {
+          if (controller.signal.aborted) return
+          await ensureProjectImageOcr(id)
+          if (!controller.signal.aborted) setRecognized(previous => new Set([...previous, id]))
+        }
+      }
+      if (controller.signal.aborted || !galleryActions.isOpenFor(convId, project?.id)) return
+      addToDraft(chosenIds, sendMode)
+      endSelection()
+    } catch (error) {
+      if (!controller.signal.aborted) setProjectError(error instanceof Error ? error.message : tx('无法准备所选资料。', 'Unable to prepare selected materials.'))
+    } finally {
+      if (operation.current === controller) { operation.current = undefined; setBusy(false) }
+    }
   }
-  const removeAction = (id: string) => !selection && (
-    <button type="button" className={css.closeBtn + ' ' + css.unpinMaterial} aria-label={tx('移出项目', 'Remove from project')} title={tx('移出项目', 'Remove from project')} onClick={() => unpin(id)}>×</button>
-  )
+  async function deleteSelected() {
+    if (!project || !chosenIds.length || operation.current) return
+    const controller = new AbortController()
+    operation.current = controller
+    setBusy(true)
+    setConfirm(undefined)
+    setProjectError('')
+    try {
+      await flushAllDrafts(true)
+      const removed = new Set(chosenIds)
+      await updateProject(project.id, current => ({ ...current, attachmentIds: current.attachmentIds.filter(id => !removed.has(id)) }))
+      await deleteUnreferencedAttachments(chosenIds)
+      if (controller.signal.aborted) return
+      setNotice(tx('已从项目移出 ' + chosenIds.length + ' 项', 'Removed ' + chosenIds.length + ' items from the project'))
+      endSelection()
+    } catch {
+      if (!controller.signal.aborted) setProjectError(tx('无法移出项目资料。', 'Could not remove project materials.'))
+    } finally {
+      if (operation.current === controller) { operation.current = undefined; setBusy(false) }
+    }
+  }
+  const addAction = (id: string) => {
+    if (selection || !ownedChat || !ready || !metaById.has(id)) return null
+    const added = draftIds.includes(id)
+    const label = added ? tx('从提问草稿移除', 'Remove from draft') : tx('加入提问草稿', 'Add to draft')
+    return <button type="button" className={css.closeBtn + ' ' + css.addMaterial} aria-label={label} title={label} aria-pressed={added} onClick={() => toggleDraftMaterial(id)}>{added ? '✓' : '＋'}</button>
+  }
   const renderProjectImage = (id: string) => {
     const meta = metaById.get(id)
     const source = meta?.source
@@ -128,11 +203,11 @@ export function Gallery() {
         <strong className={css.materialName} title={source?.fileName ?? name}>{label}</strong>
         {source && name && <span className={css.materialSource} title={source.fileName}>{name}</span>}
         <div className={css.projectCardMeta}>
-          {meta?.ocr && <small>{tx('含 OCR', 'OCR available')}</small>}
-          {!selection && (chosen ? <small>{tx('本次已选', 'Selected for this question')}</small> : sent.includes(id) && <small>{tx('本会话已用', 'Used in this chat')}</small>)}
+          {hasOcr(id) && <small>{tx('含 OCR', 'OCR available')}</small>}
+          {!selection && (chosen ? <small>{(draftModes?.[id] ?? (meta?.ocr ? 'ocr' : 'image')) === 'ocr' ? tx('本次发送 OCR', 'Send OCR this time') : tx('本次发送原图', 'Send image this time')}</small> : sent.includes(id) && <small>{tx('本会话已用', 'Used in this chat')}</small>)}
         </div>
       </div>
-      {removeAction(id)}
+      {addAction(id)}
     </div>
   </article>
   }
@@ -141,12 +216,22 @@ export function Gallery() {
     return transcript ? [{ id, transcript }] : []
   })
   useEffect(() => { if (g.open && g.convId !== convId) galleryActions.close() }, [g.open, g.convId, convId])
-  useEffect(() => setProjectError(''), [g.open, project?.id])
-  useEffect(endSelection, [g.open, project?.id, draftKey])
-  useDialogFocus(dialogRef, g.open && g.convId === convId && g.view === 'list', () => {
+  useEffect(() => {
+    setProjectError('')
+    setNotice('')
+    setRecognized(new Set())
+  }, [g.open, project?.id])
+  useEffect(() => {
+    endSelection()
+    return () => { operation.current?.abort(); operation.current = undefined; setBusy(false) }
+  }, [g.open, project?.id, draftKey])
+  const backFromList = () => {
+    if (busy) return
     if (selection) endSelection()
     else galleryActions.close()
-  })
+  }
+  useBackTarget(g.open, g.view === 'list' ? backFromList : galleryActions.close, 10)
+  useDialogFocus(dialogRef, g.open && g.convId === convId && g.view === 'list', backFromList)
   if (!g.open || g.convId !== convId) return null
   const count = imageIds.length
   return (
@@ -159,16 +244,28 @@ export function Gallery() {
           </div>
           <button type="button" className={css.closeBtn} onClick={galleryActions.close}>{tx('关闭', 'Close')}</button>
         </div>
-        {project && g.view === 'list' && (selection || (ownedChat && ready && !!sharedIds?.length)) && (
+        {project && g.view === 'list' && (selection || !!sharedIds?.length) && (
           <div className={css.selectionBar}>
             {selection ? <>
               <span role="status">{tx('已选 ', 'Selected ')}{selection.size}</span>
-              <button type="button" className={css.closeBtn} aria-pressed={continuous} onClick={() => { anchor.current = undefined; setContinuous(value => !value) }}>{tx('连续选择', 'Continuous selection')}</button>
-              <button type="button" className={css.closeBtn} onClick={endSelection}>{tx('取消', 'Cancel')}</button>
-              <button type="button" className={css.selectionApply} onClick={applySelection}>{tx('加入本次提问', 'Add to this question')}</button>
-            </> : <button type="button" className={css.closeBtn} onClick={() => setSelection(new Set(draftIds.filter(id => shared.has(id))))}>{tx('选择资料', 'Select materials')}</button>}
+              <button type="button" className={css.closeBtn} disabled={busy} aria-pressed={continuous} onClick={() => { anchor.current = undefined; setContinuous(value => !value) }}>{tx('连续选择', 'Continuous selection')}</button>
+              <button type="button" className={css.closeBtn} disabled={busy} onClick={endSelection}>{tx('取消', 'Cancel')}</button>
+              {managing ? <button type="button" className={css.selectionDelete} disabled={!chosenIds.length || busy} onClick={() => setConfirm('delete')}>{tx('删除所选', 'Delete selected')}</button> : <>
+                <select className={css.sendMode} aria-label={tx('项目资料发送方式', 'Project material send mode')} value={sendMode} disabled={busy} onChange={event => setSendMode(event.target.value as typeof sendMode)}>
+                  <option value="auto">{tx('按资料类型', 'By material type')}</option>
+                  <option value="ocr">{tx('OCR 文本', 'OCR text')}</option>
+                  <option value="image">{tx('原图', 'Original images')}</option>
+                </select>
+                <button type="button" className={css.selectionApply} disabled={!chosenIds.length || busy} onClick={() => void applySelection()}>{busy ? tx('正在准备…', 'Preparing…') : tx('加入本次提问', 'Add to this question')}</button>
+              </>}
+            </> : <>
+              {ownedChat && ready && <button type="button" className={css.closeBtn} onClick={() => startSelection(false)}>{tx('选择资料', 'Select materials')}</button>}
+              <button type="button" className={css.closeBtn} onClick={() => startSelection(true)}>{tx('管理', 'Manage')}</button>
+            </>}
           </div>
         )}
+        {g.view === 'list' && projectError && <p className={css.materialStatus} role="alert">{projectError}</p>}
+        {g.view === 'list' && notice && <p className={css.materialStatus} role="status">{notice}</p>}
       </div>
       {(!project && conv && !ready) ? <div className={css.empty} role="status">{tx('正在读取图片资料…', 'Loading images…')}</div> :
         !project && count === 0 && !transcripts.length ? <div className={css.empty}>{tx('当前会话暂无图片或转写稿', 'No images or transcripts in this chat')}</div> :
@@ -177,16 +274,15 @@ export function Gallery() {
             {project && <section aria-label={tx('项目资料', 'Project materials')}>
               <div className={css.projectSectionHeader}>
                 <h2>{project.name} · {tx('项目资料', 'Project materials')}</h2>
-                <p>{tx('选中的资料才会加入这次提问。', 'Only selected materials are added to the current question.')}</p>
+                <p>{managing ? tx('选择要从项目移出的资料。', 'Select materials to remove from this project.') : ownedChat ? tx('点＋加入草稿，或多选后指定发送 OCR 文本或原图。', 'Use ＋ to add one item to the draft, or choose OCR or original images for multiple items.') : tx('打开该项目的会话后即可选资料加入提问。', 'Open a chat in this project to add materials to a question.')}</p>
                 {project.archivedAt === undefined && <div hidden={!!selection}><ProjectMaterialImport key={project.id} projectId={project.id} projectName={project.name} /></div>}
-                {projectError && <p role="alert">{projectError}</p>}
               </div>
               {projectImageIds.length > 0 && <div className={css.grid}>{projectImageIds.map(renderProjectImage)}</div>}
               {transcripts.some(item => shared.has(item.id)) && <div className={css.transcriptList}>
-                {transcripts.filter(item => shared.has(item.id)).map(({ id, transcript }) => <div className={css.projectCard} key={id} data-project-material={id} data-selected={draftIds.includes(id) || undefined} data-used={sent.includes(id) || undefined}>
-                  {selection && <label className={css.transcriptSelect}><input type="checkbox" checked={selection.has(id)} onChange={() => selectItem(id)} />{tx('选择转写稿', 'Select transcript')}</label>}
+                {transcripts.filter(item => shared.has(item.id)).map(({ id, transcript }) => <div className={css.projectCard} key={id} data-project-material={id} data-selected={(selection ? selection.has(id) : draftIds.includes(id)) || undefined} data-used={sent.includes(id) || undefined}>
+                  {selection && <label className={css.transcriptSelect}><input type="checkbox" checked={selection.has(id)} disabled={busy} onChange={() => selectItem(id)} />{tx('选择转写稿', 'Select transcript')}</label>}
                   <TranscriptCard transcript={transcript} />
-                  {!selection && <div className={css.projectCardActions}>{removeAction(id)}</div>}
+                  {!selection && <div className={css.projectCardActions}>{addAction(id)}</div>}
                 </div>)}
               </div>}
             </section>}
@@ -197,8 +293,16 @@ export function Gallery() {
             </div>}
           </div>
         ) : (
-          <GalleryViewer imageIds={imageIds} index={clampIndex(g.attachmentId ? imageIds.indexOf(g.attachmentId) : g.index, count)} />
+          <GalleryViewer imageIds={imageIds} index={clampIndex(g.attachmentId ? imageIds.indexOf(g.attachmentId) : g.index, count)} materialAction={id => shared.has(id) ? addAction(id) : null} />
         )}
+      {confirm && <Modal open rootClassName={css.projectModal} title={confirm === 'delete' ? tx('从项目删除资料', 'Remove project materials') : tx('识别所选图片', 'Recognize selected images')} closeLabel={tx('取消', 'Cancel')} onClose={() => setConfirm(undefined)} footer={<>
+        <Button variant="outline" onClick={() => setConfirm(undefined)}>{tx('取消', 'Cancel')}</Button>
+        <Button onClick={() => void (confirm === 'delete' ? deleteSelected() : applySelection(true))}>{confirm === 'delete' ? tx('确认删除', 'Remove selected') : tx('识别并加入草稿', 'Recognize and add to draft')}</Button>
+      </>}>
+        {confirm === 'delete'
+          ? tx('从项目移出 ' + chosenIds.length + ' 项资料。已加入会话或草稿的资料仍可使用。', 'Remove ' + chosenIds.length + ' items from this project. Existing chats and drafts keep their attachments.')
+          : tx('所选资料中有 ' + missingOcr.length + ' 张图片尚未识别。这些图片会发送到 DeepSeek OCR，需官方 API Key，并按服务计费。识别结果保存在本机。', missingOcr.length + ' selected images need recognition. They will go to DeepSeek OCR, which requires an official API key and may incur charges. Results are saved locally.')}
+      </Modal>}
     </div>
   )
 }
@@ -221,7 +325,7 @@ function Thumb({ id, index, showIndex = true, selection }: { id: string; index: 
     </button>
   )
 }
-function GalleryViewer({ imageIds, index }: { imageIds: string[]; index: number }) {
+function GalleryViewer({ imageIds, index, materialAction }: { imageIds: string[]; index: number; materialAction: (id: string) => React.ReactNode }) {
   const id = imageIds[index]
   const { url } = useAttachmentPreview(id)
   const count = imageIds.length
@@ -236,7 +340,7 @@ function GalleryViewer({ imageIds, index }: { imageIds: string[]; index: number 
       onNext={() => galleryActions.goto(clampIndex(index + 1, count))}
       onBackToList={galleryActions.showList}
       onClose={galleryActions.close}
-      headerAction={<GalleryAttachmentAction key={id} id={id} />}
+      headerAction={<>{materialAction(id)}<GalleryAttachmentAction key={id} id={id} /></>}
       labels={{ close: tx('关闭', 'Close'), prev: tx('上一张', 'Previous'), next: tx('下一张', 'Next'), backToList: tx('返回列表', 'Back to list'), dialog: tx('图片大图查看', 'Image viewer') }}
     />
   )

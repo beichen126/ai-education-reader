@@ -38,7 +38,11 @@ export function PdfContextCard({
       <div className={css.groupInfo}>
         <span className={css.groupFileName}>📄 {item.fileName}</span>
         {item.title && <span className={css.groupTitle}>{item.title}</span>}
-        <span className={css.groupRange}>{countText}{item.contextMode === 'ocr' ? tx(' · OCR 文本', ' · OCR text') : ''}</span>
+        <span className={css.groupRange}>{countText}
+          {item.contextMode === 'ocr' && tx(' · OCR 文本', ' · OCR text')}
+          {item.contextMode === 'image' && tx(' · 原图', ' · Original images')}
+          {item.contextMode === 'mixed' && tx(' · OCR 与原图', ' · OCR and original images')}
+        </span>
       </div>
       <div className={css.groupActions}>
         <button

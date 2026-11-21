@@ -1,9 +1,27 @@
-import { attachmentErrorLabel, AttachmentError, saveGeneratedImagesWithSetting, type GeneratedImageInput } from '../engine/attachment-service'
+import { attachmentErrorLabel, AttachmentError, getAttachment, readAttachmentImage, saveGeneratedImagesWithSetting, type GeneratedImageInput } from '../engine/attachment-service'
+import { recognizeDeepSeekPage, validOcrPage } from '../api/deepseek-ocr'
+import { selectedDeepSeekServiceProfile } from '../engine/deepseek-service-profile'
+import { idbUpdate } from '../storage/idb'
 import { newStableId } from '../engine/types'
 import { pdfPageAttachmentName, type PdfAddPayload, type PdfAddResult } from '../pdf/pdf-types'
 import { tx } from '../engine/locale'
 import { PROJECTS_KEY, readProjectRecords } from './project-records'
 import { reloadProjects } from './project-store'
+
+export async function ensureProjectImageOcr(id: string) {
+  const recognize = async () => {
+    const attachment = await getAttachment(id)
+    if (!attachment || attachment.transcript) throw new AttachmentError('missing-attachment', 'Image is unavailable')
+    const cached = attachment.ocr ?? attachment.materialOcr
+    if (validOcrPage(cached)) return cached
+    const profile = selectedDeepSeekServiceProfile()
+    if (!profile) throw new Error(tx('请先在设置中保存 DeepSeek 官方 API Key。', 'Save an official DeepSeek API key in Settings first.'))
+    const result = await recognizeDeepSeekPage(await readAttachmentImage(id), profile.config.apiKey)
+    await idbUpdate('attachments', id, row => ({ ...row, meta: { ...row.meta, materialOcr: result } }))
+    return result
+  }
+  return typeof navigator !== 'undefined' && navigator.locks ? navigator.locks.request('project-image-ocr:' + id, recognize) : recognize()
+}
 
 export async function saveProjectMaterials(projectId: string, inputs: GeneratedImageInput[], isCancelled?: () => boolean) {
   const saved = await saveGeneratedImagesWithSetting(inputs, PROJECTS_KEY, (value, ids) => {

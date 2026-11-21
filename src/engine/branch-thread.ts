@@ -1,4 +1,4 @@
-import { newStableId, type DraftDisposition, type Message, type QuickFollowUpMetadata, type StableId } from './types'
+import { newStableId, type DraftDisposition, materialModesFor, type MaterialModes, type Message, type QuickFollowUpMetadata, type StableId } from './types'
 import { getSettingsSnapshot } from './settings-store'
 import { providerPreflight } from '../api/chat-provider'
 import { runThreadReply, type ReplyMetadata, type ReplyThread } from './stream-reply'
@@ -85,6 +85,7 @@ export class BranchReplyThread implements ReplyThread {
  */
 export type BranchReplyOptions = {
   quickFollowUp?: QuickFollowUpMetadata
+  materialModes?: MaterialModes
   documents?: import('../api/deepseek-documents').DeepSeekDocument[]
   draftDisposition?: DraftDisposition
 }
@@ -114,7 +115,7 @@ export async function runBranchReply(conversationId: StableId, branchId: StableI
       if (!lease.isCurrent()) { lease.release(); return { outcome: Promise.resolve({ kind: 'aborted' } as const) } }
       if (providerRejection) { lease.release(); return pendingRejected(providerRejection) }
       const now = Date.now()
-      const msg = await attachPdfContexts({ id: newStableId(), role: 'user', content, ...(options.documents?.length ? { documents: options.documents.map(d=>({...d})) } : {}), images: imageIds, createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
+      const msg = await attachPdfContexts({ id: newStableId(), role: 'user', content, ...(options.documents?.length ? { documents: options.documents.map(d=>({...d})) } : {}), images: imageIds, ...materialModesFor(imageIds, options.materialModes), createdAt: now, updatedAt: now, ...(options.quickFollowUp ? { quickFollowUp: options.quickFollowUp } : {}) }, imageIds, now)
       const conversation = await getConversation(conversationId)
       const branches = await listBranchesByConversation(conversationId)
       if (!conversation) {

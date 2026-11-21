@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import type { StableId } from './types'
+import { materialModesFor, type MaterialModes, type StableId } from './types'
 import type { DeepSeekDocument } from '../api/deepseek-documents'
 import { getSetting, setSetting, deleteSetting } from '../storage/storage'
 import { existsAttachment } from './attachment-service'
@@ -10,7 +10,7 @@ import { existsAttachment } from './attachment-service'
  * draft:<conversationId>) is a best-effort async layer so drafts survive reloads.
  * Non-empty drafts are persisted; empty drafts are not kept as rows.
  */
-export type Draft = { text: string; imageIds: StableId[] }
+export type Draft = { text: string; imageIds: StableId[]; materialModes?: MaterialModes }
 const KEY = 'draft:'
 const BRANCH_PREFIX = 'B:'
 /** The persisted settings key for a conversation's draft (used by atomic send accept). */
@@ -64,7 +64,7 @@ async function writeDraft(id: string): Promise<void> {
     await deleteSetting(storageKeyFor(id))
     return
   }
-  await setSetting(storageKeyFor(id), { version: VERSION, text: d.text, imageIds: d.imageIds })
+  await setSetting(storageKeyFor(id), { version: VERSION, ...d })
 }
 function persistDraft(id: string, strict = false): Promise<void> {
   const write = writeDraft(id)
@@ -75,24 +75,25 @@ function persistDraft(id: string, strict = false): Promise<void> {
 
 /** Text is debounced so a keystroke storm doesn't spam IndexedDB transactions. */
 export function setDraftText(id: string, text: string): void {
-  put(id, { text, imageIds: getDraft(id).imageIds })
+  put(id, { ...getDraft(id), text })
   cancelTextTimer(id)
   textTimers.set(id, setTimeout(() => { textTimers.delete(id); void persistDraft(id) }, TEXT_DEBOUNCE_MS))
 }
 
 export function addDraftImages(id: string, ids: StableId[]): void {
   const cur = getDraft(id)
-  put(id, { text: cur.text, imageIds: [...new Set([...cur.imageIds, ...ids])] })
+  put(id, { ...cur, imageIds: [...new Set([...cur.imageIds, ...ids])] })
   void persistDraft(id)
 }
 
-export function replaceDraftImageSelection(id: string, scope: readonly StableId[], selected: readonly StableId[]): void {
+export function replaceDraftImageSelection(id: string, scope: readonly StableId[], selected: readonly StableId[], modes?: MaterialModes): void {
   const current = getDraft(id)
   const scoped = new Set(scope)
   const chosen = new Set(selected)
   const retained = current.imageIds.filter(image => !scoped.has(image) || chosen.has(image))
   const imageIds = [...new Set([...retained, ...selected])]
-  put(id, { text: current.text, imageIds })
+  const keptModes = materialModesFor(imageIds.filter(image => !scoped.has(image)), current.materialModes)
+  put(id, { text: current.text, imageIds, ...materialModesFor(imageIds, { ...keptModes.materialModes, ...modes }) })
   void persistDraft(id)
 }
 /** Update the in-memory draft object without any database write. Used when the durable
@@ -104,7 +105,8 @@ export function updateDraftMemory(id: string, d: Draft): void {
 export function removeDraftImages(id: string, ids: readonly StableId[]): Promise<void> {
   const cur = getDraft(id)
   const removed = new Set(ids)
-  put(id, { text: cur.text, imageIds: cur.imageIds.filter(x => !removed.has(x)) })
+  const imageIds = cur.imageIds.filter(x => !removed.has(x))
+  put(id, { text: cur.text, imageIds, ...materialModesFor(imageIds, cur.materialModes) })
   return persistDraft(id)
 }
 export function removeDraftImage(id: string, img: StableId): void { void removeDraftImages(id, [img]) }
@@ -145,7 +147,7 @@ function parseDraft(raw: any): Draft | null {
   if (!raw || typeof raw !== 'object' || typeof raw.text !== 'string') return null
   if (!Array.isArray(raw.imageIds)) return null
   const imageIds = raw.imageIds.filter((x: any): x is string => typeof x === 'string')
-  return { text: raw.text, imageIds }
+  return { text: raw.text, imageIds, ...materialModesFor(imageIds, raw.materialModes) }
 }
 
 /** Drop the in-memory draft cache (e.g. after a backup restore replaced all data). */
@@ -174,8 +176,9 @@ async function restoreDraft(threadId: string, storageKey: string): Promise<void>
     try { ok = await existsAttachment(img) } catch { ok = false }
     if (ok) pruned.push(img); else changed = true
   }
-  drafts.set(threadId, { text: d.text, imageIds: pruned })
-  if (changed) try { await setSetting(storageKey, { version: VERSION, text: d.text, imageIds: pruned }) } catch { /* ignore */ }
+  const restored = { text: d.text, imageIds: pruned, ...materialModesFor(pruned, d.materialModes) }
+  drafts.set(threadId, restored)
+  if (changed) try { await setSetting(storageKey, { version: VERSION, ...restored }) } catch { /* ignore */ }
 }
 
 export async function initDrafts(conversationIds: string[]): Promise<void> {
@@ -210,6 +213,7 @@ export async function flushBranchDraft(branchId: StableId): Promise<void> { awai
 
 export function useDraftText(id: string): string { return useSyncExternalStore(subscribe, () => getDraft(id).text) }
 export function useDraftImageIds(id: string): StableId[] { return useSyncExternalStore(subscribe, () => getDraft(id).imageIds) }
+export function useDraftMaterialModes(id: string): MaterialModes | undefined { return useSyncExternalStore(subscribe, () => getDraft(id).materialModes) }
 export function useHasDraft(id: string): boolean {
   return useSyncExternalStore(subscribe, () => {
     const draft = getDraft(id)

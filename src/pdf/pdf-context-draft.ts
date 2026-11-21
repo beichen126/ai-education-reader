@@ -62,7 +62,7 @@ export async function addPdfContextToDraft(conversationId: string, payload: PdfA
     // The durable draft row was already committed in the same txn; update memory WITHOUT a
     // second DB mutation (no duplicate persist).
     const latest = getDraft(key)
-    updateDraftMemory(key, { text: latest.text, imageIds: [...new Set([...latest.imageIds, ...atts.map(a => a.id)])] })
+    updateDraftMemory(key, { ...latest, imageIds: [...new Set([...latest.imageIds, ...atts.map(a => a.id)])] })
     return { ok: true, count: atts.length, error: '' }
   } catch (e) {
     return { ok: false, count: 0, error: e instanceof Error ? e.message : tx('无法将 PDF 页面加入对话。', 'Unable to add the PDF pages to the chat.') }

@@ -6,7 +6,7 @@ import { resolveStoredModel } from '../api/model-defaults'
 import { idbGetAll } from '../storage/idb'
 import { listDocumentRecords, readDocumentSourceBlob } from '../documents/document-service'
 import { listDocumentNotes } from '../documents/document-note-service'
-import type { Attachment } from '../engine/types'
+import { materialModesFor, type Attachment } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import { BACKUP_FORMAT, BACKUP_VERSION, PORTABLE_ARCHIVE_FORMAT, type BackupAttachment, type BackupDocument, type BackupDraft, type BackupV7, type BackupBranchDraft, type BackupActiveBranch, type PortableBackupManifest, type PortableBackupV7 } from './backup-types'
 import { readBinary } from '../storage/binary-store'
@@ -96,7 +96,8 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
       if (!conversationIds.has(convId)) continue
       const v = row.value
       if (v && typeof v.text === 'string' && Array.isArray(v.imageIds)) {
-        drafts.push({ conversationId: convId, text: v.text, imageIds: v.imageIds.filter((x: any) => typeof x === 'string') })
+        const imageIds = v.imageIds.filter((x: any) => typeof x === 'string')
+        drafts.push({ conversationId: convId, text: v.text, imageIds, ...materialModesFor(imageIds, v.materialModes) })
         for (const imgId of v.imageIds) if (!seen.has(imgId)) seen.add(imgId)
       }
     } else if (row.key.indexOf('draft-branch:') === 0) {
@@ -104,7 +105,8 @@ async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBa
       if (!branchOwners.has(branchId)) continue
       const v = row.value
       if (v && typeof v.text === 'string' && Array.isArray(v.imageIds)) {
-        branchDrafts.push({ branchId, text: v.text, imageIds: v.imageIds.filter((x: any) => typeof x === 'string') })
+        const imageIds = v.imageIds.filter((x: any) => typeof x === 'string')
+        branchDrafts.push({ branchId, text: v.text, imageIds, ...materialModesFor(imageIds, v.materialModes) })
         for (const imgId of v.imageIds) if (!seen.has(imgId)) seen.add(imgId)
       }
     } else if (row.key.indexOf('activeBranch:') === 0) {

@@ -6,6 +6,7 @@ const subs = new Set<() => void>()
 function notify() { subs.forEach(f => f()) }
 function useGallery<T>(sel: (s: G) => T): T { return useSyncExternalStore(fn => { subs.add(fn); return () => { subs.delete(fn) } }, () => sel(s)) }
 export const galleryActions = {
+  isOpenFor(convId: string | undefined, projectId: string | undefined) { return s.open && s.convId === convId && s.projectId === projectId },
   open(convId: string | undefined, index = 0, view: GalleryView = 'list', projectId?: string) { s = { open: true, view, index, convId, projectId }; notify() },
   openAttachment(convId: string | undefined, attachmentId: string) { s = { open: true, view: 'viewer', index: 0, convId, attachmentId }; notify() },
   openViewer(index: number) { if (!s.open) return; s = { ...s, view: 'viewer', index, attachmentId: undefined }; notify() },

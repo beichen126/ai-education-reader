@@ -1,7 +1,7 @@
 import { PROJECTS_KEY, readProjectRecords } from '../projects/project-records'
 // attachmentService — the single authority for attachment lifecycle. The UI never
 // touches IndexedDB, OPFS, Blob, objectURL, or base64 directly.
-import { newStableId, type Attachment, type PdfAttachmentSource, type StableId } from './types'
+import { newStableId, materialModesFor, type Attachment, type MaterialModes, type PdfAttachmentSource, type StableId } from './types'
 import { saveAttachmentRow, saveAttachmentRows, getAttachmentRow, deleteAttachment as deleteAttachmentRow, attachmentExists, getConversation, type StoredAttachmentRow } from '../storage/storage'
 import { idbRunTxn, idbUpdate } from '../storage/idb'
 import { getBranch } from '../branches/branch-store'
@@ -133,7 +133,7 @@ export type DraftOwnership = { conversationId: string; text: string; existingIma
 export type DraftCommitDeps = {
   failTxn?: boolean
   /** Text and images can change while large binaries are staging. */
-  getCurrentDraft?: () => { text: string; imageIds: string[] }
+  getCurrentDraft?: () => { text: string; imageIds: string[]; materialModes?: MaterialModes }
 }
 export async function saveGeneratedImagesAndDraft(images: GeneratedImageInput[], draft: DraftOwnership, deps: DraftCommitDeps = {}): Promise<Attachment[]> {
   // Verify the target conversation still exists BEFORE staging/committing. Never allow
@@ -164,7 +164,7 @@ export async function saveGeneratedImagesAndDraft(images: GeneratedImageInput[],
       const text = current?.text ?? draft.text
       const imageIds = [...new Set([...(current?.imageIds ?? draft.existingImageIds), ...newIds])]
       if (text !== '' || imageIds.length > 0) {
-        sos.put({ key: 'draft:' + draft.conversationId, value: { version: 1, text, imageIds } })
+        sos.put({ key: 'draft:' + draft.conversationId, value: { version: 1, text, imageIds, ...materialModesFor(imageIds, current?.materialModes) } })
       } else {
         sos.delete('draft:' + draft.conversationId)
       }
@@ -214,7 +214,7 @@ export async function saveGeneratedImagesAndBranchDraft(images: GeneratedImageIn
         const imageIds = [...new Set([...(current?.imageIds ?? draft.existingImageIds), ...newIds])]
         const key = BRANCH_DRAFT_PREFIX + draft.branchId
         if (text !== '' || imageIds.length > 0) {
-          sos.put({ key, value: { version: 1, text, imageIds } })
+          sos.put({ key, value: { version: 1, text, imageIds, ...materialModesFor(imageIds, current?.materialModes) } })
         } else {
           sos.delete(key)
         }
@@ -359,8 +359,12 @@ export function releasePreviewUrl(id: StableId): void {
   if (e.refs <= 0) { e.controller?.abort(); urlRegistry.delete(id); if (e.url) URL.revokeObjectURL(e.url) }
 }
 
+export async function readAttachmentImage(id: StableId): Promise<Blob> {
+  return previewBlobOf(id, () => true)
+}
+
 export async function toDataUrl(id: StableId): Promise<string> {
-  const blob = await blobOf(id)
+  const blob = await readAttachmentImage(id)
   const buf = await blob.arrayBuffer()
   const bytes = new Uint8Array(buf)
   let bin = ''; const CHUNK = 0x8000
@@ -453,13 +457,15 @@ export async function cleanupOrphanAttachments(graceMs = 24 * 60 * 60 * 1000): P
 }
 
 /** Model projection keeps the saved preview, but OCR attachments transmit text only. */
-export async function toModelAttachment(id: StableId): Promise<string | { text: string }> {
+export async function toModelAttachment(id: StableId, mode?: 'image' | 'ocr'): Promise<string | { text: string }> {
   const meta = await getAttachment(id)
-  if (meta?.ocr) {
+  const ocr = mode === 'image' ? undefined : meta?.ocr ?? (mode === 'ocr' ? meta?.materialOcr : undefined)
+  if (ocr) {
     const { validOcrPage, ocrContextText } = await import('../api/deepseek-ocr')
-    if (!validOcrPage(meta.ocr)) throw new AttachmentError('read-failed', 'invalid OCR metadata')
-    return { text: ocrContextText(meta.ocr, meta.name) }
+    if (!validOcrPage(ocr)) throw new AttachmentError('read-failed', 'invalid OCR metadata')
+    return { text: ocrContextText(ocr, meta.name) }
   }
   if (meta?.transcript) { const {validTranscript,transcriptContext}=await import('../youtube/transcript'); if(!validTranscript(meta.transcript))throw new AttachmentError('read-failed','invalid transcript'); return {text:transcriptContext(meta.transcript)} }
+  if (mode === 'ocr') throw new AttachmentError('read-failed', 'missing OCR metadata')
   return toDataUrl(id)
 }

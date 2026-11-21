@@ -2,14 +2,14 @@
 // UI units (ordinary image | PDF context group). Recomputes groups ONLY from
 // Attachment.source — the ids order stays authoritative, groups are formed on
 // contiguous runs (never merging across an interruption, never re-sorting).
-import type { Attachment, StableId } from '../engine/types'
+import type { Attachment, MaterialModes, StableId } from '../engine/types'
 import { normalizePdfRanges, countPdfRangePages, type PdfRange } from '../pdf/pdf-types'
 
 export type AttachmentDisplayItem =
   | { type: 'image'; attachmentId: StableId }
   | {
       type: 'pdf-group'
-      contextMode?: 'ocr'
+      contextMode?: 'ocr' | 'image' | 'mixed'
       groupId: StableId
       attachmentIds: StableId[]
       fileName: string
@@ -31,7 +31,7 @@ export function isPdfPageAttachment(a: Attachment | undefined): a is Attachment 
   return !!a && a.source?.type === 'pdf-page'
 }
 
-export function buildAttachmentDisplayItems(ids: StableId[], metas: Attachment[]): AttachmentDisplayItem[] {
+export function buildAttachmentDisplayItems(ids: StableId[], metas: Attachment[], modes?: MaterialModes): AttachmentDisplayItem[] {
   const byId = new Map<string, Attachment>(metas.map(m => [m.id, m]))
   const out: AttachmentDisplayItem[] = []
   let i = 0
@@ -48,14 +48,20 @@ export function buildAttachmentDisplayItems(ids: StableId[], metas: Attachment[]
       }
       const first = byId.get(run[0])!
       const ranges = selectionRanges(first.source.selection)
+      const explicitMode = run.some(id => modes?.[id])
+      const ocrCount = run.filter(id => (modes?.[id] ?? (byId.get(id)?.ocr ? 'ocr' : 'image')) === 'ocr').length
+      const contextMode = ocrCount === run.length ? 'ocr' : ocrCount > 0 ? 'mixed' : explicitMode ? 'image' : undefined
       out.push({
         type: 'pdf-group',
-        ...(first.ocr ? { contextMode: 'ocr' as const } : {}),
+        ...(contextMode ? { contextMode } : {}),
         groupId: gid,
         attachmentIds: [...run],
         fileName: first.source.fileName,
         title: first.source.selection.title,
-        ranges,
+        ranges: explicitMode ? normalizePdfRanges(run.map(id => {
+          const page = byId.get(id)!.source!.pageNumber
+          return { startPage: page, endPage: page }
+        })) : ranges,
         selectedPageCount: run.length,
         originalPageCount: countPdfRangePages(ranges),
       })

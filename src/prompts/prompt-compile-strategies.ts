@@ -30,7 +30,7 @@ export type LogicalPromptContext = {
   bindings: LogicalPromptBinding[]
 }
 
-export type PromptImageResolver = (attachmentId: StableId) => Promise<string | { text: string }>
+export type PromptImageResolver = (attachmentId: StableId, mode?: 'image' | 'ocr') => Promise<string | { text: string }>
 
 function safeImageResolver(): PromptImageResolver {
   return async (attachmentId) => { throw new Error('missing image resolver for attachment ' + attachmentId) }

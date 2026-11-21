@@ -95,8 +95,11 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
   try {
     const contextMessages = acceptedSendContext?.logical.messages ?? await buildOcrAwareContext(await thread.getContextMessages())
     validateDocumentContext(contextMessages.flatMap(m=>m.documents || []), settings.apiBaseUrl, settings.model)
-    const contextAttachments = await Promise.all(contextMessages.flatMap(x => x.images).map(async id => ({ id, meta: await getAttachment(id) })))
-    const expectedImages = contextAttachments.filter(a => !a.meta?.ocr && !a.meta?.transcript).length
+    const contextAttachments = await Promise.all(contextMessages.flatMap(message => message.images.map(async id => ({
+      meta: await getAttachment(id),
+      mode: message.materialModes?.[id],
+    }))))
+    const expectedImages = contextAttachments.filter(({ meta, mode }) => !meta?.transcript && (mode === 'image' || (!mode && !meta?.ocr))).length
     // Provider limits differ. Never apply DeepSeek counts or an arbitrary raw
     // image-byte budget to OpenAI / compatible endpoints. Surface actual errors.
     const firecrawlEnabled = hasFirecrawlWebSearch(settings)

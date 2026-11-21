@@ -18,7 +18,7 @@ import { useSettings, useSettingsMutation } from '../engine/settings-store'
 import { formatTokenCount } from '../engine/token-usage'
 import { uiActions, useUi } from '../engine/ui-store'
 import { saveImagesAndDraft, saveGeneratedImagesAndDraft, saveGeneratedImages, saveGeneratedImagesAndBranchDraft, deleteUnreferencedAttachments, attachmentErrorLabel, isSupportedImage } from '../engine/attachment-service'
-import { useDraftDocuments, setDraftDocuments, useDraftImageIds, getDraft, removeDraftImages, updateDraftMemory } from '../engine/draft-store'
+import { useDraftDocuments, setDraftDocuments, useDraftImageIds, useDraftMaterialModes, getDraft, removeDraftImages, updateDraftMemory } from '../engine/draft-store'
 import { ComposerInput } from './ComposerInput'
 import { typedLocalFile, useComposerFileDrop } from './composer-file-input'
 import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
@@ -528,7 +528,7 @@ function PdfSourceButton({ context }: { context: { documentId: string; pageNumbe
 
 function MessageAttachmentStrip({ message, convId }: { message: TMessage; convId?: string }) {
   const metas = useAttachmentMetas(message.images)
-  const items = buildAttachmentDisplayItems(message.images, metas)
+  const items = buildAttachmentDisplayItems(message.images, metas, message.materialModes)
   return (
     <div className={css.photoStrip}>
       {items.map((item, idx) => {
@@ -591,6 +591,9 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
   const documents = useDraftDocuments(key)
   const supportsDocuments=useSettings(s=>isOfficialDeepSeek(s.apiBaseUrl)&&s.model==='deepseek-flash')
   const picIds = useDraftImageIds(key)
+  const draftMaterialModes = useDraftMaterialModes(key)
+  const materialOcrCount = picIds.filter(id => draftMaterialModes?.[id] === 'ocr').length
+  const materialImageCount = picIds.filter(id => draftMaterialModes?.[id] === 'image').length
   const firecrawlWebSearch = useSettings(hasFirecrawlWebSearch)
   const settingsPending = useSettingsMutation().status === 'pending'
   const [openId, setOpenId] = useState<string | null>(null)
@@ -672,7 +675,7 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
     return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mousedown', onDown) }
   }, [attachMenuOpen])
   const metas = useAttachmentMetas(picIds)
-  const composerItems = useMemo(() => buildAttachmentDisplayItems(picIds, metas), [picIds, metas])
+  const composerItems = useMemo(() => buildAttachmentDisplayItems(picIds, metas, draftMaterialModes), [picIds, metas, draftMaterialModes])
   const removeImages = (ids: string[]) => { void removeDraftImages(key, ids).then(() => deleteUnreferencedAttachments(ids)) }
   const removeGroup = (item: Extract<AttachmentDisplayItem, { type: 'pdf-group' }>) => removeImages(item.attachmentIds)
   const onFiles = async (files: FileList | File[]) => {
@@ -697,7 +700,7 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
       // The durable draft row was already committed in the same txn; update memory WITHOUT a
       // second DB mutation (no duplicate persist).
       const latest = getDraft(key)
-      updateDraftMemory(key, { text: latest.text, imageIds: [...new Set([...latest.imageIds, ...atts.map(a => a.id)])] })
+      updateDraftMemory(key, { ...latest, imageIds: [...new Set([...latest.imageIds, ...atts.map(a => a.id)])] })
       setPhotoError(undefined)
     } catch (e: any) {
       setPhotoError(attachmentErrorLabel(e?.kind || 'read-failed'))
@@ -731,7 +734,7 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
   const removePic = (id: string) => removeImages([id])
   const send = async () => {
     if (busy) return
-    const { text, imageIds } = getDraft(key)
+    const { text, imageIds, materialModes } = getDraft(key)
     const sendTarget = isBranch && thread
       ? { conversationId: thread.conversationId, branchId: thread.branchId }
       : sessionId ? { conversationId: sessionId } : undefined
@@ -740,12 +743,12 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
       return
     }
     if (isBranch && thread) {
-      const outcome = await runBranchReply(thread.conversationId, thread.branchId!, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), imageIds, {documents})
+      const outcome = await runBranchReply(thread.conversationId, thread.branchId!, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), imageIds, {documents, materialModes})
       if (outcome.kind !== 'rejected' && composerAliveRef.current) onBranchSent?.()
       return
     }
     if (!sessionId) return
-    await sessionsActions.sendUserMessage(sessionId, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), imageIds, {documents})
+    await sessionsActions.sendUserMessage(sessionId, text.trim() || (documents.length ? tx('请分析所附文件。','Analyze the attached documents.') : ''), imageIds, {documents, materialModes})
   }
   async function attachTranscript(data:YoutubeTranscript){
     const targetKey=key,blob=await transcriptPreview(data);
@@ -754,7 +757,7 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
     const draftCommit = { getCurrentDraft: () => getDraft(targetKey) }
     const metas=isBranch&&thread?.branchId?await saveGeneratedImagesAndBranchDraft(inputs,{branchId:thread.branchId,text:current.text,existingImageIds:current.imageIds}, draftCommit):sessionId?await saveGeneratedImagesAndDraft(inputs,{conversationId:sessionId,text:current.text,existingImageIds:current.imageIds}, draftCommit):[];
     if(!metas.length)throw new Error('请先新建会话。');
-    const latest=getDraft(targetKey);updateDraftMemory(targetKey,{text:latest.text,imageIds:[...new Set([...latest.imageIds,...metas.map(m=>m.id)])]});
+    const latest=getDraft(targetKey);updateDraftMemory(targetKey,{...latest,imageIds:[...new Set([...latest.imageIds,...metas.map(m=>m.id)])]});
   }
   return (
     <div className={css.composer} data-testid="composer" data-file-drag={draggingFiles || undefined}>
@@ -775,6 +778,10 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
             <PdfContextCard key={'g' + item.groupId + '-' + idx} item={item} onDelete={() => removeGroup(item)} onRemovePage={id => removePic(id)} />
           ))}
           <span className={css.picCount}>{tx('已添加 ', 'Added ')}{picIds.length}{metas.some(m => m.ocr || m.transcript) ? tx(' 个附件', ' attachments') : tx(' 张图片', ' images')}</span>
+          {materialOcrCount + materialImageCount > 0 && <span className={css.picCount} data-testid="draft-material-modes">{[
+            materialOcrCount > 0 && tx(materialOcrCount + ' 项 OCR 文本', materialOcrCount + ' OCR text'),
+            materialImageCount > 0 && tx(materialImageCount + ' 张原图', materialImageCount + ' original images'),
+          ].filter(Boolean).join(' · ')}</span>}
         </div>
       )}
       <div className={css.composerBar}>

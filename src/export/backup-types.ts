@@ -1,5 +1,5 @@
 import type { ReaderProject } from '../projects/project-records'
-import type { Attachment, Conversation } from '../engine/types'
+import type { Attachment, Conversation, MaterialModes } from '../engine/types'
 import type { Annotation } from '../annotations/annotation-types'
 import type { LearningDocument, DocumentNote } from '../documents/document-types'
 import type { ConversationBranch } from '../branches/branch-types'
@@ -13,7 +13,7 @@ import type { DocumentSortKey } from '../documents/document-sort'
 
 export type BackupSettings = { apiProfiles?: import('../engine/api-profiles').ApiProfile[]; activeApiProfileId?: string; userLocation?: string; userMetadataEnabled?: boolean; autoTitleEnabled?: boolean; readUrlEnabled?: boolean; nativeDeepSeekProxy?: boolean;  speechVoice?: 'stella'|'tide'; speechApiUrl?: string; apiBaseUrl: string; model: string; customSystemPrompt: string; customSystemPromptEnabled: boolean; customArtifactActions?: CustomArtifactAction[]; visionCapability?: 'auto' | 'supports-image' | 'text-only'; pdfNavigationMode?: PdfNavigationMode; uiLanguage?: UiLanguage; webSearchEnabled?: boolean; firecrawlWebSearchEnabled?: boolean; deepseekWebSearchEnabled?: boolean; chineseSpeechRate?: number; englishSpeechRate?: number; speechRepeatCount?: number; speechLoop?: boolean; highlightSpokenSelection?: boolean; rememberReadingPosition?: boolean; layoutPreferences?: LayoutPreferences; documentSort?: DocumentSortKey; productGuideSeenVersion?: string; lastConversationId?: string }
 /** Persisted composer-draft user data (unsent text + images). Must survive a complete backup. */
-export type BackupDraft = { conversationId: string; text: string; imageIds: string[] }
+export type BackupDraft = { conversationId: string; text: string; imageIds: string[]; materialModes?: MaterialModes }
 export type BackupAppearance = 'system' | 'light' | 'dark'
 export type BackupAttachment = { id: string; meta: Attachment; mimeType: string; data: string }
 /** Original document: metadata (WITHOUT the Blob) + mimeType + base64-encoded source file. */
@@ -55,7 +55,7 @@ export type BackupV3 = {
   appearance: BackupAppearance
 }
 /** V4 (post-v1): adds branch graph + branch drafts + study artifacts + active branch. */
-export type BackupBranchDraft = { branchId: string; text: string; imageIds: string[] }
+export type BackupBranchDraft = { branchId: string; text: string; imageIds: string[]; materialModes?: MaterialModes }
 export type BackupActiveBranch = { conversationId: string; branchId: string }
 export type BackupV4 = {
   format: 'ai-education-reader-backup'
