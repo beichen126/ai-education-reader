@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { parseVocabulary, type VocabularyWord } from './vocabulary-schema'
-import { readAloud, stopReadAloud, useReadAloud } from '../speech/read-aloud'
+import { hasAndroidVocabularySpeech, readAndroidVocabulary, readAloud, stopReadAloud, useReadAloud } from '../speech/read-aloud'
 import { selectedDeepSeekServiceProfile } from '../engine/deepseek-service-profile'
 import { useSettings } from '../engine/settings-store'
 import { tx } from '../engine/locale'
@@ -31,9 +31,19 @@ function WordCard({ item }: { item: VocabularyWord }) {
   useEffect(() => () => stopReadAloud(owner), [owner])
   function play() {
     if (active) { stopReadAloud(owner); return }
+    setNotice('')
+    if (hasAndroidVocabularySpeech()) {
+      const kana = /[\p{Script=Hiragana}\p{Script=Katakana}]/u
+      const lang = item.lang ?? (kana.test(item.word + item.phonetic) ? 'ja' : /\p{Script=Hangul}/u.test(item.word) ? 'ko' : /\p{Script=Han}/u.test(item.word) ? 'zh-CN' : 'en')
+      const reading = /^[\p{Script=Hiragana}\p{Script=Katakana}ー\s]+$/u.test(item.phonetic.trim()) ? item.phonetic.trim() : ''
+      const word = lang.toLowerCase().split('-')[0] === 'ja'
+        ? reading || item.word.replace(/[（(][\p{Script=Hiragana}\p{Script=Katakana}ー\s]+[）)]\s*$/u, '').trim()
+        : item.word
+      readAndroidVocabulary(word || item.word, lang, owner)
+      return
+    }
     const profile = selectedDeepSeekServiceProfile()
     if (!profile) { setNotice(tx('请在设置中填写 DeepSeek API Key。', 'Save a DeepSeek official API profile first; keep your current chat model.')); return }
-    setNotice('')
     readAloud(item.word, owner, { rate, repeats, loop, voice, apiKey: profile.config.apiKey })
   }
   return <article className={css.card} data-testid="genui-word-card">

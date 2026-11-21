@@ -1,4 +1,4 @@
-export type VocabularyWord = { type: 'vocabulary'; word: string; phonetic: string; meaning: string; example?: string }
+export type VocabularyWord = { type: 'vocabulary'; word: string; phonetic: string; meaning: string; example?: string; lang?: string }
 export function parseVocabulary(source: string): { partial?: boolean; title?: string; items: VocabularyWord[] } {
   if (source.length > 4*1024*1024) throw new Error('单词卡内容超过 4 MiB')
   let root
@@ -30,7 +30,8 @@ export function parseVocabulary(source: string): { partial?: boolean; title?: st
   const items:VocabularyWord[]=[]
   for (const item of records) {
     if (!item || (item.type != null && item.type !== 'vocabulary') || typeof item.word !== 'string' || !item.word.trim()) continue
-    items.push({type:'vocabulary',word:item.word.slice(0,120),phonetic:typeof item.phonetic==='string'?item.phonetic.slice(0,200):'',meaning:typeof item.meaning==='string'?item.meaning.slice(0,2000):'',...(typeof item.example==='string'?{example:item.example.slice(0,2000)}:{})})
+    const lang = typeof item.lang === 'string' && /^[a-z]{2,3}(?:-[a-z0-9]{2,8}){0,3}$/i.test(item.lang) ? item.lang : undefined
+    items.push({type:'vocabulary',word:item.word.slice(0,120),phonetic:typeof item.phonetic==='string'?item.phonetic.slice(0,200):'',meaning:typeof item.meaning==='string'?item.meaning.slice(0,2000):'',...(typeof item.example==='string'?{example:item.example.slice(0,2000)}:{}),...(lang?{lang}:{})})
   }
   if(!items.length)throw new Error('没有可显示的有效单词')
   return { partial:root.partial === true, title: typeof root.title === 'string' ? root.title.slice(0, 120) : undefined, items }

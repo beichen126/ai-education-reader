@@ -36,7 +36,7 @@ export const GENUI_PROMPT_EXAMPLES = [
     {type:'echart',preset:'sankey',links:[{from:'总任务',to:'阅读',value:6},{from:'总任务',to:'练习',value:4}]},
   ]}},
   {name:'英语与日语单词卡',spec:{title:'词汇',items:[
-    {type:'vocabulary',word:'analytics',phonetic:'/ˌænəˈlɪtɪks/',meaning:'n. 数据分析；分析学',example:'We use analytics to understand learning progress.'},
-    {type:'vocabulary',word:'図書館（としょかん）',phonetic:'としょかん',meaning:'名词。图书馆',example:'図書館で本を借ります。'},
+    {type:'vocabulary',word:'analytics',lang:'en-US',phonetic:'/ˌænəˈlɪtɪks/',meaning:'n. 数据分析；分析学',example:'We use analytics to understand learning progress.'},
+    {type:'vocabulary',word:'図書館（としょかん）',lang:'ja',phonetic:'としょかん',meaning:'名词。图书馆',example:'図書館で本を借ります。'},
   ]}},
 ] as const

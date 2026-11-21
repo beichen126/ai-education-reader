@@ -1,6 +1,6 @@
 import {WebImageSettings} from '../web-images/WebImageSettings'
 import {clearSpeechCache} from '../speech/audio-cache'
-import {stopReadAloud} from '../speech/read-aloud'
+import {hasAndroidVocabularySpeech, stopReadAloud} from '../speech/read-aloud'
 import {ApiProfiles} from './ApiProfiles'
 import {ApiConfigTransfer} from './ApiConfigTransfer'
 import { useState, useCallback, useEffect, useRef } from 'react'
@@ -314,6 +314,10 @@ export function SettingsDialog() {
           </select>
         </label>)}
         <div className={css.settingsHint}>{tx('中英文自动切换倍速，使用 DeepSeek 语音服务。','Automatically selects the Chinese or English speed. Uses DeepSeek speech.')}</div>
+        {hasAndroidVocabularySpeech() && <div className={css.settingsHint}>
+          {tx('词汇卡使用手机的离线语音。在系统「文字转语音输出」选择引擎和语音包，切换后重新打开 Reader。','Vocabulary cards use your phone’s offline voices. Select an engine and download a voice in system text-to-speech settings, then reopen Reader.')}
+          {' '}<a href="https://f-droid.org/en/packages/app.marmalade.tts/" target="_blank" rel="noreferrer">{tx('下载 Marmalade TTS','Download Marmalade TTS')}</a>
+        </div>}
         <label className={css.speechRateRow}><span>{tx('播放次数','Reading repetitions')}</span><select data-testid="settings-speechRepeatCount" value={s.speechRepeatCount ?? 3} disabled={mutation.status==='pending'||s.speechLoop===true} onChange={event=>{void patchSettings({speechRepeatCount:Number(event.target.value)}).catch(()=>{})}}>{Array.from({length:10},(_,i)=>i+1).map(count=><option key={count} value={count}>{tx(count+' 次',count+' passes')}</option>)}</select></label>
         <label className={css.speechRateRow}><span>{tx('循环播放','Loop until stopped')}</span><input type="checkbox" aria-label={tx('循环播放','Loop playback')} checked={s.speechLoop===true} disabled={mutation.status==='pending'} onChange={e=>{void patchSettings({speechLoop:e.target.checked}).catch(()=>{})}}/></label>
         <label className={css.speechRateRow}><span>{tx('高亮朗读过的选区', 'Highlight read-aloud selections')}</span><input type="checkbox" checked={s.highlightSpokenSelection===true} disabled={mutation.status==='pending'} onChange={event=>{void patchSettings({highlightSpokenSelection:event.target.checked}).catch(()=>{})}} /></label>
