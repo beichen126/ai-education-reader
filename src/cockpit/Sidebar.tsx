@@ -28,8 +28,8 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   const currentConv = useSessions(s => s.byId[s.current || ''])
   const projects = useProjects()
   const [projectMode, setProjectMode] = useState(false)
-  const [projectScope, setProjectScope] = useState<string | undefined>()
-  const project = projects.find(item => item.id === (projectScope ?? (projectMode ? undefined : currentConv?.projectId)))
+  const [projectScope, setProjectScope] = useState('')
+  const project = projectMode ? projects.find(item => item.id === projectScope) : undefined
   const [q, setQ] = useState('')
   const [showArchive, setShowArchive] = useState(false)
   const [organizationError, setOrganizationError] = useState(false)
@@ -37,8 +37,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
   const query = q.trim().toLowerCase()
   const projectRows = projects.filter(item => (item.archivedAt !== undefined) === showArchive && item.name.toLowerCase().includes(query))
     .sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0) || b.createdAt - a.createdAt)
-  const projectIds = new Set(projects.map(item => item.id))
-  const filtered = sessions.filter(session => (project ? session.projectId === project.id : !session.projectId || !projectIds.has(session.projectId)) &&
+  const filtered = sessions.filter(session => (!project || session.projectId === project.id) &&
     (session.archivedAt !== undefined) === showArchive && localizedSessionTitle(session).toLowerCase().includes(query))
   filtered.sort((a, b) => showArchive
     ? (b.archivedAt ?? 0) - (a.archivedAt ?? 0)
@@ -55,6 +54,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
     void sessionsActions.newChat(project?.id).catch(() => setOrganizationError(true))
   }
   const openImages = () => galleryActions.open(currentConv?.id, 0, 'list', project?.id)
+  const openFiles = () => documentUiActions.openLibrary(project?.id)
   const fsTitle = fs ? tx('退出全屏', 'Exit full screen') : tx('全屏', 'Full screen')
   const narrow = useLayoutStore(s => s.narrow)
   const toggleDesktopSidebar = () => {
@@ -83,7 +83,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         <button type="button" className={css.railBtn} data-testid="rail-history" aria-label={tx('历史会话', 'Chat history')} title={tx('历史会话', 'Chat history')} onClick={openHistory}><IconClockOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label={t('sidebar.newChat')} title={t('sidebar.newChat')} onClick={createChat}><IconNewChatOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-images" aria-label={tx('图片资料', 'Images')} title={tx('图片资料', 'Images')} onClick={openImages}><IconPhoto16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-files" aria-label={tx('本地文件', 'Local files')} title={tx('本地文件', 'Local files')} onClick={() => documentUiActions.openLibrary()}><IconFolderOpenOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-files" aria-label={tx('本地文件', 'Local files')} title={tx('本地文件', 'Local files')} onClick={openFiles}><IconFolderOpenOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-cards" aria-label={tx('学习中心', 'Learning center')} title={tx('学习中心', 'Learning center')} onClick={() => learningUiActions.openLibrary('cards')}><IconListPenOutline16 /></button>
         <div className={css.railSpacer} />
         {!isAndroidReader() && <button type="button" className={css.railBtn} data-testid="rail-fullscreen" aria-label={fsTitle} title={fsTitle} onClick={toggle}><IconFullscreenOutline16 /></button>}
@@ -109,7 +109,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         <button type="button" className={css.entryBtn} data-testid="sidebar-entry-images" onClick={openImages}>
           <IconPhoto16 /> <span>{tx('图片', 'Images')}</span>
         </button>
-        <button type="button" className={css.entryBtn} data-testid="sidebar-entry-files" onClick={() => documentUiActions.openLibrary()}>
+        <button type="button" className={css.entryBtn} data-testid="sidebar-entry-files" onClick={openFiles}>
           <IconFolderOpenOutline16 /> <span>{tx('文件', 'Files')}</span>
         </button>
       </div>
@@ -122,8 +122,8 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
       <div className={css.sidebarSection + ' ' + css.historyHeading}>
         <span>{projectMode && !project ? tx('项目', 'Projects') : showArchive ? tx('已归档会话', 'Archived chats') : tx('会话', 'Chats')}</span>
         <div className={css.historyActions}>
-        <button type="button" className={css.archiveToggle} data-testid="sidebar-projects" aria-pressed={projectMode || !!project} onClick={() => {
-          setProjectMode(value => !value || !!project); setProjectScope(''); setQ(''); setShowArchive(false)
+        <button type="button" className={css.archiveToggle} data-testid="sidebar-projects" aria-pressed={projectMode} onClick={() => {
+          setProjectMode(value => !value); setProjectScope(''); setQ(''); setShowArchive(false)
         }}><IconFolderOpenOutline16 size={15} /> {tx('项目', 'Projects')}</button>
         <button type="button" className={css.archiveToggle} aria-pressed={showArchive} onClick={toggleArchive}>
           <IconArchiveOutline20 size={15} /> {tx('归档', 'Archive')}
@@ -134,8 +134,6 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
       {project && <div className={css.projectHeading} data-testid="project-heading">
         <button className={css.archiveToggle} type="button" aria-label={tx('返回项目', 'Back to projects')} onClick={() => { setProjectMode(true); setProjectScope(''); setQ(''); setShowArchive(false) }}>‹</button>
         <strong className={css.sessionTitle}>{project.name}</strong>
-        <button className={css.archiveToggle} type="button" onClick={openImages}>{tx('项目资料', 'Project materials')}</button>
-        {!project.archivedAt && <button className={css.archiveToggle} data-testid="project-new-chat" type="button" onClick={createChat}>＋ {tx('新会话', 'New chat')}</button>}
       </div>}
       {organizationError && <div className={css.sidebarEmpty} role="alert">{tx('会话状态未能保存，请重试。', 'Could not update the chat. Try again.')}</div>}
       <div className={css.sidebarList}>

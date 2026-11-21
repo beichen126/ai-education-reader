@@ -38,7 +38,7 @@ export function ProjectList({ projects, archived, onOpen, onError }: {
     setMenu(undefined)
   }
   return <>
-    {!archived && <button className={css.entryBtn} type="button" data-testid="project-create" onClick={() => edit()}>{tx('＋ 新建项目', '＋ New project')}</button>}
+    {!archived && <button className={css.archiveToggle + ' ' + css.projectCreate} type="button" data-testid="project-create" onClick={() => edit()}>{tx('＋ 新建项目', '＋ New project')}</button>}
     {editing !== undefined && <form className={css.rowRename} onSubmit={event => { event.preventDefault(); submit() }}>
       <input autoFocus className={css.rowRenameInput} aria-label={tx('项目名称', 'Project name')} value={name} maxLength={MAX_TITLE_LEN} onChange={event => setName(event.target.value)} />
       <button className={css.rowRenameBtn} disabled={busy || !name.trim()}>{tx('保存', 'Save')}</button>
@@ -64,7 +64,7 @@ export function ProjectList({ projects, archived, onOpen, onError }: {
         <button className={css.rowMenuItem} data-danger onClick={() => { setMenu(undefined); setConfirming(project.id) }}>{tx('删除', 'Delete')}</button>
       </div>}
       {confirming === project.id && <div className={css.rowConfirm}>
-        <span>{tx('删除项目？会话将回到会话列表。', 'Delete the project? Its chats will return to the chat list.')}</span>
+        <span>{tx('删除项目？项目内会话会保留。', 'Delete the project? Its chats will be kept.')}</span>
         <button disabled={busy} onClick={() => void run(async () => { await deleteProject(project.id); setConfirming(undefined) })}>{tx('删除', 'Delete')}</button>
         <button onClick={() => setConfirming(undefined)}>{tx('取消', 'Cancel')}</button>
       </div>}

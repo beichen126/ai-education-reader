@@ -1,6 +1,6 @@
 .mode,.profile{display:flex;flex-direction:column;gap:8px;min-width:0;padding:8px 0}
 .mode label,.profile label{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.mode select,.profile select{max-width:100%;min-width:0;padding:7px 10px;border:1px solid #8886;border-radius:8px;background:var(--dsw-bg,#242424);color:inherit;font:inherit}
+.mode select,.profile select{max-width:100%;min-width:0;padding:7px 10px;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit}
 .mode small,.profile small{opacity:.75;line-height:1.5}
 .trigger{background:transparent;color:inherit;border:1px solid #8886;border-radius:7px;padding:5px 10px;cursor:pointer;font:inherit;white-space:nowrap}
 .modal{width:min(620px,94vw)}

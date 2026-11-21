@@ -17,7 +17,8 @@ import { pdfErrorMessage } from '../pdf/pdf-session'
 import { PdfError } from '../pdf/pdf-service'
 import { getSessionsCurrent, useSessions } from '../engine/sessions-store'
 import { DocumentContextPicker } from './DocumentContextPicker'
-import { executeDocumentContext } from './document-context-service'
+import { executeDocumentContext, type DocumentContextDestination } from './document-context-service'
+import { useProjects } from '../projects/project-store'
 import type { PdfSelection } from '../pdf/pdf-types'
 import css from './document-library.module.css'
 import { localizedErrorText, tx } from '../engine/locale'
@@ -38,6 +39,9 @@ function relTimeLabel(at: number): string {
 
 export function DocumentLibrary() {
   const ui = useDocumentUi(x => x)
+  const projectId = ui.view === 'library' ? ui.projectId : undefined
+  const projects = useProjects()
+  const project = projects.find(item => item.id === projectId && item.archivedAt === undefined)
   useBackTarget(ui.view === 'library', documentUiActions.close, 10)
   const [summaries, setSummaries] = useState<DocumentSummary[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -62,39 +66,39 @@ export function DocumentLibrary() {
   const [ctxMsg, setCtxMsg] = useState<string | null>(null)
   const ctxGenRef = useRef(0)
   const ctxCancelledRef = useRef(false)
-  const ctxOpRef = useRef<{ targetConversationId: string; documentId: string } | null>(null)
   const open = ui.view === 'library'
   const currentConversationId = useSessions(s => s.current)
   useEffect(() => {
     cancelCtx()
     return () => { ctxCancelledRef.current = true; ctxGenRef.current++ }
-  }, [currentConversationId, open])
+  }, [currentConversationId, open, projectId])
 
   async function addFromPicker(selection: PdfSelection) {
     if (!ctxDocId) return
-    const targetConversationId = getSessionsCurrent()
-    if (!targetConversationId) { setCtxMsg(tx('当前没有可加入的对话，请先创建一个会话。', 'There is no current chat. Create one first.')); setCtxDocId(null); return }
+    const targetConversationId = projectId ? undefined : getSessionsCurrent()
+    if (projectId && !project) { setCtxMsg(tx('此项目已归档或删除。', 'This project was archived or deleted.')); setCtxDocId(null); return }
+    if (!project && !targetConversationId) { setCtxMsg(tx('当前没有可加入的对话，请先创建一个会话。', 'There is no current chat. Create one first.')); setCtxDocId(null); return }
+    const destination: DocumentContextDestination = project ? { targetProjectId: project.id } : { targetConversationId: targetConversationId! }
     const gen = ++ctxGenRef.current
     ctxCancelledRef.current = false
     const docId = ctxDocId
-    ctxOpRef.current = { targetConversationId, documentId: docId }
     let fileName = 'document.pdf'
     try { fileName = (await getDocumentContextDescriptor(docId))?.fileName || 'document.pdf' } catch { /* fallback */ }
-    if (gen !== ctxGenRef.current || getSessionsCurrent() !== targetConversationId) return
+    if (gen !== ctxGenRef.current || (targetConversationId && getSessionsCurrent() !== targetConversationId)) return
     setCtxDocId(null)
     setCtxBusy({ done: 0, total: 1 }); setCtxMsg(null)
     const isCancelled = () => ctxCancelledRef.current || gen !== ctxGenRef.current
-    const isStale = () => gen !== ctxGenRef.current || getSessionsCurrent() !== targetConversationId
+    const isStale = () => gen !== ctxGenRef.current || (!!targetConversationId && getSessionsCurrent() !== targetConversationId)
     try {
       if (isCancelled()) return
-      const res = await executeDocumentContext({ targetConversationId, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxBusy({ done: p.done, total: p.total }) } })
+      const res = await executeDocumentContext({ ...destination, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxBusy({ done: p.done, total: p.total }) } })
       if (gen !== ctxGenRef.current) return
       if (!res.ok && res.error) setCtxMsg(localizedErrorText(res.error, 'Unable to add the PDF context to the chat.'))
-      else if (res.ok) setCtxMsg(tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages'))
+      else if (res.ok) setCtxMsg(project ? tx('已存入项目 · ' + res.count + ' 页', 'Saved to project · ' + res.count + ' pages') : tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages'))
     } catch { if (gen === ctxGenRef.current) setCtxMsg(tx('无法生成上下文。', 'Unable to build context.')) }
-    finally { if (gen === ctxGenRef.current) { setCtxBusy(null); setCtxDocId(null); ctxOpRef.current = null } }
+    finally { if (gen === ctxGenRef.current) { setCtxBusy(null); setCtxDocId(null) } }
   }
-  function cancelCtx() { ctxCancelledRef.current = true; ctxGenRef.current++; setCtxBusy(null); setCtxMsg(null); setCtxDocId(null); ctxOpRef.current = null }
+  function cancelCtx() { ctxCancelledRef.current = true; ctxGenRef.current++; setCtxBusy(null); setCtxMsg(null); setCtxDocId(null) }
 
   const refresh = useCallback(async () => {
     try { setSummaries(await listDocumentSummaries()) } catch { setSummaries([]) }
@@ -114,11 +118,11 @@ export function DocumentLibrary() {
         contentHash: analysis.contentHash, fastFingerprint: analysis.fastFingerprint,
       })
       await refresh()
-      documentUiActions.openReader(id)
+      documentUiActions.openReader(id, undefined, projectId)
     } catch (e) {
       setError(documentImportError(e, 'save'))
     } finally { setImporting(false) }
-  }, [refresh])
+  }, [projectId, refresh])
 
   // ---- import entrypoint: analyze, then either create or surface a conflict ----
   const importFile = async (f: File) => {
@@ -139,7 +143,7 @@ export function DocumentLibrary() {
   const nameConflict = pendingImport?.analysis.conflict.kind === 'name-conflict' ? pendingImport.analysis.conflict : null
   const duplicateConflict = pendingImport?.analysis.conflict.kind === 'exact-duplicate' ? pendingImport.analysis.conflict : null
 
-  const onDuplicateOpenExisting = () => { if (!duplicateConflict) return; setPendingImport(null); documentUiActions.openReader(duplicateConflict.existingDocumentId) }
+  const onDuplicateOpenExisting = () => { if (!duplicateConflict) return; setPendingImport(null); documentUiActions.openReader(duplicateConflict.existingDocumentId, undefined, projectId) }
   const onDuplicateImportCopy = async () => {
     const p = pendingImport; if (!p) return
     const resolved = nextAvailableName(p.analysis.fileName, existingNames)
@@ -210,7 +214,7 @@ export function DocumentLibrary() {
         <div className={css.list}>
           {displaySummaries.map(d => (
             <div className={css.card} key={d.id} data-testid={'doc-card-' + d.id}>
-              <button className={css.cardMain} data-testid={'doc-open-' + d.id} onClick={() => documentUiActions.openReader(d.id)}>
+              <button className={css.cardMain} data-testid={'doc-open-' + d.id} onClick={() => documentUiActions.openReader(d.id, undefined, projectId)}>
                 <div className={css.cardTitle}>{d.fileName}</div>
                 <div className={css.cardMeta}>PDF · {tx(d.pageCount + ' 页', d.pageCount + ' pages')} · {formatBytes(d.fileSize)}</div>
                 <div className={css.cardMeta}>
@@ -220,7 +224,7 @@ export function DocumentLibrary() {
                 </div>
               </button>
               <div className={css.cardActions}>
-                <button className={css.actionBtn} data-testid={'doc-context-' + d.id} onClick={() => { setMenuOpenId(null); setCtxMsg(null); setCtxDocId(d.id) }}>{tx('加入对话', 'Add to chat')}</button>
+                <button className={css.actionBtn} data-testid={'doc-context-' + d.id} disabled={!!projectId && !project} onClick={() => { setMenuOpenId(null); setCtxMsg(null); setCtxDocId(d.id) }}>{projectId ? tx('存入项目', 'Save to project') : tx('加入对话', 'Add to chat')}</button>
                 <div className={css.menuWrap}>
                   <button className={css.menuBtn} data-testid={'doc-menu-' + d.id} aria-label={tx('更多操作', 'More actions')} title={tx('更多操作', 'More actions')} onClick={() => setMenuOpenId(o => o === d.id ? null : d.id)}>⋯</button>
                   {menuOpenId === d.id && (
@@ -238,6 +242,7 @@ export function DocumentLibrary() {
       {ctxDocId && (
         <DocumentContextPicker
           documentId={ctxDocId}
+          projectName={project?.name}
           onCancel={() => { setCtxDocId(null); setCtxMsg(null) }}
           onAdd={(selection) => { void addFromPicker(selection) }}
         />

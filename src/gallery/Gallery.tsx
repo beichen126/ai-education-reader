@@ -94,7 +94,7 @@ export function Gallery() {
               <div className={css.projectSectionHeader}>
                 <h2>{project.name} · {tx('项目资料', 'Project materials')}</h2>
                 <p>{tx('选中的资料才会加入这次提问。', 'Only selected materials are added to the current question.')}</p>
-                <ProjectMaterialImport key={project.id} projectId={project.id} />
+                {project.archivedAt === undefined && <ProjectMaterialImport key={project.id} projectId={project.id} />}
                 {projectError && <p role="alert">{projectError}</p>}
               </div>
               {projectImageIds.length > 0 && <div className={css.grid}>{projectImageIds.map(renderProjectImage)}</div>}

@@ -53,7 +53,8 @@ export function deleteProject(id: string) {
 }
 
 export function addProjectAttachments(id: string, ids: string[]) {
-  return updateProject(id, project => ({
-    ...project, attachmentIds: [...new Set([...project.attachmentIds, ...ids])],
-  }))
+  return updateProject(id, project => {
+    if (project.archivedAt !== undefined) throw new Error('项目已归档。')
+    return { ...project, attachmentIds: [...new Set([...project.attachmentIds, ...ids])] }
+  })
 }

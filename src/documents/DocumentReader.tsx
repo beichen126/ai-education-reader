@@ -16,15 +16,15 @@ import { allBranches } from '../branches/branch-store'
 import { listStudyCardsByDocumentPage, type StudyCard } from '../study-cards/study-card-service'
 import { learningUiActions } from '../study-cards/learning-ui-store'
 import { formatBytes } from '../storage/diagnostics'
-import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
-import { renderPdfContextRanges, PdfContextRenderError, type ContextRenderProgress } from '../pdf/pdf-context-render'
-import { validatePdfRange, countPdfRangePages, needsPdfContextSoftConfirm, MAX_PDF_CONTEXT_PAGES, type PdfRange, type PdfSelection } from '../pdf/pdf-types'
+import type { ContextRenderProgress } from '../pdf/pdf-context-render'
+import { validatePdfRange, countPdfRangePages, needsPdfContextSoftConfirm, MAX_PDF_CONTEXT_PAGES, type PdfSelection } from '../pdf/pdf-types'
 import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, buildManualRangeSelection, applyBookmarkRangePreferenceDelta, type BookmarkRangePreferenceDelta } from './reader-context'
 import { findCurrentChapterPath } from './document-context'
 import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
 import { bookmarkRangePresentation } from '../pdf/bookmark-range'
 import { DocumentContextPicker } from './DocumentContextPicker'
-import { executeDocumentContext } from './document-context-service'
+import { executeDocumentContext, type DocumentContextDestination } from './document-context-service'
+import { useProjects } from '../projects/project-store'
 import { useDocumentUi, documentUiActions, getDocumentUiState } from './document-ui-store'
 import { useBackTarget } from '../engine/back-navigation'
 import { clampReaderPage, parsePageInput } from './reader-utils'
@@ -76,9 +76,10 @@ export function DocumentReader() {
     return () => observer.disconnect()
   })
   const ui = useDocumentUi(x => x)
+  const projectId = ui.view === 'reader' ? ui.projectId : undefined
   useBackTarget(ui.view === 'reader', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-    if (getDocumentUiState().view === 'closed') documentUiActions.backToLibrary()
+    if (getDocumentUiState().view === 'closed') documentUiActions.backToLibrary(projectId)
   }, 10)
   const pdfNavigationMode = useSettings(s => s.pdfNavigationMode)
   const docId = ui.view === 'reader' ? ui.documentId : null
@@ -160,6 +161,8 @@ export function DocumentReader() {
   }
   // ---- Reader -> Context bridge state (Stage 9.2B2) ----
   const conv = useSessions(s => s.byId[s.current || ''])
+  const projects = useProjects()
+  const ctxProject = projects.find(project => project.id === projectId && project.archivedAt === undefined)
   const [ctxMenuOpen, setCtxMenuOpen] = useState(false)
   const [ctxMode, setCtxMode] = useState<'menu' | 'manual'>('menu')
   const [manualStart, setManualStart] = useState('')
@@ -167,9 +170,8 @@ export function DocumentReader() {
   const [manualError, setManualError] = useState<string | null>(null)
   const [ctxBusy, setCtxBusy] = useState(false)
   const [ctxPickerOpen, setCtxPickerOpen] = useState(false)
-  const [ctxRunning, setCtxRunning] = useState<{ total: number; done: number } | null>(null)
   const [ctxProgress, setCtxProgress] = useState<ContextRenderProgress | null>(null)
-  const [ctxMsg, setCtxMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [ctxMsg, setCtxMsg] = useState<{ text: string; ok: boolean; project?: boolean } | null>(null)
   const [relatedConversations, setRelatedConversations] = useState<PdfPageConversationHit[]>([])
   const [relatedOpen, setRelatedOpen] = useState(false)
   const [relatedError, setRelatedError] = useState<string | null>(null)
@@ -178,7 +180,7 @@ export function DocumentReader() {
   const ctxGenRef = useRef(0)
   useEffect(() => {
     ctxGenRef.current++
-    setCtxBusy(false); setCtxProgress(null); setCtxRunning(null); setCtxMsg(null); setCtxPickerOpen(false); setCtxMenuOpen(false); setCtxPending(null)
+    setCtxBusy(false); setCtxProgress(null); setCtxMsg(null); setCtxPickerOpen(false); setCtxMenuOpen(false); setCtxPending(null)
     return () => { ctxGenRef.current++ }
   }, [conv?.id, docId])
   const ctxMenuOpenRef = useRef(false); ctxMenuOpenRef.current = ctxMenuOpen
@@ -308,7 +310,7 @@ export function DocumentReader() {
       void progressRef.current?.release('close')
       genRef.current++ // any in-flight render of the old document becomes stale
       ctxGenRef.current++ // any in-flight Reader Context generation becomes cancelled
-      setCtxBusy(false); setCtxProgress(null); setCtxRunning(null); setCtxMsg(null)
+      setCtxBusy(false); setCtxProgress(null); setCtxMsg(null)
       setCtxPending(null); setCtxMenuOpen(false); setCtxMode('menu'); setManualError(null)
       setBuilderOpen(false)
       sessionRef.current = null
@@ -437,7 +439,7 @@ export function DocumentReader() {
       }
       genRef.current++ // invalidate pending renders of THIS document immediately
       ctxGenRef.current++ // cancel any in-flight Reader Context generation (silent)
-      setCtxBusy(false); setCtxProgress(null); setCtxRunning(null); setCtxMsg(null)
+      setCtxBusy(false); setCtxProgress(null); setCtxMsg(null)
       setCtxPending(null); setCtxMenuOpen(false)
       // Release the controller session owned by this document effect. The controller
       // keeps the closure-bound owner and serializes any pending write.
@@ -726,104 +728,75 @@ export function DocumentReader() {
     documentUiActions.close()
   }, [flushCurrentNote])
 
-  // ---- Reader -> Context bridge (Stage 9.2B2 / 9.2B2.1) ----
-  // TWO phases, no confirm loop: requestContext() snapshots the operation identity
-  // and (for >30 pages) asks for approval ONCE; executeContext() runs the already
-  // approved snapshot and NEVER asks again — approving a request re-executes the
-  // SAME snapshot, never re-reads conv/doc/session/page.
   type ReaderContextRequest = {
-    targetConversationId: string
+    destination: DocumentContextDestination
+    projectName?: string
     documentId: string
     fileName: string
     selection: PdfSelection
-    ranges: PdfRange[]
     pageCount: number
     session: NonNullable<typeof sessionRef.current>
     count: number
   }
-  const requestContext = useCallback((selection: PdfSelection, ranges: PdfRange[]) => {
-    if (!doc || !sessionRef.current || ctxBusy) return
-    const targetConversationId = conv?.id
-    if (!targetConversationId) { setCtxMsg({ text: tx('请先创建一个会话。', 'Create a chat first.'), ok: false }); return }
-    const count = countPdfRangePages(ranges)
+
+  const executeContext = async (request: ReaderContextRequest) => {
+    const gen = ++ctxGenRef.current
+    setCtxBusy(true); setCtxMsg(null); setCtxProgress({ done: 0, total: request.count, bytes: 0 })
+    setCtxPending(null)
+    const isCancelled = () => gen !== ctxGenRef.current
+    const isStale = () => docIdRef.current !== request.documentId ||
+      (request.destination.targetConversationId !== undefined && getSessionsCurrent() !== request.destination.targetConversationId)
+    try {
+      const res = await executeDocumentContext({
+        ...request.destination,
+        documentId: request.documentId, fileName: request.fileName, pageCount: request.pageCount,
+        selection: request.selection, existingSession: request.session,
+        isCancelled, isStale,
+        onProgress: (p) => { if (!isCancelled()) setCtxProgress(p) },
+      })
+      if (isCancelled()) return
+      const project = request.projectName !== undefined
+      if (res.ok) {
+        const label = project
+          ? tx('已存入项目「' + request.projectName + '」· ' + res.count + ' 页', 'Saved to project “' + request.projectName + '” · ' + res.count + ' pages')
+          : request.selection.title
+            ? tx('已加入「' + request.selection.title + '」· ' + res.count + ' 页', 'Added “' + request.selection.title + '” · ' + res.count + ' pages')
+            : tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages')
+        setCtxMsg({ text: label, ok: true, project })
+      } else if (res.error) {
+        setCtxMsg({ text: localizedErrorText(res.error, project ? 'Unable to save the PDF pages to the project.' : 'Unable to add the PDF context to the chat.'), ok: false })
+      }
+    } finally {
+      if (!isCancelled()) { setCtxBusy(false); setCtxProgress(null) }
+    }
+  }
+
+  const requestContext = (selection: PdfSelection, alreadyConfirmed = false) => {
+    const session = sessionRef.current
+    if (!doc || !session || ctxBusy) return
+    let destination: DocumentContextDestination
+    if (ctxProject) destination = { targetProjectId: ctxProject.id }
+    else if (projectId) {
+      setCtxMsg({ text: tx('此项目已归档或删除。', 'This project was archived or deleted.'), ok: false })
+      return
+    } else if (conv) destination = { targetConversationId: conv.id }
+    else {
+      setCtxMsg({ text: tx('请先创建一个会话。', 'Create a chat first.'), ok: false })
+      return
+    }
+    const count = countPdfRangePages(selection.ranges)
     if (count > MAX_PDF_CONTEXT_PAGES) {
       setCtxMsg({ text: tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请选择较小的页码范围。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Select a smaller range.'), ok: false })
       return
     }
     const request: ReaderContextRequest = {
-      targetConversationId, documentId: doc.id, fileName: doc.fileName,
-      selection: { ...selection, contextMode }, ranges, pageCount,
-      session: sessionRef.current,
-      count,
+      destination, projectName: ctxProject?.name, documentId: doc.id, fileName: doc.fileName,
+      selection: { ...selection, contextMode: ctxProject ? 'ocr' : selection.contextMode ?? contextMode }, pageCount, session, count,
     }
     setCtxMenuOpen(false); setCtxMode('menu'); setManualError(null)
-    if (needsPdfContextSoftConfirm(count)) { setCtxPending(request); return }
-    void executeContext(request)
-  }, [doc, conv, ctxBusy, pageCount, contextMode])
-
-  const executeContext = useCallback(async (request: ReaderContextRequest) => {
-    const gen = ++ctxGenRef.current
-    setCtxBusy(true); setCtxMsg(null); setCtxProgress({ done: 0, total: request.count, bytes: 0 })
-    setCtxPending(null)
-    // UNIFIED execution: Reader page/chapter/manual selection converges on the SAME
-    // service as the shared picker (executeDocumentContext). The Reader passes its own
-    // PdfSession as existingSession (never closed by the service). Staleness is tested
-    // against the CURRENT active conversation (getSessionsCurrent), NOT a stale closure:
-    // if the user switches conversation, the old operation cancels early and NEVER writes
-    // into A or B (0.4 / 0.5).
-    const ownedDocId = request.documentId
-    const ownedConvId = request.targetConversationId
-    const isCancelled = () => gen !== ctxGenRef.current
-    const isStale = () => gen !== ctxGenRef.current || getSessionsCurrent() !== ownedConvId || docIdRef.current !== ownedDocId
-    try {
-      const res = await executeDocumentContext({
-        targetConversationId: request.targetConversationId,
-        documentId: request.documentId, fileName: request.fileName, pageCount: request.pageCount,
-        selection: request.selection, existingSession: request.session,
-        isCancelled, isStale,
-        onProgress: (p) => { if (gen === ctxGenRef.current) setCtxProgress(p) },
-      })
-      if (gen !== ctxGenRef.current) return // cancelled / stale during render -> silent
-      const label = request.selection.title ? tx('已加入「' + request.selection.title + '」· ' + res.count + ' 页', 'Added “' + request.selection.title + '” · ' + res.count + ' pages') : tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages')
-      if (!res.ok && res.error) setCtxMsg({ text: localizedErrorText(res.error, 'Unable to add the PDF context to the chat.'), ok: false })
-      else if (res.ok) setCtxMsg({ text: label, ok: true })
-    } catch (e) {
-      if (gen !== ctxGenRef.current) return
-      setCtxMsg({ text: e instanceof PdfContextRenderError ? localizedErrorText(e.message, 'Unable to build context.') : tx('无法生成上下文。', 'Unable to build context.'), ok: false })
-    } finally {
-      if (gen === ctxGenRef.current) { setCtxBusy(false); setCtxProgress(null) }
-    }
-  }, [])
-
-  const confirmContext = () => {
-    if (!ctxPending) return
-    const request = ctxPending
-    setCtxPending(null)
+    if (!alreadyConfirmed && needsPdfContextSoftConfirm(count)) { setCtxPending(request); return }
     void executeContext(request)
   }
-  // Add a context from the shared picker using the Reader's OWN session (never closed).
-  // Block 0.4: the Reader's generation token cancels any in-flight picker op when the
-  // doc or conversation changes; a stale op NEVER writes into a different conversation.
-  const addFromPicker = useCallback(async (selection: PdfSelection) => {
-    if (!doc || !sessionRef.current || ctxBusy) return
-    const targetConversationId = conv?.id
-    if (!targetConversationId) { setCtxMsg({ text: tx('请先创建一个会话。', 'Create a chat first.'), ok: false }); return }
-    const count = countPdfRangePages(selection.ranges)
-    if (count > MAX_PDF_CONTEXT_PAGES) { setCtxMsg({ text: tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请选择较小的页码范围。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Select a smaller range.'), ok: false }); return }
-    const ownedDocId = doc.id
-    const ownedConvId = targetConversationId
-    const gen = ++ctxGenRef.current
-    setCtxBusy(true); setCtxRunning({ total: count, done: 0 }); setCtxMsg(null)
-    const isCancelled = () => gen !== ctxGenRef.current
-    const isStale = () => gen !== ctxGenRef.current || (docIdRef.current !== ownedDocId) || (getSessionsCurrent() !== ownedConvId)
-    try {
-      const res = await executeDocumentContext({ targetConversationId, documentId: doc.id, fileName: doc.fileName, pageCount, selection, existingSession: sessionRef.current, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxRunning({ total: p.total, done: p.done }) } })
-      if (gen !== ctxGenRef.current) return
-      const label = selection.title ? tx('已加入「' + selection.title + '」· ' + res.count + ' 页', 'Added “' + selection.title + '” · ' + res.count + ' pages') : tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages')
-      setCtxMsg(res.ok ? { text: label, ok: true } : { text: localizedErrorText(res.error, 'Unable to add the PDF context to the chat.'), ok: false })
-    } catch { if (gen === ctxGenRef.current) setCtxMsg({ text: tx('无法生成上下文。', 'Unable to build context.'), ok: false }) }
-    finally { if (gen === ctxGenRef.current) { setCtxBusy(false); setCtxRunning(null) } }
-  }, [doc, conv, ctxBusy, pageCount, contextMode])
 
   const applyCommittedBookmarkRangePreferences = useCallback((delta: BookmarkRangePreferenceDelta) => {
     setDoc(current => applyBookmarkRangePreferenceDelta(current, delta))
@@ -835,7 +808,7 @@ export function DocumentReader() {
     setManualError(null)
     const s = Number(manualStart.trim()), e = Number(manualEnd.trim())
     const sel = buildManualRangeSelection(s, e)
-    void requestContext(sel, sel.ranges)
+    requestContext(sel)
   }
 
   // ---- Save the manual chapter tree: persist once, then refresh from IDB so the
@@ -1155,14 +1128,14 @@ export function DocumentReader() {
   return (
     <div className={css.overlay} data-testid="document-reader">
       <div ref={topbarRef} className={css.topbar}>
-        <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary() }}>← {tx('文件', 'Files')}</button>
+        <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary(projectId) }}>← {tx('文件', 'Files')}</button>
         <span className={css.title} data-testid="reader-title">{doc?.fileName ?? recordMeta?.fileName ?? '…'}</span>
         <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>{tx('关闭', 'Close')}</button>
         <div className={css.topActions}>
           {doc && sessionRef.current && <PdfPageOcrButton documentId={doc.id} page={page} render={async () => (await renderOcrPage(sessionRef.current!, page)).blob} />}
           {doc && (
-            <button className={css.ctxBtn} data-testid="reader-ctx-toggle" aria-label={tx('加入对话', 'Add to chat')} title={tx('加入对话', 'Add to chat')} disabled={ctxBusy} onClick={() => setCtxMenuOpen(o => !o)}>
-              {ctxBusy ? tx('处理中', 'Processing') : tx('加入对话', 'Add to chat')}
+            <button className={css.ctxBtn} data-testid="reader-ctx-toggle" aria-expanded={ctxMenuOpen} disabled={ctxBusy || (!!projectId && !ctxProject)} onClick={() => setCtxMenuOpen(o => !o)}>
+              {ctxBusy ? tx('处理中', 'Processing') : projectId ? tx('存入项目', 'Save to project') : tx('加入对话', 'Add to chat')}
             </button>
           )}
           {doc && (
@@ -1307,25 +1280,11 @@ export function DocumentReader() {
       </div>
       {ctxMenuOpen && !ctxBusy && (
         <div className={css.ctxMenu} data-testid="reader-ctx-menu">
-          <div className={css.ctxMenuTitle}>{tx('加入对话', 'Add to chat')}</div>
-          <PdfContextMode value={contextMode} onChange={setContextMode} />
-          <button type="button" className={css.menuItem} data-testid="reader-ctx-current-page" onClick={() => { const s = buildCurrentPageSelection(page); void requestContext(s, s.ranges) }}>
+          <div className={css.ctxMenuTitle}>{ctxProject?.name ?? tx('选择页面', 'Select pages')}</div>
+          {!projectId && <PdfContextMode value={contextMode} onChange={setContextMode} />}
+          <button type="button" className={css.menuItem} data-testid="reader-ctx-current-page" onClick={() => { const s = buildCurrentPageSelection(page); requestContext(s) }}>
             {tx('当前页', 'Current page')}<span className={css.menuMeta}>{tx('第 ' + page + ' 页', 'Page ' + page)}</span>
           </button>
-          {currentChapterPath.length > 0 && <div className={css.ctxMenuTitle2}>{tx('所在章节', 'Containing chapters')}</div>}
-          {[...currentChapterPath].reverse().map(n => {
-            const mode = bookmarkRangeEndModeOf(doc?.bookmarkRangePreferences, n.id)
-            const range = n.startPage != null && n.endPage != null
-              ? bookmarkRangePresentation({ startPage: n.startPage, endPage: n.endPage, pageCount })[mode]
-              : null
-            return (
-              <button key={n.id} type="button" className={css.menuItem} data-testid={'reader-ctx-ancestor-' + n.id} disabled={!n.selectable || n.startPage == null} onClick={() => { const s = buildChapterSelection(n, { pageCount, bookmarkRangePreferences: doc?.bookmarkRangePreferences }); void requestContext(s, s.ranges) }}>
-                <span className={css.menuLevel}>L{n.level}</span>{n.title}<span className={css.menuMeta}>{range ? range.label : tx('无法定位页码', 'Page unavailable')}</span>
-              </button>
-            )
-          })}
-          {doc && currentChapterPath.length === 0 && <div className={css.ctxHint}>{tx('当前页不属于可识别章节', 'This page is not inside a recognized chapter')}</div>}
-          <button type="button" className={css.menuItem} data-testid="reader-ctx-picker" onClick={() => { setCtxMenuOpen(false); setCtxPickerOpen(true) }}>{tx('选择其他章节 / 多章节…', 'Choose another or multiple chapters…')}</button>
           <button type="button" className={css.menuItem} data-testid="reader-ctx-manual" onClick={() => { setCtxMode('manual'); setManualError(null) }}>{tx('自定义页码…', 'Custom page range…')}</button>
           {ctxMode === 'manual' && (
             <div className={css.ctxForm} data-testid="reader-ctx-manual-form">
@@ -1334,18 +1293,32 @@ export function DocumentReader() {
                 <label>{tx('结束页', 'End page')}</label><input className={css.ctxInput} data-testid="reader-ctx-end" inputMode="numeric" value={manualEnd} onChange={e => setManualEnd(e.target.value)} />
               </div>
               {manualError && <div className={css.ctxHint} data-testid="reader-ctx-manual-error">{manualError}</div>}
-              <button type="button" className={css.menuItem} data-testid="reader-ctx-go" onClick={commitManualRange}>{tx('确认加入', 'Add range')}</button>
+              <button type="button" className={css.menuItem} data-testid="reader-ctx-go" onClick={commitManualRange}>{ctxProject ? tx('存入项目', 'Save to project') : tx('确认加入', 'Add range')}</button>
             </div>
           )}
+          <button type="button" className={css.menuItem} data-testid="reader-ctx-picker" onClick={() => { setCtxMenuOpen(false); setCtxPickerOpen(true) }}>{tx('选择其他章节 / 多章节…', 'Choose another or multiple chapters…')}</button>
+          {currentChapterPath.length > 0 && <div className={css.ctxMenuTitle2}>{tx('所在章节', 'Containing chapters')}</div>}
+          {[...currentChapterPath].reverse().map(n => {
+            const mode = bookmarkRangeEndModeOf(doc?.bookmarkRangePreferences, n.id)
+            const range = n.startPage != null && n.endPage != null
+              ? bookmarkRangePresentation({ startPage: n.startPage, endPage: n.endPage, pageCount })[mode]
+              : null
+            return (
+              <button key={n.id} type="button" className={css.menuItem} data-testid={'reader-ctx-ancestor-' + n.id} disabled={!n.selectable || n.startPage == null} onClick={() => { const s = buildChapterSelection(n, { pageCount, bookmarkRangePreferences: doc?.bookmarkRangePreferences }); requestContext(s) }}>
+                <span className={css.menuLevel}>L{n.level}</span>{n.title}<span className={css.menuMeta}>{range ? range.label : tx('无法定位页码', 'Page unavailable')}</span>
+              </button>
+            )
+          })}
+          {doc && currentChapterPath.length === 0 && <div className={css.ctxHint}>{tx('当前页不属于可识别章节', 'This page is not inside a recognized chapter')}</div>}
           <button type="button" className={css.menuClose} onClick={() => { setCtxMenuOpen(false); setCtxMode('menu') }}>{tx('收起', 'Close')}</button>
         </div>
       )}
       {ctxPending && (
         <div className={css.ctxConfirm} data-testid="reader-ctx-confirm">
           <div>{tx('本次将处理 ' + ctxPending.count + ' 页。', 'This will process ' + ctxPending.count + ' pages.')}</div>
-          <div className={css.ctxHint}>{tx('大范围 PDF 会占用更多本地处理时间和模型视觉上下文。', 'Large PDF ranges require more local processing time and model vision context.')}</div>
+          <div className={css.ctxHint}>{ctxPending.projectName ? tx('存入较多页面需要更长的处理时间。', 'Saving more pages takes longer.') : tx('大范围 PDF 会占用更多本地处理时间和模型视觉上下文。', 'Large PDF ranges require more local processing time and model vision context.')}</div>
           <div className={css.ctxConfirmBtns}>
-            <button className={css.ctxPrimary} data-testid="reader-ctx-confirm-yes" onClick={confirmContext}>{tx('继续加入 ' + ctxPending.count + ' 页', 'Add ' + ctxPending.count + ' pages')}</button>
+            <button className={css.ctxPrimary} data-testid="reader-ctx-confirm-yes" onClick={() => void executeContext(ctxPending)}>{tx('继续加入 ' + ctxPending.count + ' 页', 'Add ' + ctxPending.count + ' pages')}</button>
             <button className={css.ctxSecondary} data-testid="reader-ctx-confirm-no" onClick={() => setCtxPending(null)}>{tx('取消', 'Cancel')}</button>
           </div>
         </div>
@@ -1356,7 +1329,7 @@ export function DocumentReader() {
       {ctxMsg && (
         <div className={css.ctxMsg + (ctxMsg.ok ? ' ' + css.ctxMsgOk : '')} data-testid="reader-ctx-msg">
           <span>{ctxMsg.text}</span>
-          {ctxMsg.ok && <button className={css.ctxSecondary} data-testid="reader-ctx-back" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>{tx('返回对话', 'Back to chat')}</button>}
+          {ctxMsg.ok && !ctxMsg.project && <button className={css.ctxSecondary} data-testid="reader-ctx-back" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>{tx('返回对话', 'Back to chat')}</button>}
         </div>
       )}
       {ctxPickerOpen && doc && (
@@ -1364,11 +1337,9 @@ export function DocumentReader() {
           documentId={doc.id}
           onCancel={() => setCtxPickerOpen(false)}
           onPreferencesCommitted={applyCommittedBookmarkRangePreferences}
-          onAdd={(selection) => { setCtxPickerOpen(false); void addFromPicker(selection) }}
+          projectName={ctxProject?.name}
+          onAdd={(selection) => { setCtxPickerOpen(false); requestContext(selection, true) }}
         />
-      )}
-      {doc && ctxRunning && (
-        <div className={css.ctxProgress} data-testid="reader-ctx-progress">{tx('正在准备上下文 ', 'Preparing context ')}{ctxRunning.done} / {ctxRunning.total}{tx(' 页', ' pages')}</div>
       )}
       {progressError && (
         <div className={css.progressError} data-testid="reader-progress-error" role="alert">

@@ -16,6 +16,7 @@ import { tx } from '../engine/locale'
 
 type Props = {
   documentId?: string
+  projectName?: string
   onCancel: () => void
   onAdd: (selection: PdfSelection, documentId: string, fileName: string) => void
   onPreferencesCommitted?: (delta: BookmarkRangePreferenceDelta) => void
@@ -41,7 +42,7 @@ type PreferenceWriteEntry = {
 // (Library / Reader) goes straight to the context stage and never offers a misleading back.
 // Back semantics (0.10): only the unscoped picker has a document-list back; a scoped picker
 // has no back that would clear the document and leave an empty panel.
-export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferencesCommitted }: Props) {
+export function DocumentContextPicker({ documentId, projectName, onCancel, onAdd, onPreferencesCommitted }: Props) {
   const [contextMode, setContextMode] = useState<'image' | 'ocr'>('image')
   const scoped = !!documentId
   const [stage, setStage] = useState<'document' | 'context'>(scoped ? 'context' : 'document')
@@ -300,7 +301,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
     if (needsPdfContextSoftConfirm(count)) { setConfirming(currentSelection); return }
     finishAdd(currentSelection)
   }
-  const finishAdd = (sel: PdfSelection) => { if (doc) onAdd({ ...sel, contextMode }, doc.id, doc.fileName) }
+  const finishAdd = (sel: PdfSelection) => { if (doc) onAdd({ ...sel, contextMode: projectName === undefined ? contextMode : 'ocr' }, doc.id, doc.fileName) }
 
   const returnFromPreview = () => {
     setPreviewDoc(null)
@@ -380,7 +381,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
                 <button type="button" className={css.btn} data-testid="doc-context-manual-add" onClick={addManual}>{tx('选择范围', 'Select range')}</button>
               </div>
             )}
-            <PdfContextMode value={contextMode} onChange={setContextMode} />
+            {projectName === undefined && <PdfContextMode value={contextMode} onChange={setContextMode} />}
             <div className={css.footer}>
               <div className={css.summary} data-testid="doc-context-summary">
                 {hasScope ? (
@@ -392,7 +393,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
               <div className={css.footerBtns}>
                 <button type="button" className={css.btn} data-testid="doc-context-cancel2" onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
                 <button type="button" className={css.btn} data-testid="doc-context-preview" disabled={!doc || binaryAvailable !== true} aria-describedby={binaryAvailable === false ? 'doc-context-preview-disabled' : undefined} onClick={() => void openPreview()}>{tx('预览', 'Preview')}</button>
-                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" disabled={!hasScope} onClick={() => void commit()}>{tx('加入当前对话', 'Add to current chat')}</button>
+                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" disabled={!hasScope} onClick={() => void commit()}>{projectName ? tx('存入项目 · ', 'Save to project · ') + projectName : tx('加入当前对话', 'Add to current chat')}</button>
               </div>
             </div>
             {binaryAvailable === false && <div className={css.limitHint} id="doc-context-preview-disabled" data-testid="doc-context-preview-disabled">{tx('本地 PDF 数据不可用，请重新导入。', 'The local PDF data is unavailable. Import it again.')}</div>}
@@ -401,7 +402,7 @@ export function DocumentContextPicker({ documentId, onCancel, onAdd, onPreferenc
         ) : null}
         {confirming && (
           <div className={css.confirm} data-testid="doc-context-confirm">
-            <div>{tx('本次将加入 ' + countPdfRangePages(confirming.ranges) + ' 页内容，处理时间和模型输入都会比较大。确认继续？', 'This will add ' + countPdfRangePages(confirming.ranges) + ' pages and use substantial processing time and model input. Continue?')}</div>
+            <div>{projectName ? tx('将存入 ' + countPdfRangePages(confirming.ranges) + ' 页，处理可能需要一些时间。继续吗？', 'Saving ' + countPdfRangePages(confirming.ranges) + ' pages may take some time. Continue?') : tx('本次将加入 ' + countPdfRangePages(confirming.ranges) + ' 页内容，处理时间和模型输入都会比较大。确认继续？', 'This will add ' + countPdfRangePages(confirming.ranges) + ' pages and use substantial processing time and model input. Continue?')}</div>
             <div className={css.confirmBtns}>
               <button className={css.btnPrimary} data-testid="doc-context-confirm-yes" onClick={() => { const s = confirming; setConfirming(null); finishAdd(s) }}>{tx('继续加入', 'Continue')}</button>
               <button className={css.btn} data-testid="doc-context-confirm-no" onClick={() => setConfirming(null)}>{tx('取消', 'Cancel')}</button>

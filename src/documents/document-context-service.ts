@@ -8,14 +8,16 @@ import { idbGet } from '../storage/idb'
 // commits via the shared draft service, and rolls back on failure / cancellation.
 import { renderPdfContextRanges, PdfContextRenderError, type ContextRenderProgress } from '../pdf/pdf-context-render'
 import { addPdfContextToDraft } from '../pdf/pdf-context-draft'
+import { saveProjectPdf } from '../projects/project-materials'
 import { openPdfSession, closePdfSession, renderSessionPage, type PdfSession } from '../pdf/pdf-session'
 import { readDocumentSourceBlob, DocumentBinaryMissingError } from './document-service'
-import type { PdfSelection } from '../pdf/pdf-types'
-import type { PdfAddResult } from '../pdf/pdf-types'
+import type { PdfAddPayload, PdfSelection } from '../pdf/pdf-types'
 
-export type DocumentContextExecuteOptions = {
-  targetConversationId: string
-  targetBranchId?: string
+export type DocumentContextDestination =
+  | { targetConversationId: string; targetBranchId?: string; targetProjectId?: never }
+  | { targetProjectId: string; targetConversationId?: never; targetBranchId?: never }
+
+export type DocumentContextExecuteOptions = DocumentContextDestination & {
   documentId: string
   fileName: string
   pageCount: number
@@ -74,14 +76,16 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
       onProgress: opts.onProgress,
       isCancelled: () => !!(opts.isCancelled?.() || opts.isStale?.()),
     }
-    const res = opts.selection.contextMode === 'ocr' ? await prepareOcrPages(opts.documentId, renderOptions) : await renderPdfContextRanges(renderOptions)
+    const res = opts.selection.contextMode === 'ocr' ? await prepareOcrPages(opts.documentId, renderOptions, opts.targetProjectId !== undefined) : await renderPdfContextRanges(renderOptions)
     // Ownership gate: after a possibly-long render, NEVER write into a target that is
     // no longer the caller's active conversation (blocker 0.4).
-    if (opts.isStale && opts.isStale()) return { ok: false, count: 0, error: '' }
-    const draft: PdfAddResult = await addPdfContextToDraft(opts.targetConversationId, {
+    if (cancelled()) return { ok: false, count: 0, error: '' }
+    const payload: PdfAddPayload = {
       branchId: opts.targetBranchId, documentId: opts.documentId, fileName: opts.fileName, selection: opts.selection, pages: res.pages, onOcrProgress: (done, total) => opts.onProgress?.({ done, total, bytes: res.pages.reduce((sum, p) => sum + p.blob.size, 0) }), isCancelled: () => !!(opts.isCancelled?.() || opts.isStale?.()),
-    })
-    return { ok: draft.ok, count: draft.count, error: draft.error }
+    }
+    return opts.targetProjectId !== undefined
+      ? await saveProjectPdf(opts.targetProjectId, payload)
+      : await addPdfContextToDraft(opts.targetConversationId, payload)
   } catch (e) {
     if (cancelled()) return { ok: false, count: 0, error: '' }
     if (e && typeof e === 'object' && (e as { name?: string }).name === 'DocumentBinaryMissingError') return { ok: false, count: 0, error: '这份本地文件已不存在，请重新选择。' }

@@ -55,7 +55,8 @@ export function PdfPanel({
   const [selError, setSelError] = useState<string | null>(null)
   const [lastRanges, setLastRanges] = useState<PdfRange[] | null>(null)
   const [pendingConfirm, setPendingConfirm] = useState<{ ranges: PdfRange[]; count: number } | null>(null)
-  const [contextMode, setContextMode] = useState<'image' | 'ocr'>(projectMaterial ? 'ocr' : 'image')
+  const [chatContextMode, setContextMode] = useState<'image' | 'ocr'>('image')
+  const contextMode = projectMaterial ? 'ocr' : chatContextMode
   const alive = useRef(true)
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
   const [adding, setAdding] = useState(false)
@@ -239,7 +240,7 @@ export function PdfPanel({
               {selError && <div className={css.error} data-testid="pdf-error">{selError}</div>}
               {error && <div className={css.error} data-testid="pdf-error">{localizedErrorText(error, 'PDF processing failed.')}</div>}
 
-              <PdfContextMode projectMaterial={projectMaterial} value={contextMode} onChange={value => { setContextMode(value); clearPreview() }} disabled={adding || generating} />
+              {!projectMaterial && <PdfContextMode value={contextMode} onChange={value => { setContextMode(value); clearPreview() }} disabled={adding || generating} />}
               <div className={css.actions}>
                 <Button variant="primary" data-testid="pdf-generate" disabled={adding || generating || (inChapterMode && selectedNodes.length === 0)} onClick={onGenerate}>
                   {generating ? tx('正在处理…', 'Processing…') : contextMode === 'ocr' ? tx('准备 OCR 文本', 'Prepare OCR text') : tx('生成预览', 'Generate preview')}

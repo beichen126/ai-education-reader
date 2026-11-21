@@ -13,6 +13,7 @@ import { GenUiActions } from '../genui/GenUiBlock'
 import { Fragment, lazy, memo, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties, RefObject } from 'react'
 import { clearSessionsSendError, useSessions, sessionsActions } from '../engine/sessions-store'
+import { useProjects } from '../projects/project-store'
 import { useSettings, useSettingsMutation } from '../engine/settings-store'
 import { formatTokenCount } from '../engine/token-usage'
 import { uiActions, useUi } from '../engine/ui-store'
@@ -77,6 +78,8 @@ const DocumentContextPicker = lazy(() => import('../documents/DocumentContextPic
 export function Conversation() {
   useUiLanguage()
   const session = useSessions(s => s.byId[s.current || ''])
+  const projects = useProjects()
+  const projectId = projects.find(project => project.id === session?.projectId && project.archivedAt === undefined)?.id
   const focusMessage = useSessions(s => s.focusMessage)
   // Local subscription access never requires a browser API key; readiness is
   // checked before accepting a message, not inferred from the DeepSeek key.
@@ -332,7 +335,7 @@ export function Conversation() {
               <div className={css.emptyHint}>{tx('还没有学习内容。添加资料，或从资料库开始。', 'No study content yet. Add materials or start from the library.')}</div>
               <div className={css.emptyActions}>
                 <Button variant="primary" data-testid="empty-add-materials" onClick={triggerComposerMaterials}>{tx('添加资料', 'Add materials')}</Button>
-                <Button variant="outline" data-testid="empty-open-library" onClick={() => documentUiActions.openLibrary()}>{tx('打开资料库', 'Open library')}</Button>
+                <Button variant="outline" data-testid="empty-open-library" onClick={() => documentUiActions.openLibrary(projectId)}>{tx('打开资料库', 'Open library')}</Button>
                 {!hasKey && <Button variant="outline" data-testid="empty-configure" onClick={uiActions.openSettings}>{tx('配置 API', 'Configure API')}</Button>}
               </div>
               {!hasKey && <div className={css.emptyHint}>{tx('开始前，需要配置你自己的 DeepSeek API Key。', 'Configure your own DeepSeek API key before you begin.')}</div>}

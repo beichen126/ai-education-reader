@@ -5,8 +5,8 @@ import { useSyncExternalStore } from 'react'
 
 export type DocumentUiState =
   | { view: 'closed' }
-  | { view: 'library' }
-  | { view: 'reader'; documentId: string; pageNumber?: number; requestId: number }
+  | { view: 'library'; projectId?: string }
+  | { view: 'reader'; documentId: string; pageNumber?: number; requestId: number; projectId?: string }
 
 let s: DocumentUiState = { view: 'closed' }
 let readerRequestId = 0
@@ -16,13 +16,13 @@ function useDocumentUi<T>(sel: (s: DocumentUiState) => T): T {
   return useSyncExternalStore(fn => { subs.add(fn); return () => { subs.delete(fn) } }, () => sel(s))
 }
 export const documentUiActions = {
-  openLibrary() { s = { view: 'library' }; notify() },
-  openReader(documentId: string, pageNumber?: number) {
+  openLibrary(projectId?: string) { s = projectId ? { view: 'library', projectId } : { view: 'library' }; notify() },
+  openReader(documentId: string, pageNumber?: number, projectId?: string) {
     readerRequestId += 1
-    s = { view: 'reader', documentId, ...(Number.isInteger(pageNumber) && pageNumber! > 0 ? { pageNumber } : {}), requestId: readerRequestId }
+    s = { view: 'reader', documentId, ...(Number.isInteger(pageNumber) && pageNumber! > 0 ? { pageNumber } : {}), requestId: readerRequestId, ...(projectId ? { projectId } : {}) }
     notify()
   },
-  backToLibrary() { s = { view: 'library' }; notify() },
+  backToLibrary(projectId?: string) { documentUiActions.openLibrary(projectId) },
   close() { s = { view: 'closed' }; notify() },
 }
 /** Read-only snapshot for tests / non-hook consumers. */
