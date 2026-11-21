@@ -16,7 +16,7 @@ export function useDialogFocus(ref: RefObject<HTMLElement>, open: boolean, onClo
       element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden',
     )
     const focus = (element: HTMLElement = dialog) => element.focus({ preventScroll: true })
-    focus(stops()[0])
+    if (!dialog.contains(document.activeElement)) focus(stops()[0])
     const keydown = (event: KeyboardEvent) => {
       if (dialogs.at(-1) !== dialog || !dialog.getClientRects().length || event.defaultPrevented) return
       if (event.key === 'Escape') {

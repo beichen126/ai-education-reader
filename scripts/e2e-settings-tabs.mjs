@@ -5,7 +5,7 @@ import { openSettings, selectSettingsSection } from './e2e-navigation.mjs'
 
 const browser = await launchBrowser()
 try {
-  for (const [language,width,height] of [['zh-CN',1280,900],['zh-CN',390,740],['en',320,640]]) {
+  for (const [language,width,height] of [['zh-CN',1280,900],['zh-CN',390,740],['zh-CN',320,640],['en',320,640]]) {
     const context=await browser.newContext({viewport:{width,height}})
     const page=await context.newPage(), errors=[]
     page.on('pageerror',error=>errors.push(error.message))
@@ -19,6 +19,11 @@ try {
     assert.equal(await page.locator('#settings-section-api').isVisible(),true)
     assert.equal(await page.locator('[data-testid="settings-pdf-navigation"]').isVisible(),false)
     const key=page.locator('input[placeholder="sk-..."]')
+    assert.equal(await key.getAttribute('id'), 'settings-api-key')
+    assert.equal(await page.locator('label[for="settings-api-key"]').evaluate(label => getComputedStyle(label).fontSize), '14px')
+    assert.ok(await page.getByRole('tablist').evaluate(nav =>
+      nav.scrollWidth <= nav.clientWidth + 1 && [...nav.querySelectorAll('button')].every(button =>
+        getComputedStyle(button).whiteSpace === 'nowrap' && button.scrollWidth <= button.clientWidth + 1)), 'settings labels fit without splitting or overflow')
     await key.fill('unsaved-tab-draft')
     const scroller=page.locator('[data-testid="settings-panel-scroll"]')
     await selectSettingsSection(page,'general')

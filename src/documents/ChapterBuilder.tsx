@@ -232,7 +232,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
   // swallowed by this builder being open (the Reader's keydown is guarded).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
+      if (e.key !== 'Escape' || e.defaultPrevented) return
       e.preventDefault()
       if (saving) return
       if (confirmDiscard) { setConfirmDiscard(false); return }
@@ -288,7 +288,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
           </span>
         </div>
         <div className={css.list} data-testid="cb-list" ref={el => { if (el) el.inert = saving }}>
-          <div className={css.bulkToolbar} data-testid="cb-bulk-toolbar" data-has-selection={selectedIds.size > 0}>
+          <div className={css.bulkToolbar} data-testid="cb-bulk-toolbar" data-has-selection={selectedIds.size > 0} data-can-undo={deletions.length > 0}>
             <div className={css.bulkSummary}>
               <span data-testid="cb-selected-count">{tx('已选 ' + selectedIds.size + ' 项', selectedIds.size + ' selected')}</span>
               <button type="button" className={css.bulkBtn} data-testid="cb-clear-selection" onClick={clearSelection}>{tx('清除选择', 'Clear selection')}</button>
@@ -429,9 +429,21 @@ function BuilderRow(props: {
   onUp: () => void; onDown: () => void; onIndent: () => void; onOutdent: () => void; onDelete: () => void
 }) {
   const { item, index, selected, canUp, canDown, canIndent, canOutdent, error, onSelect, onTitle, onPage, onLevel, onUp, onDown, onIndent, onOutdent, onDelete } = props
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const actionsButton = useRef<HTMLButtonElement>(null)
   const pad = (item.level - 1) * 14
+  const closeActions = () => {
+    setActionsOpen(false)
+    actionsButton.current?.focus()
+  }
   return (
-    <div className={css.row + (error ? ' ' + css.rowErr : '')} data-testid="cb-row">
+    <div className={css.row + (error ? ' ' + css.rowErr : '')} data-testid="cb-row" data-actions-open={actionsOpen || undefined}
+      onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setActionsOpen(false) }}
+      onKeyDown={event => {
+        if (event.key !== 'Escape' || !actionsOpen) return
+        event.preventDefault()
+        closeActions()
+      }}>
       <div className={css.indentSpacer} style={{ width: pad }} aria-hidden />
       <div className={css.rowTop}>
         <input type="checkbox" className={css.selectionCheckbox} data-testid={'cb-select-' + index} aria-label={tx('选择第 ' + (index + 1) + ' 项', 'Select item ' + (index + 1))} checked={selected} onChange={e => onSelect(e.target.checked, (e.nativeEvent as MouseEvent).shiftKey)} />
@@ -447,10 +459,11 @@ function BuilderRow(props: {
             <option key={level + 1} value={String(level + 1)}>L{level + 1}</option>
           ))}
         </select>
-        <input className={css.titleInput} data-testid={'cb-title-' + index} value={item.title} placeholder={tx('章节标题', 'Chapter title')} onChange={e => onTitle(e.target.value)} />
+        <textarea rows={1} className={css.titleInput} data-testid={'cb-title-' + index} value={item.title} aria-label={tx('章节标题', 'Chapter title')} placeholder={tx('章节标题', 'Chapter title')} onKeyDown={event => { if (event.key === 'Enter' && !event.nativeEvent.isComposing) event.preventDefault() }} onChange={e => onTitle(e.target.value.replace(/[\r\n]+/g, ' '))} />
         <input className={css.pageInput} data-testid={'cb-page-' + index} inputMode="numeric" value={item.startPage === 0 ? '' : String(item.startPage)} placeholder={tx('待确认', 'Unconfirmed')} onChange={e => onPage(e.target.value)} />
+        <button ref={actionsButton} type="button" className={css.rowActionToggle} aria-label={tx('章节操作', 'Chapter actions')} aria-expanded={actionsOpen} onClick={() => setActionsOpen(open => !open)}>⋯</button>
       </div>
-      <div className={css.rowOps}>
+      <div className={css.rowOps} onClick={event => { if (actionsOpen && (event.target as HTMLElement).closest('button')) closeActions() }}>
         <button type="button" className={css.op} data-testid={'cb-up-' + index} title={tx('上移', 'Move up')} disabled={!canUp} onClick={onUp}>↑</button>
         <button type="button" className={css.op} data-testid={'cb-down-' + index} title={tx('下移', 'Move down')} disabled={!canDown} onClick={onDown}>↓</button>
         <button type="button" className={css.op} data-testid={'cb-outdent-' + index} title={tx('减少缩进', 'Outdent')} disabled={!canOutdent} onClick={onOutdent}>←</button>

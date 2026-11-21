@@ -199,10 +199,10 @@ export function SettingsDialog() {
   const safety = storage ? deriveDataSafetyStatus(storage, lastBackup) : null
 
   return (
-    <Modal open headless onClose={uiActions.closeSettings} title={tx('设置', 'Settings')} className={css.settingsDialog}>
+    <Modal open headless onClose={uiActions.closeSettings} title={tx('设置', 'Settings')} className={css.settingsDialog} rootClassName={css.settingsOverlay}>
       <div className={css.settingsFixedHeader}>
         <div className={css.settingsTitleRow}><h2>{tx('设置','Settings')}</h2><button type="button" className={css.keyToggle} aria-label={tx('关闭','Close')} onClick={uiActions.closeSettings}>×</button></div>
-        <div className={css.settingsHint}>{APP_NAME} · v{__APP_VERSION__}</div>
+        <div className={css.settingsVersion}>{APP_NAME} · v{__APP_VERSION__}</div>
         <div className={css.settingsNav} role="tablist" aria-label={tx('设置分类','Settings sections')}>
           {(['api','general','security','help'] as const).map((key,i)=><button type="button" role="tab" id={'settings-tab-'+key} aria-controls={'settings-section-'+key} key={key} data-testid={'settings-nav-'+key} aria-selected={section===key} tabIndex={section===key?0:-1} onClick={()=>navigateSection(key)} onKeyDown={event=>{
             const keys: Section[]=['api','general','security','help']
@@ -214,7 +214,6 @@ export function SettingsDialog() {
       </div>
       <div ref={scrollRef} className={css.settingsScroll} data-testid="settings-panel-scroll">
       <section id="settings-section-api" role="tabpanel" aria-labelledby="settings-tab-api" hidden={section!=='api'} className={css.settingsSection}>
-      <ApiConfigTransfer hasImageDraft={() => webImageDraftRef.current} />
       <div className={css.byokBlock} data-testid="settings-byok">
         <div className={css.byokTitle}>{tx('API Key 接入', 'BYOK (bring your own API key)')}</div>
         <div className={css.settingsHint}>{tx('填写服务地址、API Key 和模型。Key 仅保存在此浏览器，调用由服务商计费。', 'Enter your endpoint, API key and model. Keys stay in this browser; provider usage is billed separately.')}</div>
@@ -222,15 +221,15 @@ export function SettingsDialog() {
         <a className={css.byokLinkSub} href="https://api-docs.deepseek.com/zh-cn/" target="_blank" rel="noopener noreferrer">{tx('DeepSeek API 文档', 'DeepSeek API documentation')}</a>
       </div>
       <ApiProfiles draft={{...s,apiBaseUrl:base,apiKey:key,model}} onApply={next=>{setBase(next.apiBaseUrl);setKey(next.apiKey);setModel(next.model);setShowKey(false);setTest(null);setTestOk(null);setSaved(false)}} />
-      <div className={css.field}><label>API Base URL</label><Input className={css.fieldInput} value={base} onChange={e => setBase(e.target.value)} placeholder={DEFAULT_SETTINGS.apiBaseUrl} /></div>
+      <div className={css.field}><label htmlFor="settings-api-base">API Base URL</label><Input id="settings-api-base" className={css.fieldInput} value={base} onChange={e => setBase(e.target.value)} placeholder={DEFAULT_SETTINGS.apiBaseUrl} /></div>
       <div className={css.field}>
-        <label>API Key</label>
+        <label htmlFor="settings-api-key">API Key</label>
         <span className={css.keyRow}>
-          <Input className={css.fieldInput} type={showKey ? 'text' : 'password'} value={key} onChange={e => setKey(e.target.value)} placeholder="sk-..." />
+          <Input id="settings-api-key" className={css.fieldInput} type={showKey ? 'text' : 'password'} value={key} onChange={e => setKey(e.target.value)} placeholder="sk-..." />
           <ShowHideLabel visible={showKey} onToggle={() => setShowKey(v => !v)} onClear={onClearKey} />
         </span>
       </div>
-      <div className={css.field}><label>Model</label><Input className={css.fieldInput} value={model} onChange={e => setModel(e.target.value)} placeholder="deepseek-flash" /></div>
+      <div className={css.field}><label htmlFor="settings-api-model">Model</label><Input id="settings-api-model" className={css.fieldInput} value={model} onChange={e => setModel(e.target.value)} placeholder="deepseek-flash" /></div>
       <div className={css.settingsActions}>
         <Button variant="outline" onClick={onTest}>{test === tx('正在测试…', 'Testing…') ? test : tx('检查 API 配置', 'Check API configuration')}</Button>
         <Button variant="primary" onClick={onSave}>{saved ? tx('已保存', 'Saved') : tx('保存 API 设置', 'Save API settings')}</Button>
@@ -240,6 +239,7 @@ export function SettingsDialog() {
       )}
       {test && <div className={css.testResult} data-ok={testOk === undefined ? undefined : String(testOk)}>{test}</div>}
       <div className={css.settingsHint}>{tx('仅检查模型列表。', 'Checks the model list only; no chats, images or documents are sent.')}</div>
+      <ApiConfigTransfer hasImageDraft={() => webImageDraftRef.current} />
       <WebImageSettings saveRef={saveWebImagesRef} dirtyRef={webImageDraftRef} />
       </section>
       <section id="settings-section-general" role="tabpanel" aria-labelledby="settings-tab-general" hidden={section!=='general'} className={css.settingsSection}>

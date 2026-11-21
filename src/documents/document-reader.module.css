@@ -60,7 +60,8 @@
 @media (min-width: 681px) {
   .overlay[data-review-docked]:not(:has([data-testid="toc-review-preview-bar"])) { padding-inline-start: clamp(340px, 42vw, 600px); }
 }
-.noteStatus { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
+.noteStatus { font-size: 13px; line-height: 1.4; color: var(--dsw-alias-label-secondary); }
+.noteStatus[role="alert"] { color: var(--dsw-alias-state-error-primary); }
 .hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .pageBtn { border: none; background: transparent; padding: 0; cursor: zoom-in; display: block; max-width: 100%; max-height: 100%; }
 .pageImg { display: block; max-width: 100%; max-height: calc(100vh - 190px); object-fit: contain; box-shadow: 0 1px 6px rgba(0,0,0,0.18); border-radius: 4px; }
@@ -119,9 +120,9 @@
 @media (max-width: 1023px) {
   .toc { position: absolute; left: 0; top: 0; bottom: 0; width: min(280px, 80vw); z-index: 20; background: var(--dsw-alias-bg-base); border-right: 1px solid var(--dsw-alias-border-l2); transform: translateX(-100%); transition: transform 140ms ease-out; box-shadow: 0 4px 18px rgba(0,0,0,0.18); }
   .toc.tocOpen { transform: translateX(0); }
-  .notePanel { position: absolute; right: 0; top: 0; bottom: 0; width: min(280px, 82vw); min-width: 0; z-index: 20; box-shadow: 0 4px 18px rgba(0,0,0,0.18); }
-  .topActions { flex: 1 0 100%; display: grid; grid-template-columns: repeat(5,minmax(0,1fr)); gap: 4px; }
-  .topActions > button { min-width: 0; min-height: 40px; padding: 5px 2px; overflow: hidden; text-overflow: ellipsis; font-size: 12px; white-space: nowrap; line-height: 18px; }
+  .notePanel { width: min(280px, 46%); min-width: 0; box-sizing: border-box; }
+  .topActions { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 4px; }
+  .topActions > button { flex: 1 0 auto; min-width: 44px; min-height: 44px; padding: 5px 4px; font-size: 12px; white-space: nowrap; line-height: 18px; }
   .closeBtn { order: 0; }
   .topbar { padding: 8px; gap: 6px; }
 }
@@ -130,5 +131,10 @@
   .navBtn { min-width: 68px; }
   .readerZoom { margin-left: 0; padding-left: 0; border-left: 0; }
   .zoomSlider { width: 88px; }
+}
+@media (max-width: 680px) and (min-height: 441px) {
+  .body:has(.notePanel) { flex-direction: column; }
+  .notePanel { width: 100%; flex: 0 0 clamp(128px, 28dvh, 242px); border-left: 0; border-top: 1px solid var(--dsw-alias-border-l2); padding: 8px 12px; }
+  .noteInput { font-size: 16px; }
 }
 .relatedPanel, .ctxMenu { top: var(--reader-topbar-height, 56px); box-sizing: border-box; max-height: min(460px, calc(100dvh - var(--reader-topbar-height, 56px) - 80px)); overflow-y: auto; }

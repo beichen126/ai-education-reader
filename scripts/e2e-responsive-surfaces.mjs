@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { launchBrowser } from './e2e-browser.mjs'
-import { seedAndBoot } from './e2e-fixture.mjs'
+import { msg, seedAndBoot } from './e2e-fixture.mjs'
 import { openProductGuide, openSettings, openDocumentLibrary, selectSettingsSection } from './e2e-navigation.mjs'
 const browser = await launchBrowser()
 const base = process.env.E2E_BASE || 'http://127.0.0.1:5321/ai-education-reader/'
@@ -16,7 +16,19 @@ try {
   for (const language of ['zh-CN','en']) {
     const context = await browser.newContext()
     const page = await context.newPage()
-    await seedAndBoot(page, {settings:{uiLanguage:language}})
+    const prose = 'Reading a long answer should use a stable column width. '.repeat(35)
+    await seedAndBoot(page, {settings:{uiLanguage:language, lastConversationId:'layout-chat'}, convs:[{
+      id:'layout-chat', title:'Layout', createdAt:1, updatedAt:1,
+      messages:[msg('layout-u','user','Explain'), msg('layout-a','assistant',prose), msg('layout-b','assistant',prose + '\n\n| Column A | Column B |\n| --- | --- |\n| One | Two |')],
+    }]})
+    await page.setViewportSize({width:1920,height:1000})
+    const paragraphs = await page.locator('[data-block-type="paragraph"]').evaluateAll(elements => elements.map(element => element.getBoundingClientRect().width))
+    assert.ok(paragraphs.length >= 2 && paragraphs.every(width => width <= 740), 'wide-screen prose stays within the reading column')
+    assert.ok((await page.locator('[data-block-type="table"]').boundingBox()).width > 768, 'tables can use a wider area than prose')
+    await page.setViewportSize({width:320,height:640})
+    for (const control of ['message-read-aloud','message-copy-source','composer-attach','composer-send-stop']) {
+      assert.ok((await page.getByTestId(control).first().boundingBox()).height >= 44, control + ' has a mobile friendly height')
+    }
     await openProductGuide(page)
     for (const [width,height] of sizes) {
       await page.setViewportSize({width,height})
@@ -51,6 +63,12 @@ try {
       await inside(page,page.getByTestId('document-reader').locator('[data-testid="reader-back"], [data-testid="reader-ctx-toggle"], [data-testid="reader-related-toggle"], [data-testid="reader-toc-toggle"], [data-testid="reader-notes-toggle"], [data-testid="reader-close"]'))
       if(language==='zh-CN' && [390,768].includes(width))await page.screenshot({path:`test-results/responsive-reader-${width}.png`})
     }
+    await page.setViewportSize({width:390,height:844})
+    await page.getByTestId('reader-notes-toggle').click()
+    await page.getByTestId('reader-notes').waitFor()
+    const notes = await page.getByTestId('reader-notes').boundingBox()
+    const viewport = await page.getByTestId('reader-viewport').boundingBox()
+    assert.ok(viewport && viewport.height >= 220 && notes.y >= viewport.y + viewport.height - 1 && notes.width >= 380, 'portrait notes appear below a usable PDF viewport')
     await context.close()
   }
   const android = await browser.newContext({viewport:{width:390,height:844}})

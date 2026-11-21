@@ -32,7 +32,7 @@ try {
     await openEditor()
     const geometry = await page.locator('[data-testid="cb-row"]').evaluateAll(rows => rows.slice(0,4).map(row => {
       const bounds = row.getBoundingClientRect()
-      const buttons = [...row.querySelectorAll('button')].map(button => button.getBoundingClientRect())
+      const buttons = [...row.querySelectorAll('button')].filter(button => button.getClientRects().length).map(button => button.getBoundingClientRect())
       return {top:bounds.top,bottom:bounds.bottom,contained:buttons.every(b=>b.top>=bounds.top&&b.bottom<=bounds.bottom&&b.left>=bounds.left&&b.right<=bounds.right)}
     }))
     assert.ok(geometry.every((row,i)=>row.contained&&(!i||row.top>=geometry[i-1].bottom)), '936 rows do not shrink or overlap; arrows stay inside their own row')
