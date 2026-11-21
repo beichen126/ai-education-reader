@@ -45,15 +45,23 @@ try {
     const body = route.request().postDataJSON()
     chats.push(body)
     const question = JSON.stringify(body.messages.filter(message => message.role === 'user').at(-1)?.content ?? '')
-    const query = ['故障测试', '取消测试'].find(text => question.includes(text))
-      ?? (question.includes('那它的免费版呢？') ? 'Firecrawl free plan monthly pricing credits' : '')
-    const calls = body.tool_choice === 'auto' && query
+    const compatibility = body.messages.some(message => message.role === 'user' && String(message.content).includes('兼容读取示例'))
+    const query = ['故障测试', '取消测试', '仅用摘要 pricing'].find(text => question.includes(text))
+      ?? (question.includes('那它的免费版呢？') || question.includes('兼容读取示例') ? 'Firecrawl free plan monthly pricing credits' : '')
+    const tool = body.tools?.[0]?.function?.name
+    if (compatibility && tool === 'read_web_results') return route.fulfill({ status: 422, json: { error: { message: 'tools unsupported in continuation' } } })
+    const readMarker = body.messages.find(message => message.role === 'system' && String(message.content).includes('READER_READ_'))?.content.match(/READER_READ_\w+/)?.[0]
+    const calls = body.tool_choice === 'auto' && tool === 'search_web' && query
+    const read = body.tool_choice === 'auto' && tool === 'read_web_results' && question.includes('那它的免费版呢？')
     const usage = { input_tokens: 100, completion_tokens: 20, total_tokens: 120 }
     const chunks = calls ? [
       { choices: [{ delta: { reasoning_content: '需要查官方来源。' } }] },
       { choices: [{ delta: { tool_calls: [{ index: 0, id: 'search-1', type: 'function', function: { name: 'search_web', arguments: '{"query":' } }] } }] },
       { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify(query) + '}' } }] }, finish_reason: 'tool_calls' }], usage },
-    ] : [{ choices: [{ delta: { content: '回答完成 ' + ++answers }, finish_reason: 'stop' }], usage }]
+    ] : read ? [{ choices: [{ delta: { tool_calls: [
+      { index: 0, id: 'read-1', type: 'function', function: { name: 'read_web_results', arguments: '{"numbers":[1,9]}' } },
+      { index: 1, id: 'read-2', type: 'function', function: { name: 'read_web_results', arguments: '{"numbers":[2]}' } },
+    ] }, finish_reason: 'tool_calls' }], usage }] : [{ choices: [{ delta: { content: readMarker ? readMarker + ' {"numbers":[1]}' : '回答完成 ' + ++answers }, finish_reason: 'stop' }], usage }]
     return route.fulfill({ contentType: 'text/event-stream', body: chunks.map(chunk => 'data: ' + JSON.stringify(chunk) + '\n\n').join('') + 'data: [DONE]\n\n' })
   })
 
@@ -93,26 +101,34 @@ try {
   assert.equal(searches[0].body.query, 'Firecrawl free plan monthly pricing credits')
   assert.deepEqual(searches[0].body.sources, ['web'])
   assert.equal(searches[0].body.limit, 5)
-  assert.deepEqual(reads.map(read => read.url), [pricing, 'https://example.com/faq'])
+  assert.deepEqual(reads.map(read => read.url), [pricing])
   assert.deepEqual(reads[0].parsers, [])
-  assert.equal(chats.length, 3)
-  assert.equal(chats[2].tool_choice, 'none')
+  assert.equal(chats.length, 4)
+  assert.equal(chats[2].tool_choice, 'auto')
+  assert.equal(chats[2].tools[0].function.name, 'read_web_results')
+  assert.equal(chats[3].tool_choice, 'none')
   assert.equal(chats[2].messages.at(-2).reasoning_content, '需要查官方来源。')
   assert.equal(chats[2].messages.at(-1).role, 'tool')
   assert.equal(chats[2].messages.at(-1).tool_call_id, 'search-1')
-  assert.match(chats[2].messages.at(-1).content, /1,000 credits per month/)
+  assert.doesNotMatch(chats[2].messages.at(-1).content, /1,000 credits per month/)
+  assert.match(chats[3].messages.find(message => message.tool_call_id === 'read-1').content, /1,000 credits per month/)
+  assert.equal(JSON.parse(chats[3].messages.at(-1).content).status, 'read_limit')
   assert.ok(!JSON.stringify(chats[2]).includes('fc-available'))
   assert.ok(!JSON.stringify(chats[1].tools ?? []).includes('deepseek_web_search'))
-  await page.getByText('Firecrawl · 搜索 4 次 · 读取 2 次 · ≥3 credits', { exact: true }).waitFor()
+  await page.getByText('Firecrawl · 搜索 4 次 · 读取 1 次 · 3 credits', { exact: true }).waitFor()
   await page.getByRole('link', { name: 'Firecrawl Pricing', exact: true }).waitFor()
   assert.equal(await page.getByText('Bad source').count(), 0)
 
-  await send('故障测试', 3)
+  await send('仅用摘要 pricing', 3)
+  assert.equal(reads.length, 1, 'matching pricing keywords and short snippets do not force scraping')
+  await page.getByText('Firecrawl · 搜索 1 次 · 读取 0 次 · 2 credits', { exact: true }).waitFor()
+
+  await send('故障测试', 4)
   await page.getByText('网页搜索未完成，本轮基于已有上下文回答。', { exact: true }).waitFor()
-  assert.equal(searches.length, 5)
-  assert.equal(chats.length, 5)
-  assert.equal(JSON.parse(chats[4].messages.at(-1).content).status, 'unavailable')
-  assert.ok(!chats[3].messages.some(message => message.role === 'tool'), 'tool calls and results stay inside their turn')
+  assert.equal(searches.length, 6)
+  assert.equal(chats.length, 8)
+  assert.equal(JSON.parse(chats[7].messages.at(-1).content).status, 'unavailable')
+  assert.ok(!chats[6].messages.some(message => message.role === 'tool'), 'tool calls and results stay inside their turn')
 
   await page.getByRole('textbox', { name: '输入消息', exact: true }).fill('取消测试')
   const searchStarted = page.waitForRequest(request => request.url() === 'https://api.firecrawl.dev/v2/search' && request.postData()?.includes('取消测试'))
@@ -122,14 +138,19 @@ try {
   await sendStop.click()
   await page.waitForFunction(() => document.querySelector('[data-testid="composer-send-stop"]')?.getAttribute('aria-busy') === 'false')
   releaseSearch()
-  assert.equal(chats.length, 6, 'stopping a search also stops the model continuation')
+  assert.equal(chats.length, 9, 'stopping a search also stops the model continuation')
 
   await page.reload({ waitUntil: 'networkidle' })
   await page.getByLabel('联网搜索已开启').waitFor()
-  await send('直接解释这个概念', 4)
-  assert.equal(searches.length, 6)
-  assert.equal(chats.length, 7)
-  assert.equal(chats[6].tools[0].function.name, 'search_web')
+  await send('直接解释这个概念', 5)
+  assert.equal(searches.length, 7)
+  assert.equal(chats.length, 10)
+  assert.equal(chats[9].tools[0].function.name, 'search_web')
+  await send('兼容读取示例', 6)
+  assert.equal(reads.length, 2)
+  assert.ok(!chats.at(-1).tools)
+  assert.match(chats.at(-1).messages.at(-1).content, /1,000 credits per month/)
+  assert.equal(await page.getByText(/READER_READ_/).count(), 0)
   console.log('PASS model-triggered Firecrawl, direct reply with zero searches, quota rotation, errors, cancellation and older WebView signal support')
 } finally {
   await browser.close()

@@ -40,6 +40,13 @@ await openManager()
 const manager = page.locator('[data-testid="prompt-manager"]')
 await manager.waitFor({ state: 'visible', timeout: 10000 })
 await page.locator('[data-testid="prompt-category-protocol"]').click()
+for (const [name, text] of [
+  ['Firecrawl · 联网搜索', 'up to two results'],
+  ['Firecrawl · 网络配图', 'image-group'],
+]) {
+  await page.getByTestId('prompt-row').filter({ hasText: name }).click()
+  assert((await page.getByTestId('prompt-editor-content').inputValue()).includes(text), name + ' shows its production prompt')
+}
 assert(await page.locator('[data-testid="prompt-new"]').isDisabled() && await page.locator('[data-testid="protocol-new-hint"]').innerText() === '选中内置协议后，可复制并自定义', 'system protocol category blocks generic new and explains the canonical-copy path')
 await page.locator('[data-testid="prompt-row"]').filter({ hasText: '无效自定义协议' }).click()
 assert(await page.locator('[data-testid="protocol-activate"]').isDisabled() && (await page.locator('[data-testid="protocol-activation-reason"]').innerText()).includes('experimental'), 'invalid protocol row shows a visible activation reason and disables activation')

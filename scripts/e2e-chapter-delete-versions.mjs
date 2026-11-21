@@ -13,7 +13,7 @@ try {
     await openDocumentLibrary(page)
     await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/no-outline.pdf')
     await page.locator('[data-testid="reader-page-img"]').waitFor({state:'visible'})
-    await page.evaluate(() => { window.__dshMockAiToc = req => req.phase === 'structure' ? JSON.stringify({levels:Array(936).fill(1)}) : JSON.stringify({rows:Array.from({length:936},(_, i)=>({title:'Entry '+i,pageLabel:'1',sourceImageIndex:1}))}) })
+    await page.evaluate(() => { window.__dshMockAiToc = () => JSON.stringify({rows:Array.from({length:936},(_, i)=>({title:'Entry '+i,pageLabel:'1',sourceImageIndex:1,level:1}))}) })
     if (await page.locator('[data-testid="reader-toc-toggle"]').getAttribute('aria-expanded') !== 'true') await page.locator('[data-testid="reader-toc-toggle"]').click()
     await page.locator('[data-testid="reader-toc-ai"]').click()
     await page.locator('[data-testid="toc-thumb-1"]').click()

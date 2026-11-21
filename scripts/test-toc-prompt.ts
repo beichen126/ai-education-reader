@@ -9,23 +9,10 @@ let pass = 0, fail = 0
 function assert(c: boolean, m: string) { if (c) { pass++; console.log('  ok: ' + m) } else { fail++; console.log('  FAIL: ' + m) } }
 const t = TOC_TRANSCRIPTION_SYSTEM_PROMPT
 
-// --- MUST contain: JSONL + sourceImageIndex + faithful transcription + continuity contract ---
-assert(t.includes('JSON object') && t.includes('"rows"'), 'transcription prompt requires a JSON object envelope');
-assert(t.includes('sourceImageIndex'), 'transcription prompt requires sourceImageIndex');
-assert(/faithfully|faithful/i.test(t), 'transcription prompt requires faithful transcription');
-assert(t.includes('do not repeat'), 'transcription prompt forbids re-outputting continuity rows');
-
-// --- MUST NOT contain old JSON-array protocol: 'level' / 'children' / 'JSON 数组' ---
-assert(!/\blevel\b/.test(t), 'transcription prompt must NOT instruct level');
-assert(!t.includes('children'), 'transcription prompt must NOT instruct children');
-assert(t.includes('flat rows array'), 'transcription prompt keeps flat rows, not a nested outline');
-assert(t.includes('Legacy JSONL'), 'transcription prompt documents legacy wire compatibility');
-
-// --- prompt must forbid language drift + keep missing printed labels schema-valid ---
-assert(t.includes('Simplified') && t.includes('Traditional'), 'transcription prompt addresses simplified/traditional drift');
-assert(t.includes('translate') && t.includes('normalize'), 'transcription prompt forbids translation and normalization');
-assert(t.includes('printed destination-page label'), 'transcription prompt scopes pageLabel to the printed destination page only');
-assert(t.includes('pageLabel to the empty string ""') && t.includes('never omit'), 'transcription prompt defines the missing-pageLabel contract');
+assert(t.includes('JSON object') && t.includes('"rows"'), 'one complete JSON outline object');
+for (const field of ['title', 'pageLabel', 'sourceImageIndex', 'level']) assert(t.includes(field), 'outline prompt defines ' + field);
+assert(t.includes('across pages') && t.includes('whole directory'), 'hierarchy is inferred across all OCR pages');
+assert(t.includes('printed destination label') && t.includes('empty string'), 'page labels preserve their printed values and allow unresolved entries');
 
 // --- parser/prompt match: a model following the prompt yields a parseable row ---
 {

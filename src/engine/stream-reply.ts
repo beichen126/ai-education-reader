@@ -99,11 +99,18 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     const expectedImages = contextAttachments.filter(a => !a.meta?.ocr && !a.meta?.transcript).length
     // Provider limits differ. Never apply DeepSeek counts or an arbitrary raw
     // image-byte budget to OpenAI / compatible endpoints. Surface actual errors.
-    const genUiPrompt = (await resolveCurrentProtocol('genui')).content
+    const firecrawlEnabled = hasFirecrawlWebSearch(settings)
+    const [genUi, imageProtocol, researchProtocol] = await Promise.all([
+      resolveCurrentProtocol('genui'),
+      firecrawlEnabled ? resolveCurrentProtocol('web-image') : null,
+      firecrawlEnabled ? resolveCurrentProtocol('web-research') : null,
+    ])
+    const genUiPrompt = genUi.content
+    const webImagePrompt = imageProtocol?.content ?? null
     const reqMessages = acceptedSendContext
-      ? await projectLogicalPromptContext(acceptedSendContext.logical, acceptedSendContext.compilePolicy.systemMessagePolicy, toDataUrl, { genUi: true, genUiPrompt })
+      ? await projectLogicalPromptContext(acceptedSendContext.logical, acceptedSendContext.compilePolicy.systemMessagePolicy, toDataUrl, { genUi: true, genUiPrompt, webImagePrompt })
       : await buildApiMessages(contextMessages, toDataUrl)
-    if (!acceptedSendContext) appendGenUiGuidance(reqMessages, genUiPrompt)
+    if (!acceptedSendContext) appendGenUiGuidance(reqMessages, genUiPrompt, webImagePrompt)
     const encodedImages = countImageParts(reqMessages)
     if (encodedImages !== expectedImages) {
       const failure: SendFailure = { kind: 'failed', code: 'attachment-encode-failed', message: '图片准备失败：已选择 ' + expectedImages + ' 张，实际仅准备成功 ' + encodedImages + ' 张。请检查附件后重试。' }
@@ -124,14 +131,18 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
     thread.setStreaming()
     if (onStreamStart) onStreamStart(controller, assistantId)
     const userMessages = contextMessages.filter(message => message.role === 'user')
-    const firecrawlEnabled = hasFirecrawlWebSearch(settings)
     const native = nativeConversationOptions(settings, reqMessages, !!thread.acceptTitle && userMessages.length === 1)
-    let webFooter = ''
+    let webResearch: Awaited<ReturnType<typeof prepareFirecrawlResearch>> | undefined
     const r = await streamTextChat({
       apiKey: settings.apiKey, baseUrl: settings.apiBaseUrl, model: settings.model, messages: reqMessages,
       signal: controller.signal, onDelta, onReasoningDelta: delta => { reasoning += delta }, ...native,
       ...(firecrawlEnabled ? {
         nativeTools: [],
+        webResearchPrompt: researchProtocol?.content,
+        onWebRead: async numbers => {
+          if (!ownedLease.isCurrent()) throw new DeepSeekError('aborted', 'Aborted')
+          return await webResearch?.read?.(numbers) ?? { status: 'unavailable' }
+        },
         onWebToolCalls: async calls => {
           const queries = getToolQueries(calls).map(call => searchQuery(call.name, call.args))
           const index = queries.findIndex(Boolean)
@@ -140,14 +151,14 @@ export async function runThreadReply(thread: ReplyThread, settings: Settings, co
           if (!ownedLease.isCurrent()) throw new DeepSeekError('aborted', 'Aborted')
           const research = await prepareFirecrawlResearch({ settings, query: queries[index], signal: controller.signal })
           if (!ownedLease.isCurrent()) throw new DeepSeekError('aborted', 'Aborted')
-          webFooter = research.footer
+          webResearch = research
           results[index] = research.result
           return results
         },
       } : {}),
     })
     clearTimeout(renderTimer);renderTimer=undefined
-    received = r.content + webFooter + citationFooter(r.annotations)
+    received = r.content + (webResearch?.footer() ?? '') + citationFooter(r.annotations)
     clearTimeout(durableTimer)
     thread.updateAssistantContent(received, r.usage, { serverToolCalls: r.serverToolCalls, annotations: r.annotations, reasoning: r.reasoning })
     if (typeof r.title==='string') thread.acceptTitle?.(r.title)

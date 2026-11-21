@@ -41,9 +41,6 @@ assert((await page.locator('[data-testid="toc-picker-start"]').textContent()).in
 // --- B: mock seam -> decorated pageLabels; PDF has NO PageLabels ---
 await page.evaluate(() => {
   ;(globalThis).__dshMockAiToc = (req) => {
-    if (req.phase === 'structure') {
-      return '{"levels":[1,1,2,2,2,1]}'
-    }
     const si = (n) => { const i = req.pages.indexOf(n) + 1; return i > 0 ? i : 1 }
     const rows = [
       { title: '前言', pageLabel: 'iii', sourceImageIndex: si(req.pages[0]), visualIndent: 0, numbering: '' },
@@ -53,7 +50,7 @@ await page.evaluate(() => {
       { title: '第六节 常见失误', pageLabel: '/24', sourceImageIndex: si(req.pages[1]), visualIndent: 0, numbering: '' },
       { title: '附录', pageLabel: 'A-1', sourceImageIndex: si(req.pages[2]), visualIndent: 0, numbering: '' },
     ]
-    return rows.map(r => JSON.stringify(r)).join('\n')
+    return JSON.stringify({ rows: rows.map((row, index) => ({ ...row, level: [1,1,2,2,2,1][index] })) })
   }
 })
 await page.locator('[data-testid="toc-picker-start"]').click()

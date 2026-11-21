@@ -33,7 +33,6 @@ async function seedAndSave() {
     ;(globalThis).__dshAllCalls = []
     ;(globalThis).__dshMockAiToc = (req) => {
     ;(globalThis).__dshAllCalls.push({ phase: req.phase, attempt: req.attempt, repair: req.repair })
-    if (req.phase === 'structure') return '{"levels":[1,2,2,2]}'
     const si = (n) => { const i = req.pages.indexOf(n) + 1; return i > 0 ? i : 1 }
     const rows = [
       { title: '第一部分 方法论', pageLabel: '/1', sourceImageIndex: si(req.pages[0]) },
@@ -41,14 +40,13 @@ async function seedAndSave() {
       { title: '第三节 阅读', pageLabel: '/5', sourceImageIndex: si(req.pages[1]) },
       { title: '第六节 常见失误', pageLabel: '/24', sourceImageIndex: si(req.pages[1]) },
     ]
-    return rows.map(r => JSON.stringify(r)).join('\n')
+    return JSON.stringify({ rows: rows.map((row, index) => ({ ...row, level: [1,2,2,2][index] })) })
     }
   })
   await page.locator('[data-testid="toc-picker-start"]').click()
   await page.locator('[data-testid="toc-review"]').waitFor({ state: 'visible', timeout: 20000 })
   const happyCalls = await page.evaluate(() => (globalThis).__dshAllCalls)
-  assert(happyCalls.filter(c => c.phase === 'transcribe').length === 1, 'API gate: happy path uses one Vision call for one window')
-  assert(happyCalls.filter(c => c.phase === 'structure').length === 1, 'API gate: happy path uses exactly one structure call')
+  assert(happyCalls.length === 1 && happyCalls[0].phase === 'outline', 'API gate: one request for the whole outline')
   const reviewMeta = await page.locator('[data-testid^="toc-review-item-"]').allTextContents()
   assert(reviewMeta[0].includes('第一部分 方法论') && reviewMeta[0].includes('L1') && reviewMeta[0].includes('/1'), 'provenance: first title/level/pageLabel preserved (got ' + reviewMeta[0] + ')')
   assert(reviewMeta[1].includes('第一节 题型') && reviewMeta[1].includes('L2') && reviewMeta[1].includes('/3'), 'provenance: second title/level/pageLabel preserved (got ' + reviewMeta[1] + ')')

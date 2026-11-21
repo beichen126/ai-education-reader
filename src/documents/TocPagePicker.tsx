@@ -209,7 +209,7 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart }: Props) 
           {rangeError && <div className={css.rangeErr} data-testid="toc-picker-range-error">{rangeError}</div>}
           <div className={css.pickCount} data-testid="toc-picker-count">{tx('已选择 ' + sorted.length + ' 页', sorted.length + ' pages selected')} · PDF {selectedText || '—'}</div>
         </div>
-        <div className={css.privacy} data-testid="toc-picker-privacy">{tx('DeepSeek Flash 仅接收所选目录页的图片。', 'DeepSeek Flash receives images of the selected outline pages only.')}</div>
+        <div className={css.privacy} data-testid="toc-picker-privacy">{tx('先对所选页做 OCR，DeepSeek Flash 仅接收识别出的文字。', 'Selected pages are processed by OCR. DeepSeek Flash receives only the recognized text.')}</div>
         <div ref={gridRef} onScroll={() => pump.current()} className={css.grid} data-testid="toc-picker-grid">
           {Array.from({ length: Math.min(loadedCount, pageCount) }, (_, i) => i + 1).map(n => (
             <button key={n} type="button" ref={(el) => { thumbRefs.current[n] = el }} className={css.thumb + (selected.has(n) ? ' ' + css.selected : '')} data-testid={'toc-thumb-' + n} data-page={n} data-selected={selected.has(n) ? '1' : '0'}

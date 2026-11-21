@@ -882,7 +882,7 @@ export function DocumentReader() {
     setBuilderSaveSource('manual')
     setBuilderOpen(true)
   }, [doc])
-  // ---- AI TOC extraction runner (Stage 9.4C.1): snapshot -> vision -> mapped draft ----
+  // ---- AI TOC extraction runner (Stage 9.4C.1): snapshot -> OCR -> mapped draft ----
   // Ownership: a NEW run aborts the previous one (same doc / A->B / reader close / unmount).
   // AiToc snapshot is taken ONCE at start; a stale result that resolves later never setState.
   const runAiToc = useCallback(async (selectedPages: number[]) => {
@@ -899,7 +899,7 @@ export function DocumentReader() {
     const ownedDocId = doc.id
     try {
       const res = await extractAiToc({
-        session, pageCount, selectedPages,
+        session, documentId: ownedDocId, selectedPages,
         getPageLabels: async () => readSessionPageLabels(session),
         signal: controller.signal,
         onProgress: (p) => { if (gen === aiTocGenRef.current) setAiTocProgress(p) },
@@ -916,7 +916,7 @@ export function DocumentReader() {
     } finally {
       if (gen === aiTocGenRef.current) setAiTocExtracting(false)
     }
-  }, [doc, pageCount])
+  }, [doc])
 
   // Progress dialog lifecycle (Finding 9.4D.2-0.6): hide keeps the operation running and
   // shows a Reader activity chip; cancel aborts (no review, no persistence, no object URL).

@@ -88,7 +88,7 @@ OPFS / IndexedDB / 迁移 / 诊断：`test:opfs-storage`, `test:document-migrati
 
 ### 6. 确定性 AI mock
 
-- AI TOC 使用 `window.__dshMockAiToc` 测试缝（返回转录 JSONL + 结构 JSON），无需真实付费 API。
+- AI TOC 使用 `window.__dshMockAiToc` 测试缝（一次返回包含条目层级的目录 JSON），无需真实付费 API。
 - 应用**永不**把 AI 当作持久化权威——识别结果只是草稿，需人工检查后保存。
 
 ### 7. 真实付费 AI smoke

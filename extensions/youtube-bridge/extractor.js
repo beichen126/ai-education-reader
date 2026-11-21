@@ -7,9 +7,15 @@ globalThis.readerExtractYoutube = async function(language = 'auto') {
  const find=(root,key)=>{const queue=[root];let count=0;while(queue.length&&count++<80000){const v=queue.pop();if(!v||typeof v!=='object')continue;if(v[key])return v[key];for(const x of Object.values(v))if(x&&typeof x==='object')queue.push(x)}return null};
  const player=document.querySelector('#movie_player');
  const players=[player?.getPlayerResponse?.(),globalThis.ytInitialPlayerResponse].filter(Boolean);
- const data=players.find(p=>p.videoDetails?.videoId===videoId)||players[0];
- if(data?.playabilityStatus?.status && data.playabilityStatus.status!=='OK')throw new Error('YouTube '+data.playabilityStatus.status+' · '+(data.playabilityStatus.reason||'视频当前不可播放'));
- if(data?.videoDetails?.videoId&&data.videoDetails.videoId!==videoId)throw new Error('视频仍在切换，请稍后重试。');
+ const matching=players.filter(p=>p.videoDetails?.videoId===videoId);
+ const data=matching.find(p=>p.playabilityStatus?.status==='OK')||matching[0]||players.find(p=>!p.videoDetails?.videoId);
+ const status=data?.playabilityStatus?.status;
+ if(status && status!=='OK'){
+  const error=new Error('YouTube '+status+' · '+(data.playabilityStatus.reason||'视频当前不可播放'));
+  if(status==='LOGIN_REQUIRED')error.code='VERIFICATION_REQUIRED';
+  throw error;
+ }
+ if(!data&&players.length)throw new Error('视频仍在切换，请稍后重试。');
  const tracks=data?.captions?.playerCaptionsTracklistRenderer?.captionTracks||[];
  const rank=t=>(language==='auto'?0:t.languageCode===language?0:t.languageCode?.startsWith(language+'-')?1:10)+(t.kind==='asr'?2:0);
  const track=[...tracks].sort((a,b)=>rank(a)-rank(b))[0];
@@ -23,13 +29,13 @@ globalThis.readerExtractYoutube = async function(language = 'auto') {
  if(!segments.length){
   const endpoint=find(globalThis.ytInitialData,'getTranscriptEndpoint');
   const config=globalThis.ytcfg;
-  if(endpoint?.params&&config?.get){
+  if(endpoint?.params&&config?.get)try{
    const context=config.get('INNERTUBE_CONTEXT');
    const r=await timedFetch('/youtubei/v1/get_transcript?prettyPrint=false&key='+encodeURIComponent(config.get('INNERTUBE_API_KEY')||''),{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Youtube-Client-Name':String(config.get('INNERTUBE_CONTEXT_CLIENT_NAME')||1),'X-Youtube-Client-Version':context?.client?.clientVersion||''},body:JSON.stringify({context,params:endpoint.params})});
    if(r.ok){const json=await r.json();const queue=[json];let count=0;while(queue.length&&count++<80000){const v=queue.pop();if(!v||typeof v!=='object')continue;const cue=v.transcriptSegmentViewModel;
    if(cue?.startMs!=null&&cue.simpleText) segments.push({start:Number(cue.startMs)/1000,duration:Math.max(0,(Number(cue.endMs||cue.startMs)-Number(cue.startMs))/1000),text:typeof cue.simpleText==='string'?cue.simpleText:cue.simpleText.content||text(cue.simpleText)});
    const s=v.transcriptSegmentRenderer;if(s)segments.push({start:Number(s.startMs)/1000,duration:Math.max(0,(Number(s.endMs)-Number(s.startMs))/1000),text:text(s.snippet)});else for(const x of Object.values(v))if(x&&typeof x==='object')queue.push(x)}segments.sort((a,b)=>a.start-b.start);actualLanguage='default';}
-  }
+  }catch{/* Continue with YouTube's transcript panel when this endpoint fails. */}
  }
  if(!segments.length){
   // Let the site's own player handle session/token requirements, then read its transcript panel.

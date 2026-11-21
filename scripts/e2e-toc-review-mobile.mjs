@@ -13,7 +13,7 @@ try {
     await page.locator('[data-testid="document-library"] input[type="file"]').setInputFiles('test/fixtures/no-outline.pdf')
     await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
     const start = async count => {
-      await page.evaluate(count => { window.__reviewCount = count; window.__dshMockAiToc = req => req.phase === 'structure' ? JSON.stringify({ levels: Array(window.__reviewCount).fill(1) }) : JSON.stringify({ rows: Array.from({ length: window.__reviewCount }, (_, i) => ({ title: 'Entry ' + i, pageLabel: i === 1 ? '' : String(Math.min(8, i + 1)), sourceImageIndex: 1 })) }) }, count)
+      await page.evaluate(count => { window.__reviewCount = count; window.__dshMockAiToc = () => JSON.stringify({ rows: Array.from({ length: window.__reviewCount }, (_, i) => ({ title: 'Entry ' + i, pageLabel: i === 1 ? '' : String(Math.min(8, i + 1)), sourceImageIndex: 1, level: 1 })) }) }, count)
       if (await page.locator('[data-testid="reader-toc-toggle"]').getAttribute('aria-expanded') !== 'true') await page.locator('[data-testid="reader-toc-toggle"]').click()
       await page.locator('[data-testid="reader-toc-ai"]').click()
       await page.locator('[data-testid="toc-thumb-7"]').click()

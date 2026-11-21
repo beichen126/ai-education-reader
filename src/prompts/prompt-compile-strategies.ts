@@ -94,7 +94,7 @@ export async function projectLogicalPromptContext(
   context: LogicalPromptContext,
   policy: 'interleaved' | 'flattened',
   toDataUrl: PromptImageResolver = safeImageResolver(),
-  options: { genUi?: boolean; genUiPrompt?: string } = {},
+  options: { genUi?: boolean; genUiPrompt?: string; webImagePrompt?: string | null } = {},
 ): Promise<ApiChatMessage[]> {
   if (context.domain === 'conversation' && options.genUi) {
     context = {...context, segments: context.segments.map(segment => ({
@@ -106,7 +106,7 @@ export async function projectLogicalPromptContext(
   if (context.domain === 'conversation') {
     // Rendering capability is request-local guidance, not a conversation mode.
     // Keep timeline JSON and the empty-default system-message contract intact.
-    if (options.genUi) appendGenUiGuidance(history, options.genUiPrompt)
+    if (options.genUi) appendGenUiGuidance(history, options.genUiPrompt, options.webImagePrompt)
 
     const hasNonEmptyMode = context.segments.some((segment) => segment.snapshot.content.length > 0)
     if (policy === 'flattened') {
@@ -149,11 +149,12 @@ export async function projectLogicalPromptContext(
 }
 
 /** Clone the last user turn so durable messages and multipart attachments stay intact. */
-export function appendGenUiGuidance(messages: ApiChatMessage[], prompt = GENUI_PROMPT): void {
+export function appendGenUiGuidance(messages: ApiChatMessage[], prompt = GENUI_PROMPT, imagePrompt?: string | null): void {
   for (let index = messages.length - 1; index >= 0; index--) {
     const message = messages[index]
     if (message.role !== 'user') continue
-    const guidance = '\n\n[Reader rendering capabilities]\n' + (configuredImageKeys(getSettingsSnapshot()).length ? withWebImageCapabilities(prompt) : prompt).replace(/\bdsh-ui\b/gi, 'genui')
+    const imagesEnabled = imagePrompt !== null && (imagePrompt !== undefined || configuredImageKeys(getSettingsSnapshot()).length > 0)
+    const guidance = '\n\n[Reader rendering capabilities]\n' + (imagesEnabled ? withWebImageCapabilities(prompt, imagePrompt ?? undefined) : prompt).replace(/\bdsh-ui\b/gi, 'genui')
     messages[index] = { ...message, content: typeof message.content === 'string'
       ? message.content + guidance
       : [...message.content, { type: 'text', text: guidance }] }

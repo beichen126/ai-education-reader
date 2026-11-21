@@ -14,16 +14,16 @@ const bridge = readFileSync('android/youtube/YoutubeBridge.kt','utf8')
 const expression = bridge.match(/val script = extractor \+ (.+)/)![1]
 const parts = expression.split('+JSONObject.quote(language)+')
 const pollScript = JSON.parse(parts[0]) + JSON.stringify('auto') + JSON.parse(parts[1])
-for (const failure of [false,true]) {
+for (const failure of ['', 'EXTRACTION_FAILED', 'VERIFICATION_REQUIRED']) {
  let attempts=0
- const scope:any={document:{querySelector:()=>({getPlayerResponse:()=>({videoDetails:{videoId:'abcdefghijk'}}),pauseVideo(){}})},readerExtractYoutube:async()=>{attempts++;if(failure)throw new Error('no captions');return {videoId:'abcdefghijk'}}}
+ const scope:any={document:{querySelector:()=>({getPlayerResponse:()=>({videoDetails:{videoId:'abcdefghijk'}}),pauseVideo(){}})},readerExtractYoutube:async()=>{attempts++;if(failure)throw Object.assign(new Error('no captions'),{code:failure});return {videoId:'abcdefghijk'}}}
  scope.window=scope
  const context=createContext(scope)
  runInContext(pollScript,context)
  await new Promise(resolve=>setTimeout(resolve,0))
  const result=JSON.parse(runInContext(pollScript,context))
  assert.equal(attempts,1)
- assert.equal(failure?result.code:result.data.videoId,failure?'EXTRACTION_FAILED':'abcdefghijk')
+ assert.equal(failure?result.code:result.data.videoId,failure||'abcdefghijk')
  runInContext(pollScript,context)
  assert.equal(attempts,1)
 }

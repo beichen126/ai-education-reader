@@ -10,13 +10,13 @@ export async function readPageOcr(documentId: string, page: number): Promise<Ocr
 
 const pending = new Map<string, Promise<OcrPage>>()
 /** Cache on the immutable PDF record, atomically merge pages, and coalesce concurrent requests. */
-export function ensurePageOcr(documentId: string, page: number, render: () => Promise<Blob>): Promise<OcrPage> {
+export function ensurePageOcr(documentId: string, page: number, render: () => Promise<Blob>, acceptCached?: (page: OcrPage) => boolean): Promise<OcrPage> {
   const key = documentId + ':' + page
   const existing = pending.get(key)
   if (existing) return existing
   const run = async () => {
     const cached = await readPageOcr(documentId, page)
-    if (cached) return cached
+    if (cached && (!acceptCached || acceptCached(cached))) return cached
     const doc = await idbGet('documents', documentId)
     if (!doc || !Number.isInteger(page) || page < 1 || page > doc.pageCount) throw new Error('PDF 页面不存在，请先保存到资料库。')
     const profile = selectedDeepSeekServiceProfile()

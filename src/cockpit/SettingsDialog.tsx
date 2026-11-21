@@ -410,7 +410,7 @@ export function SettingsDialog() {
           <article>
             <h4>{tx('阅读 PDF 与识别目录','Reading PDFs and detecting outlines')}</h4>
             <p>{tx('在阅读器的目录中可以编辑章节或使用 AI 识别。识别后先检查标题、层级和 PDF 页码；印刷页码不一定等于 PDF 页码。定位问题项、校正映射后再保存，目录历史版本会保存在本地。','Open the reader outline to edit chapters or detect them with AI. Review titles, levels and PDF page mappings before saving: printed page numbers can differ from PDF page numbers. Locate problem entries, correct mappings and save; outline history is kept locally.')}</p>
-            <p>{tx('目录识别失败时，先检查 API 是否支持图片、Key 和额度是否有效，再缩小目录页范围重试。具体错误信息比重复点击重试更有帮助。','If detection fails, check image support, API credentials and available credits, then retry with fewer outline pages. Read the specific error rather than repeatedly retrying unchanged input.')}</p>
+            <p>{tx('目录识别失败时，先检查 DeepSeek 官方 Key 和额度是否有效，再缩小目录页范围重试。具体错误信息比重复点击重试更有帮助。','If detection fails, check the official DeepSeek credentials and available credits, then retry with fewer outline pages. Read the specific error rather than repeatedly retrying unchanged input.')}</p>
           </article>
           <article>
             <h4>{tx('复制、标记与学习中心','Copying, marks and the learning center')}</h4>

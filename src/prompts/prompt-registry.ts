@@ -1,3 +1,5 @@
+import { WEB_RESEARCH_PROMPT } from '../api/web-search-tool'
+import { WEB_IMAGE_PROMPT } from '../web-images/protocol'
 import {GENUI_PROMPT} from '../genui/schema'
 import type { ArtifactKind, TransformationPreset } from '../artifacts/artifact-types'
 import { presetForKind, QUIZ_OUTPUT_PROTOCOL_PROMPT, TRANSFORMATION_PRESETS } from '../artifacts/artifact-prompts'
@@ -28,6 +30,8 @@ export const BUILTIN_PROMPT_IDS = {
   artifactCustom: 'builtin-artifact-custom',
   protocolAiTocTranscription: 'builtin-protocol-ai-toc-transcription',
   protocolAiTocStructure: 'builtin-protocol-ai-toc-structure',
+  protocolWebResearch: 'builtin-protocol-web-research',
+  protocolWebImage: 'builtin-protocol-web-image',
   protocolGenUi: 'builtin-protocol-genui',
   protocolQuizOutput: 'builtin-protocol-quiz-output',
 } as const
@@ -75,20 +79,22 @@ type ProtocolAdapter = {
 
 /** Adapters point at production constants/functions; they intentionally contain no copied prompt text. */
 export const PROTOCOL_METADATA_ADAPTERS: readonly ProtocolAdapter[] = [
+  { id: BUILTIN_PROMPT_IDS.protocolWebResearch, name: 'Firecrawl · 联网搜索', description: '控制模型何时搜索，以及看过摘要后何时读取正文。', domain: 'web-research', getSystemPrompt: () => WEB_RESEARCH_PROMPT, outputContract: 'search_web({query})；read_web_results({numbers})。', validator: { name: 'searchQuery / readResultNumbers', description: '校验搜索词和本轮结果编号。' } },
+  { id: BUILTIN_PROMPT_IDS.protocolWebImage, name: 'Firecrawl · 网络配图', description: '控制模型何时插图以及如何填写图片搜索词。', domain: 'web-image', getSystemPrompt: () => WEB_IMAGE_PROMPT, outputContract: 'image 或 image-group 节点，支持在 GenUI 卡片中嵌入。', validator: { name: 'parseImageQueries', description: '校验图片位置数量和搜索词。' } },
   {id:BUILTIN_PROMPT_IDS.protocolGenUi,name:'GenUI · 交互界面',description:'紧凑卡片、图表、计算、选择测验与单词朗读。按用途组合，自动用于普通对话，可复制自定义。',domain:'genui',getSystemPrompt:()=>GENUI_PROMPT,outputContract:'genui 围栏：完整 JSON 根对象与 items 节点数组；词汇表使用 vocabulary 条目。',validator:{name:'parseGenUi',description:'校验组件字段、结构与计算引用。'}},
   {
     id: BUILTIN_PROMPT_IDS.protocolAiTocTranscription,
-    name: 'AI 目录 · 文字转录',
-    description: '将目录页视觉内容忠实转录为结构化 JSON，兼容旧 JSONL。',
+    name: 'AI 目录 · 统一识别',
+    description: '一次根据全部目录页 OCR 文本提取标题、层级和印刷页码。',
     domain: 'ai-toc-transcription',
     getSystemPrompt: () => TOC_TRANSCRIPTION_SYSTEM_PROMPT,
-    outputContract: 'JSON {rows:[...]} (legacy JSONL accepted), validated by parseTocJsonl()',
+    outputContract: 'JSON {rows:[{title, level, pageLabel, sourceImageIndex}]}',
     validator: { name: 'parseTocJsonl', description: '逐条校验目录转录 JSON，同时兼容旧 JSONL。' },
   },
   {
     id: BUILTIN_PROMPT_IDS.protocolAiTocStructure,
     name: 'AI 目录 · 结构分析',
-    description: '根据已转录目录行推断连续的绝对层级。',
+    description: '旧版分步识别的结构协议。当前目录识别使用「AI 目录 · 统一识别」。',
     domain: 'ai-toc-structure',
     getSystemPrompt: () => TOC_STRUCTURE_PROMPT,
     outputContract: 'compact JSON levels validated by parseTocStructure()',

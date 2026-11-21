@@ -139,10 +139,10 @@ class YoutubeBridge(private val context: Context, private val reader: () -> WebV
       if (generation != token || activeId != id) return
       if (System.currentTimeMillis() > deadline) { fail("TIMEOUT", "字幕提取超时（阶段：$stage），请检查网络或更换视频重试"); return }
       val uri = Uri.parse(view.url ?: "")
-      if (uri.host in listOf("consent.youtube.com", "accounts.google.com")) { fail("VERIFICATION_REQUIRED", "YouTube 要求登录或验证，后台提取无法继续。请在浏览器确认视频可访问后重试"); return }
+      if (uri.host in listOf("consent.youtube.com", "accounts.google.com")) { fail("VERIFICATION_REQUIRED", "YouTube 要求登录或验证，后台提取无法继续。可打开 YouTube 完成验证，再导入转录稿"); return }
       if (uri.host == "www.youtube.com" && uri.getQueryParameter("v") == videoId) {
         stage = "extracting"
-        val script = extractor + "\n(()=>{const player=document.querySelector('#movie_player');player?.pauseVideo?.();const ready=player?.getPlayerResponse?.()||window.ytInitialPlayerResponse;if(ready&&!window.__readerSubtitleRunning&&!window.__readerSubtitleResult){window.__readerSubtitleRunning=true;readerExtractYoutube("+JSONObject.quote(language)+").then(data=>{window.__readerSubtitleResult={data}}).catch(e=>{window.__readerSubtitleResult={error:e.message,code:'EXTRACTION_FAILED'}})};return JSON.stringify(window.__readerSubtitleResult||null)})()"
+        val script = extractor + "\n(()=>{const player=document.querySelector('#movie_player');player?.pauseVideo?.();const ready=player?.getPlayerResponse?.()||window.ytInitialPlayerResponse;if(ready&&!window.__readerSubtitleRunning&&!window.__readerSubtitleResult){window.__readerSubtitleRunning=true;readerExtractYoutube("+JSONObject.quote(language)+").then(data=>{window.__readerSubtitleResult={data}}).catch(e=>{window.__readerSubtitleResult={error:e.message,code:e.code==='VERIFICATION_REQUIRED'?'VERIFICATION_REQUIRED':'EXTRACTION_FAILED'}})};return JSON.stringify(window.__readerSubtitleResult||null)})()"
         view.evaluateJavascript(script) { raw ->
           if (generation == token) try {
             val decoded = JSONTokener(raw).nextValue()

@@ -13,6 +13,8 @@ import {
   PROTOCOL_METADATA_ADAPTERS,
 } from '../src/prompts/prompt-registry.ts'
 import { getPromptDefinitionIssues, validatePromptScopeMatrix } from '../src/prompts/prompt-validation.ts'
+import { WEB_RESEARCH_PROMPT } from '../src/api/web-search-tool.ts'
+import { WEB_IMAGE_PROMPT } from '../src/web-images/protocol.ts'
 
 let pass = 0
 let fail = 0
@@ -37,14 +39,16 @@ for (const preset of TRANSFORMATION_PRESETS) {
 assert(presetById('quiz')?.defaultPrompt === getBuiltinArtifactPrompt('quiz')?.userPrompt, 'quiz registry does not copy or drift the existing prompt')
 assert(getBuiltinArtifactPrompt('quiz')?.protocolId === BUILTIN_PROMPT_IDS.protocolQuizOutput, 'quiz artifact points to the output protocol')
 
-assert(PROTOCOL_METADATA_ADAPTERS.length === 4 && BUILTIN_PROTOCOL_PROMPTS.length === 4, 'registry exposes the four required protocol adapters')
+assert(PROTOCOL_METADATA_ADAPTERS.length === 6 && BUILTIN_PROTOCOL_PROMPTS.length === 6, 'registry exposes all six protocol adapters')
+assert(getBuiltinProtocol('web-research')?.systemPrompt === WEB_RESEARCH_PROMPT, 'web research shows the real search and read tool instructions')
+assert(getBuiltinProtocol('web-image')?.systemPrompt === WEB_IMAGE_PROMPT, 'web image shows the production prompt')
 assert(getBuiltinProtocol('ai-toc-transcription')?.systemPrompt === TOC_TRANSCRIPTION_SYSTEM_PROMPT, 'AI TOC transcription uses the production prompt constant')
 assert(getBuiltinProtocol('ai-toc-structure')?.systemPrompt === TOC_STRUCTURE_PROMPT, 'AI TOC structure uses the production prompt constant')
 assert(getBuiltinProtocol('quiz-output')?.systemPrompt === QUIZ_OUTPUT_PROTOCOL_PROMPT, 'Quiz protocol points to the canonical output protocol prompt')
 assert(getBuiltinProtocol('ai-toc-transcription')?.validator?.name === BUILTIN_PROTOCOL_VALIDATOR_NAMES.aiTocTranscription, 'transcription adapter names its actual validator')
 assert(getBuiltinProtocol('ai-toc-structure')?.validator?.name === BUILTIN_PROTOCOL_VALIDATOR_NAMES.aiTocStructure, 'structure adapter names its actual validator')
 assert(getBuiltinProtocol('quiz-output')?.validator?.name === BUILTIN_PROTOCOL_VALIDATOR_NAMES.quizOutput, 'quiz adapter names its actual validator')
-assert(listBuiltinPrompts('protocol').length === 4 && listBuiltinPrompts('artifact').length === 5, 'kind filters return complete registry partitions')
+assert(listBuiltinPrompts('protocol').length === 6 && listBuiltinPrompts('artifact').length === 5, 'kind filters return complete registry partitions')
 
 const idsBefore = BUILTIN_PROMPT_REGISTRY.map((p) => p.id).join('|')
 const idsAfterImport = BUILTIN_PROMPT_REGISTRY.map((p) => p.id).join('|')

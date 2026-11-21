@@ -33,7 +33,7 @@ const categories: { id: Category; label: string; labelEn: string; description: s
   { id: 'conversation-mode', label: '会话模式', labelEn: 'Chat modes', description: '对话时使用的模式', descriptionEn: 'Modes used in chats' },
   { id: 'artifact', label: '学习成果', labelEn: 'Study outputs', description: '笔记与题目', descriptionEn: 'Notes and quizzes' },
   { id: 'quick-follow-up', label: '快捷追问', labelEn: 'Quick follow-ups', description: '对最新回答继续追问', descriptionEn: 'Continue from the latest answer' },
-  { id: 'protocol', label: '系统协议', labelEn: 'System protocols', description: '结构化输出约束', descriptionEn: 'Structured-output constraints' },
+  { id: 'protocol', label: '系统协议', labelEn: 'System protocols', description: '工具与结构化输出约束', descriptionEn: 'Tools and structured-output constraints' },
 ]
 
 const kindLabels: Record<PromptKind, string> = {
@@ -642,7 +642,7 @@ function PromptEditor(props: {
           <section className={css.protocolInspector} data-testid="protocol-inspector" aria-label={tx('协议详情', 'Protocol details')}>
             <div className={css.protocolInspectorTitle}>{tx('协议详情', 'Protocol details')}</div>
             <dl className={css.protocolMeta}>
-              <div><dt>{tx('作用位置', 'Used for')}</dt><dd>{definition.domain === 'ai-toc-transcription' ? tx('AI TOC · 文字转录', 'AI TOC · transcription') : definition.domain === 'ai-toc-structure' ? tx('AI TOC · 结构分析', 'AI TOC · structure') : definition.domain === 'quiz-output' ? tx('Quiz · 输出校验', 'Quiz · output validation') : definition.domain === 'genui' ? tx('普通对话 · 交互界面', 'Regular chat · interactive interface') : tx('自定义协议域', 'Custom protocol domain')}</dd></div>
+              <div><dt>{tx('作用位置', 'Used for')}</dt><dd>{definition.domain === 'ai-toc-transcription' ? tx('AI TOC · 文字转录', 'AI TOC · transcription') : definition.domain === 'ai-toc-structure' ? tx('AI TOC · 结构分析', 'AI TOC · structure') : definition.domain === 'quiz-output' ? tx('Quiz · 输出校验', 'Quiz · output validation') : definition.domain === 'genui' ? tx('普通对话 · 交互界面', 'Regular chat · interactive interface') : definition.domain === 'web-research' ? tx('普通对话 · 联网搜索与网页读取', 'Regular chat · web search and page reading') : definition.domain === 'web-image' ? tx('普通对话 · 网络配图', 'Regular chat · web images') : tx('自定义协议域', 'Custom protocol domain')}</dd></div>
               <div><dt>{tx('模型职责', 'Model responsibility')}</dt><dd>{definition.description || tx('由协议 Prompt 约束结构化模型输出。', 'The protocol prompt constrains structured model output.')}</dd></div>
               <div><dt>{tx('来源', 'Source')}</dt><dd>{definition.source === 'builtin' ? tx('canonical / 内置', 'canonical / built-in') : definition.source + ' / experimental'}</dd></div>
               <div><dt>revision</dt><dd>v{definition.revision}</dd></div>

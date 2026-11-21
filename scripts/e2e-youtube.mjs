@@ -54,5 +54,12 @@ try{
  await dialog.getByText(/PAGE_NETWORK_-2/).waitFor()
  await dialog.getByRole('button',{name:'复制错误',exact:true}).waitFor()
  assert.equal(await dialog.getByRole('button',{name:'加入本次提问',exact:true}).isDisabled(),true)
+ await page.evaluate(()=>{window.AndroidYoutube.extract=(id)=>window.postMessage({channel:'reader-youtube-response',id,error:'未能读取字幕',code:'EXTRACTION_FAILED',nativeFailure:'NATIVE_PLAYABILITY_LOGIN_REQUIRED'},location.origin)})
+ await dialog.getByRole('button',{name:'提取字幕',exact:true}).click()
+ assert.equal(await dialog.getByRole('link',{name:'打开 YouTube'}).getAttribute('href'),'https://www.youtube.com/watch?v=abcdefghijk')
+ await dialog.getByLabel('粘贴转录稿').fill('0:42\nFirst caption.\n1:03 Second caption.')
+ await dialog.getByRole('button',{name:'导入转录稿'}).click()
+ assert.equal(await dialog.getByRole('link',{name:'00:00:42'}).getAttribute('href'),'https://www.youtube.com/watch?v=abcdefghijk&t=42')
+ assert.equal(await dialog.getByRole('button',{name:'加入本次提问',exact:true}).isEnabled(),true)
  console.log('PASS material 2x2 menu, YouTube bridge preview, text-only context, unchanged composer, reload cache and mobile layout')
 }finally{await browser.close()}

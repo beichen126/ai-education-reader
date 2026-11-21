@@ -3,7 +3,6 @@ import type { Settings } from '../engine/settings-store'
 import { configuredImageKeys, requestWithImageKeys } from '../web-images/key-pool'
 import { withRequestDeadline } from './request-deadline'
 
-const DETAIL = /价格|定价|费用|计费|免费|额度|限制|版本|文档|字段|区别|比较|什么时候|\b(price|pricing|cost|billing|free|quota|limit|version|api|docs|compare|difference|release)\b|\d+\.\d+/i
 const STOP_WORDS = new Set(['the', 'and', 'for', 'with', 'what', 'how', 'does', 'about', 'please', '是什么', '请问', '一下'])
 
 export function hasFirecrawlWebSearch(settings: Settings) {
@@ -44,7 +43,7 @@ export function excerptFirecrawlPage(markdown: string, query: string) {
     return { index, text, score: relevance(text, tokens) }
   }).sort((a, b) => b.score - a.score || a.index - b.index)
   const best = chunks[0]
-  if (!best?.score) return ''
+  if (!best?.score) return markdown.trim().slice(0, 1000)
   const second = chunks.find(chunk => chunk.score && Math.abs(chunk.index - best.index) > 1)
   return (second ? [best, second] : [best]).sort((a, b) => a.index - b.index).map(chunk => chunk.text).join('\n\n…\n\n')
 }
@@ -114,20 +113,14 @@ export async function prepareFirecrawlResearch(input: {
   settings: Settings
   query: string
   signal: AbortSignal
-}): Promise<{ result: Record<string, unknown>; footer: string }> {
+}) {
   const { settings, query, signal } = input
   const keys = configuredImageKeys(settings)
-  return withRequestDeadline(signal, 16_000, async deadline => {
-    return researchFirecrawl(query, keys, deadline, signal)
-  })
-}
-
-async function researchFirecrawl(query: string, keys: ReturnType<typeof configuredImageKeys>, deadline: AbortSignal, signal: AbortSignal) {
   const usage: Usage = { searches: 0, reads: 0, credits: 0, complete: true }
   const seen = new Set<string>()
   const sources: Source[] = []
   try {
-    const result = await request(keys, 'search', { query, sources: ['web'], limit: 5 }, deadline, usage)
+    const result = await withRequestDeadline(signal, 11_000, deadline => request(keys, 'search', { query, sources: ['web'], limit: 5 }, deadline, usage))
     if (!Array.isArray(result.data?.web)) throw new Error('Missing Firecrawl web results')
     for (const item of result.data.web.slice(0, 5)) {
       const url = publicUrl(item?.url)
@@ -140,35 +133,31 @@ async function researchFirecrawl(query: string, keys: ReturnType<typeof configur
     }
   } catch {
     signal.throwIfAborted()
-    return { result: { status: 'unavailable' }, footer: footer([], usage, tx('网页搜索未完成，本轮基于已有上下文回答。', 'Web search did not complete. The reply uses the existing context.')) }
+    return { result: { status: 'unavailable' }, footer: () => footer([], usage, tx('网页搜索未完成，本轮基于已有上下文回答。', 'Web search did not complete. The reply uses the existing context.')) }
   }
 
-  if (!sources.length) return { result: { status: 'no_results' }, footer: footer([], usage, tx('本轮未找到可用网页。', 'No usable webpages found.')) }
+  if (!sources.length) return { result: { status: 'no_results' }, footer: () => footer([], usage, tx('本轮未找到可用网页。', 'No usable webpages found.')) }
 
-  if (DETAIL.test(query) || sources.every(source => source.summary.length < 100)) {
-    const tokens = terms(query)
-    const version = query.match(/\b\d+\.\d+(?:\.\d+)?\b/)?.[0]
-    const ranked = sources.map((source, index) => {
-      const url = new URL(source.url)
-      const docs = /^(docs?|developer|developers|api-docs)\./.test(url.hostname) || /\/(?:docs|pricing|reference|whatsnew)\b/.test(url.pathname)
-      const exact = version && (source.title.includes(version) || url.pathname.includes(version))
-      return { source, score: relevance(source.title + ' ' + url.hostname + url.pathname, tokens) + (docs ? 8 : 0) + (exact ? 15 : 0) - index }
-    }).sort((a, b) => b.score - a.score)
-    for (const { source } of ranked.filter(({ source }) => !/\.pdf$/i.test(new URL(source.url).pathname)).slice(0, 2)) {
+  const results = () => sources.map((source, index) => ({ number: index + 1, ...source }))
+  const read = async (numbers: number[]) => withRequestDeadline(signal, 11_000, async deadline => {
+    const pages: { number: number; url: string; excerpt?: string; status: string }[] = []
+    const selected = [...new Set(numbers)].filter(number => Number.isInteger(number) &&
+      number >= 1 && number <= sources.length && !/\.pdf$/i.test(new URL(sources[number - 1].url).pathname)).slice(0, 2)
+    for (const number of selected) {
       if (deadline.aborted) break
+      const source = sources[number - 1]
       try {
         const page = await request(keys, 'scrape', { url: source.url, formats: ['markdown'], onlyMainContent: true, parsers: [] }, deadline, usage)
         const status = page.data?.metadata?.statusCode
-        if (status && (status < 200 || status >= 300)) continue
-        if (typeof page.data?.markdown === 'string') source.excerpt = excerptFirecrawlPage(page.data.markdown, query) || undefined
+        if ((!status || (status >= 200 && status < 300)) && typeof page.data?.markdown === 'string') {
+          source.excerpt = excerptFirecrawlPage(page.data.markdown, query) || undefined
+        }
       } catch {
-        signal.throwIfAborted()
+        if (signal.aborted) throw signal.reason
       }
+      pages.push({ number, url: source.url, excerpt: source.excerpt, status: source.excerpt ? 'ok' : 'unavailable' })
     }
-  }
-  signal.throwIfAborted()
-  return {
-    result: { status: 'ok', sources: sources.map((source, index) => ({ number: index + 1, ...source })) },
-    footer: footer(sources, usage),
-  }
+    return { status: selected.length ? 'completed' : 'invalid_selection', pages }
+  })
+  return { result: { status: 'ok', sources: results() }, footer: () => footer(sources, usage), read }
 }
