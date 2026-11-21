@@ -174,7 +174,7 @@ const chapMeta = (await chapBtn.textContent()) || ''
 // exact title here is not guaranteed to be X — assert it is one of the page-5 chapters.
 assert(chapMeta.includes('Chapter X') || chapMeta.includes('新章节'), 'G: current chapter is a same-page chapter (got ' + chapMeta + ')')
 await chapBtn.click()
-await page.getByText(/已加入「.*」/).waitFor({ state: 'visible', timeout: 30000 })
+await page.getByText(/已加入 \d+ 页，发送后用于本次提问/).waitFor({ state: 'visible', timeout: 30000 })
 assert(await page.locator('[data-testid="document-reader"]').count() === 1, 'G: reader stays open after context add')
 await page.locator('[data-testid="reader-ctx-toggle"]').click().catch(() => {})
 

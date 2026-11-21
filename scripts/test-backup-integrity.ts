@@ -4,6 +4,7 @@
 // once (N documents -> N binary reads), and the backup output is self-importable.
 import 'fake-indexeddb/auto'
 import { newStableId } from '../src/engine/types.ts'
+import { setDraftText } from '../src/engine/draft-store.ts'
 import { createDocument, readDocumentSourceBlob } from '../src/documents/document-service.ts'
 import { saveFiles } from '../src/engine/attachment-service.ts'
 import { idbClearAll, idbPut, idbGet, closeDb } from '../src/storage/idb.ts'
@@ -158,6 +159,14 @@ function uninstallMock() { (globalThis as any).__dshOpfsMock = undefined; readCo
   let rejected = false
   try { await buildPortableBackupPlan() } catch (error) { rejected = error instanceof BackupError }
   assert(rejected, 'ZIP validates remaining live branch references before producing a file')
+}
+
+{
+  await idbClearAll()
+  await saveConversation({ id: 'new-draft-root', title: 'Draft', createdAt: 1, updatedAt: 1, messages: [] })
+  setDraftText('new-draft-root', 'just typed')
+  const portable = await buildPortableBackupPlan()
+  assert(portable.manifest.backup.drafts.some(draft => draft.text === 'just typed'), 'ZIP includes text still pending in the draft debounce')
 }
 
 await closeDb();

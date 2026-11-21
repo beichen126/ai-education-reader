@@ -1,4 +1,5 @@
 import { PROJECTS_KEY, readProjectRecords } from '../projects/project-records'
+import { flushAllDrafts } from '../engine/draft-store'
 import {parseProfiles} from '../engine/api-profiles'
 import { listConversations, getAnnotationsByConversation, getAttachmentRow, getSetting } from '../storage/storage'
 import { resolveStoredModel } from '../api/model-defaults'
@@ -49,6 +50,7 @@ export type PortableBackupPlan = { manifest: PortableBackupManifest; binaries: P
 async function buildBackupData(portable: false): Promise<BackupV7>
 async function buildBackupData(portable: true): Promise<PortableBackupPlan>
 async function buildBackupData(portable: boolean): Promise<BackupV7 | PortableBackupPlan> {
+  await flushAllDrafts(true)
   const conversations = (await listConversations()).map((conversation) => ({
     ...conversation,
     promptTransitions: conversation.promptTransitions ?? [],

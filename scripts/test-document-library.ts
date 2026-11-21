@@ -314,6 +314,9 @@ function newStaleFreeId(seed: string) { return 'buf-' + seed + '-' + Math.random
   let taken = false
   try { await assertDocumentNameAvailable('same.pdf', undefined) } catch { taken = true }
   assert(taken, 'assertDocumentNameAvailable: existing name is NOT available')
+  const race = await Promise.allSettled([renameDocument('u1', 'race.pdf'), renameDocument('u2', 'race.pdf')])
+  assert(race.filter(result => result.status === 'fulfilled').length === 1, 'parallel PDF renames to the same name commit once')
+  assert(race.some(result => result.status === 'rejected' && result.reason instanceof DocumentNameConflictError), 'losing PDF rename reports the name conflict')
 }
 
 uninstallMock()

@@ -12,6 +12,7 @@ import { analyzeImport, createDocumentFromImport, sanitizeFileName, nextAvailabl
 import { sortDocuments, loadSortPreference, saveSortPreference, DOCUMENT_SORT_KEYS, DOCUMENT_SORT_LABELS, type DocumentSortKey } from './document-sort'
 import { documentUiActions, useDocumentUi } from './document-ui-store'
 import { useBackTarget } from '../engine/back-navigation'
+import { useDialogFocus } from '../engine/use-dialog-focus'
 import { documentImportError } from './document-import-error'
 import { pdfErrorMessage } from '../pdf/pdf-session'
 import { PdfError } from '../pdf/pdf-service'
@@ -67,6 +68,9 @@ export function DocumentLibrary() {
   const ctxGenRef = useRef(0)
   const ctxCancelledRef = useRef(false)
   const open = ui.view === 'library'
+  const pendingFile = ui.view === 'library' ? ui.importFile : undefined
+  const dialogRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(dialogRef, open && !ctxDocId, documentUiActions.close)
   const currentConversationId = useSessions(s => s.current)
   useEffect(() => {
     cancelCtx()
@@ -85,7 +89,7 @@ export function DocumentLibrary() {
     let fileName = 'document.pdf'
     try { fileName = (await getDocumentContextDescriptor(docId))?.fileName || 'document.pdf' } catch { /* fallback */ }
     if (gen !== ctxGenRef.current || (targetConversationId && getSessionsCurrent() !== targetConversationId)) return
-    setCtxDocId(null)
+    if (!project) setCtxDocId(null)
     setCtxBusy({ done: 0, total: 1 }); setCtxMsg(null)
     const isCancelled = () => ctxCancelledRef.current || gen !== ctxGenRef.current
     const isStale = () => gen !== ctxGenRef.current || (!!targetConversationId && getSessionsCurrent() !== targetConversationId)
@@ -93,10 +97,20 @@ export function DocumentLibrary() {
       if (isCancelled()) return
       const res = await executeDocumentContext({ ...destination, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxBusy({ done: p.done, total: p.total }) } })
       if (gen !== ctxGenRef.current) return
-      if (!res.ok && res.error) setCtxMsg(localizedErrorText(res.error, 'Unable to add the PDF context to the chat.'))
-      else if (res.ok) setCtxMsg(project ? tx('已存入项目 · ' + res.count + ' 页', 'Saved to project · ' + res.count + ' pages') : tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages'))
-    } catch { if (gen === ctxGenRef.current) setCtxMsg(tx('无法生成上下文。', 'Unable to build context.')) }
-    finally { if (gen === ctxGenRef.current) { setCtxBusy(null); setCtxDocId(null) } }
+      if (!res.ok) {
+        if (project) return res.error
+        if (res.error) setCtxMsg(localizedErrorText(res.error, 'Unable to add the PDF pages to the draft.'))
+      } else {
+        setCtxDocId(null)
+        setCtxMsg(project ? tx('已存入项目 · ' + res.count + ' 页', 'Saved to project · ' + res.count + ' pages') : tx('已加入 ' + res.count + ' 页，发送后用于本次提问。', 'Added ' + res.count + ' pages to this draft. They’ll be used when you send it.'))
+      }
+    } catch {
+      const error = tx('无法处理所选 PDF 页面。', 'Unable to process the selected PDF pages.')
+      if (gen === ctxGenRef.current) {
+        if (project) return error
+        setCtxMsg(error)
+      }
+    } finally { if (gen === ctxGenRef.current) setCtxBusy(null) }
   }
   function cancelCtx() { ctxCancelledRef.current = true; ctxGenRef.current++; setCtxBusy(null); setCtxMsg(null); setCtxDocId(null) }
 
@@ -138,6 +152,10 @@ export function DocumentLibrary() {
       setError(documentImportError(e, 'analyze'))
     } finally { setImporting(false) }
   }
+  useEffect(() => {
+    if (!pendingFile || !documentUiActions.acceptImport(pendingFile)) return
+    void importFile(pendingFile)
+  }, [pendingFile])
 
   const existingNames = useMemo(() => new Set(summaries.map(s => s.fileName)), [summaries])
   const nameConflict = pendingImport?.analysis.conflict.kind === 'name-conflict' ? pendingImport.analysis.conflict : null
@@ -191,9 +209,9 @@ export function DocumentLibrary() {
 
   if (!open) return null
   return (
-    <div className={css.overlay} data-testid="document-library">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={tx('资料库', 'Library')} tabIndex={-1} className={css.overlay} data-testid="document-library">
       <div className={css.head}>
-        <span className={css.title}>{tx('文件', 'Files')}</span>
+        <span className={css.title}>{tx('资料库', 'Library')}</span>
         <div className={css.headBtns}>
           <select className={css.sortSelect} data-testid="library-sort" aria-label={tx('排序', 'Sort')} value={sortKey} onChange={e => onSortChange(e.target.value as DocumentSortKey)}>
             {DOCUMENT_SORT_KEYS.map(k => <option key={k} value={k}>{localizedDocumentSort(k)}</option>)}
@@ -224,7 +242,7 @@ export function DocumentLibrary() {
                 </div>
               </button>
               <div className={css.cardActions}>
-                <button className={css.actionBtn} data-testid={'doc-context-' + d.id} disabled={!!projectId && !project} onClick={() => { setMenuOpenId(null); setCtxMsg(null); setCtxDocId(d.id) }}>{projectId ? tx('存入项目', 'Save to project') : tx('加入对话', 'Add to chat')}</button>
+                <button className={css.actionBtn} data-testid={'doc-context-' + d.id} disabled={!!projectId && !project} onClick={() => { setMenuOpenId(null); setCtxMsg(null); setCtxDocId(d.id) }}>{projectId ? tx('存入项目', 'Save to project') : tx('加入提问草稿', 'Add to question draft')}</button>
                 <div className={css.menuWrap}>
                   <button className={css.menuBtn} data-testid={'doc-menu-' + d.id} aria-label={tx('更多操作', 'More actions')} title={tx('更多操作', 'More actions')} onClick={() => setMenuOpenId(o => o === d.id ? null : d.id)}>⋯</button>
                   {menuOpenId === d.id && (
@@ -244,10 +262,10 @@ export function DocumentLibrary() {
           documentId={ctxDocId}
           projectName={project?.name}
           onCancel={() => { setCtxDocId(null); setCtxMsg(null) }}
-          onAdd={(selection) => { void addFromPicker(selection) }}
+          onAdd={addFromPicker}
         />
       )}
-      {ctxBusy && (
+      {ctxBusy && !project && (
         <div className={css.error} data-testid="library-ctx-progress">
           <span>{tx('正在准备 AI Context ' + ctxBusy.done + ' / ' + ctxBusy.total + ' 页', 'Preparing AI context ' + ctxBusy.done + ' / ' + ctxBusy.total + ' pages')}</span>
           <button type="button" className={css.ctxCancel} data-testid="library-ctx-cancel" onClick={cancelCtx}>{tx('取消', 'Cancel')}</button>

@@ -1,4 +1,4 @@
-import { idbGet, idbGetAll, idbPut, idbUpdate, idbDeleteDocumentAndNotes } from '../storage/idb'
+import { idbGet, idbGetAll, idbPut, idbUpdate, idbRunTxn, idbDeleteDocumentAndNotes } from '../storage/idb'
 import { persistBinary, readBinary, deleteBinary, binaryExists, type StoredBinary } from '../storage/binary-store'
 import type { LearningDocument, DocumentChapterSource, ChapterNode, ChapterVersion } from './document-types'
 import { nextChapterVersions } from './chapter-versions'
@@ -317,9 +317,19 @@ export async function assertDocumentNameAvailable(name: string, excludeId?: stri
 export async function renameDocument(id: string, newName: string): Promise<void> {
   const name = newName.trim()
   if (!name) throw new Error('document name must be non-empty after trim')
-  await assertDocumentNameAvailable(name, id)
-  try { await idbUpdate('documents', id, (cur: any) => ({ ...cur, fileName: name, updatedAt: Date.now(), recordVersion: 3 })); }
-  catch (e) { if (isRowMissing(e)) throw new DocumentNotFoundError(id); throw e; }
+  let conflict: Error | undefined
+  await idbRunTxn(['documents'], txn => {
+    const documents = txn.objectStore('documents')
+    const request = documents.getAll()
+    request.onsuccess = () => {
+      const records: StoredDocumentRecord[] = request.result
+      const current = records.find(row => row.id === id)
+      if (!current) { conflict = new DocumentNotFoundError(id); return }
+      if (records.some(row => row.id !== id && row.fileName === name)) { conflict = new DocumentNameConflictError(name); return }
+      documents.put({ ...current, fileName: name, updatedAt: Date.now(), recordVersion: 3 })
+    }
+  })
+  if (conflict) throw conflict
 }
 
 /** Lazy CHEAP fingerprint for one document (Agent H, H4): reads the source Blob once, computes

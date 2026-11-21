@@ -56,6 +56,7 @@ export function App() {
   // language changes, including layout slots rendered through AppFrame.
   useUiLanguage()
   const persistRequestedRef = useRef(false)
+  const guidePdfInput = useRef<HTMLInputElement>(null)
   const settingsOpen = useUi(s => s.settingsOpen)
   const promptManagerOpen = useUi(s => s.promptManagerOpen)
   const productGuideOpen = useUi(s => s.productGuideOpen)
@@ -148,10 +149,15 @@ export function App() {
         {documentsLoaded && <DocumentReader />}
       </Suspense>
       <ReadAloudPlayer />
+      <input ref={guidePdfInput} type="file" accept=".pdf,application/pdf" hidden onChange={event => {
+        const file = event.currentTarget.files?.[0]
+        event.currentTarget.value = ''
+        if (file) documentUiActions.importPdf(file)
+      }} />
       <ProductGuideDialog
         open={productGuideOpen}
         onClose={uiActions.closeProductGuide}
-        onImportPdf={() => { documentUiActions.openLibrary(); }}
+        onImportPdf={() => guidePdfInput.current?.click()}
         onOpenLibrary={() => { documentUiActions.openLibrary(); }}
         onConfigureApi={uiActions.openSettings}
       />

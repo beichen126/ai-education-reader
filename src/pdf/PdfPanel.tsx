@@ -4,8 +4,7 @@
 // hard limit), generation tracks real accumulated bytes and the panel shows a
 // representative preview (first-3 + last-3) for large contexts while keeping all
 // Blobs. Stage 9.1: multi-chapter selection — several (non-contiguous) chapters
-// normalize into ONE PdfRange[] context; adding to the draft no longer closes
-// the panel so the user can keep selecting and add a second group.
+// normalize into one range selection. Preview is optional.
 import { PdfContextMode, PdfPageOcrButton } from '../documents/PdfOcrControls'
 import { PdfAttachmentPagePicker } from '../documents/PdfAttachmentPagePicker'
 import { useEffect, useRef, useState, type ChangeEvent } from 'react'
@@ -58,7 +57,7 @@ export function PdfPanel({
   const [expandedIds, setExpandedIds] = useState<ReadonlySet<string>>(new Set())
   const [selError, setSelError] = useState<string | null>(null)
   const [lastRanges, setLastRanges] = useState<PdfRange[] | null>(null)
-  const [pendingConfirm, setPendingConfirm] = useState<{ ranges: PdfRange[]; count: number } | null>(null)
+  const [pendingConfirm, setPendingConfirm] = useState<{ ranges: PdfRange[]; count: number; submit: boolean } | null>(null)
   const [chatContextMode, setContextMode] = useState<'image' | 'ocr'>('image')
   const contextMode = projectMaterial ? 'ocr' : chatContextMode
   const alive = useRef(true)
@@ -87,11 +86,12 @@ export function PdfPanel({
   }
 
   const changeMode = (m: 'chapter' | 'manual') => {
-    if (m === mode) return
+    if (m === mode || adding || generating) return
     setMode(m); clearPreview(); setAddMsg(null); setSelError(null); setLastRanges(null); setPendingConfirm(null)
   }
 
   const toggleSelect = (node: PdfOutlineItem) => {
+    if (adding || generating) return
     setAddMsg(null); setSelError(null); setPendingConfirm(null)
     setSelectedIds(prev => {
       const n = new Set(prev)
@@ -104,32 +104,39 @@ export function PdfPanel({
 
   const toggle = (id: string) => setExpandedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
-  const startGenerateRanges = (ranges: PdfRange[]) => {
+  const startGenerateRanges = async (ranges: PdfRange[], submit: boolean) => {
     setLastRanges(ranges)
-    void generateRanges(ranges, contextMode)
+    const rendered = await generateRanges(ranges, submit ? contextMode : 'image')
+    if (submit && rendered?.length && alive.current) await addToDraft(ranges, rendered)
   }
 
-  const onGenerate = () => {
+  const onGenerate = (submit: boolean) => {
     setSelError(null)
+    setAddMsg(null)
+    if (submit && contextMode === 'image' && !generating && pages.length > 0 && lastRanges) {
+      void addToDraft(lastRanges, pages)
+      return
+    }
     if (inChapterMode) {
       if (selectedNodes.length === 0) { setSelError(tx('请先选择一个章节。', 'Select a chapter first.')); return }
       if (selectedCount > MAX_PDF_CONTEXT_PAGES) {
         setSelError(tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少选择的章节范围后重试。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Select fewer chapters and try again.'))
         return
       }
-      if (needsPdfContextSoftConfirm(selectedCount)) { setPendingConfirm({ ranges: selectedRanges, count: selectedCount }); return }
-      startGenerateRanges(selectedRanges)
+      if (needsPdfContextSoftConfirm(selectedCount)) { setPendingConfirm({ ranges: selectedRanges, count: selectedCount, submit }); return }
+      void startGenerateRanges(selectedRanges, submit)
     } else {
       if (visualRanges.length) {
         const count = countPdfRangePages(visualRanges)
         if (exceedsPdfContextHardLimit(count)) { setSelError(tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少页码范围后重试。', 'Select up to ' + MAX_PDF_CONTEXT_PAGES + ' pages.')); return }
-        if (needsPdfContextSoftConfirm(count)) setPendingConfirm({ ranges: visualRanges, count })
-        else startGenerateRanges(visualRanges)
+        if (needsPdfContextSoftConfirm(count)) setPendingConfirm({ ranges: visualRanges, count, submit })
+        else void startGenerateRanges(visualRanges, submit)
         return
       }
       const s = Number(start) || 0; const e2 = Number(end) || 0
-      if (s < 1 || e2 < 1 || e2 < s) {
-        setSelError(validatePdfRange(start, end, doc?.pageCount ?? 0))
+      const invalidRange = validatePdfRange(start, end, doc?.pageCount ?? 0)
+      if (invalidRange) {
+        setSelError(invalidRange)
         return
       }
       const ranges = normalizePdfRanges([{ startPage: s, endPage: e2 }])
@@ -138,19 +145,19 @@ export function PdfPanel({
         setSelError(tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少页码范围后重试。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Reduce the page range and try again.'))
         return
       }
-      if (needsPdfContextSoftConfirm(count)) { setPendingConfirm({ ranges, count }); return }
-      startGenerateRanges(ranges)
+      if (needsPdfContextSoftConfirm(count)) { setPendingConfirm({ ranges, count, submit }); return }
+      void startGenerateRanges(ranges, submit)
     }
   }
 
   const confirmLarge = () => {
     if (!pendingConfirm) return
     setPendingConfirm(null)
-    startGenerateRanges(pendingConfirm.ranges)
+    void startGenerateRanges(pendingConfirm.ranges, pendingConfirm.submit)
   }
 
-  const addToDraft = async () => {
-    if (!doc || pages.length === 0 || adding) return
+  const addToDraft = async (ranges: PdfRange[], rendered: RenderedPdfPage[]) => {
+    if (!doc || rendered.length === 0 || adding) return
     setAdding(true); setAddMsg(null)
     try {
       const selection = inChapterMode && selectedNodes.length > 0
@@ -159,23 +166,33 @@ export function PdfPanel({
             // Single chapter: its own title. Multiple chapters: ALL nodes joined
             // ('第二章、第五章') in PDF outline order — never just the first one.
             title: pdfSelectionTitle(selectedNodes.map(n => n.title)),
-            ranges: lastRanges ?? selectedRanges,
+            ranges,
             selectedChapterIds: [...selectedIds],
           }
-        : { kind: 'manual' as const, ranges: lastRanges ?? [{ startPage: pages[0].pageNumber, endPage: pages[pages.length - 1].pageNumber }] }
+        : { kind: 'manual' as const, ranges }
       const res = await onAddToDraft({
         fileName: doc.fileName,
         ...(documentId ? { documentId } : {}),
         selection: { ...selection, contextMode },
-        pages,
+        pages: rendered,
         isCancelled: () => !alive.current,
         onOcrProgress: (done, total) => { if (alive.current) setAddMsg(tx('OCR / 缓存 ' + done + ' / ' + total + ' 页', 'OCR / cache ' + done + ' / ' + total + ' pages')) },
       })
-      setAddMsg(res.ok ? (projectMaterial ? tx('已固定 ' + res.count + ' 页', 'Saved ' + res.count + ' pages to project') : tx('已加入 ' + res.count + ' 页', 'Added ' + res.count + ' pages')) : localizedErrorText(res.error, 'Unable to add the PDF pages to the chat.'))
-    } catch { setAddMsg(tx('无法将 PDF 页面加入对话。', 'Unable to add the PDF pages to the chat.')) }
-    setAdding(false)
+      if (res.ok) { onClose(); return }
+      setAddMsg((projectMaterial ? tx('未存入项目 · ', 'Could not save to project · ') : '') + localizedErrorText(res.error, 'Unable to process the selected PDF pages.'))
+    } catch { setAddMsg(projectMaterial ? tx('未存入项目。', 'Could not save to project.') : tx('未加入提问草稿。', 'Could not add to the draft.')) }
+    finally { if (alive.current) setAdding(false) }
   }
 
+  const editRange = (setter: (value: string) => void, value: string) => {
+    setter(value)
+    setVisualRanges([])
+    setLastRanges(null)
+    setPendingConfirm(null)
+    setSelError(null)
+    setAddMsg(null)
+    clearPreview()
+  }
   const addBarRange = pdfRangesText(lastRanges ?? (pages.length > 0 ? [{ startPage: pages[0].pageNumber, endPage: pages[pages.length - 1].pageNumber }] : []))
   const addBarTitle = inChapterMode && selectedNodes[0] ? selectedNodes[0].title + ' · ' : ''
   const visiblePages = pages.filter(p => p.previewUrl)
@@ -211,8 +228,8 @@ export function PdfPanel({
 
               {hasOutline && (
                 <div className={css.modeRow}>
-                  <button type="button" className={css.segBtn + (mode === 'chapter' ? ' ' + css.segActive : '')} data-testid="pdf-mode-chapter" aria-pressed={mode === 'chapter'} onClick={() => changeMode('chapter')}>{tx('按章节', 'By chapter')}</button>
-                  <button type="button" className={css.segBtn + (mode === 'manual' ? ' ' + css.segActive : '')} data-testid="pdf-mode-manual" aria-pressed={mode === 'manual'} onClick={() => changeMode('manual')}>{tx('选页', 'Select pages')}</button>
+                  <button type="button" className={css.segBtn + (mode === 'chapter' ? ' ' + css.segActive : '')} data-testid="pdf-mode-chapter" aria-pressed={mode === 'chapter'} onClick={() => changeMode('chapter')}>{tx('目录', 'Outline')}</button>
+                  <button type="button" className={css.segBtn + (mode === 'manual' ? ' ' + css.segActive : '')} data-testid="pdf-mode-manual" aria-pressed={mode === 'manual'} onClick={() => changeMode('manual')}>{tx('页码', 'Pages')}</button>
                 </div>
               )}
 
@@ -242,8 +259,8 @@ export function PdfPanel({
               ) : (
                 <>
                   <div className={css.rangeRow}>
-                    <div className={css.rangeField}><label className={css.rangeLabel}>{tx('开始页', 'Start page')}</label><Input className={css.rangeInput} inputMode="numeric" data-testid="pdf-start" value={start} onChange={e => { setStart(e.target.value); setVisualRanges([]) }} placeholder="1" /></div>
-                    <div className={css.rangeField}><label className={css.rangeLabel}>{tx('结束页', 'End page')}</label><Input className={css.rangeInput} inputMode="numeric" data-testid="pdf-end" value={end} onChange={e => { setEnd(e.target.value); setVisualRanges([]) }} placeholder={String(doc.pageCount)} /></div>
+                    <label className={css.rangeField}><span className={css.rangeLabel}>{tx('开始页', 'Start page')}</span><Input className={css.rangeInput} inputMode="numeric" disabled={adding || generating} data-testid="pdf-start" value={start} onChange={e => editRange(setStart, e.target.value)} placeholder="1" /></label>
+                    <label className={css.rangeField}><span className={css.rangeLabel}>{tx('结束页', 'End page')}</span><Input className={css.rangeInput} inputMode="numeric" disabled={adding || generating} data-testid="pdf-end" value={end} onChange={e => editRange(setEnd, e.target.value)} placeholder={String(doc.pageCount)} /></label>
                   </div>
                   {file && <Button variant="outline" data-testid="pdf-visual-pages" disabled={adding || generating} onClick={() => setVisualOpen(true)}>{tx('按缩略图选页', 'Select pages by thumbnail')}</Button>}
                   {visualRanges.length > 0 && <div className={css.summaryRange}>{pdfRangesText(visualRanges)}</div>}
@@ -251,12 +268,17 @@ export function PdfPanel({
               )}
 
               {selError && <div className={css.error} data-testid="pdf-error">{selError}</div>}
-              {error && <div className={css.error} data-testid="pdf-error">{localizedErrorText(error, 'PDF processing failed.')}</div>}
+              {error && <div className={css.error} data-testid="pdf-error" role="alert">{projectMaterial ? tx('未存入项目 · ', 'Could not save to project · ') : ''}{localizedErrorText(error, 'PDF processing failed.')}</div>}
 
-              {!projectMaterial && <PdfContextMode value={contextMode} onChange={value => { setContextMode(value); clearPreview() }} disabled={adding || generating} />}
+              {projectMaterial
+                ? <p className={css.confirmHint}>{tx('项目会保留页面图片和 OCR。未识别的页面会发送到 DeepSeek，需配置 DeepSeek 官方 API Key，并按服务计费。', 'The project keeps page images and OCR text. Uncached pages go to DeepSeek and require an official DeepSeek API key. DeepSeek charges apply.')}</p>
+                : <PdfContextMode value={contextMode} onChange={value => { setContextMode(value); setPendingConfirm(null); clearPreview() }} disabled={adding || generating} />}
               <div className={css.actions}>
-                <Button variant="primary" data-testid="pdf-generate" disabled={adding || generating || (inChapterMode && selectedNodes.length === 0)} onClick={onGenerate}>
-                  {generating ? tx('正在处理…', 'Processing…') : contextMode === 'ocr' ? tx('准备 OCR 文本', 'Prepare OCR text') : tx('生成预览', 'Generate preview')}
+                <Button variant="primary" data-testid="pdf-add" disabled={adding || generating || !!pendingConfirm || (inChapterMode && selectedNodes.length === 0)} onClick={() => onGenerate(true)}>
+                  {adding || generating ? tx('正在处理…', 'Processing…') : projectMaterial ? tx('存入项目', 'Save to project') : tx('加入提问草稿', 'Add to question draft')}
+                </Button>
+                <Button variant="outline" data-testid="pdf-generate" disabled={adding || generating || !!pendingConfirm || (inChapterMode && selectedNodes.length === 0)} onClick={() => onGenerate(false)}>
+                  {tx('预览', 'Preview')}
                 </Button>
                 <Button variant="outline" disabled={generating || adding} onClick={() => fileRef.current?.click()}>{tx('重新选择', 'Choose another')}</Button>
               </div>
@@ -285,12 +307,6 @@ export function PdfPanel({
                     <span className={css.fileName}>{doc.fileName}</span>
                     <span className={css.fileMeta}>{addBarTitle}{addBarRange} · {tx('共 ' + pages.length + ' 页', pages.length + ' pages')}</span>
                   </div>
-                  <div className={css.actions}>
-                    <Button variant="primary" data-testid="pdf-add" disabled={adding} onClick={() => void addToDraft()}>{adding ? tx('正在加入 ' + pages.length + ' 页…', 'Adding ' + pages.length + ' pages…') : projectMaterial ? tx('固定到项目', 'Save to project') : tx('加入对话', 'Add to chat')}</Button>
-                    <Button variant="outline" disabled={adding} onClick={() => fileRef.current?.click()}>{tx('重新选择', 'Choose another')}</Button>
-                    <Button variant="outline" data-testid="pdf-done" onClick={onClose}>{tx('完成', 'Done')}</Button>
-                  </div>
-                  {addMsg && <div className={css.progress} data-testid="pdf-add-msg">{addMsg}</div>}
                   <div className={css.pages}>
                     {visiblePages.map(p => (
                       <div className={css.pageItem} key={p.pageNumber} data-testid="pdf-page">
@@ -303,20 +319,20 @@ export function PdfPanel({
                 </>
               )}
 
-              {!generating && pages.length === 0 && !error && !selError && !pendingConfirm && (
-                <div className={css.empty}>{inChapterMode ? tx('勾选章节后点击“生成预览”。', 'Select chapters, then choose “Generate preview”.') : tx('输入页码范围后点击“生成预览”。', 'Enter a page range, then choose “Generate preview”.')}</div>
-              )}
+              {addMsg && <div className={css.progress} data-testid="pdf-add-msg" role="status">{addMsg}</div>}
             </>
           )}
         </div>
       </Modal>
       {visualOpen && file && <PdfAttachmentPagePicker source={file} onCancel={() => setVisualOpen(false)} onSelect={ranges => {
         setVisualOpen(false)
-        setStart('')
-        setEnd('')
+        setStart(ranges.length === 1 ? String(ranges[0].startPage) : '')
+        setEnd(ranges.length === 1 ? String(ranges[0].endPage) : '')
         setVisualRanges(ranges)
         setSelError(null)
         setAddMsg(null)
+        setLastRanges(null)
+        setPendingConfirm(null)
         clearPreview()
       }} />}
     </>

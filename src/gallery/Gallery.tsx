@@ -16,9 +16,11 @@ import { timestamp, type YoutubeTranscript } from '../youtube/transcript'
 import { useBranchChat } from '../cockpit/use-branch-chat'
 import { branchThreadKey, useDraftImageIds } from '../engine/draft-store'
 import { useAttachmentMetas } from '../engine/use-attachment-metas'
+import { useDialogFocus } from '../engine/use-dialog-focus'
 
 export function Gallery() {
   const g = useGallery(x => x)
+  const dialogRef = useRef<HTMLDivElement>(null)
   useBackTarget(g.open, galleryActions.close, 10)
   const conv = useSessions(s => s.byId[s.current || ''])
   const projects = useProjects()
@@ -141,14 +143,18 @@ export function Gallery() {
   useEffect(() => { if (g.open && g.convId !== convId) galleryActions.close() }, [g.open, g.convId, convId])
   useEffect(() => setProjectError(''), [g.open, project?.id])
   useEffect(endSelection, [g.open, project?.id, draftKey])
+  useDialogFocus(dialogRef, g.open && g.convId === convId && g.view === 'list', () => {
+    if (selection) endSelection()
+    else galleryActions.close()
+  })
   if (!g.open || g.convId !== convId) return null
   const count = imageIds.length
   return (
-    <div className={css.overlay} data-testid="gallery">
+    <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={project ? tx('项目资料', 'Project materials') : tx('图片资料', 'Image materials')} className={css.overlay} data-testid="gallery">
       <div className={css.head}>
         <div className={css.headInner}>
           <div className={css.heading}>
-            <span className={css.title}>{transcripts.length ? count ? tx('图片与转写稿', 'Images and transcripts') : tx('转写稿', 'Transcripts') : tx('图片', 'Images')}</span>
+            <span className={css.title}>{project ? tx('项目资料', 'Project materials') : transcripts.length ? count ? tx('图片与转写稿', 'Images and transcripts') : tx('转写稿', 'Transcripts') : tx('图片', 'Images')}</span>
             {count > 0 && <span className={css.count} data-testid="gallery-count">{tx('共 ' + count + ' 张', count + ' total')}</span>}
           </div>
           <button type="button" className={css.closeBtn} onClick={galleryActions.close}>{tx('关闭', 'Close')}</button>

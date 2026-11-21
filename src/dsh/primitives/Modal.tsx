@@ -1,10 +1,11 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import { IconCloseOutline16 } from './icons/index.tsx'
 import css from './Modal.module.css'
 import { useBackTarget } from '../../engine/back-navigation'
+import { useDialogFocus } from '../../engine/use-dialog-focus'
 
 interface ModalBaseProps {
   open: boolean
@@ -40,25 +41,9 @@ type ModalProps = ModalBaseProps & (
 export function Modal({
   open, onClose, title, closeLabel, description, children, footer, className, contentClassName, rootClassName, headless = false,
 }: ModalProps) {
-  const previousFocusRef = useRef<HTMLElement | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   useBackTarget(open, onClose)
-  useEffect(() => {
-    if (!open) return
-    previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    return () => {
-      const previous = previousFocusRef.current
-      previousFocusRef.current = null
-      if (previous?.isConnected) previous.focus()
-    }
-  }, [open])
-  useEffect(() => {
-    if (!open) return
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => { document.removeEventListener('keydown', onKeyDown) }
-  }, [open, onClose])
+  useDialogFocus(dialogRef, open, onClose)
 
   if (!open) return null
 
@@ -67,6 +52,8 @@ export function Modal({
       <div className={css.mask} aria-hidden="true" onClick={onClose} />
       <div
         className={clsx(css.dialog, className)}
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}

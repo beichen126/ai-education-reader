@@ -15,13 +15,14 @@ import { PdfAttachmentPagePicker } from './PdfAttachmentPagePicker'
 import css from './document-context-picker.module.css'
 import { tx } from '../engine/locale'
 import { useBackTarget } from '../engine/back-navigation'
+import { useDialogFocus } from '../engine/use-dialog-focus'
 
 type Props = {
   documentId?: string
   projectName?: string
   onImportPdf?: () => void
   onCancel: () => void
-  onAdd: (selection: PdfSelection, documentId: string, fileName: string) => void
+  onAdd: (selection: PdfSelection, documentId: string, fileName: string) => void | Promise<string | undefined>
   onPreferencesCommitted?: (delta: BookmarkRangePreferenceDelta) => void
 }
 
@@ -66,6 +67,9 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
   const [manualSel, setManualSel] = useState<PdfSelection | null>(null)
   const [blockMsg, setBlockMsg] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<PdfSelection | null>(null)
+  const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false)
+  const panelRef = useRef<HTMLDivElement>(null)
   const [preferenceBusyKeys, setPreferenceBusyKeys] = useState<Set<string>>(new Set())
   const preferenceStatesRef = useRef(new Map<string, PreferenceKeyState>())
   const preferenceQueuesRef = useRef(new Map<string, Promise<void>>())
@@ -120,8 +124,9 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
   }, [docs, search])
 
   const toggle = (id: string) => {
-    // Selecting a TOC chapter switches the scope to TOC (clears whole / manual).
-    setWholeChecked(false); setManualSel(null)
+    if (savingRef.current) return
+    setConfirming(null)
+    setWholeChecked(false)
     setChecked(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
   }
 
@@ -261,31 +266,40 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
 
   // ONE reviewed selection. Scope precedence: whole > manual > toc > none.
   const selection: PdfSelection = useMemo(() => {
+    if (tab === 'manual') return manualSel ?? { kind: 'manual', ranges: [] }
     if (wholeChecked && doc) return { kind: 'manual', title: doc.fileName, ranges: [{ startPage: 1, endPage: doc.pageCount }] }
-    if (manualSel) return manualSel
     if (selectedNodes.length) return buildChapterNodesSelection(selectedNodes, { pageCount: doc?.pageCount, bookmarkRangePreferences: doc?.bookmarkRangePreferences })
     return { kind: 'manual', ranges: [] }
-  }, [wholeChecked, manualSel, selectedNodes, doc])
+  }, [tab, wholeChecked, manualSel, selectedNodes, doc])
   const selectionRef = useRef(selection)
   selectionRef.current = selection
 
   const selectionCount = countPdfRangePages(selection.ranges)
   const wholeCount = doc ? countPdfRangePages([{ startPage: 1, endPage: doc.pageCount }]) : 0
   const wholeBlocked = doc ? exceedsPdfContextHardLimit(doc.pageCount) : false
-  const hasScope = wholeChecked || selectedNodes.length > 0 || !!manualSel
+  const hasScope = selectionCount > 0
 
   const addWhole = () => {
-    if (!doc || wholeBlocked) return
-    setWholeChecked(true); setChecked(new Set()); setManualSel(null); setTab('toc')
+    if (!doc || wholeBlocked || savingRef.current) return
+    setConfirming(null)
+    setWholeChecked(true); setChecked(new Set()); setTab('toc')
   }
   const addManual = () => {
-    if (!doc) return
+    if (!doc || savingRef.current) return
+    setConfirming(null)
     const v = validatePdfRange(manualStart, manualEnd, doc.pageCount)
     if (v) { setManualError(v); return }
     setManualError(null)
     const s = Number(manualStart.trim()), e = Number(manualEnd.trim())
-    setWholeChecked(false); setChecked(new Set())
     setManualSel({ kind: 'manual', title: pdfRangesText([{ startPage: s, endPage: e }]), ranges: [{ startPage: s, endPage: e }] })
+  }
+
+  const changeManual = (setter: (value: string) => void, value: string) => {
+    setter(value)
+    setManualSel(null)
+    setManualError(null)
+    setConfirming(null)
+    setBlockMsg(null)
   }
 
   const requestCancel = async () => {
@@ -303,9 +317,24 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
     const count = countPdfRangePages(currentSelection.ranges)
     if (exceedsPdfContextHardLimit(count)) { setBlockMsg(tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页，请缩小章节或页码范围。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Reduce the chapter or page range.')); return }
     if (needsPdfContextSoftConfirm(count)) { setConfirming(currentSelection); return }
-    finishAdd(currentSelection)
+    await finishAdd(currentSelection)
   }
-  const finishAdd = (sel: PdfSelection) => { if (doc) onAdd({ ...sel, contextMode: projectName === undefined ? contextMode : 'ocr' }, doc.id, doc.fileName) }
+  const finishAdd = async (sel: PdfSelection) => {
+    if (!doc || savingRef.current) return
+    savingRef.current = true
+    setSaving(true)
+    setBlockMsg(null)
+    const failure = tx('未存入项目', 'PDF pages were not saved to the project')
+    try {
+      const error = await onAdd({ ...sel, contextMode: projectName === undefined ? contextMode : 'ocr' }, doc.id, doc.fileName)
+      if (error && mountedRef.current) setBlockMsg(projectName === undefined ? error : failure + ' · ' + error)
+    } catch {
+      if (mountedRef.current) setBlockMsg(projectName === undefined ? tx('未加入提问草稿。', 'Could not add to the draft.') : failure)
+    } finally {
+      savingRef.current = false
+      if (mountedRef.current) setSaving(false)
+    }
+  }
 
   const returnFromPreview = () => {
     setPreviewDoc(null)
@@ -333,12 +362,15 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
     }
   }
 
-  useBackTarget(projectName !== undefined, () => {
+  const back = () => {
+    if (savingRef.current) return
     if (previewDoc) returnFromPreview()
     else if (confirming) setConfirming(null)
     else if (stage === 'context' && !scoped) void requestBackToDocs()
     else void requestCancel()
-  }, 60)
+  }
+  useBackTarget(projectName !== undefined, back, 60)
+  useDialogFocus(panelRef, !previewDoc && !visualPages, back)
 
   if (previewDoc) return <DocumentContextPreview document={previewDoc} initialPage={previewInitialPage} onBack={returnFromPreview} />
 
@@ -347,14 +379,14 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
     : tx('从资料库选择 PDF', 'Choose a PDF from the library')
   return (
     <div className={css.overlay} data-testid="doc-context-picker">
-      <div className={css.panel}>
+      <div className={css.panel} ref={panelRef} role="dialog" aria-modal="true" aria-label={documentListTitle} tabIndex={-1}>
         <div className={css.header}>
           {stage === 'context' && !scoped && (
-            <button type="button" className={css.back} data-testid="doc-context-back" onClick={() => void requestBackToDocs()}>←</button>
+            <button type="button" className={css.back} data-testid="doc-context-back" disabled={saving} aria-label={tx('返回资料库', 'Back to library')} onClick={() => void requestBackToDocs()}>←</button>
           )}
           <span className={css.title}>{stage === 'document' ? documentListTitle : doc?.fileName}</span>
           <span className={css.subTitle}>{stage === 'context' && doc ? tx(doc.pageCount + ' 页', doc.pageCount + ' pages') : ''}</span>
-          <button type="button" className={css.btn} data-testid="doc-context-cancel" onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
+          <button type="button" className={css.btn} data-testid="doc-context-cancel" disabled={saving} onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
         </div>
         {stage === 'document' ? (
           <div className={css.docPick}>
@@ -375,8 +407,8 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
         ) : doc ? (
           <>
             <div className={css.tabs}>
-              <button type="button" className={css.tab + (tab === 'toc' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-toc" onClick={() => { setTab('toc'); setWholeChecked(false); setManualSel(null) }}>{tx('目录', 'Outline')}</button>
-              <button type="button" className={css.tab + (tab === 'manual' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-manual" onClick={() => { setTab('manual'); setWholeChecked(false) }}>{tx('页码', 'Pages')}</button>
+              <button type="button" className={css.tab + (tab === 'toc' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-toc" disabled={saving} onClick={() => { setTab('toc'); setConfirming(null) }}>{tx('目录', 'Outline')}</button>
+              <button type="button" className={css.tab + (tab === 'manual' ? ' ' + css.tabOn : '')} data-testid="doc-context-tab-manual" disabled={saving} onClick={() => { setTab('manual'); setConfirming(null) }}>{tx('页码', 'Pages')}</button>
             </div>
             {tab === 'toc' ? (
               <div ref={contextBodyRef} className={css.body} data-testid="doc-context-tree">
@@ -392,26 +424,28 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
               </div>
             ) : (
               <div ref={contextBodyRef} className={css.manualBody} data-testid="doc-context-manual">
-                <button type="button" className={css.btn} data-testid="doc-context-visual-pages" disabled={binaryAvailable !== true} onClick={() => setVisualPages(true)}>{tx('按缩略图选页', 'Select pages by thumbnail')}</button>
-                <div className={css.fieldRow}><label>{tx('开始页', 'Start page')}</label><input className={css.input} data-testid="doc-context-ms" inputMode="numeric" value={manualStart} onChange={e => setManualStart(e.target.value)} /></div>
-                <div className={css.fieldRow}><label>{tx('结束页', 'End page')}</label><input className={css.input} data-testid="doc-context-me" inputMode="numeric" value={manualEnd} onChange={e => setManualEnd(e.target.value)} /></div>
+                <button type="button" className={css.btn} data-testid="doc-context-visual-pages" disabled={saving || binaryAvailable !== true} onClick={() => { setConfirming(null); setVisualPages(true) }}>{tx('按缩略图选页', 'Select pages by thumbnail')}</button>
+                <label className={css.fieldRow}>{tx('开始页', 'Start page')}<input className={css.input} data-testid="doc-context-ms" disabled={saving} inputMode="numeric" value={manualStart} onChange={e => changeManual(setManualStart, e.target.value)} /></label>
+                <label className={css.fieldRow}>{tx('结束页', 'End page')}<input className={css.input} data-testid="doc-context-me" disabled={saving} inputMode="numeric" value={manualEnd} onChange={e => changeManual(setManualEnd, e.target.value)} /></label>
                 {manualError && <div className={css.limitHint} data-testid="doc-context-manual-error">{manualError}</div>}
-                <button type="button" className={css.btn} data-testid="doc-context-manual-add" onClick={addManual}>{tx('选择范围', 'Select range')}</button>
+                <button type="button" className={css.btn} data-testid="doc-context-manual-add" disabled={saving} onClick={addManual}>{tx('选择范围', 'Select range')}</button>
               </div>
             )}
-            {projectName === undefined && <PdfContextMode value={contextMode} onChange={setContextMode} />}
+            {projectName === undefined
+              ? <PdfContextMode value={contextMode} onChange={setContextMode} />
+              : <p className={css.processingNote}>{tx('项目会保留页面图片和 OCR。已识别的页面使用本地缓存，其他页面会发送到 DeepSeek，需配置 DeepSeek 官方 API Key，并按服务计费。', 'The project keeps page images and OCR text. Cached OCR stays local. Uncached pages go to DeepSeek and require an official DeepSeek API key. DeepSeek charges apply.')}</p>}
             <div className={css.footer}>
               <div className={css.summary} data-testid="doc-context-summary">
                 {hasScope ? (
                   <>{tx('已选择：', 'Selected: ')}{selection.title || (wholeChecked ? tx('整份文档', 'Entire document') : pdfRangesText(selection.ranges))}<br />{pdfRangesText(selection.ranges)} · {tx('共 ' + selectionCount + ' 页', selectionCount + ' pages')}</>
                 ) : (
-                  <>{tx('已选择：未选择章节', 'Selected: no chapter selected')}</>
+                  <>{tab === 'manual' ? tx('请选择或重新确认页码范围。', 'Select or reconfirm the page range.') : tx('已选择：未选择章节', 'Selected: no chapter selected')}</>
                 )}
               </div>
               <div className={css.footerBtns}>
-                <button type="button" className={css.btn} data-testid="doc-context-cancel2" onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
-                <button type="button" className={css.btn} data-testid="doc-context-preview" disabled={!doc || binaryAvailable !== true} aria-describedby={binaryAvailable === false ? 'doc-context-preview-disabled' : undefined} onClick={() => void openPreview()}>{tx('预览', 'Preview')}</button>
-                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" disabled={!hasScope} onClick={() => void commit()}>{projectName ? tx('存入项目 · ', 'Save to project · ') + projectName : tx('加入当前对话', 'Add to current chat')}</button>
+                <button type="button" className={css.btn} data-testid="doc-context-cancel2" disabled={saving} onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
+                <button type="button" className={css.btn} data-testid="doc-context-preview" disabled={saving || !doc || binaryAvailable !== true} aria-describedby={binaryAvailable === false ? 'doc-context-preview-disabled' : undefined} onClick={() => void openPreview()}>{tx('预览', 'Preview')}</button>
+                <button type="button" className={css.btnPrimary} data-testid="doc-context-add" disabled={saving || !hasScope} onClick={() => void commit()}>{saving ? tx('正在处理…', 'Processing…') : projectName ? tx('存入项目 · ', 'Save to project · ') + projectName : tx('加入提问草稿', 'Add to question draft')}</button>
               </div>
             </div>
             {binaryAvailable === false && <div className={css.limitHint} id="doc-context-preview-disabled" data-testid="doc-context-preview-disabled">{tx('本地 PDF 数据不可用，请重新导入。', 'The local PDF data is unavailable. Import it again.')}</div>}
@@ -427,12 +461,12 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
             </div>
           </div>
         )}
-        {blockMsg && <div className={css.blockMsg} data-testid="doc-context-block">{blockMsg}</div>}
+        {blockMsg && <div className={css.blockMsg} data-testid="doc-context-block" role="alert">{blockMsg}</div>}
       </div>
       {visualPages && doc && <PdfAttachmentPagePicker source={doc.id} onCancel={() => setVisualPages(false)} onSelect={ranges => {
         setVisualPages(false)
-        setWholeChecked(false)
-        setChecked(new Set())
+        setManualStart(ranges.length === 1 ? String(ranges[0].startPage) : '')
+        setManualEnd(ranges.length === 1 ? String(ranges[0].endPage) : '')
         setManualError(null)
         setManualSel({ kind: 'manual', title: pdfRangesText(ranges), ranges })
       }} />}

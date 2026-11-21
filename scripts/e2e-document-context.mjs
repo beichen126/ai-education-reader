@@ -157,6 +157,23 @@ assert(D.sel && D.sel.selectedChapterIds && D.sel.selectedChapterIds.includes(c1
 const dPageNums = D.added.map(a => a.source.pageNumber)
 assert(new Set(dPageNums).size === dPageNums.length, 'D: no duplicate rendered page numbers within the add')
 
+await page.getByTestId('doc-context-' + doc.id).click()
+await page.getByTestId('doc-context-tab-manual').click()
+await page.getByTestId('doc-context-ms').fill('2')
+await page.getByTestId('doc-context-me').fill('3')
+await page.getByTestId('doc-context-manual-add').click()
+await page.getByTestId('doc-context-tab-toc').click()
+await page.getByTestId('doc-context-tab-manual').click()
+assert((await page.getByTestId('doc-context-summary').textContent()).includes('2–3'), 'range survives a tab round trip')
+await page.getByTestId('doc-context-ms').fill('5')
+await page.getByTestId('doc-context-me').fill('6')
+assert(await page.getByTestId('doc-context-add').isDisabled(), 'editing page fields invalidates the previous confirmed range')
+await page.getByTestId('doc-context-manual-add').click()
+const editedBefore = await docAttIds(doc.id)
+await page.getByTestId('doc-context-add').click()
+const edited = await expectDraftContext('Edited range', 2, editedBefore)
+assert(edited.added.map(attachment => attachment.source.pageNumber).sort().join(',') === '5,6', 'edited range submits the displayed PDF pages')
+
 // ========== FLOW CANCEL (0.4): large context -> cancel -> no runaway attachments ==========
 await closeLibrary()
 await openLibrary()

@@ -40,7 +40,7 @@ export type PdfPreviewApi = {
   /** Non-fatal warning: the PDF works temporarily but could NOT be saved locally. */
   documentSaveError: string | undefined
   selectFile: (file: File) => Promise<void>
-  generateRanges: (ranges: PdfRange[], contextMode?: 'image' | 'ocr') => Promise<void>
+  generateRanges: (ranges: PdfRange[], contextMode?: 'image' | 'ocr') => Promise<RenderedPdfPage[] | undefined>
   clearPreview: () => void
   reset: () => Promise<void>
 }
@@ -149,7 +149,7 @@ export function usePdfPreview(keepOcrPreview = false): PdfPreviewApi {
     try {
       const run = contextMode === 'ocr' && documentId ? (options: import('./pdf-context-render').PdfContextRenderOptions) => prepareOcrPages(documentId, options, keepOcrPreview) : renderPdfContextRanges
       setProgress({ done: 0, total: 0, bytes: 0 })
-      const result = await run({
+      await run({
         ranges,
         pageCount: doc.pageCount,
         renderPage: renderPdfPage,
@@ -164,7 +164,7 @@ export function usePdfPreview(keepOcrPreview = false): PdfPreviewApi {
           setPages([...built])
         },
       })
-      if (gen === genRef.current) setProgress(undefined)
+      if (gen === genRef.current) { setProgress(undefined); return built }
     } catch (e: unknown) {
       if (gen !== genRef.current) return // stale / cancelled -> silent
       genRef.current++
@@ -172,7 +172,7 @@ export function usePdfPreview(keepOcrPreview = false): PdfPreviewApi {
       setPages([]); setProgress(undefined)
       if (e instanceof PdfContextRenderError) {
         if (e.kind === 'hard-limit') setError(tx('当前一次最多处理 ' + MAX_PDF_CONTEXT_PAGES + ' 页。请减少选择的页面范围后重试。', 'You can process up to ' + MAX_PDF_CONTEXT_PAGES + ' pages at a time. Reduce the range and try again.'))
-        else if (e.kind === 'render-failed') setError(tx('第 ' + (e.pageNumber ?? '') + ' 页处理失败，本次范围未加入对话。你可以重新尝试，或切换到“选页”模式缩小范围。', 'Page ' + (e.pageNumber ?? '') + ' failed to process, so the range was not added. Try again or select fewer pages.'))
+        else if (e.kind === 'render-failed') setError(e.message)
         else if (e.kind === 'out-of-range') setError(tx('页码范围超出范围，该 PDF 共 ' + doc.pageCount + ' 页。', 'The page range is out of bounds. This PDF has ' + doc.pageCount + ' pages.'))
         else setError(e.message)
       } else {

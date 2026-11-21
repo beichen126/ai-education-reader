@@ -336,7 +336,7 @@ export function Conversation() {
                 <Button variant="outline" data-testid="empty-open-library" onClick={() => documentUiActions.openLibrary(projectId)}>{tx('打开资料库', 'Open library')}</Button>
                 {!hasKey && <Button variant="outline" data-testid="empty-configure" onClick={uiActions.openSettings}>{tx('配置 API', 'Configure API')}</Button>}
               </div>
-              {!hasKey && <div className={css.emptyHint}>{tx('开始前，需要配置你自己的 DeepSeek API Key。', 'Configure your own DeepSeek API key before you begin.')}</div>}
+              {!hasKey && <div className={css.emptyHint}>{tx('本地 PDF 阅读和目录编辑无需配置。使用 AI 对话时，请在设置中配置所用的 API 服务。', 'Local PDF reading and outline editing work without setup. To chat with AI, configure your API provider in Settings.')}</div>}
             </div>
           ) : <>
             {initialTransition && <PromptTransitionDivider transition={initialTransition} onOpen={() => setInspectedTransition(initialTransition)} />}
@@ -618,7 +618,9 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
     // Shared implementation (also used by the Document Reader): one
     // groupId -> saveGeneratedImages -> addDraftImages with full rollback.
     if (!sessionId) return { ok: false, count: 0, error: tx('没有当前会话，无法加入。', 'There is no active chat to add this to.') }
-    return addPdfContextToDraft(sessionId, { ...payload, branchId: isBranch ? thread?.branchId : undefined, isCancelled: () => !composerAliveRef.current || composerKeyRef.current !== key || !!payload.isCancelled?.() })
+    const result = await addPdfContextToDraft(sessionId, { ...payload, branchId: isBranch ? thread?.branchId : undefined, isCancelled: () => !composerAliveRef.current || composerKeyRef.current !== key || !!payload.isCancelled?.() })
+    if (result.ok && composerKeyRef.current === key) setLibMsg(tx('已加入 ' + result.count + ' 页，发送后用于本次提问。', 'Added ' + result.count + ' pages to this draft. They’ll be used when you send it.'))
+    return result
   }
   // Block 0.4: operation ownership + cancellation. Snapshot the operation identity at
   // start; a stale / cancelled op NEVER writes into a conversation that is no longer the
@@ -639,7 +641,7 @@ function Composer({ dropTargetRef, sessionId, busy, generationKey, status, threa
       const res = await executeDocumentContext({ targetConversationId, targetBranchId: isBranch ? thread?.branchId : undefined, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === libGenRef.current) setLibBusy({ done: p.done, total: p.total }) } })
       if (gen !== libGenRef.current) return
       if (!res.ok && res.error) setLibMsg(res.error)
-      else if (res.ok) setLibMsg(null)
+      else if (res.ok) setLibMsg(tx('已加入 ' + res.count + ' 页，发送后用于本次提问。', 'Added ' + res.count + ' pages to this draft. They’ll be used when you send it.'))
     } catch { if (gen === libGenRef.current) setLibMsg(tx('无法生成上下文。', 'Unable to build context.')) }
     finally { if (gen === libGenRef.current) setLibBusy(null) }
   }

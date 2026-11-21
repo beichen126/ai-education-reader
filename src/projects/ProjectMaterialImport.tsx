@@ -25,7 +25,6 @@ export function ProjectMaterialImport({ projectId, projectName }: { projectId: s
     if (pendingSave.current) return
     const controller = new AbortController()
     pendingSave.current = controller
-    setLibraryOpen(false)
     setBusy(true)
     setNotice(tx('正在准备 PDF 页面…', 'Preparing PDF pages…'))
     try {
@@ -34,9 +33,10 @@ export function ProjectMaterialImport({ projectId, projectName }: { projectId: s
         isCancelled: () => controller.signal.aborted,
         onProgress: ({ done, total }) => setNotice(tx('正在准备 PDF 页面 · ', 'Preparing PDF pages · ') + done + ' / ' + total),
       })
-      if (!controller.signal.aborted) setNotice(result.ok
-        ? tx('已存入项目 · ' + result.count + ' 页', 'Saved to project · ' + result.count + ' pages')
-        : result.error)
+      if (controller.signal.aborted) return
+      if (!result.ok) { setNotice(''); return result.error || tx('处理已取消。', 'Processing was cancelled.') }
+      setNotice(tx('已存入项目 · ' + result.count + ' 页', 'Saved to project · ' + result.count + ' pages'))
+      setLibraryOpen(false)
     } finally {
       pendingSave.current = undefined
       if (!controller.signal.aborted) setBusy(false)
@@ -68,8 +68,15 @@ export function ProjectMaterialImport({ projectId, projectName }: { projectId: s
       event.currentTarget.value = ''
     }} />
     {notice && <span role="status">{notice}</span>}
-    {libraryOpen && !pdf && <DocumentContextPicker projectName={projectName} onImportPdf={() => pdfInput.current?.click()} onCancel={() => setLibraryOpen(false)} onAdd={(...args) => void saveFromLibrary(...args)} />}
-    {pdf && <Suspense fallback={null}><PdfPanel rootClassName={css.projectModal} projectMaterial initialFile={pdf} onClose={() => setPdf(undefined)} onAddToDraft={payload => saveProjectPdf(projectId, payload)} /></Suspense>}
+    {libraryOpen && !pdf && <DocumentContextPicker projectName={projectName} onImportPdf={() => pdfInput.current?.click()} onCancel={() => setLibraryOpen(false)} onAdd={saveFromLibrary} />}
+    {pdf && <Suspense fallback={null}><PdfPanel rootClassName={css.projectModal} projectMaterial initialFile={pdf} onClose={() => setPdf(undefined)} onAddToDraft={async payload => {
+      const result = await saveProjectPdf(projectId, payload)
+      if (result.ok) {
+        setLibraryOpen(false)
+        setNotice(tx('已存入项目 · ' + result.count + ' 页', 'Saved to project · ' + result.count + ' pages'))
+      }
+      return result
+    }} /></Suspense>}
     {youtube && <YoutubePicker rootClassName={css.projectModal} selectLabel={tx('固定到项目', 'Save to project')} onClose={() => setYoutube(false)} onSelect={async transcript => {
       await saveProjectMaterials(projectId, [{ name: transcript.title + '.png', blob: await transcriptPreview(transcript), transcript }])
     }} />}

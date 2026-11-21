@@ -26,6 +26,9 @@ await page.locator('[data-testid="sidebar-entry-images"], [data-testid="rail-ima
 const gallery = page.locator('[data-testid="gallery"]')
 await gallery.waitFor({ state: 'visible', timeout: 10000 })
 await page.waitForFunction(() => document.querySelectorAll('[data-testid="gallery-thumbnail"]').length === 13)
+assert(await gallery.evaluate(element => element.contains(document.activeElement)), 'opening the gallery moves focus inside it')
+await page.keyboard.press('Tab')
+assert(await gallery.evaluate(element => element.contains(document.activeElement)), 'Tab stays inside the gallery')
 
 assert((await page.locator('[data-testid="gallery-count"]').innerText()).includes('13 张'), 'the header shows the conversation image count')
 assert(await page.locator('[data-testid="gallery-thumbnail"]').first().getAttribute('aria-label') === '查看第 1 张图片', 'thumbnails have useful accessible names')
@@ -60,8 +63,8 @@ const mobile = await page.locator('[data-testid="gallery-grid"]').evaluate(eleme
 assert(mobile.columns === 2, '375px gallery uses two usable columns')
 assert(mobile.pageOverflow <= 2, '375px gallery has no horizontal page overflow')
 
-await page.getByRole('button', { name: '关闭' }).click()
-assert(await gallery.count() === 0, 'the gallery close action remains available')
+await page.keyboard.press('Escape')
+assert(await gallery.count() === 0, 'Escape closes the gallery')
 assert(errors.length === 0, 'the responsive gallery produces no page errors')
 
 console.log(results.join('\n'))

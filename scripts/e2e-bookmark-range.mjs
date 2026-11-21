@@ -308,7 +308,7 @@ const testReaderPreferenceRefresh = async target => {
   await ancestor.click()
   if (await page.locator('[data-testid="reader-ctx-confirm"]').count()) await page.locator('[data-testid="reader-ctx-confirm-yes"]').click()
   const expectedCount = expectedEnd - target.startPage + 1
-  await page.getByText('已加入「' + target.title + '」· ' + expectedCount + ' 页', { exact: true }).waitFor({ state: 'visible', timeout: 30000 })
+  await page.getByText('已加入 ' + expectedCount + ' 页，发送后用于本次提问。', { exact: true }).waitFor({ state: 'visible', timeout: 30000 })
   const after = await waitForPdfPageAttachments(doc.id, before.filter(item => item.source.documentId === doc.id).length + expectedCount)
   const beforeIds = new Set(before.map(item => item.id))
   const added = after.filter(item => !beforeIds.has(item.id) && item.source.documentId === doc.id)

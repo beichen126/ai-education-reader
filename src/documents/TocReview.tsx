@@ -17,14 +17,15 @@ type Props = {
   pageCount: number
   items: MappedTocItem[]
   notice?: string
+  suspended?: boolean
   onJump: (page: number) => void
   onSave: (save: TocReviewSave) => Promise<void>
   onClose: () => void
   onEditAll: (items: MappedTocItem[]) => void
 }
 
-export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, onEditAll }: Props) {
-  useBackTarget(true, () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
+export function TocReview({ pageCount, items, notice, suspended = false, onJump, onSave, onClose, onEditAll }: Props) {
+  useBackTarget(!suspended, () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })))
   const [rows, setRows] = useState<MappedTocItem[]>(items)
   const [state, setState] = useState<ReviewState>(() => emptyReviewState(items.length))
   const [idx, setIdx] = useState(0)
@@ -34,6 +35,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   const [offset, setOffset] = useState<string>('0')
   const [confirmUnchecked, setConfirmUnchecked] = useState(false)
   const [confirmIssue, setConfirmIssue] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   // Finding 9.4D.2-0.3: a save request walks a preflight state machine. These ack flags
   // record that the user has ALREADY confirmed a given blocker for the current save attempt,
   // so when BOTH unchecked and issue conditions exist the UI confirms each in turn.
@@ -42,7 +44,10 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   const pageInputRef = useRef<HTMLInputElement | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const [levelRaw, setLevelRaw] = useState<Record<number, string>>({})
-  const [deleted, setDeleted] = useState<RemovedReviewEntry<MappedTocItem>[]>([])
+  const [pageRaw, setPageRaw] = useState<Record<number, string>>({})
+  const [deleted, setDeleted] = useState<(RemovedReviewEntry<MappedTocItem> & { pageRaw?: string })[]>([])
+  const invalidPage = (raw: string | undefined) => raw !== undefined &&
+    (!Number.isInteger(Number(raw)) || Number(raw) < 1 || Number(raw) > pageCount)
   const [editExpanded, setEditExpanded] = useState(false)
   const [previewMode, setPreviewMode] = useState(false)
   const [issuesExpanded, setIssuesExpanded] = useState(() => !window.matchMedia('(max-width: 680px)').matches)
@@ -75,7 +80,9 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
     if (saving) return
     const next = removeReviewEntry(rows, state, levelRaw, index)
     setRows(next.rows); setState(next.state); setLevelRaw(next.levelRaw)
-    setDeleted(history => [...history, next.removed])
+    setPageRaw(current => Object.fromEntries(Object.entries(current).flatMap(([key, value]) =>
+      Number(key) === index ? [] : [[Number(key) > index ? Number(key) - 1 : Number(key), value]])))
+    setDeleted(history => [...history, { ...next.removed, pageRaw: pageRaw[index] }])
     const active = Math.max(0, Math.min(next.rows.length - 1, idx > index ? idx - 1 : idx))
     setIdx(active); resetSaveAttempt()
     if (next.rows.length === 0) setEditExpanded(false)
@@ -90,6 +97,10 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
     if (!removed || saving) return
     const next = restoreReviewEntry(rows, state, levelRaw, removed)
     setRows(next.rows); setState(next.state); setLevelRaw(next.levelRaw); setIdx(next.index)
+    setPageRaw(current => ({
+      ...Object.fromEntries(Object.entries(current).map(([key, value]) => [Number(key) >= next.index ? Number(key) + 1 : Number(key), value])),
+      ...(removed.pageRaw === undefined ? {} : { [next.index]: removed.pageRaw }),
+    }))
     setDeleted(history => history.slice(0, -1)); resetSaveAttempt()
     const target = removed.row.startPage ?? removed.row.tocPage
     if (Number.isInteger(target) && target! >= 1 && target! <= pageCount) onJump(target!)
@@ -97,7 +108,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   }
 
   // Rebuild rows when a new mapped draft arrives.
-  useEffect(() => { setRows(items); setState(() => { const s: ReviewState = {}; items.forEach((_, i) => s[i] = 'unchecked'); return s }); setIdx(0); setLevelRaw({}); setDeleted([]) }, [items])
+  useEffect(() => { setRows(items); setState(() => { const s: ReviewState = {}; items.forEach((_, i) => s[i] = 'unchecked'); return s }); setIdx(0); setLevelRaw({}); setPageRaw({}); setDeleted([]) }, [items])
 
   // Finding 9.4D.2-0.6.24: on first open, auto-select the first resolved item and jump the
   // Reader to its physical page so the user immediately sees "left: chapter | right: PDF".
@@ -135,6 +146,12 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
         if (!issuesByRow[i].includes(invalidLevel)) issuesByRow[i].push(invalidLevel)
       }
     }
+    for (const key of Object.keys(pageRaw)) {
+      const index = Number(key)
+      if (!rows[index] || !invalidPage(pageRaw[index])) continue
+      if (!blocking.includes(index)) { blocking.push(index); errorCount++ }
+      issuesByRow[index] = [...(issuesByRow[index] ?? []), tx('请输入有效的 PDF 页码', 'Enter a valid PDF page')]
+    }
     return {
       ok: errorCount === 0,
       unresolvedCount: base.unresolvedCount,
@@ -142,7 +159,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
       issuesByRow,
       errorCount,
     }
-  }, [rows, pageCount, levelRaw])
+  }, [rows, pageCount, levelRaw, pageRaw])
 
   const invalid = !validation.ok
   const unresolvedCount = validation.unresolvedCount
@@ -229,7 +246,7 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   const calibrateWithCurrent = () => {
     const cur = rows[idx]
     if (!cur) return
-    if (cur.startPage == null) { setSaveError(tx('请先为当前项填写对应的 PDF 物理页，再用它校准全书。', 'Enter the physical PDF page for this item before calibrating the full document.')); return }
+    if (cur.startPage == null || invalidPage(pageRaw[idx])) { setSaveError(tx('请先为当前项填写有效的 PDF 页码，再校准全书。', 'Enter a valid PDF page for this item before calibrating the full document.')); return }
     const printed = canonicalNumericPageNumber(cur.pageLabel)
     if (printed == null) { setSaveError(tx('「' + cur.pageLabel + '」不是可识别的纯数字页码，无法作为校准项。', '“' + cur.pageLabel + '” is not a numeric page label and cannot be used for calibration.')); return }
     const n = cur.startPage - printed
@@ -245,9 +262,14 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   // left as-is (validation state flags it) — never coerced to 1.
   const onPageInput = (i: number, raw: string) => {
     setState(s => markRowUnchecked(s, i))
-    if (raw.trim() === '') { setRows(r => r.map((it, j) => (j === i ? { ...it, startPage: null } : it))); return }
     const n = Number(raw.trim())
-    if (Number.isInteger(n) && n >= 1) setRows(r => setManualPageOverride(r, i, n))
+    setPageRaw(previous => {
+      const next = { ...previous }
+      if (invalidPage(raw)) next[i] = raw
+      else delete next[i]
+      return next
+    })
+    if (!invalidPage(raw)) setRows(r => setManualPageOverride(r, i, n))
   }
   // 9.4C.1 raw level input: empty/非整数 is INVALID (blocking row), never coerced to 1.
   const onLevelInput = (i: number, raw: string) => {
@@ -299,12 +321,19 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
   const verifiedCount = countVerified(state)
 
   // Escape closes the review (never the Reader). The Reader's keydown is guarded while open.
+  const requestClose = () => {
+    if (saving) return
+    if (rows.length !== items.length || rows.some((row, i) => row !== items[i]) || Object.keys(pageRaw).length || Object.keys(levelRaw).length) setConfirmDiscard(true)
+    else onClose()
+  }
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); if (saving) return; if (previewMode) setPreviewMode(false); else if (confirmUnchecked) setConfirmUnchecked(false); else if (confirmIssue) setConfirmIssue(false); else onClose() } }
+    if (suspended) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); if (saving) return; if (previewMode) setPreviewMode(false); else if (confirmUnchecked) setConfirmUnchecked(false); else if (confirmIssue) setConfirmIssue(false); else if (confirmDiscard) setConfirmDiscard(false); else requestClose() } }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [confirmUnchecked, confirmIssue, onClose, previewMode, saving])
+  }, [confirmUnchecked, confirmIssue, confirmDiscard, onClose, previewMode, saving, rows, items, pageRaw, levelRaw, suspended])
 
+  if (suspended) return null
   return (
     <div className={css.overlay} data-testid="toc-review">
       {previewMode && <div className={css.previewBar} data-testid="toc-review-preview-bar"><span>{tx('正在核对 PDF，目录草稿已保留', 'Checking the PDF; your outline draft is preserved')}</span><button type="button" className={css.btnPrimary} data-testid="toc-review-return" onClick={() => setPreviewMode(false)}>{tx('返回检查目录', 'Back to outline')}</button></div>}
@@ -313,9 +342,13 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
           <span className={css.title}>{tx('检查目录', 'Review outline')}</span>
           <span className={css.sub} data-testid="toc-review-progress">{tx('已检查 ', 'Reviewed ')}{verifiedCount} / {rows.length}</span>
           <div className={css.headerBtns}>
-            <button type="button" className={css.btn} data-testid="toc-review-edit-all" disabled={saving || rows.length === 0} onClick={() => onEditAll(rows)}>{tx('编辑全部', 'Edit all')}</button>
+            <button type="button" className={css.btn} data-testid="toc-review-edit-all" disabled={saving || rows.length === 0} onClick={() => onEditAll(rows.map((row, i) => ({
+              ...row,
+              ...(invalidPage(pageRaw[i]) ? { startPage: null } : {}),
+              ...(levelRaw[i] !== undefined && (!Number.isInteger(Number(levelRaw[i])) || Number(levelRaw[i]) < 1) ? { level: 0 } : {}),
+            })))}>{tx('编辑全部', 'Edit all')}</button>
             <button type="button" className={`${css.btn} ${css.mobilePreview}`} data-testid="toc-review-preview" disabled={rows.length === 0 || saving} onClick={() => { jump(idx); setPreviewMode(true) }}>{tx('查看PDF', 'View PDF')}</button>
-            <button type="button" className={css.btn} data-testid="toc-review-close" disabled={saving} onClick={onClose}>{tx('取消', 'Cancel')}</button>
+            <button type="button" className={css.btn} data-testid="toc-review-close" disabled={saving} onClick={requestClose}>{tx('取消', 'Cancel')}</button>
             <button type="button" className={css.btnPrimary} data-testid="toc-review-save" disabled={saving || invalid || rows.length === 0} onClick={requestSave}>{saving ? tx('保存中…', 'Saving…') : tx('保存目录', 'Save outline')}</button>
           </div>
         </div>
@@ -362,7 +395,8 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
             <div className={css.adjustFields}>
             <label className={css.field}>{tx('标题', 'Title')} <input className={css.input} data-testid="toc-review-title" value={rows[idx]?.title || ''} onChange={e => editRow(idx, { title: e.target.value })} /></label>
             <label className={css.field}>{tx('层级', 'Level')} <input className={css.input} data-testid="toc-review-level" value={levelRaw[idx] ?? String(rows[idx]?.level ?? '')} inputMode="numeric" onChange={e => onLevelInput(idx, e.target.value)} /></label>
-            <label className={css.field}>{tx('PDF页', 'PDF page')} <input ref={pageInputRef} className={css.input} data-testid="toc-review-page" value={rows[idx]?.startPage ?? ''} placeholder={tx('待确认', 'Unconfirmed')} onChange={e => onPageInput(idx, e.target.value)} /></label>
+            <label className={css.field}>{tx('PDF页', 'PDF page')} <input ref={pageInputRef} className={css.input} data-testid="toc-review-page" inputMode="numeric" aria-invalid={invalidPage(pageRaw[idx]) || undefined} aria-describedby={invalidPage(pageRaw[idx]) ? 'toc-review-page-error' : undefined} value={pageRaw[idx] ?? rows[idx]?.startPage ?? ''} placeholder={tx('待确认', 'Unconfirmed')} onChange={e => onPageInput(idx, e.target.value)} /></label>
+            {invalidPage(pageRaw[idx]) && <div className={css.pageError} id="toc-review-page-error" role="alert">{tx('请输入 1–' + pageCount + ' 之间的整数。', 'Enter a whole page number from 1 to ' + pageCount + '.')}</div>}
             </div>
             {canOffset && (
               <div className={css.offset}>
@@ -408,6 +442,13 @@ export function TocReview({ pageCount, items, notice, onJump, onSave, onClose, o
             </div>
           </div>
         )}
+        {confirmDiscard && <div className={css.confirmWrap}><div className={css.confirmBox} role="alertdialog" aria-label={tx('放弃目录修改？', 'Discard outline changes?')}>
+          <span>{tx('放弃本次目录校对的修改？', 'Discard the changes made in this review?')}</span>
+          <div className={css.confirmBtns}>
+            <button type="button" className={css.btnPrimary} data-testid="toc-review-keep-editing" onClick={() => setConfirmDiscard(false)}>{tx('继续编辑', 'Keep editing')}</button>
+            <button type="button" className={css.btn} data-testid="toc-review-discard" onClick={onClose}>{tx('放弃修改', 'Discard changes')}</button>
+          </div>
+        </div></div>}
       </div>
     </div>
   )

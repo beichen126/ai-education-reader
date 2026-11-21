@@ -737,6 +737,7 @@ export function DocumentReader() {
     pageCount: number
     session: NonNullable<typeof sessionRef.current>
     count: number
+    fromPicker?: boolean
   }
 
   const executeContext = async (request: ReaderContextRequest) => {
@@ -754,24 +755,25 @@ export function DocumentReader() {
         isCancelled, isStale,
         onProgress: (p) => { if (!isCancelled()) setCtxProgress(p) },
       })
-      if (isCancelled()) return
+      if (isCancelled()) return tx('处理已取消。', 'Processing was cancelled.')
       const project = request.projectName !== undefined
       if (res.ok) {
         const label = project
           ? tx('已存入项目「' + request.projectName + '」· ' + res.count + ' 页', 'Saved to project “' + request.projectName + '” · ' + res.count + ' pages')
-          : request.selection.title
-            ? tx('已加入「' + request.selection.title + '」· ' + res.count + ' 页', 'Added “' + request.selection.title + '” · ' + res.count + ' pages')
-            : tx('已加入当前对话 · ' + res.count + ' 页', 'Added to current chat · ' + res.count + ' pages')
+          : tx('已加入 ' + res.count + ' 页，发送后用于本次提问。', 'Added ' + res.count + ' pages to this draft. They’ll be used when you send it.')
         setCtxMsg({ text: label, ok: true, project })
-      } else if (res.error) {
-        setCtxMsg({ text: localizedErrorText(res.error, project ? 'Unable to save the PDF pages to the project.' : 'Unable to add the PDF context to the chat.'), ok: false })
+      } else {
+        const error = res.error || tx('处理已取消。', 'Processing was cancelled.')
+        if (request.fromPicker) return error
+        if (project) { setCtxMenuOpen(true); setCtxMode('manual') }
+        setCtxMsg({ text: (project ? tx('未存入项目 · ', 'Could not save to project · ') : '') + localizedErrorText(error, 'Unable to process the selected PDF pages.'), ok: false })
       }
     } finally {
       if (!isCancelled()) { setCtxBusy(false); setCtxProgress(null) }
     }
   }
 
-  const requestContext = (selection: PdfSelection, alreadyConfirmed = false) => {
+  const requestContext = async (selection: PdfSelection, fromPicker = false) => {
     const session = sessionRef.current
     if (!doc || !session || ctxBusy) return
     let destination: DocumentContextDestination
@@ -791,11 +793,11 @@ export function DocumentReader() {
     }
     const request: ReaderContextRequest = {
       destination, projectName: ctxProject?.name, documentId: doc.id, fileName: doc.fileName,
-      selection: { ...selection, contextMode: ctxProject ? 'ocr' : selection.contextMode ?? contextMode }, pageCount, session, count,
+      selection: { ...selection, contextMode: ctxProject ? 'ocr' : selection.contextMode ?? contextMode }, pageCount, session, count, fromPicker,
     }
-    setCtxMenuOpen(false); setCtxMode('menu'); setManualError(null)
-    if (!alreadyConfirmed && needsPdfContextSoftConfirm(count)) { setCtxPending(request); return }
-    void executeContext(request)
+    setCtxMenuOpen(false); setManualError(null)
+    if (!fromPicker && needsPdfContextSoftConfirm(count)) { setCtxPending(request); return }
+    return executeContext(request)
   }
 
   const applyCommittedBookmarkRangePreferences = useCallback((delta: BookmarkRangePreferenceDelta) => {
@@ -917,12 +919,10 @@ export function DocumentReader() {
     // 编辑全部目录: hand the reviewed rows to the existing ChapterBuilder (no second editor).
   const editAiTocAll = useCallback((rows: MappedTocItem[]) => {
     const items: ChapterDraftItem[] = rows
-      .filter(r => r.startPage != null)
-      .map((r, i) => ({ id: 'ai' + i, title: r.title, level: r.level, startPage: r.startPage as number }))
-    setNativeDraft({ items, skipped: rows.filter(r => r.startPage == null).length })
+      .map((r, i) => ({ id: 'ai' + i, title: r.title, level: r.level, startPage: r.startPage ?? 0 }))
+    setNativeDraft({ items, skipped: 0 })
     setBuilderHint(tx('正在编辑 AI 识别并已检查的目录。保存后仅修改本地目录，不会改动原 PDF。', 'Editing the reviewed AI-detected outline. Saving changes only the local outline, not the PDF.'))
     setBuilderSaveSource('ai-toc')
-    setTocReviewOpen(false)
     setBuilderOpen(true)
   }, [])
 
@@ -1126,7 +1126,7 @@ export function DocumentReader() {
   }
 
   return (
-    <div className={css.overlay} data-testid="document-reader">
+    <div className={css.overlay} data-testid="document-reader" data-review-docked={tocReviewOpen && !builderOpen || undefined}>
       <div ref={topbarRef} className={css.topbar}>
         <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary(projectId) }}>← {tx('文件', 'Files')}</button>
         <span className={css.title} data-testid="reader-title">{doc?.fileName ?? recordMeta?.fileName ?? '…'}</span>
@@ -1135,7 +1135,7 @@ export function DocumentReader() {
           {doc && sessionRef.current && <PdfPageOcrButton documentId={doc.id} page={page} render={async () => (await renderOcrPage(sessionRef.current!, page)).blob} />}
           {doc && (
             <button className={css.ctxBtn} data-testid="reader-ctx-toggle" aria-expanded={ctxMenuOpen} disabled={ctxBusy || (!!projectId && !ctxProject)} onClick={() => setCtxMenuOpen(o => !o)}>
-              {ctxBusy ? tx('处理中', 'Processing') : projectId ? tx('存入项目', 'Save to project') : tx('加入对话', 'Add to chat')}
+              {ctxBusy ? tx('处理中', 'Processing') : projectId ? tx('存入项目', 'Save to project') : tx('加入提问草稿', 'Add to question draft')}
             </button>
           )}
           {doc && (
@@ -1281,6 +1281,7 @@ export function DocumentReader() {
       {ctxMenuOpen && !ctxBusy && (
         <div className={css.ctxMenu} data-testid="reader-ctx-menu">
           <div className={css.ctxMenuTitle}>{ctxProject?.name ?? tx('选择页面', 'Select pages')}</div>
+          {ctxProject && <div className={css.ctxHint}>{tx('保留页面图片和 OCR。未识别页会发送到 DeepSeek，需官方 API Key，并按服务计费。', 'Keeps page images and OCR. Uncached pages go to DeepSeek and require an official API key. DeepSeek charges apply.')}</div>}
           {!projectId && <PdfContextMode value={contextMode} onChange={setContextMode} />}
           <button type="button" className={css.menuItem} data-testid="reader-ctx-current-page" onClick={() => { const s = buildCurrentPageSelection(page); requestContext(s) }}>
             {tx('当前页', 'Current page')}<span className={css.menuMeta}>{tx('第 ' + page + ' 页', 'Page ' + page)}</span>
@@ -1338,7 +1339,11 @@ export function DocumentReader() {
           onCancel={() => setCtxPickerOpen(false)}
           onPreferencesCommitted={applyCommittedBookmarkRangePreferences}
           projectName={ctxProject?.name}
-          onAdd={(selection) => { setCtxPickerOpen(false); requestContext(selection, true) }}
+          onAdd={async selection => {
+            const error = await requestContext(selection, true)
+            if (!error) setCtxPickerOpen(false)
+            return error
+          }}
         />
       )}
       {progressError && (
@@ -1390,6 +1395,7 @@ export function DocumentReader() {
         <TocReview
           pageCount={pageCount}
           items={aiTocItems}
+          suspended={builderOpen}
           notice={aiTocWarning ?? undefined}
           onJump={(p) => go(p, pageCount)}
           onSave={saveAiToc}
@@ -1425,7 +1431,7 @@ export function DocumentReader() {
           skippedUnresolved={nativeDraft ? nativeDraft.skipped : 0}
           hint={builderHint || undefined}
           saveSource={builderSaveSource}
-          onSave={saveBuilder}
+          onSave={async save => { await saveBuilder(save); if (builderSaveSource === 'ai-toc') setTocReviewOpen(false) }}
           onClose={() => { setBuilderOpen(false); setNativeDraft(null); setBuilderHint(null) }}
         />
       )}

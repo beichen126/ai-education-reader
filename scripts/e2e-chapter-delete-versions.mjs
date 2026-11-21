@@ -66,6 +66,7 @@ try {
     assert.equal(doc.chapterVersions.length,2)
     assert.equal(doc.chapterVersions[0].chapters.length,936)
     await openEditor()
+    await page.locator('details:has([data-testid="cb-versions"]) > summary').click()
     await page.locator('[data-testid="cb-versions"]').selectOption(doc.chapterVersions[0].id)
     await page.locator('[data-testid="cb-restore-version"]').click()
     await page.locator('[data-testid="cb-version-yes"]').click()

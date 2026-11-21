@@ -54,6 +54,12 @@
 .noteTitle { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
 .noteInput { flex: 1; min-height: 120px; width: 100%; box-sizing: border-box; resize: none; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; padding: 8px; background: var(--dsw-alias-bg-base); color: var(--dsw-alias-label-primary); font: inherit; line-height: 1.5; }
 .noteInput:focus { outline: none; border-color: var(--dsw-alias-brand-primary); }
+.notePanel { min-height: 0; overflow-y: auto; }
+.notePanel .noteInput { min-height: 0; }
+.noteStatus { flex: none; }
+@media (min-width: 681px) {
+  .overlay[data-review-docked]:not(:has([data-testid="toc-review-preview-bar"])) { padding-inline-start: clamp(340px, 42vw, 600px); }
+}
 .noteStatus { font-size: 11px; color: var(--dsw-alias-label-tertiary); }
 .hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--dsw-alias-label-tertiary); }
 .pageBtn { border: none; background: transparent; padding: 0; cursor: zoom-in; display: block; max-width: 100%; max-height: 100%; }

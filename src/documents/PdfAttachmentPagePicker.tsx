@@ -24,14 +24,14 @@ export function PdfAttachmentPagePicker({ source, onCancel, onSelect }: {
   }, [])
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
+      if (session || event.key !== 'Escape') return
       event.preventDefault()
       event.stopImmediatePropagation()
       onCancel()
     }
     window.addEventListener('keydown', escape, true)
     return () => window.removeEventListener('keydown', escape, true)
-  }, [onCancel])
+  }, [onCancel, session])
   useEffect(() => {
     let active = true
     let owned: PdfSession | undefined

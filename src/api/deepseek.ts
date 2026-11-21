@@ -18,6 +18,7 @@ export function exceedsVisionImageCount(count: number): boolean { return count >
 export type ErrorKind =
   | 'no-api-key' | 'network-or-cors' | 'unauthorized' | 'billing'
   | 'rate-limited' | 'request-too-large' | 'bad-request' | 'server' | 'bad-json' | 'no-content' | 'aborted' | 'unexpected'
+  | 'stream-incomplete' | 'output-length'
 
 export class DeepSeekError extends Error {
   readonly kind: ErrorKind; readonly status?: number
@@ -57,6 +58,8 @@ export function errorKindLabel(kind: ErrorKind): string {
     case 'unexpected': return tx('处理本轮对话时出错，请重试。', 'An error occurred while processing this conversation. Try again.')
     case 'bad-json': return tx('返回内容不是有效的 JSON。', 'The response is not valid JSON.')
     case 'no-content': return tx('模型未返回有效内容，请重试。', 'The model returned no usable content. Try again.')
+    case 'stream-incomplete': return tx('连接在模型完成回复前结束，已保留收到的内容。', 'The connection ended before the reply finished. The received text was kept.')
+    case 'output-length': return tx('回复达到模型输出长度上限，已保留收到的内容。', 'The reply reached the model’s output limit. The received text was kept.')
     case 'aborted': return tx('已停止生成。', 'Generation stopped.')
     default: return tx('请求失败。', 'Request failed.')
   }
@@ -291,7 +294,7 @@ export interface StreamTextChatArgs extends SendTextChatArgs {
   onWebRead?: (numbers: number[]) => Promise<Record<string, unknown>>
   onWebToolCalls?: (calls: ToolCalls) => Promise<Record<string, unknown>[]>
 }
-export interface StreamTextChatResult extends SendTextChatResult { title?: string; serverToolCalls?: unknown[]; annotations?: unknown[]; usage?: TokenUsage; toolCalls?: ToolCalls }
+export interface StreamTextChatResult extends SendTextChatResult { title?: string; serverToolCalls?: unknown[]; annotations?: unknown[]; usage?: TokenUsage; toolCalls?: ToolCalls; incomplete?: boolean }
 
 function resolveChatBase(baseUrl: string, model?: string) {
   if (model && isTeamoGemini(baseUrl, model)) return TEAMO_OPENAI_BASE
@@ -340,7 +343,7 @@ export function streamTextChat(args: StreamTextChatArgs): Promise<StreamTextChat
         first = await streamTextChatInline({ ...request, messages: [instruction, ...messages], webSearchTool: false, onDelta() {} })
         const output = first.content.trim()
         const query = output.startsWith(marker + ' ') ? output.slice(marker.length + 1) : ''
-        if (!query || query.includes('\n')) {
+        if (first.incomplete || first.finishReason === 'length' || !query || query.includes('\n')) {
           args.onDelta(first.content)
           return first
         }
@@ -351,7 +354,7 @@ export function streamTextChat(args: StreamTextChatArgs): Promise<StreamTextChat
         throw retryError
       }
     }
-    if (!first.toolCalls || !args.onWebToolCalls) return first
+    if (first.incomplete || first.finishReason === 'length' || !first.toolCalls || !args.onWebToolCalls) return first
     const results = await args.onWebToolCalls(first.toolCalls)
     if (args.signal?.aborted) throw new DeepSeekError('aborted', 'stream aborted')
     const separator = first.content.trim() ? '\n\n' : ''
@@ -372,7 +375,7 @@ export function streamTextChat(args: StreamTextChatArgs): Promise<StreamTextChat
         onDelta: canRead ? () => {} : args.onDelta,
       })
       const output = answer.content.trim()
-      if (canRead && output.startsWith(marker)) {
+      if (canRead && !answer.incomplete && answer.finishReason !== 'length' && output.startsWith(marker)) {
         const numbers = readResultNumbers(output.slice(marker.length).trim())
         const read = numbers ? await args.onWebRead!(numbers) : { status: 'invalid_selection' }
         const final = await answerWithPages(read)
@@ -402,7 +405,7 @@ export function streamTextChat(args: StreamTextChatArgs): Promise<StreamTextChat
       if (error instanceof DeepSeekError && error.kind === 'bad-request') error.requestStage = 'search-result'
       throw error
     }
-    if (canRead && reply.toolCalls) {
+    if (canRead && !reply.incomplete && reply.finishReason !== 'length' && reply.toolCalls) {
       const readCalls = reply.toolCalls
       const selections = readCalls.calls.map(call => call.function.name === WEB_READ_TOOL.name ? readResultNumbers(call.function.arguments) : undefined)
       const index = selections.findIndex(selection => selection !== undefined)
@@ -497,8 +500,9 @@ async function streamTextChatInline(args: StreamTextChatArgs): Promise<StreamTex
   let finishReason: string | undefined
   let usage: TokenUsage | undefined
   let frameCount = 0
+  let sawDone = false
   const consume = (data: string) => {
-    if (data === '[DONE]') return false
+    if (data === '[DONE]') { sawDone = true; return false }
     let payload: any
     try { payload = JSON.parse(data) } catch { throw new DeepSeekError('bad-json', 'stream chunk is not valid JSON') }
     frameCount++
@@ -532,7 +536,7 @@ async function streamTextChatInline(args: StreamTextChatArgs): Promise<StreamTex
   }
   const assembledCalls = finalizeOpenAiCalls(calls)
   if (!assembledCalls && !hasMeaningfulAssistantContent(content)) throw emptyChatReply(gemini, finishReason, frameCount, reasoning)
-  return { content, ...(reasoning ? { reasoning } : {}), finishReason, usage, title, serverToolCalls, annotations, toolCalls: assembledCalls }
+  return { content, ...(reasoning ? { reasoning } : {}), finishReason, usage, title, serverToolCalls, annotations, toolCalls: assembledCalls, incomplete: !sawDone && !finishReason }
 }
 
 function emptyChatReply(gemini: boolean, finishReason: string | undefined, frames: number, reasoning?: string) {

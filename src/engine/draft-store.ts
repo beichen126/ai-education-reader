@@ -56,15 +56,21 @@ export function getDraft(id: string): Draft {
 function put(id: string, d: Draft) { drafts.set(id, d); emit() }
 function cancelTextTimer(id: string) { const t = textTimers.get(id); if (t !== undefined) { clearTimeout(t); textTimers.delete(id) } }
 
-async function persistDraft(id: string): Promise<void> {
+const pendingDraftWrites = new Set<Promise<void>>()
+async function writeDraft(id: string): Promise<void> {
   const d = drafts.get(id)
   // An empty draft leaves no storage row -> no stale empty entries.
   if (!d || (d.text === '' && d.imageIds.length === 0)) {
-    try { await deleteSetting(storageKeyFor(id)) } catch { /* already gone */ }
+    await deleteSetting(storageKeyFor(id))
     return
   }
-  try { await setSetting(storageKeyFor(id), { version: VERSION, text: d.text, imageIds: d.imageIds }) }
-  catch (e) { console.error('[draft] persist failed', id, e) }
+  await setSetting(storageKeyFor(id), { version: VERSION, text: d.text, imageIds: d.imageIds })
+}
+function persistDraft(id: string, strict = false): Promise<void> {
+  const write = writeDraft(id)
+  pendingDraftWrites.add(write)
+  const handled = write.finally(() => pendingDraftWrites.delete(write))
+  return strict ? handled : handled.catch(e => { console.error('[draft] persist failed', id, e) })
 }
 
 /** Text is debounced so a keystroke storm doesn't spam IndexedDB transactions. */
@@ -127,9 +133,12 @@ export function clearDraftMemory(id: string): void {
 /** Test/utility hook: flush a conversation's pending debounced text persist now. */
 export async function flushDraft(id: string): Promise<void> { cancelTextTimer(id); await persistDraft(id) }
 /** Best-effort flush of every pending text draft (used on pagehide / visibilitychange). */
-export async function flushAllDrafts(): Promise<void> {
+export async function flushAllDrafts(strict = false): Promise<void> {
   const ids = [...textTimers.keys()]
-  for (const id of ids) { cancelTextTimer(id); await persistDraft(id) }
+  const pending = [...pendingDraftWrites]
+  for (const id of ids) { cancelTextTimer(id); pending.push(persistDraft(id, strict)) }
+  if (strict) await Promise.all(pending)
+  else await Promise.allSettled(pending)
 }
 
 function parseDraft(raw: any): Draft | null {

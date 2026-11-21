@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react'
 
 export type DocumentUiState =
   | { view: 'closed' }
-  | { view: 'library'; projectId?: string }
+  | { view: 'library'; projectId?: string; importFile?: File }
   | { view: 'reader'; documentId: string; pageNumber?: number; requestId: number; projectId?: string }
 
 let s: DocumentUiState = { view: 'closed' }
@@ -17,6 +17,13 @@ function useDocumentUi<T>(sel: (s: DocumentUiState) => T): T {
 }
 export const documentUiActions = {
   openLibrary(projectId?: string) { s = projectId ? { view: 'library', projectId } : { view: 'library' }; notify() },
+  importPdf(file: File) { s = { view: 'library', importFile: file }; notify() },
+  acceptImport(file: File) {
+    if (s.view !== 'library' || s.importFile !== file) return false
+    s = { view: 'library' }
+    notify()
+    return true
+  },
   openReader(documentId: string, pageNumber?: number, projectId?: string) {
     readerRequestId += 1
     s = { view: 'reader', documentId, ...(Number.isInteger(pageNumber) && pageNumber! > 0 ? { pageNumber } : {}), requestId: readerRequestId, ...(projectId ? { projectId } : {}) }

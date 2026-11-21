@@ -83,7 +83,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
         <button type="button" className={css.railBtn} data-testid="rail-history" aria-label={tx('历史会话', 'Chat history')} title={tx('历史会话', 'Chat history')} onClick={openHistory}><IconClockOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-new-chat" aria-label={t('sidebar.newChat')} title={t('sidebar.newChat')} onClick={createChat}><IconNewChatOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-images" aria-label={tx('图片资料', 'Images')} title={tx('图片资料', 'Images')} onClick={openImages}><IconPhoto16 /></button>
-        <button type="button" className={css.railBtn} data-testid="rail-files" aria-label={tx('本地文件', 'Local files')} title={tx('本地文件', 'Local files')} onClick={openFiles}><IconFolderOpenOutline16 /></button>
+        <button type="button" className={css.railBtn} data-testid="rail-files" aria-label={tx('资料库', 'Library')} title={tx('资料库', 'Library')} onClick={openFiles}><IconFolderOpenOutline16 /></button>
         <button type="button" className={css.railBtn} data-testid="rail-cards" aria-label={tx('学习中心', 'Learning center')} title={tx('学习中心', 'Learning center')} onClick={() => learningUiActions.openLibrary('cards')}><IconListPenOutline16 /></button>
         <div className={css.railSpacer} />
         {!isAndroidReader() && <button type="button" className={css.railBtn} data-testid="rail-fullscreen" aria-label={fsTitle} title={fsTitle} onClick={toggle}><IconFullscreenOutline16 /></button>}
@@ -110,7 +110,7 @@ export function Sidebar({ collapsed, width }: { collapsed: boolean; width: numbe
           <IconPhoto16 /> <span>{tx('图片', 'Images')}</span>
         </button>
         <button type="button" className={css.entryBtn} data-testid="sidebar-entry-files" onClick={openFiles}>
-          <IconFolderOpenOutline16 /> <span>{tx('文件', 'Files')}</span>
+          <IconFolderOpenOutline16 /> <span>{tx('资料库', 'Library')}</span>
         </button>
       </div>
       <div className={css.sidebarSection}>{tx('学习', 'Study')}</div>

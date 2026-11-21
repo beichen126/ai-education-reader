@@ -245,7 +245,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [confirmDiscard, pendingDelete, pendingBulkDelete, pendingVersion, onClose, saving, selectedIds])
+  }, [confirmDiscard, pendingDelete, pendingBulkDelete, pendingVersion, onClose, saving, selectedIds, dirty])
 
   const delIndex = pendingDelete
   const delItem = delIndex != null ? items[delIndex] : null
@@ -267,13 +267,13 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
         {insertError && <div className={css.error} data-testid="cb-insert-error">{insertError}</div>}
         {hint && <div className={css.hint} data-testid="cb-hint">{hint}</div>}
         {skippedUnresolved > 0 && <div className={css.warn} data-testid="cb-skipped">{tx('原目录中有 ' + skippedUnresolved + ' 项无法定位页码，未自动加入编辑结果。', skippedUnresolved + ' original outline items had no page mapping and were not added.')}</div>}
-        {versions.length > 0 && <div className={css.versionRow}>
+        {versions.length > 0 && <details className={css.versions}><summary>{tx('目录版本', 'Outline versions')}</summary><div className={css.versionRow}>
           <select className={css.versionSelect} data-testid="cb-versions" value={versionId} disabled={saving} aria-label={tx('已保存的目录版本', 'Saved outline versions')} onChange={e => setVersionId(e.target.value)}>
             <option value="">{tx('历史目录版本（本地保存）', 'Outline history (saved locally)')}</option>
             {[...versions].reverse().map((version, i) => <option key={version.id} value={version.id}>{'V' + (versions.length - i) + ' · ' + new Date(version.createdAt).toLocaleString(tx('zh-CN', 'en-US'), { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</option>)}
           </select>
           <button type="button" className={css.btn} data-testid="cb-restore-version" disabled={saving || !versionId} onClick={() => setPendingVersion(versions.find(version => version.id === versionId) ?? null)}>{tx('载入版本', 'Load version')}</button>
-        </div>}
+        </div></details>}
         <div className={css.searchRow}>
           <input
             className={css.searchInput}
@@ -288,7 +288,7 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
           </span>
         </div>
         <div className={css.list} data-testid="cb-list" ref={el => { if (el) el.inert = saving }}>
-          <div className={css.bulkToolbar} data-testid="cb-bulk-toolbar">
+          <div className={css.bulkToolbar} data-testid="cb-bulk-toolbar" data-has-selection={selectedIds.size > 0}>
             <div className={css.bulkSummary}>
               <span data-testid="cb-selected-count">{tx('已选 ' + selectedIds.size + ' 项', selectedIds.size + ' selected')}</span>
               <button type="button" className={css.bulkBtn} data-testid="cb-clear-selection" onClick={clearSelection}>{tx('清除选择', 'Clear selection')}</button>
@@ -306,13 +306,13 @@ export function ChapterBuilder({ pageCount, initialChapters, currentPage, draftS
                 <button type="button" className={css.bulkBtn} data-testid={'cb-select-level-' + (level + 1)} key={level + 1} onClick={() => selectCurrentLevel(level + 1)}>L{level + 1}</button>
               ))}
             </div>
-            <div className={css.bulkGroup}>
+            <div className={css.bulkGroup + ' ' + css.selectedActions}>
               <span className={css.bulkLabel}>{tx('设为：', 'Set to:')}</span>
               {Array.from({ length: MAX_CHAPTER_LEVEL }, (_, level) => (
                 <button type="button" className={css.bulkBtn} data-testid={'cb-bulk-set-' + (level + 1)} key={level + 1} disabled={selectedIds.size === 0} onClick={() => applyBulkLevel(level + 1)}>L{level + 1}</button>
               ))}
             </div>
-            <div className={css.bulkGroup}>
+            <div className={css.bulkGroup + ' ' + css.selectedActions}>
               <button type="button" className={css.bulkBtn} data-testid="cb-bulk-outdent" disabled={selectedIds.size === 0} onClick={() => applyBulkShift(-1)}>{tx('减少一级', 'Decrease level')}</button>
               <button type="button" className={css.bulkBtn} data-testid="cb-bulk-indent" disabled={selectedIds.size === 0} onClick={() => applyBulkShift(1)}>{tx('增加一级', 'Increase level')}</button>
             </div>
@@ -448,7 +448,7 @@ function BuilderRow(props: {
           ))}
         </select>
         <input className={css.titleInput} data-testid={'cb-title-' + index} value={item.title} placeholder={tx('章节标题', 'Chapter title')} onChange={e => onTitle(e.target.value)} />
-        <input className={css.pageInput} data-testid={'cb-page-' + index} inputMode="numeric" value={String(item.startPage)} onChange={e => onPage(e.target.value)} />
+        <input className={css.pageInput} data-testid={'cb-page-' + index} inputMode="numeric" value={item.startPage === 0 ? '' : String(item.startPage)} placeholder={tx('待确认', 'Unconfirmed')} onChange={e => onPage(e.target.value)} />
       </div>
       <div className={css.rowOps}>
         <button type="button" className={css.op} data-testid={'cb-up-' + index} title={tx('上移', 'Move up')} disabled={!canUp} onClick={onUp}>↑</button>

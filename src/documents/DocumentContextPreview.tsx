@@ -10,6 +10,7 @@ import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import type { ChapterNode, LearningDocument } from './document-types'
 import css from './document-context-preview.module.css'
 import { tx } from '../engine/locale'
+import { useDialogFocus } from '../engine/use-dialog-focus'
 
 type Props = {
   document: LearningDocument
@@ -60,6 +61,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
   const zoomGenerationRef = useRef(0)
   const [zoomBusy, setZoomBusy] = useState(false)
   const backRef = useRef<HTMLButtonElement | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const tocVisible = narrowViewport() ? tocOpen && !tocClosed : !tocClosed
 
   const clearZoom = useCallback(() => {
@@ -109,21 +111,10 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
     clearZoom()
   }, [clearZoom, page])
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      if (zoomUrlRef.current) { clearZoom(); return }
-      if (tocVisible) {
-        setTocOpen(false)
-        setTocClosed(true)
-        return
-      }
-      onBack()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [clearZoom, onBack, tocVisible])
+  useDialogFocus(dialogRef, !zoomUrl, () => {
+    if (tocVisible) { setTocOpen(false); setTocClosed(true); return }
+    onBack()
+  })
 
   const go = (nextPage: number) => {
     const next = clampPage(nextPage, sourceDoc.pageCount)
@@ -183,7 +174,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
   }
 
   return (
-    <div className={css.overlay} data-testid="doc-context-preview-view" role="dialog" aria-modal="true" aria-labelledby="doc-context-preview-title">
+    <div ref={dialogRef} tabIndex={-1} className={css.overlay} data-testid="doc-context-preview-view" role="dialog" aria-modal="true" aria-labelledby="doc-context-preview-title">
       <div className={css.preview}>
         <header className={css.header}>
           <button ref={backRef} type="button" className={css.back} data-testid="doc-context-preview-back" onClick={onBack}>← {tx('返回选择', 'Back to selection')}</button>

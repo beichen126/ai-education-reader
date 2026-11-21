@@ -58,6 +58,14 @@ await note.waitFor({ state: 'visible', timeout: 10000 })
 await page.waitForFunction(() => document.activeElement?.matches('[data-testid="reader-notes"] textarea'), null, { timeout: 10000 })
 assert(await page.evaluate(() => window.__documentNoteReads === 1), 'preload/editor: opening the panel reuses the resolved read')
 assert(await toggle.textContent() === '收起笔记', 'open state exposes 收起笔记')
+const desktopViewport = page.viewportSize()
+await page.setViewportSize({ width: 580, height: 320 })
+assert(await page.evaluate(() => {
+  const status = document.querySelector('[data-testid="reader-note-status"]').getBoundingClientRect()
+  const footer = document.querySelector('[data-testid="reader-page-input"]').parentElement.parentElement.getBoundingClientRect()
+  return status.bottom <= footer.top + 1
+}), 'short landscape keeps the note status above PDF pagination')
+await page.setViewportSize(desktopViewport)
 
 await page.evaluate(() => {
   const w = window

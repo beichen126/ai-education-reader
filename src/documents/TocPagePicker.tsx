@@ -9,6 +9,7 @@ import { renderSessionThumbnail } from '../pdf/pdf-session'
 import type { PdfSession } from '../pdf/pdf-session'
 import css from './toc-page-picker.module.css'
 import { tx } from '../engine/locale'
+import { useDialogFocus } from '../engine/use-dialog-focus'
 import { prioritizeThumbnails } from './thumbnail-priority'
 
 const INITIAL_BATCH = 30
@@ -49,8 +50,8 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart, forAttach
   const observerRef = useRef<IntersectionObserver | null>(null);
   const thumbRefs = useRef<Record<number, HTMLElement | null>>({})
   const gridRef = useRef<HTMLDivElement | null>(null)
-  const cancelRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => { if (forAttachment) cancelRef.current?.focus() }, [forAttachment])
+  const panelRef = useRef<HTMLDivElement>(null)
+  useDialogFocus(panelRef, !!forAttachment, onCancel)
 
   const revoke = (url: string) => { try { URL.revokeObjectURL(url) } catch {} };
 
@@ -191,12 +192,12 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart, forAttach
 
   return (
     <div className={css.overlay + (forAttachment ? ' ' + css.attachmentOverlay : '')} data-testid="toc-picker">
-      <div className={css.panel} role={forAttachment ? 'dialog' : undefined} aria-modal={forAttachment || undefined} aria-label={forAttachment ? tx('选择 PDF 页面', 'Select PDF pages') : undefined}>
+      <div ref={panelRef} tabIndex={forAttachment ? -1 : undefined} className={css.panel} role={forAttachment ? 'dialog' : undefined} aria-modal={forAttachment || undefined} aria-label={forAttachment ? tx('选择 PDF 页面', 'Select PDF pages') : undefined}>
         <div className={css.header}>
           <div className={css.headRow}>
             <span className={css.title}>{forAttachment ? tx('选择 PDF 页面', 'Select PDF pages') : tx('选择目录页', 'Select outline pages')}</span>
             <div className={css.headerBtns}>
-              <button ref={cancelRef} type="button" className={css.btn} data-testid="toc-picker-cancel" onClick={onCancel}>{tx('取消', 'Cancel')}</button>
+              <button type="button" className={css.btn} data-testid="toc-picker-cancel" onClick={onCancel}>{tx('取消', 'Cancel')}</button>
               <button type="button" className={css.btnPrimary} data-testid="toc-picker-start" disabled={selected.size === 0} onClick={() => onStart(sorted)}>{forAttachment ? tx('确认选择', 'Confirm selection') : tx('开始识别', 'Start detection')}{selected.size ? tx('（' + selected.size + ' 页）', ' (' + selected.size + ' pages)') : ''}</button>
             </div>
           </div>

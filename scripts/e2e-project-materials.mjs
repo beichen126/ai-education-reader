@@ -10,9 +10,11 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   const requests = []
   let ocrCount = 0
+  let rejectOcr = false
   const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'POST, OPTIONS', 'access-control-allow-headers': '*' }
   await page.route('**/v1/tools/ocr', route => {
     if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors })
+    if (rejectOcr) return route.fulfill({ status: 401, headers: cors, json: { error: { message: 'mock key rejection' } } })
     return route.fulfill({ headers: cors, json: {
       object: 'ocr.result', page_count: 1, pages: [{ index: 0, text: 'Project OCR marker ' + ++ocrCount, finish_reason: 'stop' }],
     } })
@@ -51,11 +53,10 @@ try {
   await page.getByTestId('toc-picker-range-end').fill('30')
   await page.getByTestId('toc-picker-range-apply').click()
   await page.getByTestId('toc-picker-start').click()
-  await pdf.getByTestId('pdf-generate').click()
+  assert.match(await pdf.textContent(), /DeepSeek.*计费/)
   await pdf.getByTestId('pdf-add').click({ timeout: 60000 })
-  await pdf.getByText('已固定 16 页', { exact: true }).waitFor()
-  await pdf.getByRole('button', { name: '关闭', exact: true }).click()
-  await projectPicker.getByTestId('doc-context-cancel').click()
+  await gallery.getByText('已存入项目 · 16 页', { exact: true }).waitFor()
+  await pdf.waitFor({ state: 'hidden' })
   assert.equal(await gallery.locator('[data-project-material]').count(), 16)
   assert.equal(requests.length, 0)
   assert.equal(ocrCount, 16)
@@ -183,6 +184,12 @@ try {
   assert.equal(await projectPicker.getByTestId('pdf-context-mode').count(), 0)
   await page.setViewportSize({ width: 390, height: 844 })
   await projectPicker.screenshot({ path: 'tmp/project-library-chapter-mobile.png' })
+  assert.match(await projectPicker.textContent(), /DeepSeek.*计费/)
+  rejectOcr = true
+  await projectPicker.getByTestId('doc-context-add').click()
+  await projectPicker.getByRole('alert').getByText(/未存入项目/).waitFor()
+  assert.equal(await projectPicker.getByRole('checkbox', { name: 'Computer Organization', exact: true }).isChecked(), true)
+  rejectOcr = false
   await projectPicker.getByTestId('doc-context-add').click()
   await gallery.getByText('已存入项目 · 4 页', { exact: true }).waitFor({ timeout: 40000 })
   await gallery.locator('[data-project-material]').filter({ hasText: /第 4 页/ }).getByText('含 OCR').waitFor()

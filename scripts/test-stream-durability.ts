@@ -130,6 +130,16 @@ await initStore()
 
 await new Promise((resolve) => setImmediate(resolve))
 process.off('unhandledRejection', onUnhandledRejection)
+for (const [reason, expected] of [[undefined, 'stream-incomplete'], ['length', 'output-length'], ['stop', 'completed']]) {
+  const finish = reason ? 'data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: reason }] }) + '\n\n' : ''
+  fetchMock = async () => new Response(delta('saved body') + finish, { headers: { 'Content-Type': 'text/event-stream' } })
+  const id = await sessionsActions.newChat()
+  const result = await sessionsActions.sendUserMessage(id, 'test finish', [])
+  const message = (await getConversation(id))?.messages.at(-1)
+  assert((result.kind === 'failed' ? result.code : result.kind) === expected, 'stream terminal state: ' + expected)
+  assert(message?.content === 'saved body' && (expected === 'completed' ? message.status !== 'failed' : message.status === 'failed'), 'terminal state and received text are durable: ' + expected)
+}
+
 assert(unhandledRejections.length === 0, 'background stream tasks settle without unhandled rejection')
 console.log('RESULT pass=' + pass + ' fail=' + fail)
 process.exit(fail === 0 ? 0 : 1)
