@@ -59,7 +59,7 @@ export function errorKindLabel(kind: ErrorKind): string {
     case 'bad-json': return tx('返回内容不是有效的 JSON。', 'The response is not valid JSON.')
     case 'no-content': return tx('模型未返回有效内容，请重试。', 'The model returned no usable content. Try again.')
     case 'stream-incomplete': return tx('连接在模型完成回复前结束，已保留收到的内容。', 'The connection ended before the reply finished. The received text was kept.')
-    case 'output-length': return tx('回复达到模型输出长度上限，已保留收到的内容。', 'The reply reached the model’s output limit. The received text was kept.')
+    case 'output-length': return tx('接口因输出长度或上下文上限结束了回复，已保留收到的内容。', 'The API ended the reply at an output or context limit. The received text was kept.')
     case 'aborted': return tx('已停止生成。', 'Generation stopped.')
     default: return tx('请求失败。', 'Request failed.')
   }

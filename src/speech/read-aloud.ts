@@ -2,28 +2,6 @@ import {cachedSpeechAudio,evictSpeechAudio} from './audio-cache'
 import {selectedDeepSeekServiceProfile} from '../engine/deepseek-service-profile'
 import { useSyncExternalStore } from 'react'
 import { getSettingsSnapshot } from '../engine/settings-store'
-import { tx } from '../engine/locale'
-
-type AndroidVoicePack = { getPackStatus: () => string; downloadPack: () => void }
-type AndroidSpeechWindow = Window & { AndroidTTS?: { offlineOnly?: () => boolean } & Partial<AndroidVoicePack>; __androidTtsInstalled?: boolean }
-
-export function hasAndroidVocabularySpeech(): boolean {
-  const host = typeof window === 'undefined' ? undefined : window as AndroidSpeechWindow
-  return host?.__androidTtsInstalled === true && host.AndroidTTS?.offlineOnly?.() === true
-}
-
-export function androidVoicePack(): AndroidVoicePack | undefined {
-  const bridge = typeof window === 'undefined' ? undefined : (window as AndroidSpeechWindow).AndroidTTS
-  if (bridge?.getPackStatus && bridge.downloadPack) return bridge as AndroidVoicePack
-}
-
-export function androidVoicePackStatus() {
-  return JSON.parse(androidVoicePack()?.getPackStatus() ?? '{}') as {
-    state?: 'missing' | 'downloading' | 'ready' | 'failed'
-    downloaded?: number
-    total?: number
-  }
-}
 
 export type SpeechChunk = {text: string; lang: 'zh-CN' | 'en-US'; rate: number}
 export function speechChunks(text: string): SpeechChunk[] {
@@ -52,13 +30,11 @@ export function preferredVoice(voices: readonly SpeechSynthesisVoice[], lang: st
   return [...candidates].sort((a,b) => score(b)-score(a))[0]
 }
 
-type State = {status:'idle'|'loading'|'speaking'|'paused'|'error'; owner?:string; voice?:string; lang?:string; rate?:number; repeat?:number; repeats?:number; loop?:boolean; error?:string; offline?:boolean}
+type State = {status:'idle'|'loading'|'speaking'|'paused'|'error'; owner?:string; voice?:string; lang?:string; rate?:number; repeat?:number; repeats?:number; loop?:boolean; error?:string}
 let state: State = {status:'idle'}, generation = 0
 let audio: HTMLAudioElement | null = null
 let urls: string[] = []
 let liveRate: number | undefined
-let androidSpeech: SpeechSynthesis | undefined
-let androidUtterance: SpeechSynthesisUtterance | undefined
 const listeners = new Set<() => void>()
 function publish(next: State) { state = next; listeners.forEach(fn=>fn()) }
 export const speechSnapshot = () => state
@@ -66,84 +42,15 @@ export function useReadAloud() { return useSyncExternalStore(fn=>{listeners.add(
 export function stopReadAloud(owner?: string) {
   if (owner && state.owner !== owner) return
   generation++;liveRate=undefined
-  androidSpeech?.cancel()
-  androidSpeech=undefined
-  androidUtterance=undefined
   if(audio){audio.onended=null;audio.onerror=null;audio.pause();audio.removeAttribute('src');audio.load();audio=null}
   urls.forEach(url=>URL.revokeObjectURL(url));urls=[]
   publish({status:'idle'})
 }
-export function pauseReadAloud() {
-  if(state.status!=='speaking')return
-  if(androidSpeech)androidSpeech.pause()
-  else if(audio)audio.pause()
-  else return
-  publish({...state,status:'paused'})
-}
+export function pauseReadAloud() { if(state.status==='speaking' && audio){audio.pause();publish({...state,status:'paused'})} }
 export function resumeReadAloud() {
-  if(state.status==='paused' && androidSpeech){
-    androidSpeech.resume()
-    publish({...state,status:'speaking'})
-    return
-  }
   if(state.status!=='paused' || !audio)return
   const token=generation
   void audio.play().then(()=>{if(token===generation)publish({...state,status:'speaking'})}).catch(()=>{if(token===generation)publish({...state,status:'error',error:'浏览器阻止播放，请再次点击朗读。'})})
-}
-
-export function readAndroidVocabulary(text: string, lang: string, owner: string) {
-  stopReadAloud()
-  const pack = androidVoicePack()
-  if (pack && androidVoicePackStatus().state !== 'ready') {
-    publish({status:'error',owner,offline:true,error:tx(
-      '请在「设置 → 通用 → 朗读」下载离线语音包。',
-      'Download the offline voice pack in Settings → General → Read aloud.',
-    )})
-    return
-  }
-  const synth = window.speechSynthesis
-  const tag = lang.toLowerCase()
-  const voice = synth.getVoices().filter(candidate => candidate.localService &&
-    (candidate.lang.toLowerCase() === tag || (!tag.includes('-') && candidate.lang.toLowerCase().split('-')[0] === tag)))
-    .sort((a,b) => Number(b.default) - Number(a.default))[0]
-  const fail = (error: string) => {
-    stopReadAloud()
-    publish({status:'error',owner,offline:true,error})
-  }
-  if(!voice){
-    fail(pack ? tx('离线语音包暂不支持 '+lang+'。','The offline voice pack does not support '+lang+'.') : tx(
-      '无法使用 '+lang+' 离线语音。请在系统「文字转语音」里选择支持该语言的引擎并下载语音包。',
-      'Offline voice unavailable for '+lang+'. Select a compatible text-to-speech engine in system settings and download its voice.',
-    ))
-    return
-  }
-  const settings = getSettingsSnapshot()
-  const repeats = settings.speechRepeatCount ?? 3
-  const loop = settings.speechLoop ?? false
-  const token = generation
-  let repeat = 1
-  androidSpeech = synth
-  const next = () => {
-    const utterance = new SpeechSynthesisUtterance(text)
-    androidUtterance = utterance
-    utterance.lang = voice.lang
-    utterance.voice = voice
-    utterance.rate = liveRate ?? (tag.startsWith('zh') ? settings.chineseSpeechRate ?? 1 : tag.startsWith('en') ? settings.englishSpeechRate ?? 0.9 : 1)
-    const current = {owner,lang:voice.lang,voice:voice.name,rate:utterance.rate,repeat,repeats,loop,offline:true}
-    const active = () => token === generation && androidUtterance === utterance
-    utterance.onstart = () => { if(active())publish({...current,status:'speaking'}) }
-    utterance.onerror = () => {
-      if(active())fail(tx('离线语音播放失败，请重试。','Offline playback failed. Try again.'))
-    }
-    utterance.onend = () => {
-      if(!active() || state.status==='paused')return
-      if(++repeat > repeats && !loop)stopReadAloud()
-      else next()
-    }
-    publish({...current,status:'loading'})
-    synth.speak(utterance)
-  }
-  next()
 }
 export function ttsChunks(text: string): string[] {
   // <= 3,600 billed characters and <= 22 KB JSON even for escaped input.
