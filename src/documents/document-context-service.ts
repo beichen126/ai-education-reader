@@ -1,7 +1,8 @@
 import { prepareOcrPages } from '../pdf/pdf-ocr-pages'
 import { tx } from '../engine/locale'
 import { waitForPdfOperation } from '../pdf/pdf-abort'
-import { countPdfRangePages } from '../pdf/pdf-types'
+import { countPdfRangePages, exceedsPdfContextHardLimit, expandPdfRangePages } from '../pdf/pdf-types'
+import { validOcrPage } from '../api/deepseek-ocr'
 import { idbGet } from '../storage/idb'
 
 // Document -> Context execution service (Stage 9.5 / v1.0.0, Part 0.7). One shared
@@ -54,11 +55,14 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
   const cancellationWatch = setInterval(() => { if (cancelled()) controller.abort() }, 100)
   let session = opts.existingSession
   let pageCount = opts.pageCount
+  const ranges = opts.selection.ranges
+  const total = countPdfRangePages(ranges)
+  let previewDecodeBudget: number | undefined
   try {
     const ensureSession = async (signal: AbortSignal) => {
       if (!session) {
         const blob = await waitForPdfOperation(readDocumentSourceBlob(opts.documentId), signal)
-        const opened = await openPdfSession(blob, signal)
+        const opened = await openPdfSession(blob, signal, previewDecodeBudget)
         session = opened.session
         pageCount = opened.doc.pageCount
       }
@@ -68,9 +72,16 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
       const doc = await idbGet('documents', opts.documentId)
       if (!doc) throw new DocumentBinaryMissingError(opts.documentId)
       pageCount = doc.pageCount
+      if (opts.targetProjectId !== undefined && opts.selection.contextMode === 'ocr' &&
+        !exceedsPdfContextHardLimit(total) && expandPdfRangePages(ranges).every(page => {
+          const cached = doc.ocrPages?.[page]
+          return validOcrPage(cached) && cached.finishReason === 'stop'
+        })) {
+        // Only lower the JPEG2000 decode budget when no page needs OCR input.
+        previewDecodeBudget = 12 * 1024 * 1024
+      }
     }
-    const ranges = opts.selection.ranges
-    let progress: ContextRenderProgress = { done: 0, total: countPdfRangePages(ranges), bytes: 0 }
+    let progress: ContextRenderProgress = { done: 0, total, bytes: 0 }
     const renderOptions = {
       ranges, pageCount, signal: controller.signal,
       renderPage: async (pageNumber: number, maxEdge?: number) => {

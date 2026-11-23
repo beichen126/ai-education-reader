@@ -155,7 +155,7 @@ export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumen
       )
     }), opts?.signal)
     if (opts?.signal?.aborted) throw new PdfCancellationError()
-    if (!opts?.releasePage) warmAndroidPdf(doc)
+    warmAndroidPdf(doc)
     return { blob, width, height, mimeType: OUTPUT_IMAGE_MIME }
   } finally {
     opts?.signal?.removeEventListener('abort', cancel)

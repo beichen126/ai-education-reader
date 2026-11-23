@@ -56,8 +56,11 @@ export function createPdfDocumentInit(data: ArrayBuffer): PdfDocumentInit {
 
 /** Keep large local files disk-backed. PDF.js can then seek to the xref and read
  * only the data required for the current page instead of copying the whole book. */
-export async function openLocalPdfTask(source: Blob, pdfjs: Pick<typeof PdfJs, 'getDocument' | 'PDFDataRangeTransport'>, signal?: AbortSignal) {
-  if (source.size < LARGE_PDF_BYTES) return pdfjs.getDocument(createPdfDocumentInit(await waitForPdfOperation(readBlobBuffer(source), signal)))
+export async function openLocalPdfTask(source: Blob, pdfjs: Pick<typeof PdfJs, 'getDocument' | 'PDFDataRangeTransport'>, signal?: AbortSignal, canvasMaxAreaInBytes?: number) {
+  if (source.size < LARGE_PDF_BYTES) {
+    const data = await waitForPdfOperation(readBlobBuffer(source), signal)
+    return pdfjs.getDocument({ ...createPdfDocumentInit(data), canvasMaxAreaInBytes })
+  }
 
   let abortRead: () => void
   class BlobTransport extends pdfjs.PDFDataRangeTransport {
@@ -79,6 +82,7 @@ export async function openLocalPdfTask(source: Blob, pdfjs: Pick<typeof PdfJs, '
   const range = new BlobTransport(source.size, new Uint8Array(), false)
   const task = pdfjs.getDocument({
     ...PDFJS_RUNTIME,
+    canvasMaxAreaInBytes,
     range,
     // Fewer Blob reads when the worker seeks through adjacent scanned pages.
     rangeChunkSize: 256 * 1024,

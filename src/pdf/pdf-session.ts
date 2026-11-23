@@ -23,11 +23,11 @@ export type PdfSession = PdfSessionLike & {
 }
 
 /** Open a Blob/File as an independent PDF session. Throws PdfError on failure. */
-export async function openPdfSession(blob: Blob, signal?: AbortSignal): Promise<{ session: PdfSession; doc: LocalPdfDocument }> {
+export async function openPdfSession(blob: Blob, signal?: AbortSignal, canvasMaxAreaInBytes?: number): Promise<{ session: PdfSession; doc: LocalPdfDocument }> {
   const looksLikePdf = blob.type === PDF_FILE_MIME
   if (!looksLikePdf) throw new PdfError('not-pdf', 'not a pdf')
   let task: PdfSession['loadingTask']
-  try { task = await openLocalPdfTask(blob, pdfjsLib, signal) } catch { throw new PdfError('read-failed', 'read failed') }
+  try { task = await openLocalPdfTask(blob, pdfjsLib, signal, canvasMaxAreaInBytes) } catch { throw new PdfError('read-failed', 'read failed') }
   let proxy: import('pdfjs-dist').PDFDocumentProxy
   try {
     proxy = await waitForPdfOperation(task.promise, signal)
