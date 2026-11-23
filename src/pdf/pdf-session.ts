@@ -7,6 +7,7 @@ import '../engine/promise-compat'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 // Same worker wiring as pdf-service (static ES-module asset under the app base path).
 import pdfWorkerUrl from './pdf-worker-entry.ts?worker&url'
+import { waitForPdfOperation } from './pdf-abort'
 import { openLocalPdfTask } from './pdf-runtime'
 import { PDF_FILE_MIME, type LocalPdfDocument } from './pdf-types.ts'
 import { PdfError, pdfErrorMessage, renderPageForDocument, readOutlineForDocument, isPasswordError, readPageViewport1, startPageSurfaceRender, type RenderedPage, type PageSurfaceRender } from './pdf-service.ts'
@@ -22,13 +23,21 @@ export type PdfSession = PdfSessionLike & {
 }
 
 /** Open a Blob/File as an independent PDF session. Throws PdfError on failure. */
-export async function openPdfSession(blob: Blob): Promise<{ session: PdfSession; doc: LocalPdfDocument }> {
+export async function openPdfSession(blob: Blob, signal?: AbortSignal): Promise<{ session: PdfSession; doc: LocalPdfDocument }> {
   const looksLikePdf = blob.type === PDF_FILE_MIME
   if (!looksLikePdf) throw new PdfError('not-pdf', 'not a pdf')
   let task: PdfSession['loadingTask']
-  try { task = await openLocalPdfTask(blob, pdfjsLib) } catch { throw new PdfError('read-failed', 'read failed') }
+  try { task = await openLocalPdfTask(blob, pdfjsLib, signal) } catch { throw new PdfError('read-failed', 'read failed') }
   let proxy: import('pdfjs-dist').PDFDocumentProxy
-  try { proxy = await task.promise } catch (err) { try { await task.destroy() } catch { /* ignore */ } if (isPasswordError(err)) throw new PdfError('password', 'password protected'); throw new PdfError('parse-failed', 'parse failed') }
+  try {
+    proxy = await waitForPdfOperation(task.promise, signal)
+  } catch (err) {
+    const cleanup = task.destroy().catch(() => {})
+    if (signal?.aborted) throw err
+    await cleanup
+    if (isPasswordError(err)) throw new PdfError('password', 'password protected')
+    throw new PdfError('parse-failed', 'parse failed')
+  }
   if (proxy.numPages < 1) { try { await task.destroy() } catch { /* ignore */ } throw new PdfError('empty', 'empty') }
   setAndroidPdfSource(proxy, blob)
   return {
@@ -38,8 +47,8 @@ export async function openPdfSession(blob: Blob): Promise<{ session: PdfSession;
 }
 
 /** Render one page of a session (shared core with the PdfPanel singleton). */
-export async function renderSessionPage(session: PdfSession, pageNumber: number, signal?: AbortSignal): Promise<RenderedPage> {
-  return renderPageForDocument(session.documentProxy, pageNumber, { signal })
+export async function renderSessionPage(session: PdfSession, pageNumber: number, signal?: AbortSignal, releasePage = false): Promise<RenderedPage> {
+  return renderPageForDocument(session.documentProxy, pageNumber, { signal, releasePage })
 }
 
 /** Render a low-resolution thumbnail of one page (TOC picker). Keeps the shared render

@@ -14,6 +14,7 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 // app, uses this URL directly (no CDN wrapper, no fake worker, no 404 under the
 // /ai-education-reader/ base path).
 import pdfWorkerUrl from './pdf-worker-entry.ts?worker&url'
+import { waitForPdfOperation } from './pdf-abort'
 import { openLocalPdfTask } from './pdf-runtime'
 import { PDF_FILE_MIME, type LocalPdfDocument } from './pdf-types.ts'
 import { parsePdfOutline, type PdfOutlineResult } from './pdf-outline.ts'
@@ -120,7 +121,7 @@ export async function renderPdfPage(pageNumber: number): Promise<RenderedPage> {
 /** Optional render tuning so callers can request a LOW-RESOLUTION thumbnail (TOC picker)
  *  without changing the正文 Reader's full-resolution policy. `maxEdge` sets a smaller
  *  long-edge target (e.g. 260 for thumbnails); the safe-budget clamps still apply. */
-export type RenderOptions = { maxEdge?: number; signal?: AbortSignal }
+export type RenderOptions = { maxEdge?: number; signal?: AbortSignal; releasePage?: boolean }
 
 /** Shared render core used by BOTH the PdfPanel singleton and explicit PDF sessions.
  *  `opts.maxEdge` (optional) lowers the long-edge target for thumbnail-purpose renders;
@@ -129,7 +130,7 @@ export type RenderOptions = { maxEdge?: number; signal?: AbortSignal }
 export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number, opts?: RenderOptions): Promise<RenderedPage> {
   const native = await renderAndroidPdf(doc, pageNumber, opts?.maxEdge ?? MAX_RENDER_EDGE, opts?.signal)
   if (native) return native
-  const page = await doc.getPage(pageNumber)
+  const page = await waitForPdfOperation(doc.getPage(pageNumber), opts?.signal)
   if (opts?.signal?.aborted) throw new PdfError('render-failed', 'render cancelled')
   const vp1 = page.getViewport({ scale: 1 })
   const targetEdge = opts && opts.maxEdge && opts.maxEdge > 0 ? opts.maxEdge : MAX_RENDER_EDGE
@@ -146,25 +147,21 @@ export async function renderPageForDocument(doc: import('pdfjs-dist').PDFDocumen
   try {
     if (opts?.signal?.aborted) cancel()
     await task.promise
-  } catch {
-    canvas.width = 0
-    canvas.height = 0
-    throw new PdfError('render-failed', 'render failed')
-  } finally { opts?.signal?.removeEventListener('abort', cancel) }
-  try {
-    const blob = await new Promise<Blob>((resolve, reject) => {
+    const blob = await waitForPdfOperation(new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
         (b) => (b ? resolve(b) : reject(new PdfError('render-failed', 'toBlob failed'))),
         OUTPUT_IMAGE_MIME,
         JPEG_QUALITY,
       )
-    })
+    }), opts?.signal)
     if (opts?.signal?.aborted) throw new PdfCancellationError()
-    warmAndroidPdf(doc)
+    if (!opts?.releasePage) warmAndroidPdf(doc)
     return { blob, width, height, mimeType: OUTPUT_IMAGE_MIME }
   } finally {
+    opts?.signal?.removeEventListener('abort', cancel)
     canvas.width = 0
     canvas.height = 0
+    if (opts?.releasePage) page.cleanup()
   }
 }
 

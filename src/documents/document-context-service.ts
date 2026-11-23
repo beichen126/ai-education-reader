@@ -1,4 +1,7 @@
 import { prepareOcrPages } from '../pdf/pdf-ocr-pages'
+import { tx } from '../engine/locale'
+import { waitForPdfOperation } from '../pdf/pdf-abort'
+import { countPdfRangePages } from '../pdf/pdf-types'
 import { idbGet } from '../storage/idb'
 
 // Document -> Context execution service (Stage 9.5 / v1.0.0, Part 0.7). One shared
@@ -25,6 +28,7 @@ export type DocumentContextExecuteOptions = DocumentContextDestination & {
   /** Caller-owned session (Reader): the service NEVER closes it. */
   existingSession?: PdfSession
   onProgress?: (p: ContextRenderProgress) => void
+  signal?: AbortSignal
   isCancelled?: () => boolean
   /** Optional generation token: when it no longer matches the caller's current
    *  generation, the operation aborts (blocker 0.4 — conversation-switch ownership). */
@@ -43,45 +47,62 @@ export type DocumentContextExecuteResult = { ok: boolean; count: number; error: 
  *      and ALWAYS closes it in `finally`. */
 export async function executeDocumentContext(opts: DocumentContextExecuteOptions): Promise<DocumentContextExecuteResult> {
   const controller = new AbortController()
-  const cancelled = () => !!(opts.isCancelled?.() || opts.isStale?.())
+  const abort = () => controller.abort()
+  opts.signal?.addEventListener('abort', abort, { once: true })
+  if (opts.signal?.aborted) abort()
+  const cancelled = () => !!(opts.signal?.aborted || opts.isCancelled?.() || opts.isStale?.())
   const cancellationWatch = setInterval(() => { if (cancelled()) controller.abort() }, 100)
   let session = opts.existingSession
-  let ownsSession = false
-  let tempSession: PdfSession | null = null
   let pageCount = opts.pageCount
   try {
-    const ensureSession = async () => {
-    if (!session) {
-      // Service-owned path (Library / Composer): read the source Blob and OPEN a session.
-      let blob: Blob
-      try { blob = await readDocumentSourceBlob(opts.documentId) }
-      catch { throw new Error('这份本地文件已不存在，请重新选择。') }
-      if (opts.isStale?.() || opts.isCancelled?.()) throw new PdfContextRenderError('cancelled', '已取消')
-      const opened = await openPdfSession(blob)
-      session = opened.session
-      tempSession = session
-      ownsSession = true
-      pageCount = opened.doc.pageCount
+    const ensureSession = async (signal: AbortSignal) => {
+      if (!session) {
+        const blob = await waitForPdfOperation(readDocumentSourceBlob(opts.documentId), signal)
+        const opened = await openPdfSession(blob, signal)
+        session = opened.session
+        pageCount = opened.doc.pageCount
+      }
+      return session
     }
-    }
-    if (opts.selection.contextMode === 'ocr') {
+    if (!session || opts.selection.contextMode === 'ocr') {
       const doc = await idbGet('documents', opts.documentId)
-      if (!doc) throw new Error('这份本地文件已不存在，请重新选择。')
+      if (!doc) throw new DocumentBinaryMissingError(opts.documentId)
       pageCount = doc.pageCount
-    } else await ensureSession()
+    }
     const ranges = opts.selection.ranges
+    let progress: ContextRenderProgress = { done: 0, total: countPdfRangePages(ranges), bytes: 0 }
     const renderOptions = {
-      ranges, pageCount,
-      renderPage: async (n: number) => { await ensureSession(); return renderSessionPage(session as PdfSession, n, controller.signal) },
-      onProgress: opts.onProgress,
-      isCancelled: () => !!(opts.isCancelled?.() || opts.isStale?.()),
+      ranges, pageCount, signal: controller.signal,
+      renderPage: async (pageNumber: number) => {
+        opts.onProgress?.({ ...progress, pageNumber })
+        const attempt = new AbortController()
+        const cancelAttempt = () => attempt.abort()
+        const timer = setTimeout(cancelAttempt, 45_000)
+        controller.signal.addEventListener('abort', cancelAttempt, { once: true })
+        if (controller.signal.aborted) cancelAttempt()
+        try {
+          const pdf = await ensureSession(attempt.signal)
+          return await renderSessionPage(pdf, pageNumber, attempt.signal, !opts.existingSession)
+        } catch (error) {
+          if (attempt.signal.aborted && !cancelled()) {
+            throw new Error(tx('渲染超时，请重试。', 'Rendering timed out. Try again.'))
+          }
+          throw error
+        } finally {
+          clearTimeout(timer)
+          controller.signal.removeEventListener('abort', cancelAttempt)
+          opts.onProgress?.(progress)
+        }
+      },
+      onProgress: (value: ContextRenderProgress) => { progress = value; opts.onProgress?.(value) },
+      isCancelled: cancelled,
     }
     const res = opts.selection.contextMode === 'ocr' ? await prepareOcrPages(opts.documentId, renderOptions, opts.targetProjectId !== undefined) : await renderPdfContextRanges(renderOptions)
     // Ownership gate: after a possibly-long render, NEVER write into a target that is
     // no longer the caller's active conversation (blocker 0.4).
     if (cancelled()) return { ok: false, count: 0, error: '' }
     const payload: PdfAddPayload = {
-      branchId: opts.targetBranchId, documentId: opts.documentId, fileName: opts.fileName, selection: opts.selection, pages: res.pages, onOcrProgress: (done, total) => opts.onProgress?.({ done, total, bytes: res.pages.reduce((sum, p) => sum + p.blob.size, 0) }), isCancelled: () => !!(opts.isCancelled?.() || opts.isStale?.()),
+      branchId: opts.targetBranchId, documentId: opts.documentId, fileName: opts.fileName, selection: opts.selection, pages: res.pages, onOcrProgress: (done, total) => opts.onProgress?.({ done, total, bytes: res.pages.reduce((sum, p) => sum + p.blob.size, 0) }), isCancelled: cancelled,
     }
     return opts.targetProjectId !== undefined
       ? await saveProjectPdf(opts.targetProjectId, payload)
@@ -96,7 +117,9 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
     }
     return { ok: false, count: 0, error: e instanceof Error ? e.message : '无法生成上下文。' }
   } finally {
-    clearInterval(cancellationWatch); controller.abort()
-    if (ownsSession && tempSession) { try { await closePdfSession(tempSession) } catch { /* ignore */ } }
+    clearInterval(cancellationWatch)
+    opts.signal?.removeEventListener('abort', abort)
+    controller.abort()
+    if (!opts.existingSession && session) void closePdfSession(session)
   }
 }

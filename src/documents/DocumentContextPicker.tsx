@@ -13,16 +13,19 @@ import { ChapterRangeModeControl } from './ChapterRangeModeControl'
 import { DocumentContextPreview } from './DocumentContextPreview'
 import { PdfAttachmentPagePicker } from './PdfAttachmentPagePicker'
 import css from './document-context-picker.module.css'
+import type { ContextRenderProgress } from '../pdf/pdf-context-render'
 import { tx } from '../engine/locale'
 import { useBackTarget } from '../engine/back-navigation'
 import { useDialogFocus } from '../engine/use-dialog-focus'
+
+export type DocumentContextWork = { signal: AbortSignal; onProgress: (progress: ContextRenderProgress) => void }
 
 type Props = {
   documentId?: string
   projectName?: string
   onImportPdf?: () => void
   onCancel: () => void
-  onAdd: (selection: PdfSelection, documentId: string, fileName: string) => void | Promise<string | undefined>
+  onAdd: (selection: PdfSelection, documentId: string, fileName: string, work: DocumentContextWork) => void | Promise<string | undefined>
   onPreferencesCommitted?: (delta: BookmarkRangePreferenceDelta) => void
 }
 
@@ -68,7 +71,9 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
   const [blockMsg, setBlockMsg] = useState<string | null>(null)
   const [confirming, setConfirming] = useState<PdfSelection | null>(null)
   const [saving, setSaving] = useState(false)
+  const workRef = useRef<AbortController>()
   const savingRef = useRef(false)
+  const [progress, setProgress] = useState<ContextRenderProgress | null>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const [preferenceBusyKeys, setPreferenceBusyKeys] = useState<Set<string>>(new Set())
   const preferenceStatesRef = useRef(new Map<string, PreferenceKeyState>())
@@ -80,7 +85,7 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
 
   useEffect(() => {
     mountedRef.current = true
-    return () => { mountedRef.current = false }
+    return () => { mountedRef.current = false; workRef.current?.abort() }
   }, [])
 
   // Load the document list only for the unscoped (document) stage.
@@ -303,6 +308,15 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
   }
 
   const requestCancel = async () => {
+    if (workRef.current) {
+      workRef.current.abort()
+      workRef.current = undefined
+      savingRef.current = false
+      setSaving(false)
+      setProgress(null)
+      setBlockMsg(tx('已取消处理，选页已保留。', 'Processing cancelled. Your selection was kept.'))
+      return
+    }
     if (await flushPreferenceWrites(doc?.id)) onCancel()
   }
 
@@ -321,18 +335,27 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
   }
   const finishAdd = async (sel: PdfSelection) => {
     if (!doc || savingRef.current) return
+    const controller = new AbortController()
+    workRef.current = controller
     savingRef.current = true
+    setProgress({ done: 0, total: countPdfRangePages(sel.ranges), bytes: 0 })
     setSaving(true)
     setBlockMsg(null)
     const failure = tx('未存入项目', 'PDF pages were not saved to the project')
     try {
-      const error = await onAdd({ ...sel, contextMode: projectName === undefined ? contextMode : 'ocr' }, doc.id, doc.fileName)
-      if (error && mountedRef.current) setBlockMsg(projectName === undefined ? error : failure + ' · ' + error)
+      const error = await onAdd({ ...sel, contextMode: projectName === undefined ? contextMode : 'ocr' }, doc.id, doc.fileName, {
+        signal: controller.signal,
+        onProgress: value => { if (workRef.current === controller) setProgress(value) },
+      })
+      if (error && workRef.current === controller && mountedRef.current) setBlockMsg(projectName === undefined ? error : failure + ' · ' + error)
     } catch {
-      if (mountedRef.current) setBlockMsg(projectName === undefined ? tx('未加入提问草稿。', 'Could not add to the draft.') : failure)
+      if (workRef.current === controller && mountedRef.current) setBlockMsg(projectName === undefined ? tx('未加入提问草稿。', 'Could not add to the draft.') : failure)
     } finally {
-      savingRef.current = false
-      if (mountedRef.current) setSaving(false)
+      if (workRef.current === controller) {
+        workRef.current = undefined
+        savingRef.current = false
+        if (mountedRef.current) { setSaving(false); setProgress(null) }
+      }
     }
   }
 
@@ -363,7 +386,7 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
   }
 
   const back = () => {
-    if (savingRef.current) return
+    if (savingRef.current) { void requestCancel(); return }
     if (previewDoc) returnFromPreview()
     else if (confirming) setConfirming(null)
     else if (stage === 'context' && !scoped) void requestBackToDocs()
@@ -386,7 +409,7 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
           )}
           <span className={css.title}>{stage === 'document' ? documentListTitle : doc?.fileName}</span>
           <span className={css.subTitle}>{stage === 'context' && doc ? tx(doc.pageCount + ' 页', doc.pageCount + ' pages') : ''}</span>
-          <button type="button" className={css.btn} data-testid="doc-context-cancel" disabled={saving} onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
+          <button type="button" className={css.btn} data-testid="doc-context-cancel" onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
         </div>
         {stage === 'document' ? (
           <div className={css.docPick}>
@@ -441,9 +464,17 @@ export function DocumentContextPicker({ documentId, projectName, onImportPdf, on
                 ) : (
                   <>{tab === 'manual' ? tx('请选择或重新确认页码范围。', 'Select or reconfirm the page range.') : tx('已选择：未选择章节', 'Selected: no chapter selected')}</>
                 )}
+                {saving && progress && <div role="status" data-testid="doc-context-progress">
+                  {progress.pageNumber !== undefined
+                    ? tx('正在渲染 PDF 第 ' + progress.pageNumber + ' 页', 'Rendering PDF page ' + progress.pageNumber)
+                    : progress.done === progress.total
+                      ? tx('正在保存…', 'Saving…')
+                      : tx('正在准备页面…', 'Preparing pages…')}
+                  {' · '}{progress.done} / {progress.total}
+                </div>}
               </div>
               <div className={css.footerBtns}>
-                <button type="button" className={css.btn} data-testid="doc-context-cancel2" disabled={saving} onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
+                <button type="button" className={css.btn} data-testid="doc-context-cancel2" onClick={() => void requestCancel()}>{tx('取消', 'Cancel')}</button>
                 <button type="button" className={css.btn} data-testid="doc-context-preview" disabled={saving || !doc || binaryAvailable !== true} aria-describedby={binaryAvailable === false ? 'doc-context-preview-disabled' : undefined} onClick={() => void openPreview()}>{tx('预览', 'Preview')}</button>
                 <button type="button" className={css.btnPrimary} data-testid="doc-context-add" disabled={saving || !hasScope} onClick={() => void commit()}>{saving ? tx('正在处理…', 'Processing…') : projectName ? tx('存入项目 · ', 'Save to project · ') + projectName : tx('加入提问草稿', 'Add to question draft')}</button>
               </div>

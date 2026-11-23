@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useRef, useState } from 'react'
 import { tx } from '../engine/locale'
 import { AttachmentError, attachmentErrorLabel, isSupportedImage } from '../engine/attachment-service'
 import { YoutubePicker } from '../youtube/YoutubePicker'
@@ -6,7 +6,7 @@ import { transcriptPreview } from '../youtube/preview'
 import { saveProjectMaterials, saveProjectPdf } from './project-materials'
 import { DocumentContextPicker } from '../documents/DocumentContextPicker'
 import { executeDocumentContext } from '../documents/document-context-service'
-import type { PdfSelection } from '../pdf/pdf-types'
+
 import css from '../gallery/gallery.module.css'
 
 const PdfPanel = lazy(() => import('../pdf/PdfPanel').then(module => ({ default: module.PdfPanel })))
@@ -14,33 +14,20 @@ const PdfPanel = lazy(() => import('../pdf/PdfPanel').then(module => ({ default:
 export function ProjectMaterialImport({ projectId, projectName }: { projectId: string; projectName: string }) {
   const imageInput = useRef<HTMLInputElement>(null)
   const pdfInput = useRef<HTMLInputElement>(null)
-  const pendingSave = useRef<AbortController>()
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [pdf, setPdf] = useState<File>()
   const [youtube, setYoutube] = useState(false)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
-  useEffect(() => () => pendingSave.current?.abort(), [])
-  async function saveFromLibrary(selection: PdfSelection, documentId: string, fileName: string) {
-    if (pendingSave.current) return
-    const controller = new AbortController()
-    pendingSave.current = controller
-    setBusy(true)
-    setNotice(tx('正在准备 PDF 页面…', 'Preparing PDF pages…'))
-    try {
-      const result = await executeDocumentContext({
-        targetProjectId: projectId, documentId, fileName, pageCount: 0, selection,
-        isCancelled: () => controller.signal.aborted,
-        onProgress: ({ done, total }) => setNotice(tx('正在准备 PDF 页面 · ', 'Preparing PDF pages · ') + done + ' / ' + total),
-      })
-      if (controller.signal.aborted) return
-      if (!result.ok) { setNotice(''); return result.error || tx('处理已取消。', 'Processing was cancelled.') }
-      setNotice(tx('已存入项目 · ' + result.count + ' 页', 'Saved to project · ' + result.count + ' pages'))
-      setLibraryOpen(false)
-    } finally {
-      pendingSave.current = undefined
-      if (!controller.signal.aborted) setBusy(false)
-    }
+  const saveFromLibrary: React.ComponentProps<typeof DocumentContextPicker>['onAdd'] = async (selection, documentId, fileName, work) => {
+    setNotice('')
+    const result = await executeDocumentContext({
+      targetProjectId: projectId, documentId, fileName, pageCount: 0, selection, ...work,
+    })
+    if (work.signal.aborted) return
+    if (!result.ok) return result.error || tx('处理已取消。', 'Processing was cancelled.')
+    setNotice(tx('已存入项目 · ' + result.count + ' 页', 'Saved to project · ' + result.count + ' pages'))
+    setLibraryOpen(false)
   }
   async function saveImages(files: File[]) {
     if (!files.length || busy) return

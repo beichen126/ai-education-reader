@@ -185,6 +185,23 @@ try {
   await page.setViewportSize({ width: 390, height: 844 })
   await projectPicker.screenshot({ path: 'tmp/project-library-chapter-mobile.png' })
   assert.match(await projectPicker.textContent(), /DeepSeek.*计费/)
+  // Simulate a WebView encoder that never calls back for the first selected page.
+  await page.evaluate(() => {
+    const encode = HTMLCanvasElement.prototype.toBlob
+    HTMLCanvasElement.prototype.toBlob = function (_callback, ..._options) {
+      HTMLCanvasElement.prototype.toBlob = encode
+      window.projectPdfEncodeStalled = true
+    }
+  })
+  const beforeCancelledOcr = ocrCount
+  await projectPicker.getByTestId('doc-context-add').click()
+  await page.waitForFunction(() => window.projectPdfEncodeStalled)
+  await projectPicker.getByTestId('doc-context-progress').getByText(/正在渲染 PDF 第/).waitFor()
+  await projectPicker.getByTestId('doc-context-cancel2').click()
+  await projectPicker.getByText('已取消处理，选页已保留。').waitFor()
+  assert.equal(await projectPicker.getByRole('checkbox', { name: 'Computer Organization', exact: true }).isChecked(), true)
+  assert.equal(await gallery.locator('[data-project-material]').count(), 20)
+  assert.equal(ocrCount, beforeCancelledOcr, 'cancelling a stalled render prevents the OCR request')
   rejectOcr = true
   await projectPicker.getByTestId('doc-context-add').click()
   await projectPicker.getByRole('alert').getByText(/未存入项目/).waitFor()

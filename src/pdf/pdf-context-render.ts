@@ -17,7 +17,7 @@ export class PdfContextRenderError extends Error {
   constructor(kind: PdfContextRenderErrorKind, message: string, pageNumber?: number) { super(message); this.name = 'PdfContextRenderError'; this.kind = kind; if (pageNumber !== undefined) this.pageNumber = pageNumber }
 }
 
-export type ContextRenderProgress = { done: number; total: number; bytes: number }
+export type ContextRenderProgress = { done: number; total: number; bytes: number; pageNumber?: number }
 
 export type PdfContextRenderOptions = {
   ranges: PdfRange[]
@@ -28,6 +28,7 @@ export type PdfContextRenderOptions = {
    * progressive UIs (PdfPanel preview) WITHOUT putting preview policy in the core. */
   onPage?: (page: RenderedPdfPage, index: number, total: number) => void
   isCancelled?: () => boolean
+  signal?: AbortSignal
 }
 
 export type PdfContextRenderResult = { pages: RenderedPdfPage[] }

@@ -22,7 +22,7 @@ import { findCurrentChapter, buildCurrentPageSelection, buildChapterSelection, b
 import { findCurrentChapterPath } from './document-context'
 import { bookmarkRangeEndModeOf } from './bookmark-range-preferences'
 import { bookmarkRangePresentation } from '../pdf/bookmark-range'
-import { DocumentContextPicker } from './DocumentContextPicker'
+import { DocumentContextPicker, type DocumentContextWork } from './DocumentContextPicker'
 import { executeDocumentContext, type DocumentContextDestination } from './document-context-service'
 import { useProjects } from '../projects/project-store'
 import { useDocumentUi, documentUiActions, getDocumentUiState } from './document-ui-store'
@@ -737,7 +737,7 @@ export function DocumentReader() {
     pageCount: number
     session: NonNullable<typeof sessionRef.current>
     count: number
-    fromPicker?: boolean
+    work?: DocumentContextWork
   }
 
   const executeContext = async (request: ReaderContextRequest) => {
@@ -752,10 +752,10 @@ export function DocumentReader() {
         ...request.destination,
         documentId: request.documentId, fileName: request.fileName, pageCount: request.pageCount,
         selection: request.selection, existingSession: request.session,
-        isCancelled, isStale,
-        onProgress: (p) => { if (!isCancelled()) setCtxProgress(p) },
+        isCancelled, isStale, signal: request.work?.signal,
+        onProgress: request.work?.onProgress ?? ((p) => { if (!isCancelled()) setCtxProgress(p) }),
       })
-      if (isCancelled()) return tx('处理已取消。', 'Processing was cancelled.')
+      if (request.work?.signal.aborted || isCancelled()) return tx('处理已取消。', 'Processing was cancelled.')
       const project = request.projectName !== undefined
       if (res.ok) {
         const label = project
@@ -764,7 +764,7 @@ export function DocumentReader() {
         setCtxMsg({ text: label, ok: true, project })
       } else {
         const error = res.error || tx('处理已取消。', 'Processing was cancelled.')
-        if (request.fromPicker) return error
+        if (request.work) return error
         if (project) { setCtxMenuOpen(true); setCtxMode('manual') }
         setCtxMsg({ text: (project ? tx('未存入项目 · ', 'Could not save to project · ') : '') + localizedErrorText(error, 'Unable to process the selected PDF pages.'), ok: false })
       }
@@ -773,7 +773,7 @@ export function DocumentReader() {
     }
   }
 
-  const requestContext = async (selection: PdfSelection, fromPicker = false) => {
+  const requestContext = async (selection: PdfSelection, work?: ReaderContextRequest['work']) => {
     const session = sessionRef.current
     if (!doc || !session || ctxBusy) return
     let destination: DocumentContextDestination
@@ -793,10 +793,10 @@ export function DocumentReader() {
     }
     const request: ReaderContextRequest = {
       destination, projectName: ctxProject?.name, documentId: doc.id, fileName: doc.fileName,
-      selection: { ...selection, contextMode: ctxProject ? 'ocr' : selection.contextMode ?? contextMode }, pageCount, session, count, fromPicker,
+      selection: { ...selection, contextMode: ctxProject ? 'ocr' : selection.contextMode ?? contextMode }, pageCount, session, count, work,
     }
     setCtxMenuOpen(false); setManualError(null)
-    if (!fromPicker && needsPdfContextSoftConfirm(count)) { setCtxPending(request); return }
+    if (!work && needsPdfContextSoftConfirm(count)) { setCtxPending(request); return }
     return executeContext(request)
   }
 
@@ -1339,9 +1339,9 @@ export function DocumentReader() {
           onCancel={() => setCtxPickerOpen(false)}
           onPreferencesCommitted={applyCommittedBookmarkRangePreferences}
           projectName={ctxProject?.name}
-          onAdd={async selection => {
-            const error = await requestContext(selection, true)
-            if (!error) setCtxPickerOpen(false)
+          onAdd={async (selection, _id, _name, work) => {
+            const error = await requestContext(selection, work)
+            if (!error && !work.signal.aborted) setCtxPickerOpen(false)
             return error
           }}
         />

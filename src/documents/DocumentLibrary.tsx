@@ -7,7 +7,7 @@
 // logic extracted into document-import-service.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatBytes } from '../storage/diagnostics'
-import { deleteDocument, renameDocument, listDocumentSummaries, getDocumentContextDescriptor, DocumentNameConflictError, type DocumentSummary } from './document-service'
+import { deleteDocument, renameDocument, listDocumentSummaries, DocumentNameConflictError, type DocumentSummary } from './document-service'
 import { analyzeImport, createDocumentFromImport, sanitizeFileName, nextAvailableName, type ImportAnalysis } from './document-import-service'
 import { sortDocuments, loadSortPreference, saveSortPreference, DOCUMENT_SORT_KEYS, DOCUMENT_SORT_LABELS, type DocumentSortKey } from './document-sort'
 import { documentUiActions, useDocumentUi } from './document-ui-store'
@@ -20,7 +20,6 @@ import { getSessionsCurrent, useSessions } from '../engine/sessions-store'
 import { DocumentContextPicker } from './DocumentContextPicker'
 import { executeDocumentContext, type DocumentContextDestination } from './document-context-service'
 import { useProjects } from '../projects/project-store'
-import type { PdfSelection } from '../pdf/pdf-types'
 import css from './document-library.module.css'
 import { localizedErrorText, tx } from '../engine/locale'
 
@@ -77,7 +76,7 @@ export function DocumentLibrary() {
     return () => { ctxCancelledRef.current = true; ctxGenRef.current++ }
   }, [currentConversationId, open, projectId])
 
-  async function addFromPicker(selection: PdfSelection) {
+  const addFromPicker: React.ComponentProps<typeof DocumentContextPicker>['onAdd'] = async (selection, docId, fileName, work) => {
     if (!ctxDocId) return
     const targetConversationId = projectId ? undefined : getSessionsCurrent()
     if (projectId && !project) { setCtxMsg(tx('此项目已归档或删除。', 'This project was archived or deleted.')); setCtxDocId(null); return }
@@ -85,18 +84,17 @@ export function DocumentLibrary() {
     const destination: DocumentContextDestination = project ? { targetProjectId: project.id } : { targetConversationId: targetConversationId! }
     const gen = ++ctxGenRef.current
     ctxCancelledRef.current = false
-    const docId = ctxDocId
-    let fileName = 'document.pdf'
-    try { fileName = (await getDocumentContextDescriptor(docId))?.fileName || 'document.pdf' } catch { /* fallback */ }
-    if (gen !== ctxGenRef.current || (targetConversationId && getSessionsCurrent() !== targetConversationId)) return
-    if (!project) setCtxDocId(null)
-    setCtxBusy({ done: 0, total: 1 }); setCtxMsg(null)
+    if (!project) {
+      setCtxDocId(null)
+      setCtxBusy({ done: 0, total: 1 })
+    }
+    setCtxMsg(null)
     const isCancelled = () => ctxCancelledRef.current || gen !== ctxGenRef.current
     const isStale = () => gen !== ctxGenRef.current || (!!targetConversationId && getSessionsCurrent() !== targetConversationId)
     try {
       if (isCancelled()) return
-      const res = await executeDocumentContext({ ...destination, documentId: docId, fileName, pageCount: 0, selection, isCancelled, isStale, onProgress: (p) => { if (gen === ctxGenRef.current) setCtxBusy({ done: p.done, total: p.total }) } })
-      if (gen !== ctxGenRef.current) return
+      const res = await executeDocumentContext({ ...destination, documentId: docId, fileName, pageCount: 0, selection, signal: project ? work.signal : undefined, isCancelled, isStale, onProgress: project ? work.onProgress : (p) => { if (gen === ctxGenRef.current) setCtxBusy(p) } })
+      if ((project && work.signal.aborted) || gen !== ctxGenRef.current) return
       if (!res.ok) {
         if (project) return res.error
         if (res.error) setCtxMsg(localizedErrorText(res.error, 'Unable to add the PDF pages to the draft.'))

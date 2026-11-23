@@ -19,6 +19,7 @@
 // LICENSE files alongside, included in public/pdfjs/wasm).
 //
 import { readBlobBuffer } from '../engine/read-blob-buffer'
+import { waitForPdfOperation } from './pdf-abort'
 import type * as PdfJs from 'pdfjs-dist'
 
 const PDFJS_ASSET_DIR = 'pdfjs/'
@@ -55,8 +56,8 @@ export function createPdfDocumentInit(data: ArrayBuffer): PdfDocumentInit {
 
 /** Keep large local files disk-backed. PDF.js can then seek to the xref and read
  * only the data required for the current page instead of copying the whole book. */
-export async function openLocalPdfTask(source: Blob, pdfjs: Pick<typeof PdfJs, 'getDocument' | 'PDFDataRangeTransport'>) {
-  if (source.size < LARGE_PDF_BYTES) return pdfjs.getDocument(createPdfDocumentInit(await readBlobBuffer(source)))
+export async function openLocalPdfTask(source: Blob, pdfjs: Pick<typeof PdfJs, 'getDocument' | 'PDFDataRangeTransport'>, signal?: AbortSignal) {
+  if (source.size < LARGE_PDF_BYTES) return pdfjs.getDocument(createPdfDocumentInit(await waitForPdfOperation(readBlobBuffer(source), signal)))
 
   let abortRead: () => void
   class BlobTransport extends pdfjs.PDFDataRangeTransport {
@@ -79,6 +80,8 @@ export async function openLocalPdfTask(source: Blob, pdfjs: Pick<typeof PdfJs, '
   const task = pdfjs.getDocument({
     ...PDFJS_RUNTIME,
     range,
+    // Fewer Blob reads when the worker seeks through adjacent scanned pages.
+    rangeChunkSize: 256 * 1024,
     disableStream: true,
     disableAutoFetch: true,
   })
