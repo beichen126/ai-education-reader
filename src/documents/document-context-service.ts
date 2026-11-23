@@ -73,7 +73,7 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
     let progress: ContextRenderProgress = { done: 0, total: countPdfRangePages(ranges), bytes: 0 }
     const renderOptions = {
       ranges, pageCount, signal: controller.signal,
-      renderPage: async (pageNumber: number) => {
+      renderPage: async (pageNumber: number, maxEdge?: number) => {
         opts.onProgress?.({ ...progress, pageNumber })
         const attempt = new AbortController()
         const cancelAttempt = () => attempt.abort()
@@ -82,7 +82,7 @@ export async function executeDocumentContext(opts: DocumentContextExecuteOptions
         if (controller.signal.aborted) cancelAttempt()
         try {
           const pdf = await ensureSession(attempt.signal)
-          return await renderSessionPage(pdf, pageNumber, attempt.signal, !opts.existingSession)
+          return await renderSessionPage(pdf, pageNumber, attempt.signal, !opts.existingSession, maxEdge)
         } catch (error) {
           if (attempt.signal.aborted && !cancelled()) {
             throw new Error(tx('渲染超时，请重试。', 'Rendering timed out. Try again.'))

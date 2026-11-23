@@ -22,7 +22,7 @@ export type ContextRenderProgress = { done: number; total: number; bytes: number
 export type PdfContextRenderOptions = {
   ranges: PdfRange[]
   pageCount: number
-  renderPage: (pageNumber: number) => Promise<{ blob: Blob; width: number; height: number; mimeType: string }>
+  renderPage: (pageNumber: number, maxEdge?: number) => Promise<{ blob: Blob; width: number; height: number; mimeType: string }>
   onProgress?: (p: ContextRenderProgress) => void
   /** Incremental page callback: fires after a page passed EVERY safety check — allows
    * progressive UIs (PdfPanel preview) WITHOUT putting preview policy in the core. */

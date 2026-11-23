@@ -2,6 +2,8 @@ import { waitForPdfOperation } from './pdf-abort'
 import { ensurePageOcr } from '../documents/document-ocr'
 import { renderPdfContextRanges, type PdfContextRenderOptions } from './pdf-context-render'
 
+const CACHED_OCR_PREVIEW_EDGE = 1440
+
 /** A tiny durable placeholder; the source page is resolved only when previewed. */
 export function deferredPdfPreview(): Blob {
   const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='), c => c.charCodeAt(0))
@@ -17,7 +19,8 @@ export async function prepareOcrPages(documentId: string, opts: PdfContextRender
       if (opts.isCancelled?.()) throw new Error('已取消')
       return rendered.blob
     }), opts.signal)
-    if (keepPreview && !rendered) rendered = await opts.renderPage(page)
+    // A cached OCR result already preserves the page text; only the retained visual preview is needed.
+    if (keepPreview && !rendered) rendered = await opts.renderPage(page, CACHED_OCR_PREVIEW_EDGE)
     return { ...(rendered ?? { blob: deferredPdfPreview(), width: 1, height: 1, mimeType: 'image/png' }), ocr, previewDeferred: !rendered }
   } })
 }
