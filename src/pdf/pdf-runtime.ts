@@ -30,7 +30,7 @@ export type PdfDocumentInit = Parameters<typeof import('pdfjs-dist').getDocument
 function assetBase(): string {
   // Vite injects import.meta.env.BASE_URL = "/ai-education-reader/"; works in
   // dev, preview and GitHub Pages. Never hardcode a root URL.
-  const base = (import.meta.env.BASE_URL || '/') as string
+  const base = (import.meta.env?.BASE_URL || '/') as string
   return base.endsWith('/') ? base : base + '/'
 }
 
