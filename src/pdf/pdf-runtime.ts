@@ -18,9 +18,11 @@
 // (Apache-2.0 for pdf.js; the bundled OpenJPEG / JBIG2 / qcms wasm ship their own
 // LICENSE files alongside, included in public/pdfjs/wasm).
 //
-// NOTE: keep this module React-free and free of any pdfjs-dist import needed only
-// for rendering — it is imported by the PDF.js-facing services.
+import { readBlobBuffer } from '../engine/read-blob-buffer'
+import type * as PdfJs from 'pdfjs-dist'
+
 const PDFJS_ASSET_DIR = 'pdfjs/'
+export const LARGE_PDF_BYTES = 32 * 1024 * 1024
 
 export type PdfDocumentInit = Parameters<typeof import('pdfjs-dist').getDocument>[0]
 
@@ -49,4 +51,37 @@ export function createPdfDocumentInit(data: ArrayBuffer): PdfDocumentInit {
     data,
     ...PDFJS_RUNTIME,
   }
+}
+
+/** Keep large local files disk-backed. PDF.js can then seek to the xref and read
+ * only the data required for the current page instead of copying the whole book. */
+export async function openLocalPdfTask(source: Blob, pdfjs: Pick<typeof PdfJs, 'getDocument' | 'PDFDataRangeTransport'>) {
+  if (source.size < LARGE_PDF_BYTES) return pdfjs.getDocument(createPdfDocumentInit(await readBlobBuffer(source)))
+
+  let abortRead: () => void
+  class BlobTransport extends pdfjs.PDFDataRangeTransport {
+    private stopped = false
+
+    requestDataRange(begin: number, end: number) {
+      if (this.stopped) return
+      void readBlobBuffer(source.slice(begin, end)).then(buffer => {
+        if (this.stopped) return
+        if (buffer.byteLength !== end - begin) throw new Error('Incomplete PDF range')
+        this.onDataRange(begin, new Uint8Array(buffer))
+      }).catch(() => {
+        if (!this.stopped) abortRead()
+      })
+    }
+
+    abort() { this.stopped = true }
+  }
+  const range = new BlobTransport(source.size, new Uint8Array(), false)
+  const task = pdfjs.getDocument({
+    ...PDFJS_RUNTIME,
+    range,
+    disableStream: true,
+    disableAutoFetch: true,
+  })
+  abortRead = () => { range.abort(); void task.destroy().catch(() => {}) }
+  return task
 }

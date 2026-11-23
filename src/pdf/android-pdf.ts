@@ -1,11 +1,11 @@
 /** Optional Android accelerator. Older APKs and browsers retain the PDF.js path. */
 import { readBlobBuffer } from '../engine/read-blob-buffer'
+import { LARGE_PDF_BYTES } from './pdf-runtime'
 
 type Document = object
 type Bridge = { request(id: string, payload: string): void; cancel(id: string): void }
 type Entry = { id: string; controller: AbortController; ready: boolean }
 const CHUNK_BYTES = 96 * 1024
-const MAX_SOURCE_BYTES = 128 * 1024 * 1024
 const documents = new WeakMap<Document, Entry>()
 const sources = new WeakMap<Document, Blob>()
 function bridge(): Bridge | undefined {
@@ -41,7 +41,7 @@ function release(entry: Entry) {
 export function warmAndroidPdf(doc: Document): void {
   if (!bridge() || documents.has(doc)) return
   const source = sources.get(doc)
-  if (!source || source.size > MAX_SOURCE_BYTES) return
+  if (!source || source.size >= LARGE_PDF_BYTES) return
   const entry: Entry = { id: crypto.randomUUID(), controller: new AbortController(), ready: false }
   documents.set(doc, entry)
   const { signal } = entry.controller

@@ -14,8 +14,7 @@ import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 // app, uses this URL directly (no CDN wrapper, no fake worker, no 404 under the
 // /ai-education-reader/ base path).
 import pdfWorkerUrl from './pdf-worker-entry.ts?worker&url'
-import { createPdfDocumentInit } from './pdf-runtime'
-import { readBlobBuffer } from '../engine/read-blob-buffer'
+import { openLocalPdfTask } from './pdf-runtime'
 import { PDF_FILE_MIME, type LocalPdfDocument } from './pdf-types.ts'
 import { parsePdfOutline, type PdfOutlineResult } from './pdf-outline.ts'
 
@@ -79,10 +78,13 @@ export async function openPdf(file: File): Promise<LocalPdfDocument> {
   activeOpenToken = openToken
   const looksLikePdf = file.type === PDF_FILE_MIME || /.pdf$/i.test(file.name)
   if (!looksLikePdf) { if (activeOpenToken === openToken) activeOpenToken = null; throw new PdfError('not-pdf', 'not a pdf') }
-  let data: ArrayBuffer
-  try { data = await readBlobBuffer(file) } catch { if (activeOpenToken === openToken) activeOpenToken = null; throw new PdfError('read-failed', 'read failed') }
-  if (activeOpenToken !== openToken) throw new PdfError('read-failed', 'open superseded')
-  const task = pdfjsLib.getDocument(createPdfDocumentInit(data))
+  let task: ReturnType<typeof pdfjsLib.getDocument>
+  try { task = await openLocalPdfTask(file, pdfjsLib) } catch { if (activeOpenToken === openToken) activeOpenToken = null; throw new PdfError('read-failed', 'read failed') }
+  if (activeOpenToken !== openToken) {
+    void task.promise.catch(() => {})
+    await task.destroy().catch(() => {})
+    throw new PdfError('read-failed', 'open superseded')
+  }
   activeLoadingTask = task
   let doc: import('pdfjs-dist').PDFDocumentProxy
   try { doc = await task.promise } catch (err) {
