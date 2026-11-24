@@ -175,7 +175,7 @@ try {
   await page.getByTestId('media-invert').filter({ visible: true }).click()
   assert.equal(await fullImage.evaluate(image => getComputedStyle(image).filter), 'none')
   assert.equal(await fullImage.getAttribute('src'), imageSource)
-  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '返回列表', exact: true }).click()
   await fullImage.waitFor({ state: 'hidden' })
   await page.evaluate(() => {
     window.AndroidYoutube = { extract(id, videoId) {
