@@ -56,6 +56,13 @@ await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible'
 await page.locator('[data-testid="reader-page-img"]').waitFor({ state: 'visible', timeout: 30000 })
 assert((await page.locator('[data-testid="reader-title"]').textContent()).includes('outline-sample.pdf'), 'A: import -> reader opened with title')
 assert((await inputVal()).trim() === '1', 'A: unread doc opens at page 1')
+const canvas = page.getByTestId('reader-page-img')
+const invert = page.getByTestId('document-reader').getByTestId('media-invert')
+const pixel = () => canvas.evaluate(el => Array.from(el.getContext('2d').getImageData(0, 0, 1, 1).data).join(','))
+const originalPixel = await pixel()
+await invert.click()
+assert(await canvas.evaluate(el => getComputedStyle(el).filter) === 'invert(1)', 'A: PDF display is inverted')
+assert(await pixel() === originalPixel, 'A: inversion leaves the underlying PDF canvas pixels intact')
 
 // ---- B. chapter jump (expand parent chapter first) ----
 await page.locator('[data-testid="reader-toc-toggle-0"]').click()
@@ -106,6 +113,10 @@ await page.locator('[data-testid^="doc-open-"]').first().click()
 await page.locator('[data-testid="document-reader"]').waitFor({ state: 'visible', timeout: 10000 })
 await page.waitForTimeout(600)
 assert((await inputVal()).trim() === '5', 'E: reload -> still page 5')
+await canvas.waitFor({ state: 'visible' })
+assert(await invert.getAttribute('aria-pressed') === 'true' && await canvas.evaluate(el => getComputedStyle(el).filter) === 'invert(1)', 'E: inversion survives reopening and reloading')
+await invert.click()
+assert(await canvas.evaluate(el => getComputedStyle(el).filter) === 'none', 'E: second click restores normal colors')
 
 // ---- F. page zoom (existing viewer + transient HUD) ----
 await page.locator('[data-testid="reader-page"]').click()

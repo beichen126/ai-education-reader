@@ -37,6 +37,8 @@ function rangeOf(node: PdfOutlineItem): PdfRange { return { startPage: node.star
 
 function miB(bytes: number): string { return (bytes / (1024 * 1024)).toFixed(1) + ' MiB' }
 
+import { MediaInvertButton, useMediaInversion } from '../dsh/MediaInversion'
+
 export function PdfPanel({
   initialFile, onClose, onAddToDraft, projectMaterial = false, rootClassName,
 }: {
@@ -46,6 +48,7 @@ export function PdfPanel({
   onClose: () => void
   onAddToDraft: (payload: PdfAddPayload) => Promise<PdfAddResult>
 }) {
+  const { inverted, mediaClass } = useMediaInversion()
   const { doc, pages, status, error, progress, outline, outlineStatus, outlineError, documentId, documentSaveError, selectFile, generateRanges, clearPreview } = usePdfPreview(projectMaterial)
   const [mode, setMode] = useState<'chapter' | 'manual'>('chapter')
   const [start, setStart] = useState('')
@@ -217,6 +220,7 @@ export function PdfPanel({
               <div className={css.fileRow}>
                 <span className={css.fileName}>{doc.fileName}</span>
                 <span className={css.fileMeta}>{formatBytes(doc.fileSize)} · {tx('共 ' + doc.pageCount + ' 页', doc.pageCount + ' pages')}</span>
+                <MediaInvertButton pressed={inverted} className={css.invert} />
               </div>
 
               {documentSaveError && (
@@ -312,7 +316,7 @@ export function PdfPanel({
                       <div className={css.pageItem} key={p.pageNumber} data-testid="pdf-page">
                         <span className={css.pageLabel}>{tx('第 ' + p.pageNumber + ' 页', 'Page ' + p.pageNumber)}</span>
                         <PdfPageOcrButton documentId={documentId} page={p.pageNumber} render={async () => p.blob} />
-                        <img className={css.pageImg} src={p.previewUrl} alt={tx('第 ' + p.pageNumber + ' 页', 'Page ' + p.pageNumber)} width={p.width} height={p.height} />
+                        <img className={[css.pageImg, mediaClass].filter(Boolean).join(' ')} src={p.previewUrl} alt={tx('第 ' + p.pageNumber + ' 页', 'Page ' + p.pageNumber)} width={p.width} height={p.height} />
                       </div>
                     ))}
                   </div>

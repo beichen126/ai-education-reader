@@ -162,7 +162,21 @@ try {
     name: 'notes.png', mimeType: 'image/png',
     buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64'),
   })
-  await gallery.getByText('notes.png', { exact: true }).waitFor()
+  const savedImage = gallery.locator('[data-project-material]').filter({ hasText: 'notes.png' }).getByTestId('gallery-thumbnail')
+  await savedImage.scrollIntoViewIfNeeded()
+  await savedImage.locator('img').waitFor()
+  await gallery.getByTestId('media-invert').click()
+  assert.equal(await savedImage.locator('img').evaluate(image => getComputedStyle(image).filter), 'invert(1)')
+  await savedImage.click()
+  const fullImage = page.getByTestId('viewer-image')
+  await fullImage.waitFor()
+  assert.equal(await fullImage.evaluate(image => getComputedStyle(image).filter), 'invert(1)')
+  const imageSource = await fullImage.getAttribute('src')
+  await page.getByTestId('media-invert').filter({ visible: true }).click()
+  assert.equal(await fullImage.evaluate(image => getComputedStyle(image).filter), 'none')
+  assert.equal(await fullImage.getAttribute('src'), imageSource)
+  await page.keyboard.press('Escape')
+  await fullImage.waitFor({ state: 'hidden' })
   await page.evaluate(() => {
     window.AndroidYoutube = { extract(id, videoId) {
       window.postMessage({ channel: 'reader-youtube-response', id, data: {

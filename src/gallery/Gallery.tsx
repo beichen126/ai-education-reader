@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { useSessions } from '../engine/sessions-store'
 import { useGallery, galleryActions } from './gallery-store'
 import { useAttachmentPreview, useLazyAttachmentPreview } from '../engine/use-attachment-preview'
+import { MediaInvertButton, useMediaInversion } from '../dsh/MediaInversion'
 import { ZoomableImageDialog } from './ZoomableImageDialog'
 import { AttachmentPageOcr } from '../documents/PdfOcrControls'
 import { clampIndex } from './zoom'
@@ -22,6 +23,7 @@ import { useAttachmentMetas } from '../engine/use-attachment-metas'
 import { useDialogFocus } from '../engine/use-dialog-focus'
 
 export function Gallery() {
+  const { inverted, mediaClass } = useMediaInversion()
   const g = useGallery(x => x)
   const dialogRef = useRef<HTMLDivElement>(null)
   const conv = useSessions(s => s.byId[s.current || ''])
@@ -196,7 +198,7 @@ export function Gallery() {
     const chosen = selection ? selection.has(id) : draftIds.includes(id)
     const label = source ? tx('第 ' + source.pageNumber + ' 页', 'Page ' + source.pageNumber) : name || tx('正在读取资料…', 'Loading material…')
     return <article key={id} className={css.projectCard} data-project-material={id} data-selected={chosen || undefined} data-used={sent.includes(id) || undefined}>
-    <Thumb id={id} index={imageIds.indexOf(id)} showIndex={false}
+    <Thumb id={id} index={imageIds.indexOf(id)} showIndex={false} mediaClass={mediaClass}
       selection={selection ? { label, chosen, continuous, onClick: () => selectItem(id), onPointerDown: event => startDrag(event, id), onPointerMove: moveDrag, onPointerUp: finishDrag, onPointerCancel: finishDrag } : undefined} />
     <div className={css.materialDetails}>
       <div className={css.materialCaption}>
@@ -242,7 +244,10 @@ export function Gallery() {
             <span className={css.title}>{project ? tx('项目资料', 'Project materials') : transcripts.length ? count ? tx('图片与转写稿', 'Images and transcripts') : tx('转写稿', 'Transcripts') : tx('图片', 'Images')}</span>
             {count > 0 && <span className={css.count} data-testid="gallery-count">{tx('共 ' + count + ' 张', count + ' total')}</span>}
           </div>
-          <button type="button" className={css.closeBtn} onClick={galleryActions.close}>{tx('关闭', 'Close')}</button>
+          <div className={css.headActions}>
+            {count > 0 && g.view === 'list' && <MediaInvertButton pressed={inverted} className={css.closeBtn} />}
+            <button type="button" className={css.closeBtn} onClick={galleryActions.close}>{tx('关闭', 'Close')}</button>
+          </div>
         </div>
         {project && g.view === 'list' && (selection || !!sharedIds?.length) && (
           <div className={css.selectionBar}>
@@ -289,7 +294,7 @@ export function Gallery() {
             {project && (conversationImageIds.length > 0 || transcripts.some(item => !shared.has(item.id))) && <h2 className={css.projectSectionHeader}>{tx('本会话附件', 'Chat attachments')}</h2>}
             {transcripts.some(item => !shared.has(item.id)) && <div className={css.transcriptList}>{transcripts.filter(item => !shared.has(item.id)).map(({ id, transcript }) => <TranscriptCard key={id} transcript={transcript} />)}</div>}
             {conversationImageIds.length > 0 && <div className={css.grid} data-testid="gallery-grid" aria-label={tx('当前会话图片，共 ' + count + ' 张', count + ' images in this chat')}>
-              {conversationImageIds.map(id => <Thumb key={id} id={id} index={imageIds.indexOf(id)} />)}
+              {conversationImageIds.map(id => <Thumb key={id} id={id} index={imageIds.indexOf(id)} mediaClass={mediaClass} />)}
             </div>}
           </div>
         ) : (
@@ -313,13 +318,13 @@ type ThumbnailSelection = {
   onPointerUp: (event: PointerEvent<HTMLButtonElement>) => void
   onPointerCancel: (event: PointerEvent<HTMLButtonElement>) => void
 }
-function Thumb({ id, index, showIndex = true, selection }: { id: string; index: number; showIndex?: boolean; selection?: ThumbnailSelection }) {
+function Thumb({ id, index, showIndex = true, selection, mediaClass }: { id: string; index: number; showIndex?: boolean; selection?: ThumbnailSelection; mediaClass?: string }) {
   const { ref, url, error } = useLazyAttachmentPreview(id)
   return (
     <button ref={ref} type="button" className={css.thumb} data-testid="gallery-thumbnail" data-continuous={selection?.continuous || undefined} aria-pressed={selection?.chosen}
       aria-label={selection ? tx('选择 ', 'Select ') + selection.label : tx('查看第 ' + (index + 1) + ' 张图片', 'View image ' + (index + 1))}
       onClick={selection?.onClick ?? (() => galleryActions.openViewer(index))} onPointerDown={selection?.onPointerDown} onPointerMove={selection?.onPointerMove} onPointerUp={selection?.onPointerUp} onPointerCancel={selection?.onPointerCancel}>
-      {url ? <img src={url} alt="" loading="lazy" decoding="async" draggable={false} /> : <span className={css.missing}>{error ? tx('图片已丢失', 'Image missing') : '…'}</span>}
+      {url ? <img className={mediaClass} src={url} alt="" loading="lazy" decoding="async" draggable={false} /> : <span className={css.missing}>{error ? tx('图片已丢失', 'Image missing') : '…'}</span>}
       {selection && <span className={css.selectionMark} aria-hidden="true">{selection.chosen ? '✓' : ''}</span>}
       {showIndex && <span className={css.index} aria-hidden="true">{index + 1}</span>}
     </button>

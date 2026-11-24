@@ -1,0 +1,6 @@
+.inverted { filter: invert(1); }
+.toggle { white-space: nowrap; }
+.toggle[aria-pressed="true"] {
+  outline: 2px solid currentColor;
+  outline-offset: -3px;
+}

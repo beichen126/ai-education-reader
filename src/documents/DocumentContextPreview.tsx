@@ -6,6 +6,7 @@ import { PdfError, pdfErrorMessage } from '../pdf/pdf-service'
 import { usePdfViewport } from './pdf-viewport'
 import { useSettings } from '../engine/settings-store'
 import { createPdfPerformanceTelemetry, type PdfPerformanceTelemetry } from './pdf-performance-telemetry'
+import { MediaInvertButton, useMediaInversion } from '../dsh/MediaInversion'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import type { ChapterNode, LearningDocument } from './document-types'
 import css from './document-context-preview.module.css'
@@ -43,6 +44,7 @@ function PreviewTocRows({ nodes, onOpen, depth = 0 }: { nodes: ChapterNode[]; on
 }
 
 export function DocumentContextPreview({ document: sourceDoc, initialPage, onBack }: Props) {
+  const { inverted, mediaClass } = useMediaInversion()
   const pdfNavigationMode = useSettings(s => s.pdfNavigationMode)
   const [session, setSession] = useState<PdfSession | null>(null)
   const [displayTelemetry, setDisplayTelemetry] = useState<PdfPerformanceTelemetry | null>(null)
@@ -179,6 +181,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
         <header className={css.header}>
           <button ref={backRef} type="button" className={css.back} data-testid="doc-context-preview-back" onClick={onBack}>← {tx('返回选择', 'Back to selection')}</button>
           <h2 id="doc-context-preview-title" className={css.title} data-testid="doc-context-preview-title">{tx('PDF 预览', 'PDF preview')} · {sourceDoc.fileName}</h2>
+          <MediaInvertButton pressed={inverted} className={css.tocToggle} />
           <button type="button" className={css.tocToggle} data-testid="doc-context-preview-toc-toggle" aria-expanded={tocVisible} aria-controls="doc-context-preview-toc" onClick={() => { setTocClosed(false); setTocOpen(open => !open) }}>{tx('目录', 'Outline')}</button>
         </header>
         {session && <PdfPageOcrButton documentId={sourceDoc.id} page={page} render={async () => (await renderSessionPage(session, page)).blob} />}
@@ -195,7 +198,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
             {session && status === 'ready' && (
               <div ref={display.stageRef} className={css.stage} data-testid="doc-context-preview-stage" data-pdf-navigation-mode={display.mode}>
                 {display.mode !== 'continuous' && <button type="button" className={css.pageButton} data-testid="doc-context-preview-page" disabled={zoomBusy} onClick={() => openZoom()} aria-label={tx('PDF 第 ' + page + ' 页，点击放大', 'PDF page ' + page + ', open enlarged view')}>
-                  <canvas ref={display.canvasRef} className={css.canvas} data-testid="doc-context-preview-page-canvas" aria-label={tx('PDF 第 ' + page + ' 页', 'PDF page ' + page)} data-render-width={display.surface ? String(display.surface.width) : undefined} data-render-height={display.surface ? String(display.surface.height) : undefined} />
+                  <canvas ref={display.canvasRef} className={[css.canvas, mediaClass].filter(Boolean).join(' ')} data-testid="doc-context-preview-page-canvas" aria-label={tx('PDF 第 ' + page + ' 页', 'PDF page ' + page)} data-render-width={display.surface ? String(display.surface.width) : undefined} data-render-height={display.surface ? String(display.surface.height) : undefined} />
                 </button>}
                 {display.mode === 'continuous' && display.continuousWindow && (
                   <div ref={display.continuousStackRef} className={css.continuousStack} data-testid="doc-context-preview-continuous-scroll" role="region" aria-label={tx('PDF 连续阅读', 'Continuous PDF reading')}>
@@ -204,7 +207,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
                       <section key={view.pageNumber} className={css.continuousPage} data-testid={'doc-context-preview-continuous-page-' + view.pageNumber} data-page-number={view.pageNumber} data-mounted="true" data-render-state={view.surface ? 'ready' : view.error ? 'error' : 'loading'} style={view.style}>
                         {view.surface ? (
                           <button type="button" className={css.continuousPageButton} data-testid={'doc-context-preview-continuous-page-button-' + view.pageNumber} disabled={zoomBusy} onClick={() => openZoom(view.pageNumber)}>
-                            <canvas ref={view.canvasRef} className={css.continuousCanvas} data-testid={'doc-context-preview-continuous-canvas-' + view.pageNumber} aria-label={tx('PDF 第 ' + view.pageNumber + ' 页', 'PDF page ' + view.pageNumber)} width={view.surface.width} height={view.surface.height} />
+                            <canvas ref={view.canvasRef} className={[css.continuousCanvas, mediaClass].filter(Boolean).join(' ')} data-testid={'doc-context-preview-continuous-canvas-' + view.pageNumber} aria-label={tx('PDF 第 ' + view.pageNumber + ' 页', 'PDF page ' + view.pageNumber)} width={view.surface.width} height={view.surface.height} />
                           </button>
                         ) : view.error ? <div className={css.error} role="alert">{view.error}</div> : <span className={css.continuousPlaceholder}>{tx('第 ' + view.pageNumber + ' 页', 'Page ' + view.pageNumber)}</span>}
                       </section>

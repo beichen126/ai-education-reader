@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom'
 import { clampScale, clampPan, zoomAtPoint, resetTransform, DOUBLE_CLICK_SCALE } from './zoom'
 import css from './zoomable-image.module.css'
 import { tx as localeText } from '../engine/locale'
+import { MediaInvertButton, useMediaInversion } from '../dsh/MediaInversion'
 import { useBackTarget } from '../engine/back-navigation'
 
 export interface ZoomableImageDialogProps {
@@ -28,6 +29,7 @@ export interface ZoomableImageDialogProps {
 type Nd = { x: number; y: number }
 
 export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
+  const { inverted, mediaClass } = useMediaInversion()
   const { src, alt = '', resetKey, index, count, onPrev, onNext, onBackToList, onClose, headerAction, labels } = props
   useBackTarget(true, onBackToList || onClose)
   const stageRef = useRef<HTMLDivElement | null>(null)
@@ -236,7 +238,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
         onDoubleClick={onDoubleClick}
         onClick={onStageClick}
       >
-        {src ? <img className={css.image} data-testid="viewer-image" src={src} alt={alt} draggable={false}
+        {src ? <img className={[css.image, mediaClass].filter(Boolean).join(' ')} data-testid="viewer-image" src={src} alt={alt} draggable={false}
           style={{ width: fit ? fit.w : undefined, height: fit ? fit.h : undefined, transform: 'translate3d(' + tx + 'px,' + ty + 'px,0) scale(' + scale + ')', willChange: 'transform' }}
           onLoad={e => { const el = e.currentTarget; setNat({ w: el.naturalWidth, h: el.naturalHeight }) }}
         /> : <div className={css.missing}>{localeText('无法读取这张图片', 'Unable to load this image')}</div>}
@@ -255,6 +257,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
         </div>
       )}
       <div className={css.headerActions}>
+        {src && <MediaInvertButton pressed={inverted} className={css.ctrl} />}
         {headerAction}
         <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>✕</button>
       </div>

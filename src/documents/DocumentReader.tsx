@@ -32,6 +32,7 @@ import { openPdfSession, closePdfSession, readSessionOutline, readSessionPageLab
 import { isZoomStale } from './use-reader-display'
 import { usePdfViewport } from './pdf-viewport'
 import { PdfError } from '../pdf/pdf-service'
+import { MediaInvertButton, useMediaInversion } from '../dsh/MediaInversion'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { createUrlOwner } from './url-owner'
 import { ChapterBuilder, type ChapterBuilderSave } from './ChapterBuilder'
@@ -65,6 +66,7 @@ const EMPTY_DOC_STATE = {
 }
 
 export function DocumentReader() {
+  const { inverted, mediaClass } = useMediaInversion()
   const topbarRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const bar = topbarRef.current
@@ -1130,6 +1132,7 @@ export function DocumentReader() {
       <div ref={topbarRef} className={css.topbar}>
         <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary(projectId) }}>← {tx('文件', 'Files')}</button>
         <span className={css.title} data-testid="reader-title">{doc?.fileName ?? recordMeta?.fileName ?? '…'}</span>
+        <MediaInvertButton pressed={inverted} className={css.backBtn} />
         <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>{tx('关闭', 'Close')}</button>
         <div className={css.topActions}>
           {doc && sessionRef.current && <PdfPageOcrButton documentId={doc.id} page={page} render={async () => (await renderOcrPage(sessionRef.current!, page)).blob} />}
@@ -1225,7 +1228,7 @@ export function DocumentReader() {
               {(display.pageError || pageError) && <div className={css.errorBox} data-testid="reader-page-error">{display.pageError || pageError}</div>}
               {display.mode !== 'continuous' && display.surface && (
                 <button className={css.pageBtn} data-testid="reader-page" disabled={zoomBusy} onClick={() => openZoom()}>
-                  <canvas ref={display.canvasRef} className={css.pageCanvas} data-testid="reader-page-img" aria-label={tx('PDF 第 ' + page + ' 页', 'PDF page ' + page)} data-render-width={String(display.surface.width)} data-render-height={String(display.surface.height)} width={display.surface.width} height={display.surface.height} />
+                  <canvas ref={display.canvasRef} className={[css.pageCanvas, mediaClass].filter(Boolean).join(' ')} data-testid="reader-page-img" aria-label={tx('PDF 第 ' + page + ' 页', 'PDF page ' + page)} data-render-width={String(display.surface.width)} data-render-height={String(display.surface.height)} width={display.surface.width} height={display.surface.height} />
                 </button>
               )}
               {display.mode === 'continuous' && display.continuousWindow && (
@@ -1243,7 +1246,7 @@ export function DocumentReader() {
                     <section key={view.pageNumber} className={css.continuousPage} data-testid={'reader-continuous-page-' + view.pageNumber} data-page-number={view.pageNumber} data-mounted="true" data-render-state={view.surface ? 'ready' : view.error ? 'error' : 'loading'} style={view.style}>
                       {view.surface ? (
                         <button type="button" className={css.continuousPageButton} data-testid={'reader-continuous-page-button-' + view.pageNumber} disabled={zoomBusy} onClick={() => openZoom(view.pageNumber)}>
-                          <canvas ref={view.canvasRef} className={css.continuousCanvas} data-testid={'reader-continuous-canvas-' + view.pageNumber} aria-label={tx('PDF 第 ' + view.pageNumber + ' 页', 'PDF page ' + view.pageNumber)} width={view.surface.width} height={view.surface.height} data-render-width={String(view.surface.width)} data-render-height={String(view.surface.height)} />
+                          <canvas ref={view.canvasRef} className={[css.continuousCanvas, mediaClass].filter(Boolean).join(' ')} data-testid={'reader-continuous-canvas-' + view.pageNumber} aria-label={tx('PDF 第 ' + view.pageNumber + ' 页', 'PDF page ' + view.pageNumber)} width={view.surface.width} height={view.surface.height} data-render-width={String(view.surface.width)} data-render-height={String(view.surface.height)} />
                         </button>
                       ) : view.error ? <div className={css.errorBox} role="alert">{view.error}</div> : <span className={css.continuousPlaceholder}>{tx('第 ' + view.pageNumber + ' 页', 'Page ' + view.pageNumber)}</span>}
                     </section>

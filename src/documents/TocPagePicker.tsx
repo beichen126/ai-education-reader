@@ -26,7 +26,10 @@ type Props = {
   forAttachment?: boolean
 }
 
+import { MediaInvertButton, useMediaInversion } from '../dsh/MediaInversion'
+
 export function TocPagePicker({ session, pageCount, onCancel, onStart, forAttachment }: Props) {
+  const { inverted, mediaClass } = useMediaInversion()
   const [loadedCount, setLoadedCount] = useState(INITIAL_BATCH)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [thumbs, setThumbs] = useState<Record<number, string>>({})
@@ -197,6 +200,7 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart, forAttach
           <div className={css.headRow}>
             <span className={css.title}>{forAttachment ? tx('选择 PDF 页面', 'Select PDF pages') : tx('选择目录页', 'Select outline pages')}</span>
             <div className={css.headerBtns}>
+              <MediaInvertButton pressed={inverted} className={css.btn} />
               <button type="button" className={css.btn} data-testid="toc-picker-cancel" onClick={onCancel}>{tx('取消', 'Cancel')}</button>
               <button type="button" className={css.btnPrimary} data-testid="toc-picker-start" disabled={selected.size === 0} onClick={() => onStart(sorted)}>{forAttachment ? tx('确认选择', 'Confirm selection') : tx('开始识别', 'Start detection')}{selected.size ? tx('（' + selected.size + ' 页）', ' (' + selected.size + ' pages)') : ''}</button>
             </div>
@@ -233,7 +237,7 @@ export function TocPagePicker({ session, pageCount, onCancel, onStart, forAttach
               }}
               >
               <span className={css.thumbNum}>{n}</span>
-              {thumbs[n] ? <img className={css.thumbImg} src={thumbs[n]} alt={tx('第 ' + n + ' 页', 'Page ' + n)} draggable={false} /> : <span className={css.thumbLoad}>{failedThumbs.has(n) ? tx('预览失败', 'Preview failed') : '…'}</span>}
+              {thumbs[n] ? <img className={[css.thumbImg, mediaClass].filter(Boolean).join(' ')} src={thumbs[n]} alt={tx('第 ' + n + ' 页', 'Page ' + n)} draggable={false} /> : <span className={css.thumbLoad}>{failedThumbs.has(n) ? tx('预览失败', 'Preview failed') : '…'}</span>}
               {selected.has(n) && <span className={css.check}>✓</span>}
             </button>
           ))}
