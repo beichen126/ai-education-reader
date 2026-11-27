@@ -64,6 +64,8 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
   const [pageInput, setPageInput] = useState(String(clampPage(initialPage, sourceDoc.pageCount)))
   const [tocOpen, setTocOpen] = useState(false)
   const [tocClosed, setTocClosed] = useState(false)
+  const viewerScaleRef = useRef(1)
+  const rememberViewerScale = useCallback((scale: number) => { viewerScaleRef.current = scale }, [])
   const [zoomUrl, setZoomUrl] = useState<string | null>(null)
   const [viewerPage, setViewerPage] = useState(1)
   const zoomUrlRef = useRef<string | null>(null)
@@ -80,6 +82,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
   }, [])
 
   useEffect(() => {
+    viewerScaleRef.current = 1
     const generation = ++generationRef.current
     let ownedSession: PdfSession | null = null
     const telemetry = createPdfPerformanceTelemetry(sourceDoc.id, 'preview')
@@ -241,6 +244,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
         </footer>
       </div>
       {zoomUrl && <ZoomableImageDialog src={zoomUrl} alt={tx('PDF 第 ' + viewerPage + ' 页', 'PDF page ' + viewerPage)} resetKey={viewerPage} onClose={clearZoom}
+        initialScale={viewerScaleRef.current} onScaleChange={rememberViewerScale}
         rotation={rotation} onRotate={rotate}
         headerAction={session && <PdfPageOcrButton documentId={sourceDoc.id} page={viewerPage} startOnOpen render={async () => (await renderSessionPage(session, viewerPage)).blob} />}
         labels={{ close: tx('关闭', 'Close'), dialog: tx('PDF 页面预览', 'PDF page preview') }} />}

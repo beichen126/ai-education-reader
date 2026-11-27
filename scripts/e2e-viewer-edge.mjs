@@ -156,7 +156,7 @@ async function drag(p, dx, dy) {
   await page.waitForTimeout(1400)
   assert(await hudCount(page) === 0, 'A: HUD hidden after reset timer elapses')
 
-  // ---- prev/next reset (Case G) ----
+  // ---- prev/next preserve zoom and recenter (Case G) ----
   await page.keyboard.press('0')
   await page.waitForTimeout(80)
   await page.keyboard.press('+')
@@ -167,7 +167,7 @@ async function drag(p, dx, dy) {
   await page.locator('[data-testid="viewer-next"]').click()
   await page.waitForTimeout(250)
   const s3 = await zstyle(page)
-  assert(s3.includes('scale(1)') && s3.includes('translate3d(0px, 0px, 0'), 'A: next resets to fit')
+  assert(s3.includes('scale(1.25)') && s3.includes('translate3d(0px, 0px, 0'), 'A: next keeps zoom and recenters')
   assert(await hudCount(page) === 0, 'A: next hides the HUD (no inheritance from image 1)')
   assert((await counter(page)).trim() === '2 / 2', 'A: counter 2 / 2')
   assert(await page.locator('[data-testid="viewer-next"]').isDisabled(), 'A: next disabled at end')
@@ -271,7 +271,7 @@ async function drag(p, dx, dy) {
   await page.waitForTimeout(250)
   assert((await counter(page)).trim() === '2 / 3', 'D: next -> 2 / 3')
   const d2 = await zstyle(page)
-  assert(d2.includes('scale(1)') && d2.includes('translate3d(0px, 0px, 0'), 'D: page switch resets zoom')
+  assert(!d2.includes('scale(1)') && d2.includes('translate3d(0px, 0px, 0'), 'D: page switch keeps zoom and recenters')
   assert(await hudCount(page) === 0, 'D: HUD hidden after pdf page switch')
   await page.locator('[data-testid="viewer-prev"]').click()
   await page.waitForTimeout(250)

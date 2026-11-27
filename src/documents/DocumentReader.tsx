@@ -86,13 +86,15 @@ export function DocumentReader() {
   }, 10)
   const pdfNavigationMode = useSettings(s => s.pdfNavigationMode)
   const docId = ui.view === 'reader' ? ui.documentId : null
-  const [orientation, setOrientation] = useState({ documentId: docId, angle: 0 })
-  const rotation = orientation.documentId === docId ? orientation.angle : 0
-  const rotate = () => setOrientation(previous => ({
-    documentId: docId,
-    angle: ((previous.documentId === docId ? previous.angle : 0) + 90) % 360,
-  }))
   const readerRequestId = ui.view === 'reader' ? ui.requestId : 0
+  const [orientation, setOrientation] = useState({ requestId: readerRequestId, angle: 0 })
+  const rotation = orientation.requestId === readerRequestId ? orientation.angle : 0
+  const rotate = () => setOrientation(previous => ({
+    requestId: readerRequestId,
+    angle: ((previous.requestId === readerRequestId ? previous.angle : 0) + 90) % 360,
+  }))
+  const viewerScaleRef = useRef(1)
+  const rememberViewerScale = useCallback((scale: number) => { viewerScaleRef.current = scale }, [])
   const requestedPage = ui.view === 'reader' ? ui.pageNumber : undefined
   const [doc, setDoc] = useState<LearningDocument | null>(null)
   const [recordMeta, setRecordMeta] = useState<Awaited<ReturnType<typeof getDocumentRecordMeta>> | null>(null)
@@ -626,8 +628,9 @@ export function DocumentReader() {
   useEffect(() => {
     pendingReaderZoomRef.current = null
     readerZoomRef.current = 1
+    viewerScaleRef.current = 1
     setReaderZoom(1)
-  }, [docId])
+  }, [docId, readerRequestId])
 
   // ---- Reader正文 display render: now handled by useReaderDisplay (viewport-aware
   //      scale, real RenderTask cancel, bounded cache, neighbor prefetch). No JPEG Blob. ----
@@ -1398,6 +1401,8 @@ export function DocumentReader() {
           src={viewerUrl}
           alt={tx('PDF 第 ' + viewerPage + ' 页', 'PDF page ' + viewerPage)}
           resetKey={viewerPage}
+          initialScale={viewerScaleRef.current}
+          onScaleChange={rememberViewerScale}
           rotation={rotation}
           onRotate={rotate}
           headerAction={doc && sessionRef.current && <PdfPageOcrButton documentId={doc.id} page={viewerPage} startOnOpen render={async () => (await renderOcrPage(sessionRef.current!, viewerPage)).blob} />}

@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { clampScale, clampPan, zoomAtPoint, resetTransform, DOUBLE_CLICK_SCALE } from './zoom'
+import { clampScale, clampPan, zoomAtPoint, DOUBLE_CLICK_SCALE } from './zoom'
 import css from './zoomable-image.module.css'
 import { tx as localeText } from '../engine/locale'
 import { MediaRotateButton } from '../dsh/MediaRotateButton'
@@ -15,8 +15,10 @@ import { useBackTarget } from '../engine/back-navigation'
 export interface ZoomableImageDialogProps {
   src?: string
   alt?: string
-  /** Reset transform whenever this changes (e.g. switching to another image). */
+  /** Identity of the current item, used to recenter after navigation. */
   resetKey?: string | number
+  initialScale?: number
+  onScaleChange?: (scale: number) => void
   rotation?: number
   onRotate?: () => void
   index?: number
@@ -41,11 +43,11 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
   // Sharing one ref would let the JSX ref overwrite the captured opener.
   const openerRef = useRef<HTMLElement | null>(null)
   const closeRef = useRef<HTMLButtonElement | null>(null)
-  const [scale, setScale] = useState(1)
+  const [scale, setScale] = useState(() => clampScale(props.initialScale ?? 1))
   const [tx, setTx] = useState(0)
   const [ty, setTy] = useState(0)
-  const [imageRotation, setImageRotation] = useState({ key: resetKey, angle: 0 })
-  const rotation = props.rotation ?? (imageRotation.key === resetKey ? imageRotation.angle : 0)
+  const [imageRotation, setImageRotation] = useState(0)
+  const rotation = props.rotation ?? imageRotation
   const sideways = rotation % 180 !== 0
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null)
   const [stage, setStage] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
@@ -82,7 +84,8 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
     tyRef.current = next.ty
     scaleRef.current = clampScale(s)
     setTx(next.tx); setTy(next.ty); setScale(scaleRef.current)
-  }, [base, stage])
+    props.onScaleChange?.(scaleRef.current)
+  }, [base, stage, props.onScaleChange])
 
   const bump = useCallback((factor: number) => {
     const s = scaleRef.current
@@ -95,11 +98,13 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
     setT(ns, z.tx, z.ty)
   }, [setT])
 
-  // Reset transform on image change — and drop any zoom HUD state so image 2
-  // never inherits image 1's visible percent or pending hide timer.
-  useEffect(() => {
+  // Keep the zoom and rotation for the open viewer. Recenter a new page or
+  // orientation so a previous pan cannot push the new image off-screen.
+  useLayoutEffect(() => {
     pointers.current.clear(); pinchRef.current = null; dragRef.current = null
-    const t = resetTransform(); setScale(t.scale); setTx(t.tx); setTy(t.ty)
+    lastMovedRef.current = 0
+    txRef.current = 0; tyRef.current = 0
+    setTx(0); setTy(0)
     setZoomHudVisible(false)
     if (zoomHudTimerRef.current !== null) { window.clearTimeout(zoomHudTimerRef.current); zoomHudTimerRef.current = null }
   }, [src, resetKey, rotation])
@@ -267,9 +272,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
       <div className={css.headerActions}>
         {src && <>
           <MediaInvertButton pressed={inverted} className={css.ctrl} />
-          <MediaRotateButton className={css.ctrl} onRotate={props.onRotate ?? (() => setImageRotation({
-            key: resetKey, angle: (rotation + 90) % 360,
-          }))} />
+          <MediaRotateButton className={css.ctrl} onRotate={props.onRotate ?? (() => setImageRotation(angle => (angle + 90) % 360))} />
         </>}
         {headerAction}
         <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>✕</button>
