@@ -58,16 +58,16 @@ export async function renderSessionThumbnail(session: PdfSession, pageNumber: nu
 }
 
 /** Read a page's viewport at scale 1 — anchor for viewport-aware display scaling. */
-export async function readSessionPageViewport(session: PdfSession, pageNumber: number): Promise<{ width: number; height: number }> {
-  return readPageViewport1(session.documentProxy, pageNumber)
+export async function readSessionPageViewport(session: PdfSession, pageNumber: number, rotation = 0): Promise<{ width: number; height: number }> {
+  return readPageViewport1(session.documentProxy, pageNumber, rotation)
 }
 
 /** Render one page of a session to a DISPLAY surface (canvas -> ImageBitmap) at an exact
  *  scale. This is the Reader正文 path (C1/C2): it never encodes to a JPEG Blob and returns
  *  a cancellable handle so a stale render is truly torn down (C3). The AI/export path
  *  still uses renderSessionPage (Blob). */
-export function renderSessionPageSurface(session: PdfSession, pageNumber: number, scale: number): PageSurfaceRender {
-  return startPageSurfaceRender(session.documentProxy, pageNumber, scale)
+export function renderSessionPageSurface(session: PdfSession, pageNumber: number, scale: number, rotation = 0): PageSurfaceRender {
+  return startPageSurfaceRender(session.documentProxy, pageNumber, scale, rotation)
 }
 
 /** Read the native outline of a session. */

@@ -6,6 +6,7 @@ import { PdfError, pdfErrorMessage } from '../pdf/pdf-service'
 import { usePdfViewport } from './pdf-viewport'
 import { useSettings } from '../engine/settings-store'
 import { createPdfPerformanceTelemetry, type PdfPerformanceTelemetry } from './pdf-performance-telemetry'
+import { MediaRotateButton } from '../dsh/MediaRotateButton'
 import { MediaInvertButton, useMediaInversion } from '../dsh/MediaInversion'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import type { ChapterNode, LearningDocument } from './document-types'
@@ -45,6 +46,12 @@ function PreviewTocRows({ nodes, onOpen, depth = 0 }: { nodes: ChapterNode[]; on
 
 export function DocumentContextPreview({ document: sourceDoc, initialPage, onBack }: Props) {
   const { inverted, mediaClass } = useMediaInversion()
+  const [orientation, setOrientation] = useState({ documentId: sourceDoc.id, angle: 0 })
+  const rotation = orientation.documentId === sourceDoc.id ? orientation.angle : 0
+  const rotate = () => setOrientation(previous => ({
+    documentId: sourceDoc.id,
+    angle: ((previous.documentId === sourceDoc.id ? previous.angle : 0) + 90) % 360,
+  }))
   const pdfNavigationMode = useSettings(s => s.pdfNavigationMode)
   const [session, setSession] = useState<PdfSession | null>(null)
   const [displayTelemetry, setDisplayTelemetry] = useState<PdfPerformanceTelemetry | null>(null)
@@ -130,6 +137,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
     pageCount: sourceDoc.pageCount,
     currentPage: page,
     mode: pdfNavigationMode,
+    rotation,
     telemetry: displayTelemetry,
     onCurrentPageChange: next => go(next),
   })
@@ -182,6 +190,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
           <button ref={backRef} type="button" className={css.back} data-testid="doc-context-preview-back" onClick={onBack}>← {tx('返回选择', 'Back to selection')}</button>
           <h2 id="doc-context-preview-title" className={css.title} data-testid="doc-context-preview-title">{tx('PDF 预览', 'PDF preview')} · {sourceDoc.fileName}</h2>
           <MediaInvertButton pressed={inverted} className={css.tocToggle} />
+          <MediaRotateButton className={css.tocToggle} onRotate={rotate} />
           <button type="button" className={css.tocToggle} data-testid="doc-context-preview-toc-toggle" aria-expanded={tocVisible} aria-controls="doc-context-preview-toc" onClick={() => { setTocClosed(false); setTocOpen(open => !open) }}>{tx('目录', 'Outline')}</button>
         </header>
         {session && <PdfPageOcrButton documentId={sourceDoc.id} page={page} render={async () => (await renderSessionPage(session, page)).blob} />}
@@ -232,6 +241,7 @@ export function DocumentContextPreview({ document: sourceDoc, initialPage, onBac
         </footer>
       </div>
       {zoomUrl && <ZoomableImageDialog src={zoomUrl} alt={tx('PDF 第 ' + viewerPage + ' 页', 'PDF page ' + viewerPage)} resetKey={viewerPage} onClose={clearZoom}
+        rotation={rotation} onRotate={rotate}
         headerAction={session && <PdfPageOcrButton documentId={sourceDoc.id} page={viewerPage} startOnOpen render={async () => (await renderSessionPage(session, viewerPage)).blob} />}
         labels={{ close: tx('关闭', 'Close'), dialog: tx('PDF 页面预览', 'PDF page preview') }} />}
     </div>

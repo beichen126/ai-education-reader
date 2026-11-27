@@ -174,6 +174,16 @@ await page.locator('[data-testid="reader-page-input"]').fill('3')
 await page.locator('[data-testid="reader-page-input"]').press('Enter')
 const reachedStart = await safe(async () => { await waitForCurrentPage(3); return true }, false)
 assert(reachedStart === true, 'the page input jumps back to page 3')
+const continuousPage = page.getByTestId('reader-continuous-canvas-3')
+await continuousPage.waitFor({ state: 'visible' })
+const wasWide = await continuousPage.evaluate(canvas => canvas.width > canvas.height)
+await page.getByTestId('media-rotate').click()
+await page.waitForFunction(wasWide => {
+  const canvas = document.querySelector('[data-testid="reader-continuous-canvas-3"]')
+  return canvas && (canvas.width > canvas.height) !== wasWide
+}, wasWide)
+assert(await currentPageValue() === '3', 'rotating reflows continuous pages and keeps the reading position')
+
 const zoomed = await safe(async () => {
   await page.locator('[data-testid="reader-continuous-page-button-3"]').click({ timeout: 15000 })
   await page.locator('[data-testid="viewer-image"]').waitFor({ state: 'visible', timeout: 30000 })

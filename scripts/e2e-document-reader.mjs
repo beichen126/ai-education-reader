@@ -132,6 +132,32 @@ await page.waitForTimeout(200)
 assert(await page.locator('[role="dialog"]').count() === 0, 'F: Escape closes zoom viewer')
 assert(await page.locator('[data-testid="reader-page"]').count() === 1, 'F: back on the reader page')
 assert((await inputVal()).trim() === '5', 'F: reader page unchanged after zoom')
+await page.setViewportSize({ width: 844, height: 390 })
+const readerRotate = page.getByTestId('document-reader').getByTestId('media-rotate')
+const canvasIsLandscape = () => canvas.evaluate(el => el.width > el.height)
+const initialOrientation = await canvasIsLandscape()
+await readerRotate.click()
+await page.waitForFunction(expected => {
+  const el = document.querySelector('[data-testid="reader-page-img"]')
+  return el && (el.width > el.height) === expected
+}, !initialOrientation)
+await page.getByTestId('reader-page').click()
+const rotatedViewer = page.getByTestId('viewer-image')
+await rotatedViewer.waitFor()
+await page.waitForFunction(() => {
+  const image = document.querySelector('[data-testid="viewer-image"]')
+  const stage = document.querySelector('[data-testid="viewer-stage"]')
+  if (!image?.naturalWidth || !image.style.transform.includes('rotate(90deg)')) return false
+  const bounds = image.getBoundingClientRect()
+  return bounds.width <= stage.clientWidth + 1 && bounds.height <= stage.clientHeight + 1
+})
+await page.getByRole('dialog').getByTestId('media-rotate').click()
+assert((await rotatedViewer.getAttribute('style')).includes('rotate(180deg)'), 'F: landscape zoom rotates and fits the page')
+await page.keyboard.press('Escape')
+await canvas.waitFor()
+await readerRotate.click()
+await readerRotate.click()
+assert((await inputVal()).trim() === '5', 'F: rotating does not change the PDF page')
 
 // ---- G. responsive: mobile toc drawer ----
 await page.setViewportSize({ width: 360, height: 800 })

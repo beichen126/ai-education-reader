@@ -32,6 +32,7 @@ import { openPdfSession, closePdfSession, readSessionOutline, readSessionPageLab
 import { isZoomStale } from './use-reader-display'
 import { usePdfViewport } from './pdf-viewport'
 import { PdfError } from '../pdf/pdf-service'
+import { MediaRotateButton } from '../dsh/MediaRotateButton'
 import { MediaInvertButton, useMediaInversion } from '../dsh/MediaInversion'
 import { ZoomableImageDialog } from '../gallery/ZoomableImageDialog'
 import { createUrlOwner } from './url-owner'
@@ -85,6 +86,12 @@ export function DocumentReader() {
   }, 10)
   const pdfNavigationMode = useSettings(s => s.pdfNavigationMode)
   const docId = ui.view === 'reader' ? ui.documentId : null
+  const [orientation, setOrientation] = useState({ documentId: docId, angle: 0 })
+  const rotation = orientation.documentId === docId ? orientation.angle : 0
+  const rotate = () => setOrientation(previous => ({
+    documentId: docId,
+    angle: ((previous.documentId === docId ? previous.angle : 0) + 90) % 360,
+  }))
   const readerRequestId = ui.view === 'reader' ? ui.requestId : 0
   const requestedPage = ui.view === 'reader' ? ui.pageNumber : undefined
   const [doc, setDoc] = useState<LearningDocument | null>(null)
@@ -656,6 +663,7 @@ export function DocumentReader() {
     pageCount,
     currentPage: page,
     mode: pdfNavigationMode,
+    rotation,
     telemetry: displayTelemetry,
     onCurrentPageChange: next => go(next, pageCount),
     onFirstPixelReady,
@@ -1133,6 +1141,7 @@ export function DocumentReader() {
         <button className={css.backBtn} data-testid="reader-back" onClick={() => { flushCurrentNote(); documentUiActions.backToLibrary(projectId) }}>← {tx('文件', 'Files')}</button>
         <span className={css.title} data-testid="reader-title">{doc?.fileName ?? recordMeta?.fileName ?? '…'}</span>
         <MediaInvertButton pressed={inverted} className={css.backBtn} />
+        <MediaRotateButton className={css.backBtn} onRotate={rotate} />
         <button className={css.closeBtn} data-testid="reader-close" onClick={() => { flushCurrentNote(); documentUiActions.close() }}>{tx('关闭', 'Close')}</button>
         <div className={css.topActions}>
           {doc && sessionRef.current && <PdfPageOcrButton documentId={doc.id} page={page} render={async () => (await renderOcrPage(sessionRef.current!, page)).blob} />}
@@ -1389,6 +1398,8 @@ export function DocumentReader() {
           src={viewerUrl}
           alt={tx('PDF 第 ' + viewerPage + ' 页', 'PDF page ' + viewerPage)}
           resetKey={viewerPage}
+          rotation={rotation}
+          onRotate={rotate}
           headerAction={doc && sessionRef.current && <PdfPageOcrButton documentId={doc.id} page={viewerPage} startOnOpen render={async () => (await renderOcrPage(sessionRef.current!, viewerPage)).blob} />}
           onClose={() => { viewerOpenRef.current = false; setViewerUrl(null); setViewerPage(1); urlOwnerRef.current.revokeAll() }}
           labels={{ close: tx('关闭', 'Close'), dialog: tx('PDF 页面查看', 'PDF page viewer') }}

@@ -19,6 +19,7 @@ export type PdfViewportProps = {
   pageCount: number
   currentPage: number
   mode: PdfNavigationMode
+  rotation?: number
   telemetry?: PdfPerformanceTelemetry | null
   onCurrentPageChange?: (page: number, reason: PageChangeReason) => void
   onOpenZoom?: (page: number) => void
@@ -103,7 +104,7 @@ type ContinuousViewportApi = {
  * spacers, and the render controller only ever targets the window's pages.
  */
 function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }): ContinuousViewportApi {
-  const { enabled, session, documentKey, pageCount, currentPage, telemetry } = props
+  const { enabled, session, documentKey, pageCount, currentPage, telemetry, rotation = 0 } = props
   const stageRef = useRef<HTMLDivElement | null>(null)
   const continuousStackRef = useRef<HTMLDivElement | null>(null)
   const controllerRef = useRef<ContinuousRenderController | null>(null)
@@ -156,7 +157,7 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
   }, [])
 
   // ---- bind a controller to the session; an inactive renderer creates nothing ----
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!enabled || !session || !documentKey) {
       controllerRef.current?.cancelAll()
       controllerRef.current = null
@@ -170,13 +171,15 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
     firstPixelReportedRef.current = false
     lastReportedPageRef.current = null
     pendingJumpRef.current = null
-    // A document switch invalidates every measurement.
+    // A document or rotation change invalidates the measured page geometry.
+    setSurfaces(new Map())
+    setPageErrors(new Map())
     layoutRef.current = null
     const layout = ensureLayout()
     const ownedSession = session
     const controller = new ContinuousRenderController({
-      readViewport1: page => { notePdfRendererCall('continuous', 'readViewport'); return readSessionPageViewport(ownedSession, page) },
-      startRender: (page, scale) => { notePdfRendererCall('continuous', 'startRender'); return renderSessionPageSurface(ownedSession, page, scale) },
+      readViewport1: page => { notePdfRendererCall('continuous', 'readViewport'); return readSessionPageViewport(ownedSession, page, rotation) },
+      startRender: (page, scale) => { notePdfRendererCall('continuous', 'startRender'); return renderSessionPageSurface(ownedSession, page, scale, rotation) },
     }, { pageCount, cacheCapacity: MAX_CANVAS_PAGES, maxConcurrentRenders: 3 }, {
       onPageReady: (page, surface) => {
         setSurfaces(previous => { const next = new Map(previous); next.set(page, surface); return next })
@@ -210,7 +213,7 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
       if (controllerRef.current === controller) controllerRef.current = null
       controller.cancelAll()
     }
-  }, [bumpLayout, documentKey, enabled, ensureLayout, pageCount, session])
+  }, [bumpLayout, documentKey, enabled, ensureLayout, pageCount, session, rotation])
 
   // ---- measure the scroll root, then keep the model's geometry in sync ----
   useLayoutEffect(() => {
@@ -249,7 +252,7 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
     }
     else window.addEventListener('resize', measure)
     return () => { observer?.disconnect(); if (timer !== null) window.clearTimeout(timer); if (!observer) window.removeEventListener('resize', measure) }
-  }, [bumpLayout, documentKey, enabled, ensureLayout, session])
+  }, [bumpLayout, documentKey, enabled, ensureLayout, session, rotation])
 
   // ---- scroll: window + settled current page, no session/branch/card reads ----
   const refreshFromScroll = useCallback(() => {
@@ -354,7 +357,7 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
     // Our own scroll reported this page; scrolling again would fight the user.
     if (lastReportedPageRef.current === target) return
     scrollToPage(target, 'center')
-  }, [currentPage, documentKey, enabled, pageCount, scrollToPage])
+  }, [currentPage, documentKey, enabled, pageCount, scrollToPage, rotation])
 
   // ---- blit ready surfaces onto the mounted canvases ----
   useEffect(() => {
@@ -421,7 +424,7 @@ function useContinuousPdfViewport(props: PdfViewportProps & { enabled: boolean }
  */
 export function usePdfViewport(props: PdfViewportProps): PdfViewportApi {
   const pagedEnabled = props.mode === 'paged'
-  const display = useReaderDisplay(props.session, props.currentPage, props.pageCount, props.telemetry ?? null, props.onFirstPixelReady, pagedEnabled)
+  const display = useReaderDisplay(props.session, props.currentPage, props.pageCount, props.telemetry ?? null, props.onFirstPixelReady, pagedEnabled, props.rotation)
   const continuous = useContinuousPdfViewport({ ...props, enabled: props.mode === 'continuous' })
   const shared = {
     canvasRef: display.canvasRef,

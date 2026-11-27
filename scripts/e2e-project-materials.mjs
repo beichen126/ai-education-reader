@@ -175,6 +175,9 @@ try {
   await page.getByTestId('media-invert').filter({ visible: true }).click()
   assert.equal(await fullImage.evaluate(image => getComputedStyle(image).filter), 'none')
   assert.equal(await fullImage.getAttribute('src'), imageSource)
+  await page.getByRole('dialog', { name: '图片大图查看' }).getByTestId('media-rotate').click()
+  assert.match(await fullImage.getAttribute('style'), /rotate\(90deg\)/)
+  assert.equal(await fullImage.getAttribute('src'), imageSource)
   await page.getByRole('button', { name: '返回列表', exact: true }).click()
   await fullImage.waitFor({ state: 'hidden' })
   await page.evaluate(() => {

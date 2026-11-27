@@ -233,9 +233,9 @@ export type PageSurfaceRender = {
 }
 
 /** Read a page's viewport at scale 1 — the anchor for viewport-aware display scaling. */
-export async function readPageViewport1(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number): Promise<{ width: number; height: number }> {
+export async function readPageViewport1(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number, rotation = 0): Promise<{ width: number; height: number }> {
   const page = await doc.getPage(pageNumber)
-  const vp = page.getViewport({ scale: 1 })
+  const vp = page.getViewport({ scale: 1, rotation: page.rotate + rotation })
   return { width: vp.width, height: vp.height }
 }
 
@@ -243,18 +243,18 @@ export async function readPageViewport1(doc: import('pdfjs-dist').PDFDocumentPro
  *  Contrary to the AI/export path (renderPageForDocument -> JPEG Blob), this path
  *  NEVER encodes to a Blob — the surface stays a GPU-friendly bitmap / canvas the
  *  Reader blits directly to its visible canvas (C1/C2). Returns a cancellable handle. */
-export function startPageSurfaceRender(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number, scale: number): PageSurfaceRender {
+export function startPageSurfaceRender(doc: import('pdfjs-dist').PDFDocumentProxy, pageNumber: number, scale: number, rotation = 0): PageSurfaceRender {
   let task: { cancel(): void } | null = null
   let cancelled = false
   const controller = new AbortController()
   const promise = (async (): Promise<PageSurface> => {
     const page = await doc.getPage(pageNumber)
     if (cancelled) throw new PdfCancellationError()
-    const vp = page.getViewport({ scale })
+    const vp = page.getViewport({ scale, rotation: page.rotate + rotation })
     const width = Math.max(1, Math.floor(vp.width))
     const height = Math.max(1, Math.floor(vp.height))
     const canUseBitmap = typeof createImageBitmap === 'function'
-    const native = canUseBitmap ? await renderAndroidPdf(doc, pageNumber, Math.max(width, height), controller.signal) : null
+    const native = canUseBitmap && rotation === 0 ? await renderAndroidPdf(doc, pageNumber, Math.max(width, height), controller.signal) : null
     if (cancelled) throw new PdfCancellationError()
     if (native) {
       const bitmap = typeof createImageBitmap === 'function' ? await createImageBitmap(native.blob).catch(() => null) : null

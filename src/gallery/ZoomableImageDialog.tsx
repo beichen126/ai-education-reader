@@ -8,6 +8,7 @@ import { createPortal } from 'react-dom'
 import { clampScale, clampPan, zoomAtPoint, resetTransform, DOUBLE_CLICK_SCALE } from './zoom'
 import css from './zoomable-image.module.css'
 import { tx as localeText } from '../engine/locale'
+import { MediaRotateButton } from '../dsh/MediaRotateButton'
 import { MediaInvertButton, useMediaInversion } from '../dsh/MediaInversion'
 import { useBackTarget } from '../engine/back-navigation'
 
@@ -16,6 +17,8 @@ export interface ZoomableImageDialogProps {
   alt?: string
   /** Reset transform whenever this changes (e.g. switching to another image). */
   resetKey?: string | number
+  rotation?: number
+  onRotate?: () => void
   index?: number
   count?: number
   onPrev?: () => void
@@ -41,6 +44,9 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
   const [scale, setScale] = useState(1)
   const [tx, setTx] = useState(0)
   const [ty, setTy] = useState(0)
+  const [imageRotation, setImageRotation] = useState({ key: resetKey, angle: 0 })
+  const rotation = props.rotation ?? (imageRotation.key === resetKey ? imageRotation.angle : 0)
+  const sideways = rotation % 180 !== 0
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null)
   const [stage, setStage] = useState<{ w: number; h: number }>({ w: 0, h: 0 })
   const scaleRef = useRef(scale); scaleRef.current = scale
@@ -63,9 +69,11 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
 
   const base = useCallback(() => {
     if (!nat || stage.w <= 0 || stage.h <= 0) return null
-    const fit = Math.min(stage.w / nat.w, stage.h / nat.h)
-    return { w: nat.w * fit, h: nat.h * fit }
-  }, [nat, stage])
+    const w = sideways ? nat.h : nat.w
+    const h = sideways ? nat.w : nat.h
+    const fit = Math.min(stage.w / w, stage.h / h)
+    return { w: w * fit, h: h * fit }
+  }, [nat, stage, sideways])
 
   const setT = useCallback((s: number, x: number, y: number) => {
     const b = base()
@@ -94,7 +102,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
     const t = resetTransform(); setScale(t.scale); setTx(t.tx); setTy(t.ty)
     setZoomHudVisible(false)
     if (zoomHudTimerRef.current !== null) { window.clearTimeout(zoomHudTimerRef.current); zoomHudTimerRef.current = null }
-  }, [src, resetKey])
+  }, [src, resetKey, rotation])
 
   // Unmount cleanup: never let the hide timer fire state updates after close.
   useEffect(() => () => {
@@ -239,7 +247,7 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
         onClick={onStageClick}
       >
         {src ? <img className={[css.image, mediaClass].filter(Boolean).join(' ')} data-testid="viewer-image" src={src} alt={alt} draggable={false}
-          style={{ width: fit ? fit.w : undefined, height: fit ? fit.h : undefined, transform: 'translate3d(' + tx + 'px,' + ty + 'px,0) scale(' + scale + ')', willChange: 'transform' }}
+          style={{ width: sideways ? fit?.h : fit?.w, height: sideways ? fit?.w : fit?.h, transform: 'translate3d(' + tx + 'px,' + ty + 'px,0) scale(' + scale + ')' + (rotation ? ' rotate(' + rotation + 'deg)' : ''), willChange: 'transform' }}
           onLoad={e => { const el = e.currentTarget; setNat({ w: el.naturalWidth, h: el.naturalHeight }) }}
         /> : <div className={css.missing}>{localeText('无法读取这张图片', 'Unable to load this image')}</div>}
       </div>
@@ -257,7 +265,12 @@ export function ZoomableImageDialog(props: ZoomableImageDialogProps) {
         </div>
       )}
       <div className={css.headerActions}>
-        {src && <MediaInvertButton pressed={inverted} className={css.ctrl} />}
+        {src && <>
+          <MediaInvertButton pressed={inverted} className={css.ctrl} />
+          <MediaRotateButton className={css.ctrl} onRotate={props.onRotate ?? (() => setImageRotation({
+            key: resetKey, angle: (rotation + 90) % 360,
+          }))} />
+        </>}
         {headerAction}
         <button ref={closeRef} type="button" className={css.close} aria-label={labels.close} onClick={onClose}>✕</button>
       </div>

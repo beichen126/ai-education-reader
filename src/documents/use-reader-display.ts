@@ -30,7 +30,7 @@ export type ReaderDisplayApi = {
 const STAGE_PADDING = 24 // 12px each side of the reader stage
 export { isZoomStale, type ZoomRequestContext } from './zoom-ownership'
 
-export function useReaderDisplay(session: PdfSession | null, page: number, pageCount: number, telemetry: PdfPerformanceTelemetry | null = null, onFirstPixelReady?: () => void, enabled = true): ReaderDisplayApi {
+export function useReaderDisplay(session: PdfSession | null, page: number, pageCount: number, telemetry: PdfPerformanceTelemetry | null = null, onFirstPixelReady?: () => void, enabled = true, rotation = 0): ReaderDisplayApi {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const stageRef = useRef<HTMLDivElement | null>(null)
   const controllerRef = useRef<ReaderRenderController | null>(null)
@@ -56,8 +56,8 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
       return
     }
     const backend = {
-      readViewport1: (n: number) => { notePdfRendererCall('paged', 'readViewport'); return readSessionPageViewport(session, n) },
-      startRender: (n: number, scale: number) => { notePdfRendererCall('paged', 'startRender'); return renderSessionPageSurface(session, n, scale) },
+      readViewport1: (n: number) => { notePdfRendererCall('paged', 'readViewport'); return readSessionPageViewport(session, n, rotation) },
+      startRender: (n: number, scale: number) => { notePdfRendererCall('paged', 'startRender'); return renderSessionPageSurface(session, n, scale, rotation) },
     }
     let ctrl: ReaderRenderController | null = null
     ctrl = new ReaderRenderController(backend, { cacheCapacity: 5, pageCount }, {
@@ -74,7 +74,7 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
       notePdfRendererAttach('paged', 'detach')
       if (controllerRef.current === ctrl) { ctrl.cancelAll(); controllerRef.current = null }
     }
-  }, [active, session, telemetry])
+  }, [active, session, telemetry, rotation])
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { if (active) controllerRef.current?.setPageCount(pageCount) }, [active, pageCount])
 
@@ -120,7 +120,7 @@ export function useReaderDisplay(session: PdfSession | null, page: number, pageC
     ctrl.setPageCount(pageCount)
     setPageError(null)
     ctrl.requestForeground(page)
-  }, [active, page, pageCount, geometry, session])
+  }, [active, page, pageCount, geometry, session, rotation])
 
   const requestZoomUrl = useCallback(async (pageOverride?: number): Promise<string> => {
     const sess = session
